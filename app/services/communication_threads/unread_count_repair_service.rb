@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require 'digest'
-
 class CommunicationThreads::UnreadCountRepairService
   DEFAULT_BATCH_SIZE = 100
 
@@ -68,9 +66,7 @@ class CommunicationThreads::UnreadCountRepairService
   end
 
   def lock_contact_thread!(contact_id)
-    identity = "communication-thread:#{account.id}:#{contact_id}"
-    lock_id = Digest::SHA256.digest(identity).unpack1('q>')
-    ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{lock_id})")
+    CommunicationThreads::PersonLock.lock!(account_id: account.id, contact_id: contact_id)
   end
 
   def communication_threads

@@ -77,13 +77,29 @@ describe('appointment patient dialog route', () => {
       )?.params
     ).toEqual({ accountId: 74, communication_thread_id: '456' });
   });
-  it('never treats a database ID as a public conversation ID', () => {
+  it('never treats a database ID as a public conversation ID: the dialog is the one of the person', () => {
     expect(
       appointmentPatientDialogRoute(
         { contactId: 42, patientContactId: 84, conversationId: 12002 },
         74
       )
-    ).toBeNull();
+    ).toEqual({
+      name: 'communication_thread_contact',
+      params: { accountId: 74, contact_id: 42 },
+      query: { patientContactId: '84', patientChatContactId: '42' },
+    });
+  });
+  it('opens the dialog of the person for an appointment that has no chat yet', () => {
+    expect(
+      appointmentPatientDialogRoute({ contactId: 42, patientContactId: 84 }, 74)
+    ).toEqual({
+      name: 'communication_thread_contact',
+      params: { accountId: 74, contact_id: 42 },
+      query: { patientContactId: '84', patientChatContactId: '42' },
+    });
+  });
+  it('has nothing to open without a person', () => {
+    expect(appointmentPatientDialogRoute({}, 74)).toBeNull();
   });
 });
 

@@ -1,4 +1,4 @@
-import { MESSAGE_TYPE } from 'shared/constants/messages';
+import { MESSAGE_STATUS, MESSAGE_TYPE } from 'shared/constants/messages';
 import { timestampInSeconds } from './timestampHelper';
 
 export const isCommunicationThread = chat => {
@@ -353,6 +353,13 @@ const isIncomingMessage = message => {
   );
 };
 
+const isOutgoingMessage = message => {
+  return (
+    message?.message_type === MESSAGE_TYPE.OUTGOING ||
+    message?.message_type === 'outgoing'
+  );
+};
+
 const channelForMessage = (channels, message) => {
   const exactChannel = channels.find(
     channel =>
@@ -366,17 +373,23 @@ const channelForMessage = (channels, message) => {
   );
 };
 
-const getLatestIncomingReplyableChannel = (channels, messages = []) => {
-  const latestIncomingMessage = [...messages]
+// The channel of the last activity of the person, whoever made it: a message of the person or of the staff. A private note is
+// not a conversation with the person and a call card is not a channel to write in, so neither one decides it.
+const getLatestActivityReplyableChannel = (channels, messages = []) => {
+  const latestMessage = [...messages]
     .filter(message => {
+      if (message?.private || message?.content_type === 'voice_call') {
+        return false;
+      }
+      if (!isIncomingMessage(message) && !isOutgoingMessage(message)) {
+        return false;
+      }
       const channel = channelForMessage(channels, message);
-      return isIncomingMessage(message) && channel?.can_reply;
+      return Boolean(channel) && !isCommunicationVoiceChannel(channel);
     })
     .sort(sortByNewestMessage)[0];
 
-  return latestIncomingMessage
-    ? channelForMessage(channels, latestIncomingMessage)
-    : null;
+  return latestMessage ? channelForMessage(channels, latestMessage) : null;
 };
 
 export const getPrimaryCommunicationChannel = channels => {
@@ -390,11 +403,11 @@ export const getDefaultReplyChannel = (channels, messages = []) => {
   if (!uniqueChannels.length) return null;
 
   const replyChannels = getCommunicationReplyChannels(uniqueChannels);
-  const latestIncomingReplyableChannel = getLatestIncomingReplyableChannel(
+  const latestActivityChannel = getLatestActivityReplyableChannel(
     replyChannels,
     messages
   );
-  if (latestIncomingReplyableChannel) return latestIncomingReplyableChannel;
+  if (latestActivityChannel) return latestActivityChannel;
 
   if (replyChannels.length) {
     return replyChannels[0];
@@ -520,6 +533,20 @@ export const getCommunicationReplyChannel = (chat, conversationId = null) => {
         sameCommunicationInbox(channel, selectedRawChannel)
       );
       if (selectedInboxChannel) return selectedInboxChannel;
+
+      // A channel picked before the dialog had a conversation in it ("inbox:12") is the same channel once the first message
+      // has made the conversation ("conversation:34" in inbox 12).
+      const selectedInboxId = String(conversationId).startsWith('inbox:')
+        ? String(conversationId).slice('inbox:'.length)
+        : null;
+      const promotedChannel = selectedInboxId
+        ? selectableChannels.find(
+            channel =>
+              channel.conversation_id &&
+              String(channel.inbox_id) === selectedInboxId
+          )
+        : null;
+      if (promotedChannel) return promotedChannel;
     }
   }
 
@@ -656,6 +683,9 @@ const compactPayload = payload => {
   );
 };
 
+// The dialog of a person who has none yet (see buildPersonDialogChat).
+export const isDraftDialog = chat => Boolean(chat?.is_draft);
+
 export const decoratePayloadWithCommunicationThread = (
   payload,
   chat,
@@ -667,13 +697,20 @@ export const decoratePayloadWithCommunicationThread = (
     chat,
     selectedChannelIdentifier || payload.channelKey || payload.conversationId
   );
-  if (!replyChannel) return payload;
+  if (!replyChannel) {
+    // Without a channel the server refuses it in plain words; it must not fall through to a conversation endpoint.
+    return isDraftDialog(chat)
+      ? { ...payload, person_contact_id: chat.person_contact_id }
+      : payload;
+  }
 
   return {
     ...payload,
     ...compactPayload({
       conversationId: replyChannel.conversation_id,
-      communicationThreadId: chat.id,
+      // A person without a dialog has no thread yet: the message goes to the person, and the first one makes the dialog.
+      communicationThreadId: isDraftDialog(chat) ? null : chat.id,
+      person_contact_id: isDraftDialog(chat) ? chat.person_contact_id : null,
       channelKey: replyChannel.message_channel_key || replyChannel.channel_key,
       targetInboxId: replyChannel.inbox_id,
       targetContactInboxId: replyChannel.contact_inbox_id,
@@ -725,6 +762,48 @@ export const buildCommunicationThreadConversation = thread => {
       sender: thread.meta?.sender || thread.contact || {},
       assignee: thread.meta?.assignee || null,
       team: thread.meta?.team || null,
+    },
+  };
+};
+
+// The dialog of a person who has none yet. It lives only in the screen: nothing is stored for it until the first message, call or
+// note, and it is never a row of any list.
+export const PERSON_DIALOG_CHAT_TYPE = 'person_dialog';
+
+export const personDialogChatId = contactId => `draft-${contactId}`;
+
+// The first message of the draft is on its way: the answer of the server makes the dialog, nothing else may, or the screen would
+// show the message twice (the server's copy and the bubble that is still waiting).
+export const isPersonDialogSending = personDialog =>
+  (personDialog?.messages || []).some(
+    message => message?.status === MESSAGE_STATUS.PROGRESS
+  );
+
+export const buildPersonDialogChat = personDialog => {
+  if (!personDialog) return {};
+
+  const thread = buildCommunicationThreadConversation({
+    id: personDialogChatId(personDialog.contactId),
+    contact: personDialog.contact,
+    channels: personDialog.channels,
+    messages: personDialog.messages || [],
+  });
+
+  return {
+    ...thread,
+    display_id: null,
+    communication_thread_id: null,
+    is_draft: true,
+    person_contact_id: personDialog.contactId,
+    shared_phone_holder: personDialog.sharedPhoneHolder || null,
+    blocked: Boolean(personDialog.blocked),
+    status: null,
+    labels: [],
+    dataFetched: true,
+    allMessagesLoaded: true,
+    meta: {
+      ...thread.meta,
+      sender: personDialog.contact || {},
     },
   };
 };

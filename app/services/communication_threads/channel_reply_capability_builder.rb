@@ -35,10 +35,13 @@ class CommunicationThreads::ChannelReplyCapabilityBuilder
     return voice_capability_payload(target_error, can_reply: target_error.blank?, can_call: target_error.blank?) if voice_channel?
 
     reply_window_open = unlinked_reply_window_open?
-    can_send_text = target_error.blank? && free_text_allowed?
+    reachable = target_error.blank?
     capability_payload(
-      can_send_text: can_send_text,
+      can_send_text: reachable && free_text_allowed?,
       reply_window_open: reply_window_open,
+      # A template cannot reach a person the channel has no number or address for: the channel asks for nothing then, it only
+      # says why it is disabled (the screen offers to write to the holder of a shared number, or to add the number to the card).
+      requires_template: reachable && policy.requires_template,
       disabled_reason: target_error || disabled_reason(reply_window_open)
     )
   end
@@ -65,7 +68,7 @@ class CommunicationThreads::ChannelReplyCapabilityBuilder
       can_send_text: can_send_text,
       can_send_attachments: can_send_text,
       can_call: attributes.fetch(:can_call, false),
-      requires_template: policy.requires_template,
+      requires_template: attributes.fetch(:requires_template, policy.requires_template),
       reply_window_open: attributes.fetch(:reply_window_open),
       reply_window_closes_at: policy.reply_window_closes_at,
       reauthorization_required: reauthorization_required?,

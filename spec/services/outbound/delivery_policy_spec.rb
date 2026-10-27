@@ -75,37 +75,61 @@ RSpec.describe Outbound::DeliveryPolicy do
       expect(result.reply_window_open).to be(true)
     end
 
-    it 'uses incoming messages across contact inbox identities of the same contact and inbox' do
-      whatsapp_inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
-      previous_contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
-      current_contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
-      previous_conversation = create(
-        :conversation,
-        account: account,
-        inbox: whatsapp_inbox,
-        contact: contact,
-        contact_inbox: previous_contact_inbox
-      )
-      new_conversation = create(
-        :conversation,
-        account: account,
-        inbox: whatsapp_inbox,
-        contact: contact,
-        contact_inbox: current_contact_inbox
-      )
-      create(
-        :message,
-        account: account,
-        inbox: whatsapp_inbox,
-        conversation: previous_conversation,
-        message_type: 'incoming',
-        created_at: 1.hour.ago
-      )
+    context 'when the customer has more than one conversation or number in the inbox' do
+      let(:whatsapp_inbox) { create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox }
+      let(:customer_number) { create(:contact_inbox, contact: contact, inbox: whatsapp_inbox) }
+      let(:other_number) { create(:contact_inbox, contact: contact, inbox: whatsapp_inbox) }
 
-      result = described_class.evaluate(conversation: new_conversation, content_kind: 'free_text')
+      def conversation_on(contact_inbox)
+        create(:conversation, account: account, inbox: whatsapp_inbox, contact: contact, contact_inbox: contact_inbox)
+      end
 
-      expect(result).to be_allowed
-      expect(result.reply_window_open).to be(true)
+      def customer_wrote(conversation, at)
+        create(:message, account: account, inbox: whatsapp_inbox, conversation: conversation, message_type: 'incoming', created_at: at)
+      end
+
+      it 'uses the incoming messages the customer wrote from the same number in any conversation of the inbox' do
+        previous_conversation = conversation_on(customer_number)
+        new_conversation = conversation_on(customer_number)
+        customer_wrote(previous_conversation, 1.hour.ago)
+
+        result = described_class.evaluate(conversation: new_conversation, content_kind: 'free_text')
+
+        expect(result).to be_allowed
+        expect(result.reply_window_open).to be(true)
+      end
+
+      it 'counts the user id the customer wrote with and the phone number the staff writes to as one customer' do
+        by_user_id = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox, source_id: 'AB.providerbsuid123')
+        customer_wrote(conversation_on(by_user_id), 1.hour.ago)
+
+        result = described_class.evaluate(conversation: conversation_on(customer_number), content_kind: 'free_text')
+
+        expect(result).to be_allowed
+        expect(result.reply_window_open).to be(true)
+      end
+
+      it 'does not use the messages the same person wrote from another phone number: each number has its own window' do
+        customer_wrote(conversation_on(customer_number), 1.hour.ago)
+
+        result = described_class.evaluate(conversation: conversation_on(other_number), content_kind: 'free_text')
+
+        expect(result).not_to be_allowed
+        expect(result.requires_template).to be(true)
+        expect(result.reply_window_open).to be(false)
+      end
+
+      it 'looks at the customer a message to another inbox of the person goes to' do
+        customer_wrote(conversation_on(customer_number), 1.hour.ago)
+        other_inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
+        in_other_inbox = create(:contact_inbox, contact: contact, inbox: other_inbox)
+        customer_wrote(create(:conversation, account: account, inbox: other_inbox, contact: contact, contact_inbox: in_other_inbox), 30.hours.ago)
+
+        result = described_class.evaluate(conversation: conversation_on(customer_number), inbox: other_inbox, content_kind: 'free_text')
+
+        expect(result).not_to be_allowed
+        expect(result.reply_window_open).to be(false)
+      end
     end
 
     it 'denies WhatsApp Business free text when the 24-hour reply window is closed' do
@@ -187,16 +211,41 @@ RSpec.describe Outbound::DeliveryPolicy do
       end
     end
 
-    it 'does not apply official WhatsApp 24-hour template rules to Twilio WhatsApp' do
-      twilio_channel = create(:channel_twilio_sms, medium: :whatsapp, account: account)
-      twilio_inbox = create(:inbox, channel: twilio_channel, account: account)
-      conversation = conversation_for(twilio_inbox)
+    context 'with Twilio WhatsApp, which has the same 24-hour customer service window as the official WhatsApp' do
+      let(:twilio_inbox) { create(:inbox, channel: create(:channel_twilio_sms, medium: :whatsapp, account: account), account: account) }
 
-      result = described_class.evaluate(conversation: conversation, content_kind: 'free_text', scheduled_at: 3.days.from_now)
+      it 'allows free text while the customer wrote within the window' do
+        conversation = conversation_for(twilio_inbox)
+        create(:message, account: account, inbox: twilio_inbox, conversation: conversation, message_type: 'incoming', created_at: 1.hour.ago)
 
-      expect(result).to be_allowed
-      expect(result.provider).to eq('twilio_whatsapp')
-      expect(result.requires_template).to be(false)
+        result = described_class.evaluate(conversation: conversation, content_kind: 'free_text')
+
+        expect(result).to be_allowed
+        expect(result.provider).to eq('twilio_whatsapp')
+        expect(result.reply_window_open).to be(true)
+      end
+
+      it 'asks for a content template when the customer never wrote, or wrote longer ago', :aggregate_failures do
+        conversation = conversation_for(twilio_inbox)
+
+        result = described_class.evaluate(conversation: conversation, content_kind: 'free_text')
+
+        expect(result).not_to be_allowed
+        expect(result.provider).to eq('twilio_whatsapp')
+        expect(result.requires_template).to be(true)
+        expect(result.reason).to eq(described_class::TWILIO_WHATSAPP_TEMPLATE_REQUIRED_REASON)
+        expect(result.allowed_content_kinds).to eq(['channel_template'])
+      end
+
+      it 'asks for a content template when the window will be closed at delivery time' do
+        conversation = conversation_for(twilio_inbox)
+        create(:message, account: account, inbox: twilio_inbox, conversation: conversation, message_type: 'incoming', created_at: 1.hour.ago)
+
+        result = described_class.evaluate(conversation: conversation, content_kind: 'free_text', scheduled_at: 3.days.from_now)
+
+        expect(result).not_to be_allowed
+        expect(result.requires_template).to be(true)
+      end
     end
 
     it 'allows Twilio WhatsApp content templates by content_sid' do

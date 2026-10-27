@@ -14,6 +14,7 @@ import {
 } from 'date-fns';
 import { utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz';
 
+import { PERSON_DIALOG_ROUTE_NAME } from 'dashboard/helper/personDialogHelper';
 import {
   DEFAULT_VISIBLE_END_MINUTE,
   DEFAULT_VISIBLE_START_MINUTE,
@@ -534,7 +535,12 @@ export const appointmentPatientDialogRoute = (appointment, accountId) => {
       query,
     };
   }
-  return null;
+  // No chat yet: the dialog of the person, which is the empty screen of a draft until the first message.
+  return {
+    name: PERSON_DIALOG_ROUTE_NAME,
+    params: { accountId, contact_id: ownerId },
+    query,
+  };
 };
 
 export const toDate = value => {

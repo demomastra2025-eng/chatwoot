@@ -10,7 +10,11 @@ import { BUS_EVENTS } from 'shared/constants/busEvents';
 import CmdBarConversationSnooze from 'dashboard/routes/dashboard/commands/CmdBarConversationSnooze.vue';
 import { emitter } from 'shared/helpers/mitt';
 import SidepanelSwitch from 'dashboard/components-next/Conversation/SidepanelSwitch.vue';
-import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
+import {
+  isCommunicationThread,
+  isDraftDialog,
+} from 'dashboard/helper/communicationThreadHelper';
+import { useAlert } from 'dashboard/composables';
 
 const ConversationSidebar = defineAsyncComponent(
   () =>
@@ -62,6 +66,12 @@ export default {
       type: Boolean,
       default: false,
     },
+    // The dialog of a person opened by the person (the contact card, a calendar entry): the person's thread when they have one,
+    // else the empty screen of a draft.
+    personContactId: {
+      type: [String, Number],
+      default: '',
+    },
   },
   setup() {
     const { uiSettings, updateUISettings } = useUISettings();
@@ -84,11 +94,18 @@ export default {
       chatList: 'getAllConversations',
       currentChat: 'getSelectedChat',
     }),
+    hasSelectedDialog() {
+      return Boolean(this.conversationId || this.personContactId);
+    },
     showConversationList() {
-      return this.isOnExpandedLayout ? !this.conversationId : true;
+      return this.isOnExpandedLayout
+        ? !(this.conversationId || this.personContactId)
+        : true;
     },
     showMessageView() {
-      return this.conversationId ? true : !this.isOnExpandedLayout;
+      return this.conversationId || this.personContactId
+        ? true
+        : !this.isOnExpandedLayout;
     },
     isOnExpandedLayout() {
       const {
@@ -114,6 +131,13 @@ export default {
     'currentChat.inbox_id'() {
       this.normalizeConversationRoute();
     },
+    // The first message (or call, or note) of an empty dialog made the thread: the address of the screen becomes the thread's.
+    'currentChat.id'() {
+      this.replaceRouteWithPromotedThread();
+    },
+    personContactId() {
+      this.setActiveChat();
+    },
   },
 
   created() {
@@ -121,7 +145,10 @@ export default {
     // This prevents child components from accessing stale data
     // and resolves timing issues during navigation
     // with conversation view and other screens
-    if (!this.conversationId) {
+    if (!this.hasSelectedDialog) {
+      this.$store.dispatch('clearSelectedState');
+    } else if (this.personContactId && !this.isChatOfPerson(this.currentChat)) {
+      // Another chat must not show while the dialog of this person is being opened.
       this.$store.dispatch('clearSelectedState');
     }
   },
@@ -145,7 +172,7 @@ export default {
 
   beforeUnmount() {
     this.isLeavingConversationRoute = true;
-    if (this.conversationId || this.currentChat?.id) {
+    if (this.hasSelectedDialog || this.currentChat?.id) {
       this.$store.dispatch('clearSelectedState');
     }
   },
@@ -217,7 +244,75 @@ export default {
         hash: this.$route.hash,
       });
     },
+    async openPersonDialog() {
+      const contactId = this.personContactId;
+      // This person's dialog is already the open chat: do not read it again, that would drop the bubbles that failed to send.
+      if (isDraftDialog(this.currentChat)) {
+        if (this.isChatOfPerson(this.currentChat)) return;
+      } else if (this.isOpenThreadOfPerson(this.currentChat)) {
+        this.replaceRouteWithPromotedThread();
+        return;
+      }
+
+      try {
+        const result = await this.$store.dispatch('openPersonDialog', {
+          contactId,
+        });
+        if (!result || String(this.personContactId) !== String(contactId)) {
+          return;
+        }
+        if (result.communicationThreadId) {
+          this.$router.replace({
+            name: 'communication_thread_conversation',
+            params: {
+              accountId: this.$route.params.accountId,
+              communication_thread_id: result.communicationThreadId,
+            },
+            query: this.$route.query,
+          });
+        }
+      } catch (error) {
+        useAlert(this.$t('PERSON_DIALOG.OPEN_ERROR'));
+      }
+    },
+    isChatOfPerson(chat) {
+      if (isDraftDialog(chat)) {
+        return String(chat.person_contact_id) === String(this.personContactId);
+      }
+      return this.isOpenThreadOfPerson(chat);
+    },
+    isOpenThreadOfPerson(chat) {
+      if (!chat?.id || isDraftDialog(chat) || !isCommunicationThread(chat)) {
+        return false;
+      }
+
+      return (
+        String(chat.contact_id ?? chat.meta?.sender?.id) ===
+        String(this.personContactId)
+      );
+    },
+    replaceRouteWithPromotedThread() {
+      if (
+        !this.personContactId ||
+        !this.isOpenThreadOfPerson(this.currentChat)
+      ) {
+        return;
+      }
+
+      this.$router.replace({
+        name: 'communication_thread_conversation',
+        params: {
+          accountId: this.$route.params.accountId,
+          communication_thread_id: this.currentChat.id,
+        },
+        query: this.$route.query,
+      });
+    },
     setActiveChat() {
+      if (this.personContactId) {
+        this.openPersonDialog();
+        return;
+      }
       if (this.conversationId) {
         const selectedConversation = this.findConversation();
         // If conversation doesn't exist or selected conversation is same as the active

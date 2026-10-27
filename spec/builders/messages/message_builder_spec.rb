@@ -111,6 +111,25 @@ describe Messages::MessageBuilder do
       end
     end
 
+    context 'when the screen sends an echo_id' do
+      let(:account) { create(:account) }
+      let(:user) { create(:user, account: account) }
+      let(:conversation) { create(:conversation, account: account) }
+
+      it 'keeps the echo_id with the message, so a second send of the same bubble can be recognised', :aggregate_failures do
+        message = described_class.new(user, conversation, ActionController::Parameters.new(content: 'Hello', echo_id: 'bubble-1')).perform
+
+        expect(message.additional_attributes).to include('echo_id' => 'bubble-1')
+        expect(message.reload.additional_attributes['echo_id']).to eq('bubble-1')
+      end
+
+      it 'stores nothing for a message sent without one' do
+        message = described_class.new(user, conversation, ActionController::Parameters.new(content: 'Hello')).perform
+
+        expect(message.additional_attributes.to_h).not_to have_key('echo_id')
+      end
+    end
+
     context 'when campaign_id and template_params are both provided' do
       let(:params) do
         ActionController::Parameters.new({

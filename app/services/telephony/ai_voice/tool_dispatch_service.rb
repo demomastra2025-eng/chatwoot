@@ -857,12 +857,8 @@ class Telephony::AiVoice::ToolDispatchService
   def reply_window_state
     return {} unless conversation&.inbox&.channel.is_a?(Channel::Whatsapp)
 
-    last_incoming_at = conversation.messages
-                                   .where(account_id: conversation.account_id)
-                                   .incoming
-                                   .reorder(created_at: :desc)
-                                   .limit(1)
-                                   .pick(:created_at)
+    # The window is the customer's number's, not the conversation's, see Conversations::MessageWindowService.
+    last_incoming_at = Conversations::MessageWindowService.last_incoming_timestamps([conversation])[conversation.id]
     closes_at = last_incoming_at&.+(Conversations::MessageWindowService::MESSAGING_WINDOW_24_HOURS)
 
     {

@@ -9,7 +9,14 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     'Channel::Whatsapp' => [:phone_number]
   }.freeze
 
-  SUPPORTED_UNLINKED_CHANNELS = (CONTACT_TARGET_REQUIREMENTS.keys + Inbox::API_CHANNEL_TYPES + ['Channel::WebWidget']).freeze
+  # The order of the channels the person has no conversation in yet. The screen takes the first one that can be replied to when
+  # the person has no activity anywhere, so the official WhatsApp comes first; a call comes last, so the default is never "call".
+  UNLINKED_CHANNEL_ORDER = %w[
+    Channel::Whatsapp Channel::WhatsappWeb Channel::Telegram Channel::TelegramPersonal Channel::Instagram Channel::FacebookPage
+    Channel::Sms Channel::TwilioSms Channel::Email Channel::Api Channel::WebWidget
+  ].freeze
+  UNLINKED_CHANNEL_LAST = 'Channel::Voice'
+  ONLY_AFTER_THE_PERSON_WROTE = %w[Channel::WhatsappWeb Channel::Telegram].freeze
   INITIALIZE_OPTION_KEYS = %i[
     contact available_inboxes include_unlinked deduplicate_linked preferred_status
     unread_counts last_incoming_message_timestamps last_seen_timestamps
@@ -67,10 +74,40 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     ]
   end
 
+  # A channel the person has no conversation in is offered when the channel itself can reach the person: it derives the chat
+  # identity of the contact (Contacts::ContactableInboxesService, the same truth the first message uses to create the
+  # ContactInbox). A phone number is that identity for WhatsApp, SMS and calls, an email for email, the Telegram id for Telegram;
+  # Instagram, Facebook, TikTok and Line need a chat that the person has opened. A channel that needs a phone or an email the
+  # person lacks is still listed, disabled with the reason; a channel that is not reachable by nature is not listed at all.
+  # WhatsApp Web is a personal number and a Telegram bot cannot write to someone who never opened it: both are offered only to
+  # someone who has already written there (a contact_inbox exists).
   def unlinked_channels
     linked_inbox_ids = links.map(&:inbox_id)
-    available_inboxes.reject { |inbox| linked_inbox_ids.include?(inbox.id) }
-                     .map { |inbox| build_unlinked_channel(inbox) }
+    inboxes = available_inboxes.reject { |inbox| linked_inbox_ids.include?(inbox.id) }
+                               .select { |inbox| contactable_inbox_ids.include?(inbox.id) || CONTACT_TARGET_REQUIREMENTS.key?(inbox.channel_type) }
+    inboxes.sort_by { |inbox| [unlinked_channel_rank(inbox), inbox.id] }.map { |inbox| build_unlinked_channel(inbox) }
+  end
+
+  def unlinked_channel_rank(inbox)
+    return UNLINKED_CHANNEL_ORDER.size + 1 if inbox.channel_type == UNLINKED_CHANNEL_LAST
+
+    UNLINKED_CHANNEL_ORDER.index(inbox.channel_type) || UNLINKED_CHANNEL_ORDER.size
+  end
+
+  def contactable_inbox_ids
+    @contactable_inbox_ids ||= if contact.blank?
+                                 []
+                               else
+                                 contactable_entries.filter_map { |entry| entry[:inbox].id if offered_first?(entry[:inbox]) }
+                               end
+  end
+
+  def contactable_entries
+    Contacts::ContactableInboxesService.new(contact: contact).get
+  end
+
+  def offered_first?(inbox)
+    ONLY_AFTER_THE_PERSON_WROTE.exclude?(inbox.channel_type) || contact_inbox_by_inbox_id.key?(inbox.id)
   end
 
   def build_linked_channel(link)
@@ -130,13 +167,13 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
   end
 
   def contact_target_error(inbox)
-    return 'unsupported_channel' unless SUPPORTED_UNLINKED_CHANNELS.include?(inbox.channel_type)
+    return if contactable_inbox_ids.include?(inbox.id)
 
     Array(CONTACT_TARGET_REQUIREMENTS[inbox.channel_type]).each do |attribute|
       return "missing_contact_#{attribute}" if contact.blank? || contact.public_send(attribute).blank?
     end
 
-    nil
+    'unsupported_channel'
   end
 
   def delivery_policy(conversation:, inbox:)

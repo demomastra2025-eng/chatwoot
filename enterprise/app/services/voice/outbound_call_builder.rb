@@ -85,13 +85,14 @@ class Voice::OutboundCallBuilder
                                   contact.phone_number
   end
 
+  # The call starts the dialog of the person, like their first message: no "new conversation" is announced to the others, and
+  # the conversation goes to the owner of the person (when he works in the inbox) or to the one who calls.
   def create_conversation!(contact_inbox)
-    account.conversations.create!(
-      contact_inbox_id: contact_inbox.id,
-      inbox_id: inbox.id,
-      contact_id: contact.id,
-      status: :open
-    )
+    ConversationBuilder.new(
+      params: ActionController::Parameters.new(status: 'open'),
+      contact_inbox: contact_inbox,
+      started_by: user
+    ).create_new
   end
 
   def find_or_create_conversation!(contact_inbox)

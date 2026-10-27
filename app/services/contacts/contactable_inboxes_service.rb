@@ -67,7 +67,7 @@ class Contacts::ContactableInboxesService
     delivery_policy = Outbound::DeliveryPolicy.evaluate(
       inbox: inbox,
       content_kind: 'free_text',
-      last_incoming_message_at: latest_incoming_message_timestamps[inbox.id]
+      last_incoming_message_at: last_incoming_message_at(inbox, contact_inbox)
     )
 
     {
@@ -183,19 +183,20 @@ class Contacts::ContactableInboxesService
     end
   end
 
+  # The last incoming message of the customer the contact_inbox belongs to: the reply window is the customer's, see
+  # Conversations::MessageWindowService
+  def last_incoming_message_at(inbox, contact_inbox)
+    identities = contact_inboxes_by_identity.values.select { |known| known.inbox_id == inbox.id }.map { |known| [known.id, known.source_id] }
+    Conversations::MessageWindowService.customer_ids(identities, contact_inbox&.id)
+                                       .filter_map { |id| latest_incoming_message_timestamps[id] }.max
+  end
+
+  # { contact_inbox id => time of its last incoming message }
   def latest_incoming_message_timestamps
-    @latest_incoming_message_timestamps ||= Message.incoming
-                                                   .reorder(nil)
-                                                   .joins(:conversation)
-                                                   .where(
-                                                     account_id: @contact.account_id,
-                                                     conversations: {
-                                                       account_id: @contact.account_id,
-                                                       contact_id: @contact.id
-                                                     }
-                                                   )
-                                                   .group('conversations.inbox_id')
-                                                   .maximum('messages.created_at')
+    @latest_incoming_message_timestamps ||= Conversations::MessageWindowService.latest_by_contact_inbox(
+      account_id: @contact.account_id,
+      contact_inbox_ids: contact_inboxes_by_identity.values.map(&:id)
+    )
   end
 
   def active_conversation_display_ids

@@ -697,5 +697,32 @@
   },
   "GALLERY_VIEW": {
     "ERROR_DOWNLOADING": "Unable to download attachment. Please try again"
+  },
+  "PERSON_DIALOG": {
+    "WRITE": "Message",
+    "CALL": "Call",
+    "CALL_NO_PHONE": "This patient has no phone number. Add one in the card.",
+    "OPEN_ERROR": "Could not open the conversation. Please try again.",
+    "EMPTY": {
+      "DEFAULT": "No messages yet. Write the first message and the dialog will appear in the list.",
+      "WHATSAPP_TEMPLATE": "In WhatsApp the first message can only be sent as a template. Press \"Template\" below. Plain text becomes available once the patient replies.",
+      "NEEDS_PHONE": "To write, the patient's phone number is needed. Add it in the card.",
+      "OPEN_CARD": "Open the card",
+      "SHARED_PHONE": "The patient has no number of their own. The number belongs to {name}. Write to {name} about the patient?",
+      "WRITE_TO_HOLDER": "Write to {name}",
+      "NO_ACCESS": "You have no access to the messengers used to reach this patient. Please contact your administrator.",
+      "BLOCKED": "The contact is blocked. Unblock it in the card to write."
+    },
+    "ERRORS": {
+      "foreign_chat_identity": "This number is already linked to another contact: {name}. Check the card.",
+      "template_required": "In WhatsApp only a template can be sent right now.",
+      "channel_unavailable": "You cannot write through this channel right now. Choose another one.",
+      "no_reachable_channel": "There is no way to write to this person yet, and nowhere to leave a note. Add a phone number or another contact in the card.",
+      "contact_blocked": "The contact is blocked. Unblock it in the card to write."
+    },
+    "PICKER": {
+      "SEARCH_ERROR": "Could not search contacts. Please try again.",
+      "CREATE_ERROR": "Could not create the contact. Check the number or the email address and try again."
+    }
   }
 }

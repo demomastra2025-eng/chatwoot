@@ -266,7 +266,7 @@
   premium: true
 - name: communication_threads
   display_name: Communication Threads
-  enabled: false
+  enabled: true
 - name: deferred_touch_materialization
   display_name: Deferred Touch Materialization
   enabled: false

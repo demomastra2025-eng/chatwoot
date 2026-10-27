@@ -49,6 +49,24 @@ export default {
         };
       },
     },
+    {
+      path: frontendURL(
+        'accounts/:accountId/communication_threads/contact/:contact_id'
+      ),
+      name: 'communication_thread_contact',
+      meta: {
+        permissions: CONVERSATION_ACCESS_PERMISSIONS,
+        featureFlag: FEATURE_FLAGS.COMMUNICATION_THREADS,
+      },
+      component: ConversationView,
+      props: route => {
+        return {
+          inboxId: 0,
+          personContactId: route.params.contact_id,
+          communicationThreadMode: true,
+        };
+      },
+    },
     ...inboxDialogRoutes.routes,
     {
       path: frontendURL('accounts/:accountId/conversations/:conversation_id'),

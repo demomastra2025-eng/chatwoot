@@ -32,7 +32,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     service_amount
   ].freeze
 
-  before_action :set_appointment, only: [:show, :update, :cancel, :create_conversation, :destroy]
+  before_action :set_appointment, only: [:show, :update, :cancel, :destroy]
   before_action :ensure_editable_appointment!, only: [:destroy]
 
   def index
@@ -83,20 +83,6 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     cancel_and_render
   end
 
-  def create_conversation
-    inbox = Current.account.inboxes.find(create_conversation_params[:inbox_id])
-    authorize inbox, :show?
-    appointment = Scheduling::Appointments::CreateConversationService.new(
-      account: Current.account,
-      appointment: @appointment,
-      inbox: inbox,
-      params: create_conversation_params,
-      actor: Current.user
-    ).perform
-
-    render_payload(Scheduling::PayloadBuilder.appointment(appointment))
-  end
-
   def destroy
     @appointment.with_lock do
       Scheduling::Appointments::ProviderCancellationPolicy.new(appointment: @appointment).ensure_deletable!
@@ -109,10 +95,6 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
 
   def appointment_params
     params.permit(*APPOINTMENT_PARAM_KEYS, service_ids: [], custom_attributes: {})
-  end
-
-  def create_conversation_params
-    params.permit(:contact_id, :contact_inbox_id, :inbox_id, :source_id)
   end
 
   def filter_by_range(scope)

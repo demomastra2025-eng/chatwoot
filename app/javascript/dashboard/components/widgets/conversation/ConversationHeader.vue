@@ -17,7 +17,9 @@ import {
   getCommunicationContactIdentityLabel,
   getUniqueCommunicationChannels,
   isCommunicationThread,
+  isDraftDialog,
 } from 'dashboard/helper/communicationThreadHelper';
+import { PERSON_DIALOG_ROUTE_NAME } from 'dashboard/helper/personDialogHelper';
 import {
   APPOINTMENT_STATUS_ICON_CLASSES,
   APPOINTMENT_STATUS_ICONS,
@@ -45,6 +47,8 @@ const currentChat = computed(() => store.getters.getSelectedChat);
 const accountId = computed(() => store.getters.getCurrentAccountId);
 
 const chatMetadata = computed(() => props.chat.meta || {});
+// A person without a dialog has no status and nothing to assign or resolve yet.
+const isDraft = computed(() => isDraftDialog(props.chat));
 const isCommunicationThreadConversation = computed(() =>
   isCommunicationThread(props.chat)
 );
@@ -92,7 +96,9 @@ const backButtonUrl = computed(() => {
     customViewId,
     status: route.query.status,
     assigneeType: route.query.assignee_type || route.query.assigneeType,
-    communicationThread: name === 'communication_thread_conversation',
+    communicationThread:
+      name === 'communication_thread_conversation' ||
+      name === PERSON_DIALOG_ROUTE_NAME,
   });
 });
 
@@ -394,6 +400,7 @@ const statusMeta = computed(() => {
             {{ contactDisplayName }}
           </span>
           <span
+            v-if="!isDraft"
             class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium leading-4 whitespace-nowrap"
             :class="statusMeta.className"
           >
@@ -503,7 +510,7 @@ const statusMeta = computed(() => {
         :parent-width="width"
         class="hidden md:flex"
       />
-      <MoreActions :conversation-id="currentChat.id" />
+      <MoreActions v-if="!isDraft" :conversation-id="currentChat.id" />
     </div>
   </div>
 </template>

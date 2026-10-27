@@ -489,4 +489,71 @@ describe('ConversationSidebar', () => {
     );
     expect(wrapper.text()).toBe('');
   });
+
+  describe('the empty dialog of a person', () => {
+    const draft = {
+      id: 'draft-42',
+      is_draft: true,
+      person_contact_id: 42,
+      is_communication_thread: true,
+      meta: { sender: { id: 42, name: 'Owner' } },
+      channels: [],
+    };
+
+    it('gives the contact panel no conversation id: no request may carry the screen id', async () => {
+      mocks.uiSettings = ref({ is_contact_sidebar_open: true });
+
+      const wrapper = mountComponent(draft);
+      await flushPromises();
+
+      expect(
+        wrapper.findComponent({ name: 'ContactPanel' }).props('conversationId')
+      ).toBe('');
+    });
+
+    it('shows no deals panel, which belongs to a conversation', async () => {
+      mocks.uiSettings = ref({ is_crm_deal_panel_open: true });
+
+      const wrapper = mountComponent(draft);
+      await flushPromises();
+
+      expect(
+        wrapper.findComponent({ name: 'CrmConversationDealsSidebar' }).exists()
+      ).toBe(false);
+    });
+
+    it('shows the patients of the person in the appointments panel', async () => {
+      mocks.uiSettings = ref({ is_scheduling_appointments_panel_open: true });
+
+      const wrapper = mountComponent(draft);
+      await flushPromises();
+
+      expect(SchedulingContactsAPI.patients).toHaveBeenCalledWith(42);
+      expect(
+        wrapper
+          .findComponent({ name: 'SchedulingConversationAppointmentsSidebar' })
+          .exists()
+      ).toBe(true);
+    });
+
+    it('keeps the patient that was selected for the empty dialog once the first message made the dialog', async () => {
+      mocks.uiSettings = ref({ is_scheduling_appointments_panel_open: true });
+      const wrapper = mountComponent(draft);
+      await flushPromises();
+      const store = useConversationPatientContextStore();
+      store.select('1:9:person:42', 84);
+      await flushPromises();
+
+      await wrapper.setProps({
+        currentChat: {
+          id: 77,
+          is_communication_thread: true,
+          meta: { sender: { id: 42, name: 'Owner' } },
+        },
+      });
+      await flushPromises();
+
+      expect(store.selectedPatient('1:9:thread:77').id).toBe(84);
+    });
+  });
 });

@@ -82,6 +82,13 @@
       },
       "PATIENT_CONFLICT": "MedElement пациент картасында қайшылық табылды: пациент деректерін тексеріңіз немесе интеграция баптауларында шешіңіз."
     },
+    "CONVERSATION_PLACEHOLDER": {
+      "ADD_CONTACT": "Контакт қосу",
+      "CONTACT": "Контакт",
+      "LOAD_ERROR": "Диалогты жүктеу мүмкін болмады",
+      "NO_CONTACT_DESCRIPTION": "Адамға жазу үшін жазбаға контакт қосыңыз.",
+      "TITLE": "Жазбада контакт жоқ"
+    },
     "APPOINTMENT_FORM": {
       "EDIT_OR_RESCHEDULE": "Өзгерту / ауыстыру",
       "STARTS_AT": "Басталуы",

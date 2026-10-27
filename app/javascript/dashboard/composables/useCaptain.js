@@ -24,6 +24,8 @@ export function useCaptain() {
   const replyMode = useMapGetter('draftMessages/getReplyEditorMode');
   const draftConversationId = computed(() => currentChat.value?.id);
   const conversationId = computed(() => {
+    // The dialog of a person who has none yet has no conversation.
+    if (currentChat.value?.is_draft) return null;
     if (currentChat.value?.is_communication_thread) {
       return (
         currentChat.value?.active_reply_channel_conversation_id ||

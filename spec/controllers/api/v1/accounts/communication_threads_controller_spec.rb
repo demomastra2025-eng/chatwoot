@@ -1549,7 +1549,25 @@ RSpec.describe 'Communication Threads API', type: :request do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.parsed_body['error']).to include('requires a template')
+      expect(response.parsed_body['code']).to eq('template_required')
       expect(conversation.messages.outgoing).to be_empty
+    end
+
+    it 'answers the same echo_id with the message it already created', :aggregate_failures do
+      conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread
+      params = { content: 'Sent once', conversation_id: conversation.display_id, echo_id: 'bubble-42' }
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages", params: params, headers: headers, as: :json
+      first_id = response.parsed_body['id']
+
+      expect do
+        post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages", params: params, headers: headers, as: :json
+      end.not_to change(Message, :count)
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body['id']).to eq(first_id)
     end
 
     it 'saves a private note on official WhatsApp outside the reply window without a template', :aggregate_failures do
@@ -1827,6 +1845,24 @@ RSpec.describe 'Communication Threads API', type: :request do
         can_send_text: conversation.can_reply?,
         disabled: !conversation.can_reply?
       )
+    end
+
+    it 'counts the WhatsApp window per customer: a conversation without messages is open when the customer wrote in another',
+       :aggregate_failures do
+      whatsapp_inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      resolved = create(:conversation, account: account, contact: contact, inbox: whatsapp_inbox, contact_inbox: contact_inbox, status: :resolved)
+      create(:message, account: account, inbox: whatsapp_inbox, conversation: resolved, message_type: 'incoming', created_at: 10.minutes.ago)
+      started_by_staff = create(:conversation, account: account, contact: contact, inbox: whatsapp_inbox, contact_inbox: contact_inbox, status: :open)
+      create(:inbox_member, user: agent, inbox: whatsapp_inbox)
+      thread = started_by_staff.reload.communication_thread
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/channels",
+          params: { status: 'open' }, headers: headers, as: :json
+
+      channel = response.parsed_body['payload'].find { |entry| entry['conversation_id'] == started_by_staff.display_id }
+      expect(channel).to include('reply_window_open' => true, 'requires_template' => false, 'can_send_text' => true)
     end
 
     it 'returns linked channels and supported unlinked contact channels' do

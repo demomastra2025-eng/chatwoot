@@ -1,5 +1,3 @@
-require 'digest'
-
 class DeleteObjectJob < ApplicationJob # rubocop:disable Metrics/ClassLength -- keep this job's deletion lifecycle and retry contract together
   queue_as :low
 
@@ -43,10 +41,7 @@ class DeleteObjectJob < ApplicationJob # rubocop:disable Metrics/ClassLength -- 
         CommunicationThread.transaction do
           # Incoming attachment uses this same contact lock in the native
           # resolver. Recheck emptiness only after that attachment has settled.
-          identity = "communication-thread:#{account.id}:#{thread.contact_id}"
-          lock_id = Digest::SHA256.digest(identity).unpack1('q>')
-          lock_bind = ActiveRecord::Relation::QueryAttribute.new('lock_id', lock_id, ActiveRecord::Type::Integer.new(limit: 8))
-          ActiveRecord::Base.connection.exec_query('SELECT pg_advisory_xact_lock($1)', 'DeleteObjectJob', [lock_bind])
+          CommunicationThreads::PersonLock.lock!(account_id: account.id, contact_id: thread.contact_id)
           current = CommunicationThread.lock.find_by(id: thread.id, account_id: account.id, contact_id: thread.contact_id)
           cleanup_empty_communication_threads([current.id], account_id: account.id) if current
         end

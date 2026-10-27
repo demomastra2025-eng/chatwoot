@@ -1,9 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia } from 'pinia';
 import { flushPromises, shallowMount } from '@vue/test-utils';
 import ContactPanel from './ContactPanel.vue';
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  dispatch: vi.fn(),
+  sidebarItems: [{ name: 'contact_attributes' }, { name: 'contact_notes' }],
+}));
 const chat = {
   id: 123,
   meta: { sender: { id: 42 }, channel: 'Channel::Whatsapp' },
@@ -41,10 +44,7 @@ vi.mock('dashboard/composables/useUISettings', async () => {
       updateUISettings: vi.fn(),
       toggleSidebarUIState: vi.fn(),
       isContactSidebarItemOpen: () => true,
-      conversationSidebarItemsOrder: createRef([
-        { name: 'contact_attributes' },
-        { name: 'contact_notes' },
-      ]),
+      conversationSidebarItemsOrder: createRef(mocks.sidebarItems),
     }),
   };
 });
@@ -121,5 +121,92 @@ describe('ContactPanel selected patient details', () => {
       'integrations/get',
       'linear'
     );
+  });
+});
+
+describe('ContactPanel for a person who has no dialog yet', () => {
+  const ALL_ITEMS = [
+    { name: 'conversation_actions' },
+    { name: 'contact_attributes' },
+    { name: 'macros' },
+    { name: 'contact_notes' },
+    { name: 'shared_files' },
+  ];
+  const itemStubs = {
+    Draggable: {
+      props: ['list'],
+      template:
+        '<div><slot v-for="element in list" name="item" :element="element" /></div>',
+    },
+    AccordionItem: { template: '<div><slot /></div>' },
+    ConversationAction: { name: 'ConversationAction', template: '<div />' },
+    MacrosList: { name: 'MacrosList', template: '<div />' },
+    SharedFiles: { name: 'SharedFiles', template: '<div />' },
+    CustomAttributes: { name: 'CustomAttributes', template: '<div />' },
+    ContactNotes: { name: 'ContactNotes', template: '<div />' },
+    'woot-feature-toggle': { template: '<div><slot /></div>' },
+  };
+  const mountPanel = async draft => {
+    mocks.sidebarItems.splice(0, mocks.sidebarItems.length, ...ALL_ITEMS);
+    if (draft) {
+      Object.assign(chat, { id: 'draft-42', is_draft: true });
+    } else {
+      delete chat.is_draft;
+      chat.id = 123;
+    }
+    const wrapper = shallowMount(ContactPanel, {
+      props: { conversationId: draft ? '' : 123 },
+      global: {
+        plugins: [createPinia()],
+        mocks: { $t: key => key },
+        stubs: itemStubs,
+      },
+    });
+    await flushPromises();
+    return wrapper;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    mocks.sidebarItems.splice(
+      0,
+      mocks.sidebarItems.length,
+      { name: 'contact_attributes' },
+      { name: 'contact_notes' }
+    );
+    delete chat.is_draft;
+    chat.id = 123;
+  });
+
+  it('keeps what belongs to the person: attributes and notes', async () => {
+    const wrapper = await mountPanel(true);
+
+    expect(wrapper.findComponent({ name: 'CustomAttributes' }).exists()).toBe(
+      true
+    );
+    expect(wrapper.findComponent({ name: 'ContactNotes' }).exists()).toBe(true);
+  });
+
+  it('drops what belongs to a conversation: its actions, macros and shared files', async () => {
+    const wrapper = await mountPanel(true);
+
+    expect(wrapper.findComponent({ name: 'ConversationAction' }).exists()).toBe(
+      false
+    );
+    expect(wrapper.findComponent({ name: 'MacrosList' }).exists()).toBe(false);
+    expect(wrapper.findComponent({ name: 'SharedFiles' }).exists()).toBe(false);
+  });
+
+  it('shows all of them for a dialog that exists', async () => {
+    const wrapper = await mountPanel(false);
+
+    expect(wrapper.findComponent({ name: 'ConversationAction' }).exists()).toBe(
+      true
+    );
+    expect(wrapper.findComponent({ name: 'MacrosList' }).exists()).toBe(true);
+    expect(wrapper.findComponent({ name: 'SharedFiles' }).exists()).toBe(true);
   });
 });

@@ -8,7 +8,6 @@ const dispatchMock = vi.fn();
 const updateUISettingsMock = vi.fn();
 const useAdminMock = vi.fn();
 const useUISettingsMock = vi.fn();
-const openWithChannelMock = vi.fn();
 
 vi.mock('dashboard/composables/useAdmin', () => ({
   useAdmin: (...args) => useAdminMock(...args),
@@ -76,11 +75,6 @@ const buildWrapper = ({ conversations = [], contact = {} } = {}) =>
       },
       stubs: {
         Avatar: true,
-        ComposeConversation: {
-          name: 'ComposeConversation',
-          template: '<div />',
-          methods: { openWithChannel: openWithChannelMock },
-        },
         ContactChannelLabels: true,
         ContactInfoRow: true,
         ContactMergeModal: true,
@@ -98,7 +92,6 @@ describe('ContactInfo', () => {
   beforeEach(() => {
     dispatchMock.mockReset();
     routerPushMock.mockReset();
-    openWithChannelMock.mockReset();
     updateUISettingsMock.mockReset();
 
     useAdminMock.mockReturnValue({
@@ -111,18 +104,41 @@ describe('ContactInfo', () => {
     window.history.replaceState({}, '', '/');
   });
 
-  it('delegates channel shortcuts to the authoritative compose flow', async () => {
+  it('has no button that opens a message to the person whose dialog is already open', () => {
     const wrapper = buildWrapper();
 
-    await wrapper.vm.openChannelConversation({
-      inboxId: 7,
-    });
+    expect(
+      wrapper.findComponent({ name: 'ComposeConversation' }).exists()
+    ).toBe(false);
+    expect(wrapper.vm.openChannelConversation).toBeUndefined();
+  });
 
-    expect(openWithChannelMock).toHaveBeenCalledWith({
-      contact: expect.objectContaining({ id: 154 }),
-      channelIdentity: { inboxId: 7 },
+  it('turns the empty dialog into the dialog of the call that was started from the card', () => {
+    const wrapper = buildWrapper();
+    wrapper.vm.$store.getters.getSelectedChat = {
+      id: 'draft-154',
+      is_draft: true,
+      person_contact_id: 154,
+    };
+
+    wrapper.vm.onCallInitiated({ communication_thread_id: 77 });
+
+    expect(dispatchMock).toHaveBeenCalledWith('promotePersonDialog', {
+      contactId: 154,
+      communicationThreadId: 77,
     });
-    expect(routerPushMock).not.toHaveBeenCalled();
+  });
+
+  it('leaves a dialog that already exists alone when a call starts', () => {
+    const wrapper = buildWrapper();
+    wrapper.vm.$store.getters.getSelectedChat = { id: 77 };
+
+    wrapper.vm.onCallInitiated({ communication_thread_id: 77 });
+
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      'promotePersonDialog',
+      expect.anything()
+    );
   });
 
   it('marks only non-resolved inbox conversations as active', () => {

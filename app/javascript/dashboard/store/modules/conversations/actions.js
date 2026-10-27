@@ -9,6 +9,7 @@ import {
   buildCommunicationThreadConversation,
   isCommunicationThread,
   isMessageInCommunicationThread,
+  isPersonDialogSending,
 } from 'dashboard/helper/communicationThreadHelper';
 import {
   buildConversationList,
@@ -21,6 +22,7 @@ import {
 import messageReadActions from './actions/messageReadActions';
 import messageTranslateActions from './actions/messageTranslateActions';
 import conversationDeletionActions from './actions/conversationDeletionActions';
+import personDialogActions from './actions/personDialogActions';
 import {
   blockedDeletionIds,
   projectDeletedConversation,
@@ -1424,6 +1426,10 @@ const actions = {
   },
 
   sendMessageWithData: async (context, pendingMessage) => {
+    // The first message of a person who has no dialog yet: the draft turns into the dialog when the server has made it.
+    if (pendingMessage.person_contact_id) {
+      return context.dispatch('sendPersonDialogMessage', pendingMessage);
+    }
     const { commit } = context;
     const { conversation_id: conversationId, id } = pendingMessage;
     const communicationThreadId =
@@ -1675,6 +1681,17 @@ const actions = {
     if (sender?.id) {
       dispatch('contacts/setContact', sender);
     }
+    // The person wrote, or a colleague wrote first, while their empty dialog was open: it is a real dialog now.
+    if (
+      state?.personDialog &&
+      !isPersonDialogSending(state.personDialog) &&
+      String(payload?.contact_id) === String(state.personDialog.contactId)
+    ) {
+      dispatch('promotePersonDialog', {
+        contactId: payload.contact_id,
+        communicationThreadId: communicationThread.id,
+      });
+    }
     if (Object.prototype.hasOwnProperty.call(payload || {}, 'labels')) {
       dispatch('conversationLabels/setConversationLabel', {
         id: communicationThread.id,
@@ -1886,6 +1903,7 @@ const actions = {
 
   ...messageReadActions,
   ...messageTranslateActions,
+  ...personDialogActions,
 };
 
 export default actions;

@@ -946,38 +946,23 @@ export const useSchedulingAppointmentFormStore = defineStore(
         return payload;
       },
 
-      async createAndLinkConversation(
-        { appointmentId = this.recordId, contactId, inbox },
+      // The first message, call or note of the person made their dialog (in the panel beside the appointment). The appointment is
+      // read again: its chat is the dialog of the person, found by the contact, so no link is written anywhere.
+      async refreshAfterDialog(
+        { appointmentId = this.recordId },
         calendarStore,
         shouldApplyResponse = () => true
       ) {
         const normalizedAppointmentId = Number(appointmentId);
-        const normalizedContactId = Number(contactId);
-        const normalizedInboxId = Number(inbox?.value || inbox?.id);
-
         if (
           !Number.isFinite(normalizedAppointmentId) ||
           normalizedAppointmentId <= 0
         ) {
           throw new Error('An existing appointment is required');
         }
-        if (
-          !Number.isFinite(normalizedContactId) ||
-          normalizedContactId <= 0 ||
-          !Number.isFinite(normalizedInboxId) ||
-          normalizedInboxId <= 0
-        ) {
-          throw new Error('A contact and inbox are required');
-        }
 
-        const { data } = await SchedulingAppointmentsAPI.createConversation(
-          normalizedAppointmentId,
-          {
-            contact_id: normalizedContactId,
-            contact_inbox_id: inbox.contactInboxId || undefined,
-            inbox_id: normalizedInboxId,
-            source_id: inbox.sourceId || undefined,
-          }
+        const { data } = await SchedulingAppointmentsAPI.show(
+          normalizedAppointmentId
         );
         const appointment = normalizePayload(data);
 
@@ -986,13 +971,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
         calendarStore.syncAppointment(appointment);
         if (
           this.mode === 'edit' &&
-          Number(this.recordId) === normalizedAppointmentId &&
-          Number(this.form.contactId) === normalizedContactId
+          Number(this.recordId) === normalizedAppointmentId
         ) {
           this.selectedAppointment = appointment;
           this.form = {
             ...this.form,
-            contactId: appointment.contactId || normalizedContactId,
             conversationDisplayId: appointment.conversationDisplayId || '',
             conversationId: appointment.conversationId || '',
           };

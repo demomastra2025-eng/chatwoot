@@ -20,8 +20,6 @@ import SocialIcons from './SocialIcons.vue';
 import EditContact from './EditContact.vue';
 import ContactChannelLabels from 'dashboard/components-next/Contacts/ContactChannelLabels.vue';
 import ContactMergeModal from 'dashboard/modules/contact/ContactMergeModal.vue';
-import ComposeConversation from 'dashboard/components-next/NewConversation/ComposeConversation.vue';
-import { BUS_EVENTS } from 'shared/constants/busEvents';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import VoiceCallButton from 'dashboard/components-next/Contacts/VoiceCallButton.vue';
 import InlineInput from 'dashboard/components-next/inline-input/InlineInput.vue';
@@ -32,7 +30,6 @@ import {
   isAInboxViewRoute,
   getConversationDashboardRoute,
 } from '../../../../helper/routeHelpers';
-import { emitter } from 'shared/helpers/mitt';
 
 export default {
   components: {
@@ -40,7 +37,6 @@ export default {
     ContactInfoRow,
     EditContact,
     Avatar,
-    ComposeConversation,
     SocialIcons,
     ContactChannelLabels,
     ContactMergeModal,
@@ -234,16 +230,14 @@ export default {
     closeEditModal() {
       this.showEditModal = false;
     },
-    openComposeConversationModal(toggleFn) {
-      toggleFn();
-      // Flag to prevent triggering drag n drop,
-      // When compose modal is active
-      emitter.emit(BUS_EVENTS.NEW_CONVERSATION_MODAL, true);
-    },
-    closeComposeConversationModal() {
-      // Flag to enable drag n drop,
-      // When compose modal is closed
-      emitter.emit(BUS_EVENTS.NEW_CONVERSATION_MODAL, false);
+    // A call from the empty dialog of this person made the dialog: the draft becomes it.
+    onCallInitiated(response) {
+      const chat = this.$store.getters.getSelectedChat;
+      if (!chat?.is_draft) return;
+      this.$store.dispatch('promotePersonDialog', {
+        contactId: chat.person_contact_id,
+        communicationThreadId: response?.communication_thread_id,
+      });
     },
     toggleDeleteModal() {
       this.showDeleteModal = !this.showDeleteModal;
@@ -400,12 +394,6 @@ export default {
         }
       }
     },
-    async openChannelConversation(channelIdentity) {
-      await this.$refs.composeConversation?.openWithChannel({
-        contact: this.contact,
-        channelIdentity,
-      });
-    },
   },
 };
 </script>
@@ -556,28 +544,10 @@ export default {
               :existing-conversation-inbox-ids="existingConversationInboxIds"
               :title="$t('CONTACT_PANEL.CHANNEL_IDENTITIES')"
               :copy-on-click="false"
-              @select="openChannelConversation"
             />
           </div>
         </div>
         <div class="flex items-center w-full mt-0.5 gap-2">
-          <ComposeConversation
-            ref="composeConversation"
-            :contact-id="String(contact.id)"
-            is-modal
-            @close="closeComposeConversationModal"
-          >
-            <template #trigger="{ toggle }">
-              <NextButton
-                v-tooltip.top-end="$t('CONTACT_PANEL.NEW_MESSAGE')"
-                icon="i-ph-chat-circle-dots"
-                slate
-                faded
-                sm
-                @click="openComposeConversationModal(toggle)"
-              />
-            </template>
-          </ComposeConversation>
           <VoiceCallButton
             :phone="contact.phone_number"
             :contact-id="contact.id"
@@ -586,6 +556,7 @@ export default {
             :tooltip-label="$t('CONTACT_PANEL.CALL')"
             slate
             faded
+            @call-initiated="onCallInitiated"
           />
           <NextButton
             v-if="canCreateCrmDeal"

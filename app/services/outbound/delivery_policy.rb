@@ -3,6 +3,7 @@ class Outbound::DeliveryPolicy
   VALID_CONTENT_KINDS = %w[free_text channel_template].freeze
   WHATSAPP_TEMPLATE_REQUIRED_REASON = 'Official WhatsApp Business API requires an approved channel_template ' \
                                       'when the 24-hour customer service window is closed'.freeze
+  TWILIO_WHATSAPP_TEMPLATE_REQUIRED_REASON = 'Twilio WhatsApp requires an approved content template when the 24-hour window is closed'.freeze
   TEMPLATE_ATTACHMENTS_UNSUPPORTED_REASON = 'Native attachments cannot be combined with channel_template messages; ' \
                                             'use template header/media parameters instead'.freeze
   OUTBOUND_CHANNEL_UNSUPPORTED_REASON = 'This channel does not support outbound message delivery'.freeze
@@ -82,11 +83,11 @@ class Outbound::DeliveryPolicy
               :provided_last_incoming_message_at
 
   def evaluate_free_text
-    return allowed_result(delivery_mode: 'free_text') unless official_whatsapp_channel?
+    return allowed_result(delivery_mode: 'free_text') unless whatsapp_with_reply_window?
     return allowed_result(delivery_mode: 'free_text', reply_window_open: true) if reply_window_open_at_delivery?
 
     denied_result(
-      WHATSAPP_TEMPLATE_REQUIRED_REASON,
+      official_whatsapp_channel? ? WHATSAPP_TEMPLATE_REQUIRED_REASON : TWILIO_WHATSAPP_TEMPLATE_REQUIRED_REASON,
       requires_template: true,
       allowed_content_kinds: ['channel_template']
     )
@@ -145,7 +146,7 @@ class Outbound::DeliveryPolicy
   end
 
   def reply_window_value(value = nil)
-    return nil unless official_whatsapp_channel?
+    return nil unless whatsapp_with_reply_window?
     return value unless value.nil?
 
     reply_window_open_at_delivery?
@@ -163,15 +164,21 @@ class Outbound::DeliveryPolicy
     channel.is_a?(Channel::TwilioSms) && channel.medium == 'whatsapp'
   end
 
+  # Both WhatsApp providers answer a free text outside the 24-hour customer service window with an error (131047, 63016):
+  # only a template can open the conversation.
+  def whatsapp_with_reply_window?
+    official_whatsapp_channel? || twilio_whatsapp?
+  end
+
   def reply_window_open_at_delivery?
-    return true unless official_whatsapp_channel?
+    return true unless whatsapp_with_reply_window?
     return false if reply_window_closes_at.blank?
 
     delivery_time < reply_window_closes_at
   end
 
   def reply_window_closes_at
-    return unless official_whatsapp_channel?
+    return unless whatsapp_with_reply_window?
 
     last_incoming_message_at&.+(Conversations::MessageWindowService::MESSAGING_WINDOW_24_HOURS)
   end
@@ -191,16 +198,18 @@ class Outbound::DeliveryPolicy
   def incoming_messages_scope
     return if conversation.blank?
 
-    Message.incoming
-           .joins(:conversation)
-           .where(
-             account_id: conversation.account_id,
-             conversations: {
-               account_id: conversation.account_id,
-               contact_id: conversation.contact_id,
-               inbox_id: inbox&.id || conversation.inbox_id
-             }
-           )
+    Conversations::MessageWindowService.incoming_messages(account_id: conversation.account_id, contact_inbox_ids: customer_contact_inbox_ids)
+  end
+
+  # The contact_inboxes whose messages open the window: the customer of the conversation, or, for another inbox of the same person,
+  # the customer a message to that inbox goes to (Outbound::ContactInboxResolver takes the latest identity).
+  def customer_contact_inbox_ids
+    if inbox.blank? || inbox.id == conversation.inbox_id
+      return Conversations::MessageWindowService.customers_of([conversation]).fetch(conversation.id)
+    end
+
+    identities = ContactInbox.where(contact_id: conversation.contact_id, inbox_id: inbox.id).order(:id).pluck(:id, :source_id)
+    Conversations::MessageWindowService.customer_ids(identities, identities.last&.first)
   end
 
   def delivery_time

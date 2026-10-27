@@ -403,18 +403,11 @@
       "CONVERSATION_PLACEHOLDER": {
         "ADD_CONTACT": "Add contact",
         "CONTACT": "Contact",
-        "CREATE_DIALOG": "Create dialog",
-        "CREATE_ERROR": "Could not create a dialog",
-        "CREATED": "Dialog created and linked to the deal",
-        "DESCRIPTION": "No dialog has been created yet. Select a contact and channel to create one and link it to this deal.",
-        "INBOX": "Channel",
-        "INBOXES_LOAD_ERROR": "Could not load contact channels",
         "LINK_FAILED": "The dialog was created, but the contact could not be linked to the deal: {reason}",
-        "NO_CONTACT_DESCRIPTION": "Add a contact to this deal before creating a dialog.",
-        "NO_INBOXES": "No channel is available for this contact to create a dialog",
+        "NO_CONTACT_DESCRIPTION": "Add a contact to this deal to write to them.",
         "OPEN_FULL_SCREEN": "Open dialog full screen",
         "THREADS_LOAD_ERROR": "Could not load contact dialogs",
-        "TITLE": "No dialog created yet"
+        "TITLE": "No contact in this deal"
       },
       "NEW_DEAL": "New deal",
       "SIDEBAR_DESCRIPTION": "Open any contact deal and edit it inline without leaving the conversation.",

@@ -78,7 +78,6 @@ const mountPanel = ({
   canManage = true,
   communicationThreadDisplayId = '',
   communicationThreadId = '',
-  contactableInboxes = [],
   contextLoadError = null,
   contacts = [],
   conversationId = 11963,
@@ -95,7 +94,6 @@ const mountPanel = ({
       canManage,
       communicationThreadDisplayId,
       communicationThreadId,
-      contactableInboxes,
       contextLoadError,
       contacts,
       conversationDisplayId,
@@ -829,62 +827,157 @@ describe('CrmDealConversationPanel', () => {
     );
   });
 
-  it('emits createConversation with selected contact and inbox when no chat is linked', async () => {
-    const wrapper = mountPanel({
-      contactableInboxes: [
-        {
-          id: 9,
-          label: 'SALEBOT TEST',
-          sourceId: 'salebot-source',
-          value: 9,
-        },
-        {
-          id: 10,
-          label: 'Voice channel',
-          sourceId: '+77000000000',
-          value: 10,
-        },
-      ],
-      contacts: [{ id: 7, label: 'John', value: 7 }],
-      conversationDisplayId: '',
-      conversationId: '',
-      placeholderI18nPrefix: 'SCHEDULING.CONVERSATION_PLACEHOLDER',
-      selectedContactId: 7,
+  describe('the dialog of the person when no chat is linked', () => {
+    const draftOf = contactId => ({
+      id: `draft-${contactId}`,
+      is_draft: true,
+      is_communication_thread: true,
+      person_contact_id: contactId,
+      inbox_id: 12,
+      meta: { sender: { id: contactId } },
     });
 
-    await flushPromises();
-    expect(wrapper.text()).toContain(
-      'SCHEDULING.CONVERSATION_PLACEHOLDER.DESCRIPTION'
-    );
-    expect(wrapper.text()).toContain('SALEBOT TEST');
-    expect(wrapper.text()).toContain('Voice channel');
-    await wrapper.find('button').trigger('click');
+    it('opens the empty dialog of the person and offers no inbox and no button that makes a dialog', async () => {
+      dispatch.mockImplementation(async action => {
+        if (action === 'openPersonDialog') {
+          currentChat.value = draftOf(7);
+          return { communicationThreadId: null };
+        }
+        return undefined;
+      });
+      const wrapper = mountPanel({
+        contacts: [{ id: 7, label: 'John', value: 7 }],
+        conversationDisplayId: '',
+        conversationId: '',
+        placeholderI18nPrefix: 'SCHEDULING.CONVERSATION_PLACEHOLDER',
+        selectedContactId: 7,
+      });
 
-    expect(wrapper.emitted('createConversation')?.[0]).toEqual([
-      expect.objectContaining({
+      await flushPromises();
+
+      expect(dispatch).toHaveBeenCalledWith('openPersonDialog', {
         contactId: 7,
-        inboxId: 9,
-        inbox: expect.objectContaining({ sourceId: 'salebot-source' }),
-      }),
-    ]);
-  });
-
-  it('does not allow dialog creation in read-only mode', async () => {
-    const wrapper = mountPanel({
-      canManage: false,
-      contactableInboxes: [
-        { id: 9, label: 'SALEBOT TEST', sourceId: 'salebot-source', value: 9 },
-      ],
-      contacts: [{ id: 7, label: 'John', value: 7 }],
-      conversationDisplayId: '',
-      conversationId: '',
-      placeholderI18nPrefix: 'SCHEDULING.CONVERSATION_PLACEHOLDER',
-      selectedContactId: 7,
+      });
+      expect(wrapper.findComponent({ name: 'ConversationBox' }).exists()).toBe(
+        true
+      );
+      expect(wrapper.text()).not.toContain('CREATE_DIALOG');
+      expect(wrapper.emitted('createConversation')).toBeUndefined();
     });
 
-    await flushPromises();
+    it('follows the dialog the person already has', async () => {
+      dispatch.mockImplementation(async (action, payload) => {
+        if (action === 'openPersonDialog') {
+          return { communicationThreadId: 41 };
+        }
+        if (action === 'getCommunicationThread' && payload === 41) {
+          const thread = {
+            id: 41,
+            display_id: 41,
+            communication_thread_id: 41,
+            inbox_id: 7,
+            is_communication_thread: true,
+            messages: [{ id: 2 }],
+            meta: { sender: { id: 7 } },
+            conversation_ids: [185],
+          };
+          conversations.value = [thread];
+          return thread;
+        }
+        if (action === 'setActiveChat') currentChat.value = payload.data;
+        return undefined;
+      });
+      mountPanel({
+        contacts: [{ id: 7, label: 'John', value: 7 }],
+        conversationDisplayId: '',
+        conversationId: '',
+        selectedContactId: 7,
+      });
 
-    expect(wrapper.find('button').attributes('disabled')).toBeDefined();
-    expect(wrapper.emitted('createConversation')).toBeUndefined();
+      await flushPromises();
+
+      expect(dispatch).toHaveBeenCalledWith('getCommunicationThread', 41);
+      expect(currentChat.value.id).toBe(41);
+    });
+
+    it('tells the page when the first message made the dialog', async () => {
+      dispatch.mockImplementation(async action => {
+        if (action === 'openPersonDialog') {
+          currentChat.value = draftOf(7);
+          return { communicationThreadId: null };
+        }
+        return undefined;
+      });
+      const wrapper = mountPanel({
+        contacts: [{ id: 7, label: 'John', value: 7 }],
+        conversationDisplayId: '',
+        conversationId: '',
+        selectedContactId: 7,
+      });
+      await flushPromises();
+
+      currentChat.value = {
+        id: 41,
+        is_communication_thread: true,
+        contact_id: 7,
+        meta: { sender: { id: 7 } },
+      };
+      await flushPromises();
+
+      expect(wrapper.emitted('dialogCreated')).toEqual([
+        [{ communicationThreadId: 41, contactId: 7 }],
+      ]);
+      // already the open chat: it is not selected again
+      expect(dispatch).not.toHaveBeenCalledWith(
+        'setActiveChat',
+        expect.objectContaining({ data: expect.objectContaining({ id: 41 }) })
+      );
+    });
+
+    it('asks which of several people to write to', async () => {
+      dispatch.mockImplementation(async action => {
+        if (action === 'openPersonDialog')
+          return { communicationThreadId: null };
+        return undefined;
+      });
+      const wrapper = mountPanel({
+        contacts: [
+          { id: 7, label: 'John', value: 7 },
+          { id: 8, label: 'Jane', value: 8 },
+        ],
+        conversationDisplayId: '',
+        conversationId: '',
+        selectedContactId: 7,
+      });
+      await flushPromises();
+
+      expect(wrapper.find('select').exists()).toBe(true);
+      wrapper.find('select').element.value = '8';
+      await wrapper.find('select').trigger('change');
+      await flushPromises();
+
+      expect(wrapper.emitted('selectContact')?.at(-1)).toEqual([8]);
+      expect(dispatch).toHaveBeenCalledWith('openPersonDialog', {
+        contactId: 8,
+      });
+    });
+
+    it('does not offer a dialog to add a contact without the right to manage', async () => {
+      const wrapper = mountPanel({
+        canManage: false,
+        contacts: [],
+        conversationDisplayId: '',
+        conversationId: '',
+        placeholderI18nPrefix: 'SCHEDULING.CONVERSATION_PLACEHOLDER',
+      });
+
+      await flushPromises();
+
+      expect(wrapper.find('button').attributes('disabled')).toBeDefined();
+      expect(dispatch).not.toHaveBeenCalledWith(
+        'openPersonDialog',
+        expect.anything()
+      );
+    });
   });
 });

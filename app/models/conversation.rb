@@ -69,8 +69,11 @@ class Conversation < ApplicationRecord
   # The columns of the removed Agent Bots feature stay in the database for one more release (dropped later).
   self.ignored_columns += ['assignee_agent_bot_id']
 
+  # started_by_staff: a staff member started this conversation himself (the first message, call or note of a person's dialog, see
+  # ConversationBuilder). Such a conversation is open and in his hands: no bot or AI takes it over on creation, and nobody is
+  # waiting for a reply yet, because the person has not written.
   attr_accessor :skip_runtime_events, :skip_communication_thread_refresh, :skip_communication_thread_realtime,
-                :communication_thread_event_id, :skip_activity_messages
+                :communication_thread_event_id, :skip_activity_messages, :started_by_staff
 
   validates :account_id, presence: true
   validates :inbox_id, presence: true
@@ -306,6 +309,17 @@ class Conversation < ApplicationRecord
     ActiveModel::Type::Boolean.new.cast(marker) == true
   end
 
+  # The owner of the person is the natural assignee of a new conversation of that person: he works in this inbox (and in
+  # the team, if the conversation has one). Public because the creation of a conversation by a staff member (see
+  # ConversationBuilder) needs the same answer before the record exists.
+  def contact_owner_assignable_to_conversation?
+    return false if contact&.owner_id.blank?
+    return false unless inbox&.members&.exists?(id: contact.owner_id)
+    return true if team.blank?
+
+    team.members.exists?(id: contact.owner_id)
+  end
+
   def dispatch_read_state_update(actor: Current.user)
     dispatcher_dispatch(CONVERSATION_READ, nil, performer: actor)
   end
@@ -381,7 +395,7 @@ class Conversation < ApplicationRecord
   end
 
   def ensure_waiting_since
-    self.waiting_since = created_at
+    self.waiting_since = created_at unless started_by_staff
   end
 
   def validate_additional_attributes
@@ -393,14 +407,6 @@ class Conversation < ApplicationRecord
     return unless contact_owner_assignable_to_conversation?
 
     self.assignee = contact.owner
-  end
-
-  def contact_owner_assignable_to_conversation?
-    return false if contact&.owner_id.blank?
-    return false unless inbox&.members&.exists?(id: contact.owner_id)
-    return true if team.blank?
-
-    team.members.exists?(id: contact.owner_id)
   end
 
   def sync_contact_owner_from_assignee
@@ -430,6 +436,7 @@ class Conversation < ApplicationRecord
     self.status = :resolved and return if contact.blocked?
 
     return if outbound_resolved_conversation?
+    return if started_by_staff
 
     return handle_campaign_status if campaign.present?
 

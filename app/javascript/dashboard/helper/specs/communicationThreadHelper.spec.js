@@ -15,6 +15,9 @@ import {
   getCommunicationThreadTypingTargetIds,
   isCommunicationCallChannel,
   isCommunicationWhatsappCallChannel,
+  buildPersonDialogChat,
+  getDefaultReplyChannel,
+  isDraftDialog,
   getUniqueCommunicationChannels,
   isCommunicationVoiceChannel,
   isMessageInCommunicationThread,
@@ -544,6 +547,44 @@ describe('communicationThreadHelper', () => {
       expect(getCommunicationReplyChannel(chat)).toEqual(telegramChannel);
     });
 
+    it('uses the channel of the last activity, whoever made it: a message of the staff counts like one of the person', () => {
+      const chat = {
+        channels: [whatsappChannel, telegramChannel],
+        messages: [
+          { id: 1, conversation_id: 22, message_type: 0, created_at: 10 },
+          { id: 2, conversation_id: 11, message_type: 1, created_at: 20 },
+        ],
+      };
+
+      expect(getCommunicationReplyChannel(chat)).toEqual(whatsappChannel);
+    });
+
+    it('does not let a private note, an activity line or a call card decide the channel', () => {
+      const chat = {
+        channels: [whatsappChannel, telegramChannel],
+        messages: [
+          { id: 1, conversation_id: 22, message_type: 0, created_at: 10 },
+          {
+            id: 2,
+            conversation_id: 11,
+            message_type: 1,
+            private: true,
+            created_at: 20,
+          },
+          { id: 3, conversation_id: 11, message_type: 2, created_at: 30 },
+          {
+            id: 4,
+            conversation_id: 11,
+            message_type: 1,
+            content_type: 'voice_call',
+            created_at: 40,
+          },
+        ],
+      };
+
+      expect(getCommunicationReplyChannel(chat)).toEqual(telegramChannel);
+    });
+
     it('respects an explicitly selected reply conversation', () => {
       const chat = {
         channels: [whatsappChannel, telegramChannel],
@@ -553,6 +594,17 @@ describe('communicationThreadHelper', () => {
       };
 
       expect(getCommunicationReplyChannel(chat, 11)).toEqual(whatsappChannel);
+    });
+
+    it('keeps a channel chosen before the dialog had a conversation: inbox:ID is the conversation made in that inbox', () => {
+      const chat = {
+        channels: [whatsappChannel, telegramChannel],
+        messages: [],
+      };
+
+      expect(getCommunicationReplyChannel(chat, 'inbox:202')).toEqual(
+        telegramChannel
+      );
     });
 
     it('maps a selected duplicate child conversation back to the single inbox channel', () => {
@@ -922,6 +974,125 @@ describe('communicationThreadHelper', () => {
         })
       ).toBe(101);
       expect(getCommunicationReplyInboxId({ inbox_id: 707 })).toBe(707);
+    });
+  });
+
+  describe('the dialog of a person who has none yet', () => {
+    const whatsappCloud = {
+      conversation_id: null,
+      inbox_id: 12,
+      inbox_name: 'WhatsApp Cloud',
+      channel: 'Channel::Whatsapp',
+      channel_key: 'inbox:12',
+      can_reply: false,
+      can_send_text: false,
+      requires_template: true,
+      last_activity_at: null,
+    };
+    const sms = {
+      conversation_id: null,
+      inbox_id: 13,
+      inbox_name: 'SMS',
+      channel: 'Channel::Sms',
+      channel_key: 'inbox:13',
+      can_reply: true,
+      can_send_text: true,
+      last_activity_at: null,
+    };
+    const personDialog = {
+      contactId: 5,
+      contact: { id: 5, name: 'Aigul', phone_number: '+77011234567' },
+      channels: [whatsappCloud, sms],
+      messages: [],
+      sharedPhoneHolder: { id: 9, name: 'Mother' },
+      blocked: false,
+    };
+
+    it('builds a chat that is a draft of the person and has no thread or conversation of its own', () => {
+      const chat = buildPersonDialogChat(personDialog);
+
+      expect(isDraftDialog(chat)).toBe(true);
+      expect(chat).toMatchObject({
+        id: 'draft-5',
+        is_draft: true,
+        is_communication_thread: true,
+        person_contact_id: 5,
+        communication_thread_id: null,
+        display_id: null,
+        status: null,
+        dataFetched: true,
+        shared_phone_holder: { id: 9, name: 'Mother' },
+        meta: { sender: personDialog.contact },
+      });
+      expect(chat.conversation_ids).toEqual([]);
+    });
+
+    it('is not a draft when nothing says so', () => {
+      expect(isDraftDialog({ id: 7, is_communication_thread: true })).toBe(
+        false
+      );
+      expect(isDraftDialog(null)).toBe(false);
+    });
+
+    it('picks the first replyable channel for a person with no activity: the order of the server puts the official WhatsApp first', () => {
+      const chat = buildPersonDialogChat(personDialog);
+
+      expect(chat.active_reply_channel.channel_key).toBe('inbox:12');
+      expect(getDefaultReplyChannel(chat.channels, chat.messages)).toEqual(
+        whatsappCloud
+      );
+    });
+
+    it('does not default to a WhatsApp that cannot reach the person (no number), as the server answers it, when another channel can', () => {
+      const withoutNumber = {
+        ...whatsappCloud,
+        requires_template: false,
+        can_send_attachments: false,
+        reply_window_open: false,
+        disabled: true,
+        disabled_reason: 'missing_contact_phone_number',
+      };
+      const email = {
+        ...sms,
+        inbox_id: 14,
+        inbox_name: 'Mail',
+        channel: 'Channel::Email',
+        channel_key: 'inbox:14',
+      };
+      const chat = buildPersonDialogChat({
+        ...personDialog,
+        channels: [withoutNumber, email],
+      });
+
+      expect(chat.active_reply_channel.channel_key).toBe('inbox:14');
+    });
+
+    it('sends the message to the person, with the selected channel and no thread', () => {
+      const chat = buildPersonDialogChat(personDialog);
+
+      expect(
+        decoratePayloadWithCommunicationThread(
+          { message: 'Hi' },
+          chat,
+          'inbox:13'
+        )
+      ).toEqual({
+        message: 'Hi',
+        person_contact_id: 5,
+        channelKey: 'inbox:13',
+        targetInboxId: 13,
+        inbox_id: 13,
+        inbox_name: 'SMS',
+        channel: 'Channel::Sms',
+      });
+    });
+
+    it('still sends to the person when no channel exists, so the server answers in plain words', () => {
+      const chat = buildPersonDialogChat({ ...personDialog, channels: [] });
+
+      expect(
+        decoratePayloadWithCommunicationThread({ message: 'Hi' }, chat)
+      ).toEqual({ message: 'Hi', person_contact_id: 5 });
     });
   });
 });

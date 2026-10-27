@@ -15,7 +15,6 @@ import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
 import CompanyAPI from 'dashboard/api/companies';
 import ContactAPI from 'dashboard/api/contacts';
-import ConversationAPI from 'dashboard/api/conversations';
 import CrmDealsAPI from 'dashboard/api/crm/deals';
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
@@ -117,14 +116,7 @@ import {
 } from 'shared/helpers/CustomErrors';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
-import {
-  buildContactableInboxesList,
-  fetchContactableInboxes,
-} from 'dashboard/components-next/NewConversation/helpers/composeConversationHelper.js';
-import {
-  createLatestRequestGuard,
-  runLatestRequestRetries,
-} from 'dashboard/routes/dashboard/crm/helpers/latestRequestGuard';
+import { createLatestRequestGuard } from 'dashboard/routes/dashboard/crm/helpers/latestRequestGuard';
 import {
   assertCrmEditCurrent,
   changedDraftPayload,
@@ -216,16 +208,10 @@ const boardSortDirections = reactive({});
 const showLinkedConversationPanel = ref(false);
 const dealConversationDraft = reactive({
   contactId: '',
-  contactableInboxes: [],
   contextError: null,
   communicationThreadDisplayId: '',
-  createdConversationDisplayId: '',
-  createdConversationId: '',
-  isCreating: false,
-  isLoadingInboxes: false,
   isLoadingCommunicationThread: false,
 });
-const contactableInboxesByContactId = ref({});
 const communicationThreadsByContactId = ref({});
 const hasRestoredPreferences = ref(false);
 let restoredPreferencesAccountKey = null;
@@ -368,20 +354,13 @@ const companyCreateOptionLabel = computed(() => {
   return t('CRM.DEALS.FORM.CREATE_COMPANY_FROM_SEARCH');
 });
 const linkedConversationId = computed(() => {
-  const conversationId = Number(
-    form.originatingConversationId ||
-      dealConversationDraft.createdConversationId
-  );
+  const conversationId = Number(form.originatingConversationId);
   return Number.isFinite(conversationId) && conversationId > 0
     ? conversationId
     : 0;
 });
 const linkedConversationDisplayId = computed(() =>
-  String(
-    form.originatingConversationDisplayId ||
-      dealConversationDraft.createdConversationDisplayId ||
-      ''
-  ).replace(/[^\d]/g, '')
+  String(form.originatingConversationDisplayId || '').replace(/[^\d]/g, '')
 );
 const linkedCommunicationThreadId = computed(() => {
   const communicationThreadId = Number(form.originatingCommunicationThreadId);
@@ -1880,20 +1859,10 @@ const ensureSelectedLookups = async deal => {
 
 const resetDealConversationDraft = () => {
   dealConversationDraft.contactId = primaryDealContactId.value || '';
-  dealConversationDraft.contactableInboxes = [];
   dealConversationDraft.contextError = null;
   dealConversationDraft.communicationThreadDisplayId = '';
-  dealConversationDraft.createdConversationDisplayId = '';
-  dealConversationDraft.createdConversationId = '';
-  dealConversationDraft.isCreating = false;
-  dealConversationDraft.isLoadingInboxes = false;
   dealConversationDraft.isLoadingCommunicationThread = false;
 };
-
-const waitForDealConversationThread = () =>
-  new Promise(resolve => {
-    window.setTimeout(resolve, 250);
-  });
 
 const dealConversationRequestGuard = createLatestRequestGuard();
 
@@ -1904,20 +1873,13 @@ const isCurrentDealConversationRequest = (contactId, requestId) =>
 const setDealConversationContact = contactId => {
   const normalizedContactId = Number(contactId);
 
-  if (Number(dealConversationDraft.contactId) !== normalizedContactId) {
-    dealConversationDraft.createdConversationDisplayId = '';
-    dealConversationDraft.createdConversationId = '';
-  }
-
   dealConversationDraft.contactId =
     Number.isFinite(normalizedContactId) && normalizedContactId > 0
       ? normalizedContactId
       : '';
-  dealConversationDraft.contactableInboxes = [];
   dealConversationDraft.contextError = null;
   dealConversationDraft.communicationThreadDisplayId = '';
   dealConversationDraft.isLoadingCommunicationThread = false;
-  dealConversationDraft.isLoadingInboxes = false;
 
   return dealConversationRequestGuard.start();
 };
@@ -1973,67 +1935,8 @@ const loadDealContactCommunicationThreads = async (contactId, requestId) => {
   }
 };
 
-const loadDealConversationInboxes = async (contactId, requestId) => {
-  if (!contactId || !isCurrentDealConversationRequest(contactId, requestId)) {
-    return;
-  }
-
-  dealConversationDraft.contactableInboxes = [];
-
-  const cachedInboxes = contactableInboxesByContactId.value[contactId];
-  if (cachedInboxes) {
-    dealConversationDraft.contextError = null;
-    dealConversationDraft.contactableInboxes = cachedInboxes;
-    return;
-  }
-
-  dealConversationDraft.isLoadingInboxes = true;
-
-  try {
-    const contactableInboxes = buildContactableInboxesList(
-      await fetchContactableInboxes(contactId)
-    );
-    if (isCurrentDealConversationRequest(contactId, requestId)) {
-      contactableInboxesByContactId.value = {
-        ...contactableInboxesByContactId.value,
-        [contactId]: contactableInboxes,
-      };
-      dealConversationDraft.contextError = null;
-      dealConversationDraft.contactableInboxes = contactableInboxes;
-    }
-  } catch {
-    if (isCurrentDealConversationRequest(contactId, requestId)) {
-      dealConversationDraft.contactableInboxes = [];
-      dealConversationDraft.contextError = t(
-        'CRM.DEALS.CONVERSATION_PLACEHOLDER.INBOXES_LOAD_ERROR'
-      );
-    }
-  } finally {
-    if (isCurrentDealConversationRequest(contactId, requestId)) {
-      dealConversationDraft.isLoadingInboxes = false;
-    }
-  }
-};
-
-const loadDealConversationContextForRequest = async (
-  activeContactId,
-  requestId
-) => {
-  const communicationThreads = await loadDealContactCommunicationThreads(
-    activeContactId,
-    requestId
-  );
-
-  if (
-    communicationThreads &&
-    !communicationThreads.length &&
-    isCurrentDealConversationRequest(activeContactId, requestId)
-  ) {
-    await loadDealConversationInboxes(activeContactId, requestId);
-  }
-
-  return communicationThreads;
-};
+const loadDealConversationContextForRequest = (activeContactId, requestId) =>
+  loadDealContactCommunicationThreads(activeContactId, requestId);
 
 const loadDealConversationContext = async contactId => {
   const requestId = setDealConversationContact(contactId);
@@ -2042,26 +1945,6 @@ const loadDealConversationContext = async contactId => {
   if (!activeContactId) return [];
 
   return loadDealConversationContextForRequest(activeContactId, requestId);
-};
-
-const loadDealConversationContextWithRetry = async (
-  contactId,
-  attempts = 3
-) => {
-  const requestId = setDealConversationContact(contactId);
-  const activeContactId = dealConversationDraft.contactId;
-
-  if (!activeContactId) return;
-
-  await runLatestRequestRetries({
-    attempts,
-    isCurrent: () =>
-      isCurrentDealConversationRequest(activeContactId, requestId),
-    load: () =>
-      loadDealConversationContextForRequest(activeContactId, requestId),
-    shouldRetry: () => !dealConversationDraft.communicationThreadDisplayId,
-    wait: waitForDealConversationThread,
-  });
 };
 
 const resolveStageFilterId = (stageId, pipelineId) => {
@@ -2616,95 +2499,32 @@ const saveDealContactLink = async contactId => {
   return isCurrentEditor();
 };
 
-const createDealConversation = async ({ contactId, inbox }) => {
-  if (!canManageDeals.value || !selectedDeal.value || !inbox) return;
-
-  const editorGeneration = dealEditorGeneration;
-  const editorDealId = Number(selectedDeal.value.id);
-  const isCurrentEditor = () =>
-    editorGeneration === dealEditorGeneration &&
-    Number(selectedDeal.value?.id) === editorDealId;
-
+// The first message, call or note of a person made their dialog in the panel: the deal follows it. The contact is linked to the
+// deal at that moment, as it was when the dialog used to be made by a button.
+const handleDealDialogCreated = async ({
+  communicationThreadId,
+  contactId,
+}) => {
   const normalizedContactId = Number(contactId);
-  if (!Number.isFinite(normalizedContactId) || normalizedContactId <= 0) {
-    return;
-  }
+  if (!canManageDeals.value || !selectedDeal.value) return;
+  if (!Number.isFinite(normalizedContactId) || normalizedContactId <= 0) return;
 
-  dealConversationDraft.isCreating = true;
-
+  dealConversationDraft.contactId = normalizedContactId;
+  dealConversationDraft.communicationThreadDisplayId = String(
+    communicationThreadId || ''
+  );
+  communicationThreadsByContactId.value = {
+    ...communicationThreadsByContactId.value,
+    [normalizedContactId]: [{ id: communicationThreadId }],
+  };
   try {
-    const conversationPayload = compactPayload({
-      assignee_id: currentUserId.value || undefined,
-      contact_id: normalizedContactId,
-      inbox_id: Number(inbox.value || inbox.id),
-      source_id: inbox.sourceId || undefined,
-    });
-    const { data } = await ConversationAPI.create(conversationPayload);
-    if (!isCurrentEditor()) return;
-    const createdConversation = normalizePayload({
-      payload: data?.payload || data,
-    });
-    const conversationId =
-      createdConversation?.displayId ||
-      createdConversation?.display_id ||
-      createdConversation?.id;
-    // The dialog exists from here on. Record it before the contact link is
-    // saved, so a failed link can neither hide the dialog nor leave a button
-    // that creates one more empty dialog on every retry.
-    if (conversationId) {
-      dealConversationDraft.contactId = normalizedContactId;
-      dealConversationDraft.createdConversationId =
-        createdConversation?.id || '';
-      dealConversationDraft.createdConversationDisplayId = conversationId;
-    }
-
-    let contactLinkIsCurrent = true;
-    let linkError = null;
-    try {
-      contactLinkIsCurrent = await saveDealContactLink(normalizedContactId);
-    } catch (error) {
-      linkError = error;
-    }
-    if (!contactLinkIsCurrent || !isCurrentEditor()) return;
-    if (linkError) {
-      useAlert(
-        t('CRM.DEALS.CONVERSATION_PLACEHOLDER.LINK_FAILED', {
-          reason: formatErrorMessage(linkError),
-        })
-      );
-    }
-
-    if (conversationId) {
-      if (!linkError) {
-        useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'));
-      }
-      if (isDealPage.value) {
-        await loadDealConversationContextWithRetry(normalizedContactId);
-        return;
-      }
-      if (!linkError) {
-        router.push({
-          name: 'inbox_conversation',
-          params: {
-            accountId: accountId.value,
-            conversation_id: conversationId,
-          },
-        });
-      }
-      return;
-    }
-
-    showLinkedConversationPanel.value = true;
-    await loadDealConversationContextWithRetry(normalizedContactId);
-    if (!isCurrentEditor()) return;
-    if (!linkError) {
-      useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'));
-    }
+    await saveDealContactLink(normalizedContactId);
   } catch (error) {
-    if (!isCurrentEditor()) return;
-    useAlert(formatErrorMessage(error));
-  } finally {
-    if (isCurrentEditor()) dealConversationDraft.isCreating = false;
+    useAlert(
+      t('CRM.DEALS.CONVERSATION_PLACEHOLDER.LINK_FAILED', {
+        reason: formatErrorMessage(error),
+      })
+    );
   }
 };
 
@@ -5354,22 +5174,16 @@ watch(
             :conversation-id="linkedConversationId"
             :conversation-display-id="linkedConversationDisplayId"
             :contacts="dealConversationContacts"
-            :contactable-inboxes="dealConversationDraft.contactableInboxes"
             :context-load-error="dealConversationDraft.contextError"
             :selected-contact-id="dealConversationDraft.contactId"
             :can-manage="canManageDeals"
-            :is-creating-conversation="dealConversationDraft.isCreating"
-            :is-loading-inboxes="dealConversationDraft.isLoadingInboxes"
-            :is-loading-communication-thread="
-              dealConversationDraft.isLoadingCommunicationThread
-            "
             visible
             :inline="isDealPage"
             :active="!isDealPage || dealPageTab === 'chat'"
             :show-open-full-screen="isDealPage && canOpenLinkedConversation"
             @add-contact="openCreateNewContactDialog"
             @close="closeDealEditor"
-            @create-conversation="createDealConversation"
+            @dialog-created="handleDealDialogCreated"
             @open-full-screen="openLinkedConversation"
             @retry-context="
               loadDealConversationContext(dealConversationDraft.contactId)

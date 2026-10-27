@@ -27,6 +27,7 @@ const isConversationRoute = computed(() => {
     'conversation_through_unattended',
     'inbox_view_conversation',
     'communication_thread_conversation',
+    'communication_thread_contact',
   ];
   return (
     CONVERSATION_ROUTES.includes(route.name) ||

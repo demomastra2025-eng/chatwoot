@@ -229,7 +229,6 @@ Rails.application.routes.draw do
             resources :cabinets, only: [:index]
             resources :appointments, only: [:index, :show, :create, :update, :destroy] do
               post :cancel, on: :member
-              post :conversation, action: :create_conversation, on: :member
             end
             resources :provider_commands, only: [:index, :show, :create] do
               post :confirm, on: :member
@@ -433,6 +432,9 @@ Rails.application.routes.draw do
             scope module: :contacts do
               resources :conversations, only: [:index]
               resources :communication_threads, only: [:index]
+              resource :dialog, only: [:show] do
+                post :messages, to: 'dialogs#create_message'
+              end
               resources :contact_inboxes, only: [:create]
               resource :shared_phone, only: [:show] do
                 post :promote

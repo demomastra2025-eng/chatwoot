@@ -1,9 +1,8 @@
 <script>
-import { ref, provide, useTemplateRef } from 'vue';
+import { reactive, ref, provide, useTemplateRef } from 'vue';
 import { useElementSize } from '@vueuse/core';
 // composable
 import { useLabelSuggestions } from 'dashboard/composables/useLabelSuggestions';
-import { useSnakeCase } from 'dashboard/composables/useTransformKeys';
 import { useAlert } from 'dashboard/composables';
 
 // components
@@ -16,6 +15,7 @@ import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import ResizableEditorWrapper from './ResizableEditorWrapper.vue';
 import IntersectionObserver from 'dashboard/components/IntersectionObserver.vue';
+import PersonDialogEmptyState from 'dashboard/components-next/Conversation/PersonDialogEmptyState.vue';
 
 // stores and apis
 import { mapGetters } from 'vuex';
@@ -44,6 +44,7 @@ import {
   getCommunicationReplyChannels,
   getCommunicationReplyInboxId,
   isCommunicationThread,
+  isDraftDialog,
 } from 'dashboard/helper/communicationThreadHelper';
 
 // constants
@@ -52,6 +53,13 @@ import { REPLY_POLICY } from 'shared/constants/links';
 import wootConstants from 'dashboard/constants/globals';
 import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
+
+// The draft of a person's dialog became the thread of that person (their first message, call or note made it).
+const isPromotionOf = (draftChat, threadChat) =>
+  isDraftDialog(draftChat) &&
+  !isDraftDialog(threadChat) &&
+  String(threadChat.contact_id ?? threadChat.meta?.sender?.id) ===
+    String(draftChat.person_contact_id);
 
 export default {
   components: {
@@ -64,6 +72,7 @@ export default {
     Icon,
     ResizableEditorWrapper,
     IntersectionObserver,
+    PersonDialogEmptyState,
   },
   mixins: [inboxMixin],
   setup() {
@@ -81,8 +90,12 @@ export default {
     } = useLabelSuggestions();
 
     provide('contextMenuElementTarget', conversationPanelRef);
+    // The channel the reply box has selected: the empty screen of a person says what the first message in that channel needs.
+    const replyChannelState = reactive({ key: null });
+    provide('replyChannelState', replyChannelState);
 
     return {
+      replyChannelState,
       captainTasksEnabled,
       getLabelSuggestions,
       isLabelSuggestionFeatureEnabled,
@@ -130,6 +143,13 @@ export default {
     }),
     isOpen() {
       return this.currentChat?.status === wootConstants.STATUS_TYPE.OPEN;
+    },
+    // A person who has no dialog yet: nothing of it exists on the server, so nothing is asked of the server for it.
+    isDraft() {
+      return isDraftDialog(this.currentChat);
+    },
+    showPersonDialogEmptyState() {
+      return this.isDraft && !(this.currentChat.messages || []).length;
     },
     shouldShowLabelSuggestions() {
       return (
@@ -379,6 +399,8 @@ export default {
       ) {
         return;
       }
+      // The first message made the dialog: it is the same screen, the draft only became the thread of the person.
+      if (isPromotionOf(oldChat, newChat)) return;
       this.conversationHistoryGeneration += 1;
       this.hasUserScrolled = false;
       this.hasUserScrolledUp = false;
@@ -451,6 +473,7 @@ export default {
     async fetchSuggestions() {
       // start empty, this ensures that the label suggestions are not shown
       this.labelSuggestions = [];
+      if (this.isDraft) return;
 
       if (this.isLabelSuggestionDismissed()) {
         return;
@@ -754,6 +777,7 @@ export default {
     },
 
     async fetchPreviousMessages(scrollTop = 0) {
+      if (this.isDraft) return;
       const resolvedScrollTop =
         typeof scrollTop === 'number'
           ? scrollTop
@@ -884,6 +908,7 @@ export default {
     },
 
     makeMessagesRead() {
+      if (this.isDraft) return;
       if (this.currentChat?.is_communication_thread) {
         this.$store.dispatch('markCommunicationThreadRead', {
           id: this.currentChat.id,
@@ -893,10 +918,17 @@ export default {
 
       this.$store.dispatch('markMessagesRead', { id: this.currentChat.id });
     },
+    // The bubble the list hands over is a camel-cased copy made for display: it has lost the channel, the template and the other
+    // keys the send was built from. The send needs the message as the store holds it, with the echo_id it had, so a retry of a
+    // first message is answered by the server with the message it already made.
     async handleMessageRetry(message) {
       if (!message) return;
-      const payload = useSnakeCase(message);
-      await this.$store.dispatch('sendMessageWithData', payload);
+      const stored = (this.currentChat?.messages || []).find(
+        item => String(item.id) === String(message.id)
+      );
+      if (!stored) return;
+
+      await this.$store.dispatch('sendMessageWithData', stored);
     },
     async cancelCaptainResponse() {
       const conversationId = this.captainResponseConversationId;
@@ -987,6 +1019,11 @@ export default {
           :chat-labels="currentChat.labels"
           :conversation-id="currentChat.id"
         />
+        <li v-if="showPersonDialogEmptyState" class="list-none">
+          <PersonDialogEmptyState
+            :selected-channel-key="replyChannelState.key"
+          />
+        </li>
       </template>
     </MessageList>
     <div class="flex relative flex-col bg-n-surface-1">
