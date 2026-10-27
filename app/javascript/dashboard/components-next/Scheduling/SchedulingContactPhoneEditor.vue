@@ -6,6 +6,7 @@ import PhoneNumberInput from 'dashboard/components-next/phonenumberinput/PhoneNu
 import { isKazakhstanE164Phone } from 'dashboard/stores/scheduling/appointmentForm';
 
 const props = defineProps({
+  contactId: { type: [Number, String], default: null },
   phone: { type: String, default: '' },
   saving: { type: Boolean, default: false },
   error: { type: String, default: '' },
@@ -17,8 +18,8 @@ const draft = ref('');
 const validationError = ref('');
 
 watch(
-  () => props.phone,
-  value => {
+  () => [props.contactId, props.phone],
+  ([, value]) => {
     draft.value = value || '';
     editing.value = false;
     validationError.value = '';

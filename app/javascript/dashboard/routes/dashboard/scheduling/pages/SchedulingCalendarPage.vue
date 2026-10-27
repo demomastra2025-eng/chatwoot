@@ -1757,15 +1757,26 @@ const saveContactPhone = async phone => {
     }
     useAlert(t('SCHEDULING.CONTACT.PHONE_SAVED'));
   } catch (error) {
-    phoneEditorError.value = formatErrorMessage(error);
+    if (
+      Number(formStore.form.patientContactId || formStore.form.contactId) ===
+      Number(contactId)
+    ) {
+      phoneEditorError.value = formatErrorMessage(error);
+    }
   } finally {
     isPhoneSaving.value = false;
   }
 };
 
 watch(
-  () => [formStore.mode, formStore.recordId],
+  () => [
+    formStore.mode,
+    formStore.recordId,
+    formStore.form.patientContactId,
+    formStore.form.contactId,
+  ],
   ([mode]) => {
+    phoneEditorError.value = '';
     if (mode === 'edit') {
       contactEditorMode.value = null;
       formStore.inlineContactSnapshot = null;
@@ -3126,6 +3137,10 @@ onMounted(async () => {
                       </div>
                       <SchedulingContactPhoneEditor
                         v-if="
+                          formStore.form.patientContactId ||
+                          formStore.form.contactId
+                        "
+                        :contact-id="
                           formStore.form.patientContactId ||
                           formStore.form.contactId
                         "

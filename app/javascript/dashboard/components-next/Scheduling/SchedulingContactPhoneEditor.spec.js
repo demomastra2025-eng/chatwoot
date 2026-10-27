@@ -58,4 +58,16 @@ describe('SchedulingContactPhoneEditor', () => {
     await wrapper.findAll('button')[1].trigger('click');
     expect(wrapper.find('input').exists()).toBe(false);
   });
+
+  it('clears the draft when switching to another contact with the same phone', async () => {
+    const wrapper = render({ contactId: 1, phone: '' });
+    await wrapper.get('button').trigger('click');
+    await wrapper.get('input').setValue('+77010000001');
+
+    await wrapper.setProps({ contactId: 2 });
+
+    expect(wrapper.find('input').exists()).toBe(false);
+    await wrapper.get('button').trigger('click');
+    expect(wrapper.get('input').element.value).toBe('');
+  });
 });
