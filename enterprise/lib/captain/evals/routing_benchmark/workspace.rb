@@ -28,6 +28,7 @@ class Captain::Evals::RoutingBenchmark::Workspace
 
   def create!
     @account = Account.create!(name: "Benchmark #{SecureRandom.uuid}", locale: 'ru',
+                               limits: { non_web_inboxes: ChatwootApp.max_limit },
                                internal_attributes: { 'captain_benchmark_source' => true })
     @account.enable_features!(*FEATURES)
     create_agents!

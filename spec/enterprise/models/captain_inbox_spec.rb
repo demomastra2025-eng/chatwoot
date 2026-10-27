@@ -30,6 +30,8 @@ RSpec.describe CaptainInbox do
   end
 
   describe 'a WhatsApp number whose calls the AI answers' do
+    let(:account) { create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }) }
+
     def whatsapp_inbox(ai_voice:)
       create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', sync_templates: false, validate_provider_config: false,
                                 provider_config: { 'ai_voice_enabled' => ai_voice }).inbox

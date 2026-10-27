@@ -278,7 +278,7 @@ RSpec.describe Captain::Assistant, type: :model do
   end
 
   describe 'deleting an agent that answers calls' do
-    let(:account) { create(:account) }
+    let(:account) { create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }) }
     let(:assistant) { create(:captain_assistant, account: account) }
 
     it 'removes the row of a phone number and clears its routing policy, because a phone number cannot go without its agent' do

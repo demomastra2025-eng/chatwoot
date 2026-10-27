@@ -1353,6 +1353,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       end
 
       context 'when the agent answers the calls of a WhatsApp number' do
+        before { account.update!(limits: { non_web_inboxes: ChatwootApp.max_limit }) }
+
         it 'deletes the agent and keeps the text settings of the number, without an agent' do
           whatsapp_inbox = create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', sync_templates: false,
                                                      validate_provider_config: false,
