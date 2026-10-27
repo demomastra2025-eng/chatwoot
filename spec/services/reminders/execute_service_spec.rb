@@ -289,6 +289,10 @@ RSpec.describe Reminders::ExecuteService do
         cloud_owner_inbox = create(:contact_inbox, contact: owner, inbox: cloud_inbox, source_id: '77000000009')
         cloud_conversation = create(:conversation, account: account, inbox: cloud_inbox, contact: owner, contact_inbox: cloud_owner_inbox)
         create(:message, account: account, inbox: cloud_inbox, conversation: cloud_conversation, message_type: :incoming)
+        # The owner has written from his own number too: the touch goes to that number, whose window is what lets free text through.
+        cloud_own_number = create(:contact_inbox, contact: owner, inbox: cloud_inbox, source_id: '77000000001')
+        own_conversation = create(:conversation, account: account, inbox: cloud_inbox, contact: owner, contact_inbox: cloud_own_number)
+        create(:message, account: account, inbox: cloud_inbox, conversation: own_conversation, message_type: :incoming)
         appointment.update!(conversation: cloud_conversation)
         patient.update!(phone_number: '+77000000009')
         touch = create(:reminder, account: account, touch_conversation: cloud_conversation, conversation: cloud_conversation,

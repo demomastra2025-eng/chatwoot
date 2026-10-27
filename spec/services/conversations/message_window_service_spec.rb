@@ -659,6 +659,25 @@ RSpec.describe Conversations::MessageWindowService do
       expect(described_class.new(started_by_staff).can_reply?).to be false
     end
 
+    it 'keeps one window for each phone number of a person who writes from two numbers in the inbox', :aggregate_failures do
+      second_number = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      on_second_number = create(:conversation, account: account, inbox: whatsapp_inbox, contact: contact, contact_inbox: second_number)
+      incoming_message(earlier, 10.minutes.ago)
+
+      expect(described_class.new(started_by_staff).can_reply?).to be true
+      expect(described_class.new(on_second_number).can_reply?).to be false
+      expect(described_class.last_incoming_timestamps([started_by_staff, on_second_number]).keys).to eq([started_by_staff.id])
+    end
+
+    it 'counts the phone number and the business scoped user id of the same contact as one customer', :aggregate_failures do
+      by_user_id = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox, source_id: 'whatsapp:AB.providerbsuid123')
+      on_user_id = create(:conversation, account: account, inbox: whatsapp_inbox, contact: contact, contact_inbox: by_user_id)
+      incoming_message(on_user_id, 10.minutes.ago)
+
+      expect(described_class.new(started_by_staff).can_reply?).to be true
+      expect(described_class.last_incoming_timestamps([started_by_staff]).keys).to eq([started_by_staff.id])
+    end
+
     it 'is not opened by a message of another customer' do
       other = create(:conversation, account: account, inbox: whatsapp_inbox)
       incoming_message(other, 10.minutes.ago)
@@ -685,5 +704,28 @@ RSpec.describe Conversations::MessageWindowService do
       expect(timestamps.keys).to contain_exactly(earlier.id, started_by_staff.id)
       expect(timestamps[started_by_staff.id]).to be_within(1.second).of(message.created_at)
     end
+  end
+end
+
+RSpec.describe Conversations::MessageWindowService, '.customer_ids' do
+  let(:identities) { [[1, '77011110001'], [2, '+77011110001'], [3, 'AB.providerbsuid1'], [4, '77011110002'], [5, 'whatsapp:+77011110002']] }
+
+  it 'is every identity of the contact when it has one phone number, however it is written, and the business scoped user ids' do
+    expect(described_class.customer_ids(identities.first(3), 1)).to contain_exactly(1, 2, 3)
+    expect(described_class.customer_ids(identities.first(3), 3)).to contain_exactly(1, 2, 3)
+  end
+
+  it 'is the identities of that phone number alone when the contact has two different numbers' do
+    expect(described_class.customer_ids(identities, 1)).to contain_exactly(1, 2)
+    expect(described_class.customer_ids(identities, 4)).to contain_exactly(4, 5)
+  end
+
+  it 'does not guess the business scoped user id onto either number, or either number onto it' do
+    expect(described_class.customer_ids(identities, 3)).to eq([3])
+  end
+
+  it 'is the contact_inbox itself when the contact has no other identity in the inbox' do
+    expect(described_class.customer_ids([], 9)).to eq([9])
+    expect(described_class.customer_ids([], nil)).to eq([])
   end
 end
