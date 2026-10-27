@@ -1,7 +1,12 @@
 import { shallowMount } from '@vue/test-utils';
+import { ref } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SidepanelSwitch from './SidepanelSwitch.vue';
+import {
+  resetMobileConversationPanel,
+  useConversationSidepanelAvailability,
+} from 'dashboard/composables/useConversationSidepanelAvailability';
 
 const testState = vi.hoisted(() => ({
   currentAccountId: { __v_isRef: true, value: 530 },
@@ -19,6 +24,17 @@ const testState = vi.hoisted(() => ({
   },
   currentAccount: { __v_isRef: true, value: { settings: {} } },
   updateUISettings: vi.fn(),
+  width: null,
+}));
+
+vi.mock('vue-router', async importOriginal => ({
+  ...(await importOriginal()),
+  useRoute: () => ({ params: { accountId: '530', conversation_id: '42' } }),
+}));
+
+vi.mock('@vueuse/core', async importOriginal => ({
+  ...(await importOriginal()),
+  useWindowSize: () => ({ width: testState.width }),
 }));
 
 vi.mock('dashboard/composables/useUISettings', () => ({
@@ -82,6 +98,8 @@ describe('SidepanelSwitch', () => {
       accounts: [{ id: 530, permissions: ['crm_deal_manage'] }],
     };
     testState.updateUISettings.mockClear();
+    testState.width = ref(1280);
+    resetMobileConversationPanel();
   });
 
   it('opens the CRM deals sidebar from the floating switch', async () => {
@@ -96,6 +114,19 @@ describe('SidepanelSwitch', () => {
       is_crm_deal_panel_open: true,
       is_scheduling_appointments_panel_open: false,
     });
+  });
+
+  it('opens the contact card on a phone tap without changing the desktop preference', async () => {
+    testState.width.value = 390;
+    testState.uiSettings.value.is_contact_sidebar_open = true;
+    const wrapper = mountComponent();
+
+    await wrapper.find('[data-icon="i-ph-user-bold"]').trigger('click');
+
+    expect(useConversationSidepanelAvailability().activePanel.value).toBe(
+      'contact'
+    );
+    expect(testState.updateUISettings).not.toHaveBeenCalled();
   });
 
   it('opens the scheduling appointments sidebar from the floating switch', async () => {

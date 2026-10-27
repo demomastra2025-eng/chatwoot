@@ -1,7 +1,10 @@
-import { effectScope } from 'vue';
+import { effectScope, reactive, ref } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useConversationSidepanelAvailability } from './useConversationSidepanelAvailability';
+import {
+  resetMobileConversationPanel,
+  useConversationSidepanelAvailability,
+} from './useConversationSidepanelAvailability';
 
 const testState = vi.hoisted(() => ({
   currentAccountId: { __v_isRef: true, value: 530 },
@@ -17,10 +20,24 @@ const testState = vi.hoisted(() => ({
     __v_isRef: true,
     value: {},
   },
+  width: null,
+  route: null,
+  updateUISettings: vi.fn(),
 }));
 
 vi.mock('dashboard/composables/useUISettings', () => ({
-  useUISettings: () => ({ uiSettings: testState.uiSettings }),
+  useUISettings: () => ({
+    uiSettings: testState.uiSettings,
+    updateUISettings: testState.updateUISettings,
+  }),
+}));
+
+vi.mock('vue-router', () => ({
+  useRoute: () => testState.route,
+}));
+
+vi.mock('@vueuse/core', () => ({
+  useWindowSize: () => ({ width: testState.width }),
 }));
 
 vi.mock('dashboard/composables/store', () => ({
@@ -45,7 +62,18 @@ describe('useConversationSidepanelAvailability', () => {
       accounts: [{ id: 530, permissions: [] }],
     };
     testState.isFeatureEnabledonAccount.value = vi.fn(() => true);
-    testState.uiSettings.value = {};
+    testState.uiSettings = ref({});
+    testState.width = ref(1280);
+    testState.route = reactive({
+      params: { accountId: '530', conversation_id: '42' },
+    });
+    testState.updateUISettings.mockImplementation(settings => {
+      testState.uiSettings.value = {
+        ...testState.uiSettings.value,
+        ...settings,
+      };
+    });
+    resetMobileConversationPanel();
   });
 
   it('ignores a persisted CRM panel when the user lacks permission', () => {
@@ -114,6 +142,81 @@ describe('useConversationSidepanelAvailability', () => {
     testState.uiSettings.value = { is_touch_sidebar_open: true };
     const { activePanel, stop } = buildAvailability();
 
+    expect(activePanel.value).toBeNull();
+    stop();
+  });
+
+  it('opens the conversation on a phone despite a desktop contact preference', () => {
+    testState.uiSettings.value = { is_contact_sidebar_open: true };
+    testState.width.value = 390;
+    const { activePanel, openPanel, closePanel, stop } = buildAvailability();
+
+    expect(activePanel.value).toBeNull();
+    openPanel('contact');
+    expect(activePanel.value).toBe('contact');
+    closePanel();
+    expect(activePanel.value).toBeNull();
+    expect(testState.updateUISettings).not.toHaveBeenCalled();
+    expect(testState.uiSettings.value.is_contact_sidebar_open).toBe(true);
+    stop();
+  });
+
+  it('keeps a phone panel inside its conversation and restores desktop state on resize', () => {
+    testState.currentUser.value = {
+      accounts: [{ id: 530, permissions: ['administrator'] }],
+    };
+    testState.uiSettings.value = { is_contact_sidebar_open: true };
+    testState.width.value = 390;
+    const { activePanel, openPanel, stop } = buildAvailability();
+
+    openPanel('appointments');
+    expect(activePanel.value).toBe('appointments');
+    testState.route.params.conversation_id = '43';
+    expect(activePanel.value).toBeNull();
+    testState.width.value = 1280;
+    expect(activePanel.value).toBe('contact');
+    stop();
+  });
+
+  it('scopes a phone panel on team routes that use conversationId', () => {
+    testState.width.value = 390;
+    testState.route.params = { accountId: '530', conversationId: '42' };
+    const { activePanel, openPanel, stop } = buildAvailability();
+
+    openPanel('contact');
+    expect(activePanel.value).toBe('contact');
+    testState.route.params.conversationId = '43';
+    expect(activePanel.value).toBeNull();
+    stop();
+  });
+
+  it('does not show a persisted deals panel on a phone until its button is used', () => {
+    testState.currentUser.value = {
+      accounts: [{ id: 530, permissions: ['crm_deal_manage'] }],
+    };
+    testState.uiSettings.value = { is_crm_deal_panel_open: true };
+    testState.width.value = 390;
+    const { activePanel, openPanel, closePanel, stop } = buildAvailability();
+
+    expect(activePanel.value).toBeNull();
+    openPanel('deals');
+    expect(activePanel.value).toBe('deals');
+    closePanel();
+    expect(activePanel.value).toBeNull();
+    stop();
+  });
+
+  it('retains desktop panel updates through the shared buttons', () => {
+    const { activePanel, openPanel, closePanel, stop } = buildAvailability();
+
+    openPanel('contact');
+    expect(activePanel.value).toBe('contact');
+    expect(testState.updateUISettings).toHaveBeenCalledWith({
+      is_contact_sidebar_open: true,
+      is_crm_deal_panel_open: false,
+      is_scheduling_appointments_panel_open: false,
+    });
+    closePanel();
     expect(activePanel.value).toBeNull();
     stop();
   });

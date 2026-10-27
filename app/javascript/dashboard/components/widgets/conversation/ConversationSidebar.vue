@@ -9,7 +9,6 @@ import {
   patientContactId,
   useConversationPatientContextStore,
 } from 'dashboard/stores/scheduling/patientContext';
-import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 import { useWindowSize } from '@vueuse/core';
 import { vOnClickOutside } from '@vueuse/components';
@@ -34,8 +33,7 @@ const SchedulingConversationAppointmentsSidebar = defineAsyncComponent(
     )
 );
 
-const { uiSettings, updateUISettings } = useUISettings();
-const { activePanel, appointmentsAvailable } =
+const { activePanel, appointmentsAvailable, closePanel } =
   useConversationSidepanelAvailability();
 const route = useRoute();
 const router = useRouter();
@@ -170,35 +168,11 @@ const isSmallScreen = computed(
 );
 
 const closeSidebar = () => {
-  if (
-    isSmallScreen.value &&
-    (uiSettings.value?.is_contact_sidebar_open ||
-      uiSettings.value?.is_crm_deal_panel_open ||
-      uiSettings.value?.is_scheduling_appointments_panel_open)
-  ) {
-    updateUISettings({
-      is_contact_sidebar_open: false,
-      is_crm_deal_panel_open: false,
-      is_scheduling_appointments_panel_open: false,
-    });
-  }
+  if (isSmallScreen.value && activePanel.value) closePanel();
 };
 
-const closeDealsSidebar = () => {
-  updateUISettings({
-    is_contact_sidebar_open: false,
-    is_crm_deal_panel_open: false,
-    is_scheduling_appointments_panel_open: false,
-  });
-};
-
-const closeAppointmentsSidebar = () => {
-  updateUISettings({
-    is_contact_sidebar_open: false,
-    is_crm_deal_panel_open: false,
-    is_scheduling_appointments_panel_open: false,
-  });
-};
+const closeDealsSidebar = () => closePanel();
+const closeAppointmentsSidebar = () => closePanel();
 </script>
 
 <template>

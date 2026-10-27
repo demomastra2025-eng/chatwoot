@@ -4,6 +4,7 @@ import { createPinia } from 'pinia';
 import { flushPromises, shallowMount } from '@vue/test-utils';
 
 import ConversationSidebar from './ConversationSidebar.vue';
+import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
 import {
   PATIENT_SELECTION_STORAGE_KEY,
@@ -145,9 +146,12 @@ describe('ConversationSidebar', () => {
       'crm_deal_manage',
       'scheduling_manage',
     ];
-    mocks.width = ref(390);
+    mocks.width = ref(1024);
     mocks.updateUISettings.mockClear();
-    mocks.route = reactive({ params: { accountId: '1' }, query: {} });
+    mocks.route = reactive({
+      params: { accountId: '1', conversation_id: '1' },
+      query: {},
+    });
     mocks.replace.mockClear();
     window.localStorage.clear();
     SchedulingContactsAPI.patients.mockReset();
@@ -337,6 +341,7 @@ describe('ConversationSidebar', () => {
   });
 
   it('moves the mobile drawer off-canvas when no sidebar tab is open', () => {
+    mocks.width.value = 390;
     mocks.uiSettings = ref({
       is_contact_sidebar_open: false,
     });
@@ -348,12 +353,17 @@ describe('ConversationSidebar', () => {
     expect(wrapper.classes()).toContain('pointer-events-none');
   });
 
-  it('keeps the mobile drawer visible when contact sidebar is open', () => {
+  it('keeps the mobile drawer visible after the contact button is used', async () => {
+    mocks.width.value = 390;
     mocks.uiSettings = ref({
       is_contact_sidebar_open: true,
     });
 
     const wrapper = mountComponent();
+    const panel = useConversationSidepanelAvailability();
+    panel.openPanel('contact');
+    expect(panel.activePanel.value).toBe('contact');
+    await flushPromises();
 
     expect(wrapper.classes()).toContain('translate-x-0');
     expect(wrapper.classes()).not.toContain('pointer-events-none');

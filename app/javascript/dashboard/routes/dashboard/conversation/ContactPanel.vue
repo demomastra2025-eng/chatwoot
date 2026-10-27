@@ -2,6 +2,7 @@
 import { computed, watch, onMounted, ref } from 'vue';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { useUISettings } from 'dashboard/composables/useUISettings';
+import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 
 import AccordionItem from 'dashboard/components/Accordion/AccordionItem.vue';
 import ConversationAction from './ConversationAction.vue';
@@ -34,6 +35,7 @@ const {
   conversationSidebarItemsOrder,
   toggleSidebarUIState,
 } = useUISettings();
+const { closePanel } = useConversationSidepanelAvailability();
 
 const dragging = ref(false);
 const conversationSidebarItems = ref([]);
@@ -85,12 +87,8 @@ const onDragEnd = () => {
   });
 };
 
-const closeContactPanel = () => {
-  updateUISettings({
-    is_contact_sidebar_open: false,
-    is_crm_deal_panel_open: false,
-  });
-};
+const closeContactPanel = () =>
+  closePanel({ is_contact_sidebar_open: false, is_crm_deal_panel_open: false });
 
 onMounted(() => {
   conversationSidebarItems.value = conversationSidebarItemsOrder.value;

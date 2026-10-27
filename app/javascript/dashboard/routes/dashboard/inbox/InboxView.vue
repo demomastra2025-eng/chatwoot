@@ -1,10 +1,13 @@
 <script setup>
-import { computed, ref, watch, onMounted } from 'vue';
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useTrack } from 'dashboard/composables';
 import { useUISettings } from 'dashboard/composables/useUISettings';
-import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
+import {
+  resetMobileConversationPanel,
+  useConversationSidepanelAvailability,
+} from 'dashboard/composables/useConversationSidepanelAvailability';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { INBOX_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 import { emitter } from 'shared/helpers/mitt';
@@ -190,6 +193,7 @@ watch(
   conversationId,
   (newVal, oldVal) => {
     if (newVal !== oldVal) {
+      resetMobileConversationPanel();
       fetchConversationById();
     }
   },
@@ -199,6 +203,7 @@ watch(
 onMounted(async () => {
   await store.dispatch('agents/get');
 });
+onBeforeUnmount(resetMobileConversationPanel);
 </script>
 
 <template>

@@ -2,7 +2,10 @@
 import { defineAsyncComponent } from 'vue';
 import { mapGetters } from 'vuex';
 import { useUISettings } from 'dashboard/composables/useUISettings';
-import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
+import {
+  resetMobileConversationPanel,
+  useConversationSidepanelAvailability,
+} from 'dashboard/composables/useConversationSidepanelAvailability';
 import ChatList from '../../../components/ChatList.vue';
 import ConversationBox from '../../../components/widgets/conversation/ConversationBox.vue';
 import wootConstants from 'dashboard/constants/globals';
@@ -31,6 +34,10 @@ export default {
     // beforeUnmount so the current conversation pane does not blank out while
     // lazy route chunks are still loading.
     this.isLeavingConversationRoute = true;
+    next();
+  },
+  beforeRouteUpdate(to, from, next) {
+    if (to.path !== from.path) resetMobileConversationPanel();
     next();
   },
   props: {
@@ -109,6 +116,7 @@ export default {
   },
   watch: {
     conversationId() {
+      resetMobileConversationPanel();
       this.fetchConversationIfUnavailable();
     },
     'currentChat.inbox_id'() {
@@ -117,6 +125,7 @@ export default {
   },
 
   created() {
+    resetMobileConversationPanel();
     // Clear selected state early if no conversation is selected
     // This prevents child components from accessing stale data
     // and resolves timing issues during navigation
@@ -144,6 +153,7 @@ export default {
   },
 
   beforeUnmount() {
+    resetMobileConversationPanel();
     this.isLeavingConversationRoute = true;
     if (this.conversationId || this.currentChat?.id) {
       this.$store.dispatch('clearSelectedState');
