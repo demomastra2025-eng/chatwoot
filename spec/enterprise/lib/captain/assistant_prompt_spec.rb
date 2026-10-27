@@ -282,7 +282,8 @@ RSpec.describe Captain::AssistantPrompt do
 
       expect(variables[:booking_search]).to be(true)
       expect(stable_rules(variables)).to include('call search_booking_options first', 'slots_service_id',
-                                                 'found by the same search as search_available_slots: offer those times exactly as listed')
+                                                 'found by the same search as search_available_slots: offer those times exactly as listed',
+                                                 'For a price alone call search_scheduling_services')
     end
 
     it 'is off for an agent without a free-time search, and the rules name no tool it does not have' do

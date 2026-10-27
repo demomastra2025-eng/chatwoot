@@ -232,6 +232,13 @@ RSpec.describe Captain::Tools::Account::SearchBookingOptionsService do
       expect(answer['results'].first).to include('slots_status' => 'specialist_not_found')
       expect(answer['results'].first).not_to have_key('days')
     end
+
+    it 'still gives a named specialist\'s availability when the service is not in the catalog' do
+      answer = search(services: ['нет такой'], doctor: 'Асланова', from: '2026-04-22', to: '2026-04-23')
+
+      expect(answer['results'].first).to include('status' => 'not_in_catalog')
+      expect(answer['specialists']['days'].pluck('resource_id')).to eq([aigerim.id])
+    end
   end
 
   describe 'the size of the answer' do

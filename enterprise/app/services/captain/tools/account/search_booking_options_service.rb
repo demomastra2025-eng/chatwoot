@@ -144,7 +144,9 @@ class Captain::Tools::Account::SearchBookingOptionsService < Captain::Tools::Acc
     failure = add_service_slots(results, ids, specialist_named: specialists.present?)
     return failure if failure
 
-    block = specialists_block(specialists, ids, with_slots: results.empty?)
+    # A catalog miss does not make a named specialist's availability disappear. Keep it separate from any unmatched service.
+    matched_service = results.any? { |result| result['status'] == Captain::Tools::Account::SearchSchedulingServicesService::FOUND }
+    block = specialists_block(specialists, ids, with_slots: !matched_service)
     return block if block.is_a?(String)
 
     { results: results.presence, specialists: block, range: { from: @range.first, to: @range.last },

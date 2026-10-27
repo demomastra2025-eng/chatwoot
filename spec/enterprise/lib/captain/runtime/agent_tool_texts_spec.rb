@@ -261,10 +261,11 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect([entry.description, *entry.params.values].join(' ')).not_to match(/cabinet/i)
   end
 
-  it 'sends a price, a booking and a doctor question to the booking search first, and a follow-up to the free-time search with the service' do
+  it 'sends booking and doctor questions to the booking search, but a price alone to the catalog search' do
     entry = described_class.for_tool('search_booking_options')
 
-    expect(entry.description).to include('use it FIRST', 'ONE call', 'slots_service_id', 'call search_available_slots with that service_id',
+    expect(entry.description).to include('use it FIRST', 'ONE call', 'For a price alone use search_scheduling_services',
+                                         'slots_service_id', 'call search_available_slots with that service_id',
                                          'specialist_required', 'a time that is not listed may be free')
     expect(entry.params.keys).to contain_exactly('services', 'doctor', 'from', 'to')
     expect(entry.description.split.size).to be < 180
