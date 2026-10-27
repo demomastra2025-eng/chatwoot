@@ -97,10 +97,16 @@ RSpec.describe Captain::ReplySuggestion::DraftStream::FieldReader do
     expect(reader).to be_done
   end
 
-  it 'reads the first value of a repeated key only' do
-    reader.feed('{"response":"first","response":"second"}')
+  it 'stops previewing when a tracked key repeats because the final parser may replace it' do
+    reader.feed('{"response_mode":"reply","response":"first","response":"second"}')
 
-    expect(reader.text).to eq('first')
+    expect(reader).to be_dead
+  end
+
+  it 'stops previewing when the mode repeats, even if its second value is not a string' do
+    reader.feed('{"response_mode":"reply","response":"first","response_mode":null}')
+
+    expect(reader).to be_dead
   end
 
   it 'tolerates whitespace between the tokens' do

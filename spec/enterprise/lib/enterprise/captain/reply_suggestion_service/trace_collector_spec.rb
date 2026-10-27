@@ -25,7 +25,7 @@ RSpec.describe Enterprise::Captain::ReplySuggestionService::TraceCollector do
       described_class.new(assistant: assistant, conversation: conversation, user: user, progress_context: progress_context)
     end
     let(:run) { OpenStruct.new(context: { state: { assistant_id: assistant.id } }) }
-    let(:answer) { '{"patient_language":"ru","response":"Здравствуйте, Анна! Приём стоит 8000 тенге.","response_mode":"reply"}' }
+    let(:answer) { '{"patient_language":"ru","response_mode":"reply","response":"Здравствуйте, Анна! Приём стоит 8000 тенге."}' }
     let(:broadcasts) { [] }
 
     def previews
@@ -61,16 +61,16 @@ RSpec.describe Enterprise::Captain::ReplySuggestionService::TraceCollector do
       )
     end
 
-    it 'sends the words that the interval held back when the call of the agent ends' do
-      collector.callbacks[:on_answer_delta].call(assistant.agent_name, '{"response":"Здравствуйте, Анна', run)
+    it 'keeps the broadcast interval when the call of the agent ends' do
+      collector.callbacks[:on_answer_delta].call(assistant.agent_name, '{"response_mode":"reply","response":"Здравствуйте, Анна', run)
       collector.callbacks[:on_answer_delta].call(assistant.agent_name, '! Приём стоит 8000 тенге."', run)
       collector.callbacks[:on_llm_call_complete].call(assistant.agent_name, 'model', OpenStruct.new(content: '{}', tool_call?: false), run)
 
-      expect(preview_texts).to eq(['Здравствуйте, Анна', 'Здравствуйте, Анна! Приём стоит 8000 тенге.'])
+      expect(preview_texts).to eq(['Здравствуйте, Анна'])
     end
 
     it 'takes the text back when a tool is about to run' do
-      collector.callbacks[:on_answer_delta].call(assistant.agent_name, '{"response":"Сейчас проверю расписание"}', run)
+      collector.callbacks[:on_answer_delta].call(assistant.agent_name, '{"response_mode":"reply","response":"Сейчас проверю расписание"}', run)
       collector.callbacks[:on_tool_start].call('search_available_slots', {}, run)
 
       expect(preview_texts).to eq(['Сейчас проверю расписание', ''])

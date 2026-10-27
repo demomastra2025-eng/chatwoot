@@ -10,12 +10,14 @@ class Captain::ReplySuggestion::DraftStream::FieldReader
   MODE_FIELD = 'response_mode'
   MAX_KEY_LENGTH = 64
   MAX_TEXT_LENGTH = 20_000
-  WHITESPACE = [" ", "\t", "\r", "\n"].freeze
-  HEX = /\A\h\z/
-  SIMPLE_ESCAPES = { '"' => '"', '\\' => '\\', '/' => '/', 'n' => "\n", 't' => "\t", 'r' => "\r", 'b' => "\b", 'f' => "\f" }.freeze
-  HIGH_SURROGATES = (0xD800..0xDBFF)
-  LOW_SURROGATES = (0xDC00..0xDFFF)
-  REPLACEMENT = "�"
+  WHITESPACE = [' ', "\t", "\r", "\n"].freeze
+  REPLACEMENT = '�'
+  STEPS = {
+    start: :expect_open, first_key: :expect_first_key, next_key: :expect_key_start, key: :read_key,
+    colon: :expect_colon, value: :begin_value, string: :read_string, skip: :skip_value,
+    after_value: :after_value
+  }.freeze
+  DISCARD = Class.new { def <<(_char) = self }.new
 
   # text: the decoded text of the field so far. mode: the value of response_mode once that string is complete (nil before).
   attr_reader :text, :mode
@@ -32,10 +34,10 @@ class Captain::ReplySuggestion::DraftStream::FieldReader
     @mode = nil
     @mode_buffer = +''
     @field_seen = false
+    @mode_seen = false
     @closed = false
-    @escape = false
-    @unicode = nil
-    @high = nil
+    @decoder = StringDecoder.new
+    @skip_escape = false
     @skip_depth = 0
     @skip_in_string = false
     self
@@ -67,17 +69,7 @@ class Captain::ReplySuggestion::DraftStream::FieldReader
   private
 
   def step(char)
-    case @state
-    when :start then expect_open(char)
-    when :first_key then expect_first_key(char)
-    when :next_key then expect_key_start(char)
-    when :key then read_key(char)
-    when :colon then expect_colon(char)
-    when :value then begin_value(char)
-    when :string then read_string(char)
-    when :skip then skip_value(char)
-    when :after_value then after_value(char)
-    end
+    __send__(STEPS.fetch(@state), char)
   end
 
   def expect_open(char)
@@ -102,7 +94,10 @@ class Captain::ReplySuggestion::DraftStream::FieldReader
   end
 
   def read_key(char)
-    decode(char, @key) { @state = :colon }
+    closed = false
+    valid = @decoder.decode(char, @key) { closed = true }
+    die unless valid
+    @state = :colon if closed
     die if @key.length > MAX_KEY_LENGTH
   end
 
@@ -114,6 +109,7 @@ class Captain::ReplySuggestion::DraftStream::FieldReader
 
   def begin_value(char)
     return if whitespace?(char)
+    return die if tracked_key_repeated?
     return begin_string_value if char == '"'
 
     @skip_depth = 0
@@ -125,20 +121,26 @@ class Captain::ReplySuggestion::DraftStream::FieldReader
   def begin_string_value
     @target = target_for(@key)
     @field_seen = true if @target == :text
+    @mode_seen = true if @target == :mode
     @state = :string
   end
 
-  # The first value of each tracked key is read; a repeated key is skipped.
+  # A duplicate tracked key can replace a previously previewed value in the final JSON parser.
+  # Stop previewing rather than guessing which value will win.
+  def tracked_key_repeated?
+    (@key == FIELD && @field_seen) || (@key == MODE_FIELD && @mode_seen)
+  end
+
   def target_for(key)
     return :text if key == FIELD && !@field_seen
-    return :mode if key == MODE_FIELD && @mode.nil?
+    return :mode if key == MODE_FIELD && !@mode_seen
 
     nil
   end
 
   def read_string(char)
     buffer = buffer_for(@target)
-    decode(char, buffer) { finish_string }
+    die unless @decoder.decode(char, buffer) { finish_string }
     die if @text.length > MAX_TEXT_LENGTH
   end
 
@@ -175,6 +177,12 @@ class Captain::ReplySuggestion::DraftStream::FieldReader
     case char
     when '"' then @skip_in_string = true
     when '[', '{' then @skip_depth += 1
+    else skip_delimiter(char)
+    end
+  end
+
+  def skip_delimiter(char)
+    case char
     when ']' then close_skipped_group
     when '}' then close_skipped_object
     when ',' then @state = :next_key if @skip_depth.zero?
@@ -182,10 +190,10 @@ class Captain::ReplySuggestion::DraftStream::FieldReader
   end
 
   def skip_string_char(char)
-    if @escape
-      @escape = false
+    if @skip_escape
+      @skip_escape = false
     elsif char == '\\'
-      @escape = true
+      @skip_escape = true
     elsif char == '"'
       @skip_in_string = false
     end
@@ -201,66 +209,6 @@ class Captain::ReplySuggestion::DraftStream::FieldReader
     @skip_depth -= 1
   end
 
-  # Decodes one character of a JSON string into buffer; yields when the closing quote is read.
-  def decode(char, buffer)
-    return read_unicode(char, buffer) if @unicode
-    return read_escape(char, buffer) if @escape
-
-    case char
-    when '\\' then @escape = true
-    when '"'
-      flush_high(buffer)
-      yield
-    else
-      flush_high(buffer)
-      buffer << char
-    end
-  end
-
-  def read_escape(char, buffer)
-    @escape = false
-    if char == 'u'
-      @unicode = +''
-    elsif SIMPLE_ESCAPES.key?(char)
-      flush_high(buffer)
-      buffer << SIMPLE_ESCAPES[char]
-    else
-      die
-    end
-  end
-
-  def read_unicode(char, buffer)
-    return die unless HEX.match?(char)
-
-    @unicode << char
-    return if @unicode.length < 4
-
-    code = @unicode.to_i(16)
-    @unicode = nil
-    append_code(code, buffer)
-  end
-
-  # A code in the high range waits for the low half that follows it (it may arrive in the next piece).
-  def append_code(code, buffer)
-    if HIGH_SURROGATES.cover?(code)
-      flush_high(buffer)
-      @high = code
-    elsif LOW_SURROGATES.cover?(code)
-      buffer << (@high ? [0x10000 + ((@high - 0xD800) << 10) + (code - 0xDC00)].pack('U') : REPLACEMENT)
-      @high = nil
-    else
-      flush_high(buffer)
-      buffer << [code].pack('U')
-    end
-  end
-
-  def flush_high(buffer)
-    return unless @high
-
-    buffer << REPLACEMENT
-    @high = nil
-  end
-
   def whitespace?(char)
     WHITESPACE.include?(char)
   end
@@ -268,12 +216,4 @@ class Captain::ReplySuggestion::DraftStream::FieldReader
   def die
     @state = :dead
   end
-
-  # The buffer of a string that is read only to get past it.
-  class Discard
-    def <<(_char)
-      self
-    end
-  end
-  DISCARD = Discard.new
 end

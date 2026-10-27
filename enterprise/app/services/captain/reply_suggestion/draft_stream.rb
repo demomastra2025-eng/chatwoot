@@ -1,14 +1,12 @@
 # frozen_string_literal: true
 
 # The first words of a draft for the manager, while the agent is still writing it. The agent answers in structured output
-# (Captain::SuggestionResponseSchema: patient_language, response, response_mode, operator_note, reasoning, artifact_ids), and the
+# (Captain::SuggestionResponseSchema: patient_language, response_mode, response, operator_note, reasoning, artifact_ids), and the
 # text of the draft is its `response` field. This reads that field out of the pieces of JSON the model streams (FieldReader) and
 # broadcasts what has been written so far to the manager who asked, at most every INTERVAL_SECONDS.
 #
-# `response_mode` (reply, suppress, human) comes AFTER `response` in the schema, so the outcome is not known while the text is
-# written. Nothing is held back for it: the agent is told to leave `response` empty for suppress and human, so such an answer
-# never shows a word. The rare answer that writes a text and then still says human or suppress is cleared when the result arrives
-# (the dashboard drops a preview that the result does not confirm), and the text is never sent to the patient anyway.
+# `response_mode` (reply, suppress, human) precedes `response` in the schema. A provider may still emit the fields in another
+# order, so no text is broadcast until the reader has seen an explicit `reply` mode. An answer whose mode comes last is buffered.
 # What the draft finally is stays what it was: the same `response` after the same clean-up (AgentRunnerService#guard_public_response)
 # and every later rule of the run (safety check, guardrails, the outcome classifier) - the preview is read-only on the side.
 #
@@ -49,14 +47,13 @@ class Captain::ReplySuggestion::DraftStream
     end
   end
 
-  # The model call ended: the last words that the interval held back go out now (or the preview goes, when the answer turned out
-  # not to be a reply).
+  # The model call ended. Send the last words only when the interval permits it; the final result carries the complete draft.
   def finish!
     guarded do
       text = visible_text
       if text.nil?
         clear if @shown
-      elsif text != @shown
+      elsif due?(text)
         publish(text)
       end
     end
@@ -118,7 +115,7 @@ class Captain::ReplySuggestion::DraftStream
   # that this is a reply for the patient.
   def visible_text
     return if @reader.dead?
-    return if @reader.mode.present? && @reader.mode != 'reply'
+    return unless @reader.mode == 'reply'
 
     text = @reader.text
     return if stamp_may_follow?(text)

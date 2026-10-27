@@ -15,6 +15,12 @@ RSpec.describe Captain::ReplySuggestion::DraftStream do
     allow(broadcaster).to receive(:preview) { |data| sent << data }
   end
 
+  it 'requests the outcome before the response in the provider schema' do
+    fields = Llm::StructuredOutputSchema.definition_for(Captain::SuggestionResponseSchema).fetch('properties').keys
+
+    expect(fields.index('response_mode')).to be < fields.index('response')
+  end
+
   def advance(seconds)
     clock[:now] += seconds
   end
@@ -25,7 +31,7 @@ RSpec.describe Captain::ReplySuggestion::DraftStream do
 
   describe 'what is shown' do
     it 'sends the text of the answer as it grows, to the request it belongs to, with a number for the order' do
-      stream.feed('{"patient_language":"ru","response":"Здравствуйте, ')
+      stream.feed('{"patient_language":"ru","response_mode":"reply","response":"Здравствуйте, ')
       advance(0.25)
       stream.feed('Анна! Приём стоит 8000 тенге.')
 
@@ -35,7 +41,7 @@ RSpec.describe Captain::ReplySuggestion::DraftStream do
     end
 
     it 'sends at most one preview every 0.2 s and the latest text when the interval has passed' do
-      stream.feed('{"response":"Здравствуйте, Анна')
+      stream.feed('{"response_mode":"reply","response":"Здравствуйте, Анна')
       advance(0.05)
       stream.feed('! Приём')
       advance(0.05)
@@ -49,8 +55,8 @@ RSpec.describe Captain::ReplySuggestion::DraftStream do
       expect(texts).to eq(['Здравствуйте, Анна', 'Здравствуйте, Анна! Приём стоит 8000'])
     end
 
-    it 'sends the words that the interval held back when the model call ends' do
-      stream.feed('{"response":"Здравствуйте, Анна')
+    it 'does not bypass the broadcast interval when the model call ends' do
+      stream.feed('{"response_mode":"reply","response":"Здравствуйте, Анна')
       advance(0.05)
       stream.feed('! Приём стоит 8000 тенге."')
 
@@ -58,28 +64,33 @@ RSpec.describe Captain::ReplySuggestion::DraftStream do
 
       stream.finish!
 
+      expect(texts).to eq(['Здравствуйте, Анна'])
+
+      advance(0.2)
+      stream.finish!
+
       expect(texts).to eq(['Здравствуйте, Анна', 'Здравствуйте, Анна! Приём стоит 8000 тенге.'])
     end
 
     it 'does not repeat a text it has already sent' do
-      stream.feed('{"response":"Здравствуйте, Анна!"')
+      stream.feed('{"response_mode":"reply","response":"Здравствуйте, Анна!"')
       stream.finish!
       advance(1)
-      stream.feed(',"response_mode":"reply"')
+      stream.feed(',"reasoning":"по прайсу"')
       stream.finish!
 
       expect(texts).to eq(['Здравствуйте, Анна!'])
     end
 
     it 'waits for a few words before the first preview, but not when the field is already complete' do
-      stream.feed('{"response":"Зд')
+      stream.feed('{"response_mode":"reply","response":"Зд')
       expect(sent).to be_empty
 
       stream.feed('равствуйте, Анна')
       expect(texts).to eq(['Здравствуйте, Анна'])
 
       short = described_class.new(broadcaster: broadcaster, identity: identity, clock: -> { clock[:now] })
-      short.feed('{"response":"Хорошо!"')
+      short.feed('{"response_mode":"reply","response":"Хорошо!"')
       expect(texts.last).to eq('Хорошо!')
     end
 
@@ -90,24 +101,35 @@ RSpec.describe Captain::ReplySuggestion::DraftStream do
       expect(sent).to be_empty
     end
 
-    it 'shows nothing when the mode is known before the text and it is not reply' do
-      stream.feed('{"response_mode":"human","response":"Это решит администратор, ждите ответа"}')
-      stream.finish!
+    it 'shows nothing when the mode is human or suppress, even if the model writes text' do
+      %w[human suppress].each do |mode|
+        candidate = described_class.new(broadcaster: broadcaster, identity: identity, clock: -> { clock[:now] })
+        candidate.feed(%({"response_mode":"#{mode}","response":"Это решит администратор, ждите ответа"}))
+        candidate.finish!
+      end
 
       expect(sent).to be_empty
     end
 
-    it 'takes the text back when the mode that follows it is not reply' do
+    it 'buffers text until a late reply mode is known' do
       stream.feed('{"response":"Это решит администратор, ждите ответа')
+      expect(texts).to be_empty
+
+      stream.feed('","response_mode":"reply"')
+
       expect(texts).to eq(['Это решит администратор, ждите ответа'])
+    end
 
-      stream.feed('","response_mode":"human"')
+    it 'never reveals text when a late mode says human' do
+      stream.feed('{"response":"Это решит администратор, ждите ответа')
+      stream.feed('","response_mode":"human"}')
+      stream.finish!
 
-      expect(texts).to eq(['Это решит администратор, ждите ответа', ''])
+      expect(texts).to be_empty
     end
 
     it 'takes the text back at the end of the call when the answer turns out to be broken' do
-      stream.feed('{"response":"Это решит администратор, ждите ответа')
+      stream.feed('{"response_mode":"reply","response":"Это решит администратор, ждите ответа')
       stream.feed('" nonsense')
       stream.finish!
 
@@ -115,7 +137,7 @@ RSpec.describe Captain::ReplySuggestion::DraftStream do
     end
 
     it 'shows the text as the run cleans it: without a send stamp the model copied into the reply' do
-      stream.feed('{"response":"[Sat 24.10 09:5')
+      stream.feed('{"response_mode":"reply","response":"[Sat 24.10 09:5')
       expect(sent).to be_empty
 
       stream.feed('0] Здравствуйте, Анна, приём в 10:00')
@@ -125,7 +147,7 @@ RSpec.describe Captain::ReplySuggestion::DraftStream do
     end
 
     it 'holds a text that starts with a bracket until it is clear that it is no stamp' do
-      stream.feed('{"response":"[Анна], здрав')
+      stream.feed('{"response_mode":"reply","response":"[Анна], здрав')
       expect(sent).to be_empty
 
       advance(0.25)
@@ -137,9 +159,9 @@ RSpec.describe Captain::ReplySuggestion::DraftStream do
 
   describe '#reset!' do
     it 'takes back what was shown when a tool is about to run, and reads the next answer from the start' do
-      stream.feed('{"response":"Сейчас проверю расписание"')
+      stream.feed('{"response_mode":"reply","response":"Сейчас проверю расписание"')
       stream.reset!
-      stream.feed('{"response":"Приём в 10:00 свободен"')
+      stream.feed('{"response_mode":"reply","response":"Приём в 10:00 свободен"')
 
       expect(texts).to eq(['Сейчас проверю расписание', '', 'Приём в 10:00 свободен'])
       expect(sent.pluck(:seq)).to eq([1, 2, 3])
@@ -152,14 +174,14 @@ RSpec.describe Captain::ReplySuggestion::DraftStream do
     end
 
     it 'follows the new document when the model is asked again after an answer that was not valid' do
-      stream.feed('{"response":"Первый вариант ответа","response_mode":"reply","reasoning":""}')
-      stream.feed('{"response":"Второй вариант ответа","response_mode":"reply","reasoning":"по прайсу"}')
+      stream.feed('{"response_mode":"reply","response":"Первый вариант ответа","reasoning":""}')
+      stream.feed('{"response_mode":"reply","response":"Второй вариант ответа","reasoning":"по прайсу"}')
 
       expect(texts).to eq(['Первый вариант ответа', '', 'Второй вариант ответа'])
     end
 
     it 'does not take a bracket inside the text for a new document' do
-      stream.feed('{"response":"Адрес клиники: ул. Абая 1, ')
+      stream.feed('{"response_mode":"reply","response":"Адрес клиники: ул. Абая 1, ')
       stream.feed('{') # a piece that starts like a document, in the middle of the text
       advance(0.25)
       stream.feed('вход со двора}"')
@@ -173,8 +195,8 @@ RSpec.describe Captain::ReplySuggestion::DraftStream do
       allow(broadcaster).to receive(:preview).and_raise(RuntimeError, 'redis down')
       allow(Rails.logger).to receive(:warn)
 
-      expect { stream.feed('{"response":"Здравствуйте, Анна, добрый день"') }.not_to raise_error
-      expect { stream.feed(',"response_mode":"reply"') }.not_to raise_error
+      expect { stream.feed('{"response_mode":"reply","response":"Здравствуйте, Анна, добрый день"') }.not_to raise_error
+      expect { stream.feed(',"reasoning":"по прайсу"') }.not_to raise_error
       expect { stream.finish! }.not_to raise_error
 
       expect(broadcaster).to have_received(:preview).once
