@@ -144,7 +144,7 @@ RSpec.describe 'onelink:one_open_dialog_per_thread rake task' do # rubocop:disab
       expect(CsatSurveyService).not_to have_received(:new)
       expect(dispatcher).not_to have_received(:dispatch).with(Events::Types::CONVERSATION_RESOLVED, anything, anything)
       expect(Message.where(account_id: account.id, message_type: %w[outgoing template])).to be_empty
-      expect(current_chat.messages.activity.count).to eq(2)
+      expect(current_chat.messages.activity).to be_empty # the merge writes no line into the dialog that stays
       expect(JSON.parse(run_task(account.id.to_s, 'true').lines.last)).to include('threads' => 0)
     end
 
