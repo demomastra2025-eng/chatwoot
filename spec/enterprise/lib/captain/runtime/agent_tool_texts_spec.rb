@@ -225,17 +225,17 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect(described_class.for_tool('get_scheduling_resource_availability').params['service_id']).not_to include('offers')
   end
 
-  it 'starts a booking from the specialist: find the specialist, then the slots; a service only for a price or to pass a service_id' do
+  it 'starts a booking from the booking search; a follow-up finds the specialist, then the slots; a service is for a price or a service_id' do
     resources = described_class.for_tool('search_scheduling_resources')
     services = described_class.for_tool('search_scheduling_services')
     slots = described_class.for_tool('search_available_slots')
 
-    expect(resources.description).to include('Start here for any booking or slot question', 'then use the ID with search_available_slots',
+    expect(resources.description).to include('call search_booking_options first', 'then use the ID with search_available_slots',
                                              'A service link is never needed to find or book a specialist')
     expect(resources.params['service_id']).to include('Optional', 'leave it out')
     expect(services.description).to include('Send every service of the request in queries', 'ONE call', 'candidates by meaning',
                                             'not_in_catalog', 'catalog_updating', 'queries_not_searched', 'say staff will confirm',
-                                            'To book, find the specialist first with search_scheduling_resources')
+                                            'To book, use search_booking_options, or find the specialist first with search_scheduling_resources')
     expect(services.description.length).to be < 700
     expect(services.description).not_to include('before searching slots or booking a named service')
     expect(slots.description).to include('find the specialist first with search_scheduling_resources',
@@ -292,6 +292,28 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     entry = described_class.for_tool('create_appointment')
 
     expect([entry.description, *entry.params.values].join(' ')).not_to match(/cabinet/i)
+  end
+
+  it 'sends booking and doctor questions to the booking search, but a price alone to the catalog search' do
+    entry = described_class.for_tool('search_booking_options')
+
+    expect(entry.description).to include('use it FIRST', 'ONE call', 'For a price alone use search_scheduling_services',
+                                         'slots_service_id', 'call search_available_slots with that service_id',
+                                         'specialist_required', 'a time that is not listed may be free')
+    expect(entry.params.keys).to contain_exactly('services', 'doctor', 'from', 'to')
+    expect(entry.description.split.size).to be < 180
+  end
+
+  it 'tells the agent that the Patient block may already hold the card and the upcoming appointments that these tools read' do
+    expect(described_class.for_tool('get_my_contact').description).to include('unless the Patient block already has the card')
+    expect(described_class.for_tool('list_my_appointments').description)
+      .to include('When the Patient block already lists the upcoming appointments, call it only for other dates, past or cancelled appointments')
+  end
+
+  it 'tells the agent to call faq_lookup only for another question when the prompt already lists possibly relevant FAQ answers' do
+    expect(described_class.for_tool('faq_lookup').description)
+      .to include('When the prompt lists possibly relevant FAQ answers for the patient\'s latest message, call it only for another question ' \
+                  'or when none of them answers')
   end
 
   it 'has no entry for a tool that is not part of the file' do

@@ -102,10 +102,16 @@ class Captain::AssistantResponse < ApplicationRecord
     # Only the vectors of the model that embeds the question are compared with it: vectors of two models cannot be compared.
     embedder = Captain::Llm::EmbeddingService.new(account_id: account_id)
     embedding = embedder.get_embedding(query, input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE)
+    nearest_to(embedding, embedding_model: embedder.embedding_model, account_id: account_id, assistant_id: assistant_id, limit: limit)
+  end
+
+  # The answers nearest to a question that is already embedded (by `embedding_model`): what #search does after it has embedded the
+  # question. A reply suggestion embeds the patient's message while the router decides, and asks here when the agent is known.
+  def self.nearest_to(embedding, embedding_model:, account_id:, assistant_id: nil, limit: 5)
     nearest_neighbors(:embedding, embedding, distance: 'cosine')
       .approved
       .visible_to_assistant(assistant_id)
-      .where(account_id: account_id, embedding_model: embedder.embedding_model)
+      .where(account_id: account_id, embedding_model: embedding_model)
       .where.not(embedding: nil)
       .limit(limit)
   end

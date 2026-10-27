@@ -32,6 +32,43 @@ RSpec.describe Captain::AppointmentContext do
                                     starts_at: starts_at, ends_at: starts_at + 30.minutes, status: status, **attributes)
   end
 
+  describe '#upcoming_of_patients' do
+    let(:child) { create(:contact, account: account) }
+    let(:stranger) { create(:contact, account: account) }
+
+    def booked(booker, patient: nil, **attributes)
+      create(:scheduling_appointment, account: account, contact: booker, patient_contact: patient, resource: resource, **attributes)
+    end
+
+    it 'reads the upcoming appointments of the circle, soonest first, with their number' do
+      later = booked(contact, patient: child, starts_at: 3.days.from_now)
+      sooner = booked(contact, starts_at: 1.day.from_now)
+
+      records, total = context.upcoming_of_patients([contact.id, child.id], limit: 1)
+
+      expect(records.map(&:id)).to eq([sooner.id])
+      expect(total).to eq(2)
+      expect(context.upcoming_of_patients([contact.id, child.id], limit: 5).first.map(&:id)).to eq([sooner.id, later.id])
+    end
+
+    it 'needs both the booking contact and the patient in the circle, as the appointments of one contact do' do
+      booked(stranger, patient: contact, starts_at: 1.day.from_now)
+      booked(contact, patient: stranger, starts_at: 2.days.from_now)
+      booked(stranger, starts_at: 3.days.from_now)
+
+      expect(context.upcoming_of_patients([contact.id, child.id], limit: 5)).to eq([[], 0])
+    end
+
+    it 'leaves out the past, the cancelled and another account' do
+      booked(contact, starts_at: 2.days.ago, status: 'completed')
+      booked(contact, starts_at: 1.day.from_now, status: 'cancelled')
+      foreign = create(:account)
+      create(:scheduling_appointment, account: foreign, contact: create(:contact, account: foreign), starts_at: 1.day.from_now)
+
+      expect(context.upcoming_of_patients([contact.id], limit: 5)).to eq([[], 0])
+    end
+  end
+
   it 'selects an in-progress visit until its end, then the next visit' do
     active = appointment(starts_at: 10.minutes.ago)
     following = appointment(starts_at: 2.days.from_now, conversation: other_conversation)

@@ -91,6 +91,7 @@ describe('suggestionStages: the stage of a progress event', () => {
         'list_scheduling_resources',
       ],
       [STAGE.SLOTS]: [
+        'search_booking_options',
         'search_available_slots',
         'get_scheduling_resource_availability',
         'get_scheduling_resource_schedule',
@@ -150,6 +151,21 @@ describe('suggestionStages: the stage of a progress event', () => {
       ]);
 
       expect(keyOf(live)).toBe(STAGE.SERVICES);
+    });
+
+    it('follows the booking search while the other calls of the same model step are done', () => {
+      const live = progress('tool_running', [
+        step('faq_lookup', 'start'),
+        step('faq_lookup', 'complete'),
+        step('get_my_contact', 'start'),
+        step('get_my_contact', 'complete'),
+        step('search_booking_options', 'start'),
+      ]);
+
+      expect(deriveStage(live)).toEqual({
+        key: STAGE.SLOTS,
+        afterTools: false,
+      });
     });
 
     it('keeps the stage of the last tool when it has just finished', () => {

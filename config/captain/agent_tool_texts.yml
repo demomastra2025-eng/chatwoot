@@ -21,7 +21,7 @@ tools:
     hidden_params: []
 
   list_my_appointments:
-    description: "The appointments booked from this chat, latest date first: the patient's own and those of a child or a relative booked here (an appointment of another patient names that patient as patient_name and carries the token that changing or cancelling it needs). Call it for 'my appointments' and to get the appointment ID before rescheduling or cancelling; for upcoming ones use status scheduled with date_from today, or the day the patient's message was sent when it was earlier. An empty list does not prove that there is no appointment: follow its note and never tell the patient that there is nothing to cancel."
+    description: "The appointments booked from this chat, latest date first: the patient's own and those of a child or a relative booked here (an appointment of another patient names that patient as patient_name and carries the token that changing or cancelling it needs). Call it for 'my appointments' and to get the appointment ID before rescheduling or cancelling; for upcoming ones use status scheduled with date_from today, or the day the patient's message was sent when it was earlier. When the Patient block already lists the upcoming appointments, call it only for other dates, past or cancelled appointments. An empty list does not prove that there is no appointment: follow its note and never tell the patient that there is nothing to cancel."
     params:
       status: "scheduled, completed, cancelled, no_show or any (default any)."
       date_from: "First date, YYYY-MM-DD."
@@ -58,7 +58,7 @@ tools:
       - include_inactive
 
   search_scheduling_resources:
-    description: "Find a specialist or room by name words (any order) or specialty; an empty query lists all. Start here for any booking or slot question: find the specialist by the specialty or name the patient gave, then use the ID with search_available_slots. A service link is never needed to find or book a specialist."
+    description: "Find a specialist or room by name words (any order) or specialty; an empty query lists all. For a booking or slot question call search_booking_options first (it finds the specialist and the free times in one call); use this tool when you need only the specialist: find the specialist by the specialty or name the patient gave, then use the ID with search_available_slots. A service link is never needed to find or book a specialist."
     params:
       query: "One specialty word or name in dictionary form, as the catalog writes it (do not combine synonyms)."
       service_id: "Optional, only to narrow by a recorded service link; leave it out to find a specialist by specialty or name."
@@ -91,7 +91,7 @@ tools:
     hidden_params: []
 
   search_scheduling_services:
-    description: "Find clinic services and prices. Send every service of the request in queries (one string per mention) in ONE call. Results are candidates by meaning, best first, each with a score: use one only if its name is the service asked for (with or without, body part, first or repeat visit must match). When no candidate fits, or the status is not_in_catalog or catalog_updating, do not name a price or offer another service: say staff will confirm. Mentions in queries_not_searched were skipped: ask for them again. To book, find the specialist first with search_scheduling_resources."
+    description: "Find clinic services and prices. Send every service of the request in queries (one string per mention) in ONE call. Results are candidates by meaning, best first, each with a score: use one only if its name is the service asked for (with or without, body part, first or repeat visit must match). When no candidate fits, or the status is not_in_catalog or catalog_updating, do not name a price or offer another service: say staff will confirm. Mentions in queries_not_searched were skipped: ask for them again. To book, use search_booking_options, or find the specialist first with search_scheduling_resources."
     params:
       queries: "Service mentions, one string each (a name, an abbreviation or the patient's words). All services of the request in one list."
       limit: "Max services per mention, up to 10 (default 3)."
@@ -100,7 +100,7 @@ tools:
       - offset
 
   search_available_slots:
-    description: "List free slots in a date range, earliest first. Call it to offer the patient free slots; the start the patient chooses goes to create_appointment or update_appointment. Pass resource_ids of the chosen specialist (find the specialist first with search_scheduling_resources); service_id is optional and only sets the visit length. A service_id alone searches the specialists recorded for it, and the tool asks for resource_ids when none is recorded. The result lists specialist-days as {resource_id, name, date, times, more}: times are free starts of that day in clinic time (HH:MM, up to 5 spread over the day), more counts the other free starts of that day, and more_days says how many further specialist-days were left out. The times are a sample, not every free start: a time that is not listed may still be free (more > 0), so to know whether one given time is free search that exact time (from = to) and call it taken only when that search returns no start. To book a start pass date + \"T\" + time (for example 2026-04-20T11:00) as starts_at, or an exact ISO start from a tool result; there is no starts_at field to copy. Offer 2-3 slots spread over the period, not neighbouring starts."
+    description: "List free slots in a date range, earliest first. Call it to offer the patient free slots; the start the patient chooses goes to create_appointment or update_appointment. Pass resource_ids of the chosen specialist (from search_booking_options, or find the specialist first with search_scheduling_resources); service_id is optional and only sets the visit length. A service_id alone searches the specialists recorded for it, and the tool asks for resource_ids when none is recorded. The result lists specialist-days as {resource_id, name, date, times, more}: times are free starts of that day in clinic time (HH:MM, up to 5 spread over the day), more counts the other free starts of that day, and more_days says how many further specialist-days were left out. The times are a sample, not every free start: a time that is not listed may still be free (more > 0), so to know whether one given time is free search that exact time (from = to) and call it taken only when that search returns no start. To book a start pass date + \"T\" + time (for example 2026-04-20T11:00) as starts_at, or an exact ISO start from a tool result; there is no starts_at field to copy. Offer 2-3 slots spread over the period, not neighbouring starts."
     params:
       from: "Range start, YYYY-MM-DD or YYYY-MM-DDTHH:MM (clinic time). To check one time pass from = that time. For the nearest, an earlier or a later time, or when the patient named no day, pass today's date: the free times of today that are later than now are returned too; start later only on the day the patient named."
       to: "Range end, same format as from, within 31 days; slots start before it. For one whole day pass the next day's date."
@@ -108,6 +108,15 @@ tools:
       service_id: "Optional service ID from search_scheduling_services, when the patient named a service; once used, keep it in later searches."
       duration_min: "Minutes, when no service_id is given."
       limit: "Max specialist-days listed, earliest days first (default 10, max 31); more_days says how many were left out. Each day lists up to 5 times and more counts the rest. For a later hour start the range at that hour."
+    hidden_params: []
+
+  search_booking_options:
+    description: "Booking search in ONE call; use it FIRST for a booking that needs options, a doctor's free times or a service with its time. For a price alone use search_scheduling_services. Per service mention it returns the catalog candidates with price and length (as search_scheduling_services does), then the specialists of the best candidate with their nearest free times as specialist-days {resource_id, name, date, times, more} (as search_available_slots does). With doctor it searches that specialist or specialty alone; with both, that specialist for each service. The free times belong to slots_service_id: when another candidate is the service asked for, or you need another period, a given hour, more days or another specialist, call search_available_slots with that service_id. slots_status says why a service has no free times here (not_searched, specialist_required, specialist_not_found). A candidate is the service asked for only when its name says so; not_in_catalog means no price. times are a sample: a time that is not listed may be free, so search that exact time (from = to) with search_available_slots before calling it taken."
+    params:
+      services: "Service mentions, one string each (a name, an abbreviation or the patient's words). All services of the request in one list."
+      doctor: "A specialist name or one specialty in dictionary form, as the catalog writes it, not in the case of the patient's sentence; omit it when the patient names none."
+      from: "Range start, YYYY-MM-DD or YYYY-MM-DDTHH:MM (clinic time); default now."
+      to: "Range end, same format, within 31 days of the start; default 7 days after the start. For one whole day pass the next day's date."
     hidden_params: []
 
   create_appointment:
@@ -157,7 +166,7 @@ tools:
     hidden_params: []
 
   get_my_contact:
-    description: "Show the current patient's card: first, last and middle name, IIN, birth date, gender, phone, email. Call it to see what is on file before asking the patient for a detail."
+    description: "Show the current patient's card: first, last and middle name, IIN, birth date, gender, phone, email. Call it to see what is on file before asking the patient for a detail, unless the Patient block already has the card."
     params: {}
     hidden_params: []
 
@@ -245,7 +254,7 @@ tools:
     hidden_params: []
 
   faq_lookup:
-    description: "Search the clinic's FAQ for the patient's question. Returns result found with the matching answers, or not_found. Call it for a clinic question that the clinic instructions and data do not answer."
+    description: "Search the clinic's FAQ for the patient's question. Returns result found with the matching answers, or not_found. Call it for a clinic question that the clinic instructions and data do not answer. When the prompt lists possibly relevant FAQ answers for the patient's latest message, call it only for another question or when none of them answers."
     params:
       query: "Short question or keywords translated into the language of the clinic instructions."
     hidden_params: []

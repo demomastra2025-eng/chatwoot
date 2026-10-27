@@ -60,6 +60,18 @@ class Captain::AppointmentContext
     upcoming(now).order(ends_at: :asc, id: :asc).includes(:resource, :service).first
   end
 
+  # The upcoming appointments of a patient circle (the patient and the patients who share the phone, see
+  # Scheduling::PatientContextQuery), soonest first: [the first `limit` records, how many there are]. Like #appointments for one contact,
+  # both the booking contact and the patient must be in the circle: an appointment that someone outside it booked for a member, or that
+  # a member booked for someone outside it, is not read.
+  def upcoming_of_patients(patient_ids, limit:, now: Time.current)
+    ids = Array(patient_ids)
+    scope = @account.scheduling_appointments.where(contact_id: ids)
+                    .where('COALESCE(scheduling_appointments.patient_contact_id, scheduling_appointments.contact_id) IN (?)', ids)
+                    .where.not(status: 'cancelled').where('scheduling_appointments.ends_at > ?', now)
+    [scope.order(:starts_at, :id).limit(limit).includes(:resource, :service).to_a, scope.count]
+  end
+
   def last_past(now: Time.current)
     past(now).order(ends_at: :desc, id: :desc).includes(:resource, :service).first
   end

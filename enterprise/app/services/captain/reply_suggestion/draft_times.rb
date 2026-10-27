@@ -5,7 +5,7 @@
 # never changed: the manager decides). In the suggestion eval of 26.10 a draft for Sezim (Байтурсынова) offered 19:00 from the
 # clinic text «последняя запись 19:00» while the slot search returned 19:30 and 19:50.
 #
-# Only a run that searched free times (search_available_slots) is checked. A time counts as found when a source the agent read
+# Only a run that searched free times (search_available_slots, search_booking_options) is checked. A time counts as found when a source the agent read
 # names it: the reads of that run (the cache of its reads, see Captain::Runtime::ToolWrapper#cache_suggestion_read_result: the
 # schedule, appointments and the patient card), the patient data of its prompt (the appointment and deal summaries and data
 # blocks of the # Patient block), what the agents already did in this conversation (Captain::DoneActions: the cards of earlier
@@ -20,10 +20,10 @@ module Captain::ReplySuggestion::DraftTimes
   BOUND_BEFORE = /(?<![[:alpha:]])(?:до|после|позже|позднее|раньше)[[:space:]]+\z/i
   BOUND_AFTER = /\A(?:-?[[:alpha:]]{2,3})?[[:space:]]*(?:дейін|кейін)(?![[:alpha:]])/i
   BOUND_WINDOW = 20
-  SLOT_SEARCH_TOOL = 'search_available_slots'
+  SLOT_SEARCH_TOOLS = %w[search_available_slots search_booking_options].freeze
   SOURCE_TOOLS = %w[
-    search_available_slots get_scheduling_resource_availability get_scheduling_resource_schedule search_appointments get_appointment
-    list_my_appointments get_my_contact get_contact get_appointment_provider_status
+    search_available_slots search_booking_options get_scheduling_resource_availability get_scheduling_resource_schedule
+    search_appointments get_appointment list_my_appointments get_my_contact get_contact get_appointment_provider_status
   ].freeze
   # The reads that name the appointments of the patient: the time of a booking the patient has.
   APPOINTMENT_TOOLS = %w[list_my_appointments get_appointment search_appointments get_appointment_provider_status].freeze
@@ -81,7 +81,7 @@ module Captain::ReplySuggestion::DraftTimes
 
   def searched_slots?(context)
     names = Array(value(context, :captain_v2_completed_tool_names))
-    names.any? { |name| Captain::Runtime::ToolFailure.canonical_name(name) == SLOT_SEARCH_TOOL }
+    names.any? { |name| SLOT_SEARCH_TOOLS.include?(Captain::Runtime::ToolFailure.canonical_name(name)) }
   end
 
   # The times of the scheduling reads of the run, of the patient data of the prompt, of what the agents already did, of the dialog
@@ -110,7 +110,14 @@ module Captain::ReplySuggestion::DraftTimes
   # Captain::AssistantPrompt#patient_lines) and the actions the agents already did in this conversation (Captain::DoneActions).
   def prompt_texts(context)
     prompt_context = value(value(context, :state).to_h, :prompt_context)
-    [prompt_context, value(context, :done_actions)].compact_blank.map { |data| read_text(data) }
+    [prompt_context, value(context, :done_actions), patient_preload(context)].compact_blank.map { |data| read_text(data) }
+  end
+
+  # The patient card and the upcoming appointments that the run read at its start (Captain::ReplySuggestion::PatientPreload): reads of
+  # the patient, as get_my_contact and list_my_appointments are. The FAQ matches it also holds are knowledge texts, no source of times.
+  def patient_preload(context)
+    preload = value(context, :suggestion_preload).to_h
+    { card: value(preload, :card), appointments: value(preload, :appointments) }.compact
   end
 
   def value(hash, key)

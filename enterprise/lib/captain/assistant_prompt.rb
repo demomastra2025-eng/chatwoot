@@ -17,7 +17,8 @@ class Captain::AssistantPrompt
   SUMMARY_LABELS = { appointment: 'Appointments', deal: 'Deals' }.freeze
 
   # done: the actions the agents already did in this conversation and the request being answered (Captain::DoneActions.for_run).
-  def initialize(assistant:, context:, state:, prompt_state:, part: false, suggestion: false, done: nil)
+  # preload: what a reply suggestion read at its start instead of with tools (Captain::ReplySuggestion::PatientPreload).
+  def initialize(assistant:, context:, state:, prompt_state:, part: false, suggestion: false, done: nil, preload: nil) # rubocop:disable Metrics/ParameterLists
     @assistant = assistant
     @context = context
     @state = state.to_h
@@ -25,6 +26,7 @@ class Captain::AssistantPrompt
     @part = part
     @suggestion = suggestion
     @done = done
+    @preload = preload.to_h
   end
 
   def variables
@@ -34,7 +36,10 @@ class Captain::AssistantPrompt
       @prompt_state, bound_tool_ids: bound_tool_ids, time_zone: time_zone
     )
     variables = texts.merge(now_text: now_text, patient_lines: patient_lines, iin_enabled: iin_enabled?)
-    @suggestion ? variables.merge(operator_language: operator_language, staff_voice_note: staff_voice_note) : variables
+    return variables unless @suggestion
+
+    variables.merge(operator_language: operator_language, staff_voice_note: staff_voice_note,
+                    booking_search: booking_search?, faq_lines: faq_lines)
   end
 
   private
@@ -53,6 +58,12 @@ class Captain::AssistantPrompt
   # The language the clinic operator reads: the notes of a reply suggestion (operator_note) are written in it.
   def operator_language
     @assistant.account&.locale_english_name.presence || 'russian'
+  end
+
+  # A reply suggestion of an agent that searches free times also has the booking search (Captain::Assistant#filter_agent_tools), and
+  # the rules send it there first.
+  def booking_search?
+    Array(bound_tool_ids).include?(Captain::Assistant::SLOT_SEARCH_TOOL_ID)
   end
 
   # The tools of this run; nil when the context does not say (every @ mention is then its function name, no number is shown).
@@ -95,8 +106,65 @@ class Captain::AssistantPrompt
       ("Conversation labels: #{labels.join(', ')}." if labels.any?),
       numbered_line(:conversation, 'Conversation ID', conversation[:display_id]),
       *unplaced_summary_lines,
+      *preload_lines,
       *Captain::DoneActions.lines(@done)
     ].compact
+  end
+
+  # The FAQ answers close to the patient's latest message that the suggestion found before the first model call (Captain::ReplySuggestion::
+  # FaqPreload), as labelled reference text for the template. Never part of the Patient block: they are the clinic's texts, no patient data.
+  def faq_lines
+    Array(@preload[:faq]).map do |match|
+      answer = Captain::EncodingNormalizer.string(match[:answer].to_s).strip.gsub(/\n+/, "\n  ")
+      "- Q: #{Captain::EncodingNormalizer.string(match[:question].to_s).strip}\n  A: #{answer}\n  (match #{match[:score]})"
+    end
+  end
+
+  # What the suggestion read of the patient when it started, for an agent that has the tool that would have read it.
+  def preload_lines
+    return [] unless @suggestion && @preload.present?
+
+    [patient_card_line, appointments_line].compact
+  end
+
+  def patient_card_line
+    card = @preload[:card]
+    return if card.blank? || !tool_bound?(Captain::ReplySuggestion::PatientPreload::CARD_TOOL)
+
+    "Patient card on file (data; get_my_contact returns the same): #{JSON.generate(card)}."
+  end
+
+  def appointments_line
+    return unless @preload.key?(:appointments) && tool_bound?(Captain::ReplySuggestion::PatientPreload::APPOINTMENTS_TOOL)
+
+    entries = Array(@preload[:appointments])
+    label = 'Upcoming appointments of the patient and of the patients on the same phone'
+    return "#{label} (data): none." if entries.empty?
+
+    ["#{label}, soonest first (data): #{JSON.generate(entries.map { |entry| appointment_row(entry) })}.",
+     other_patient_note(entries), unlisted_appointments_note(entries)].compact.join(' ')
+  end
+
+  def other_patient_note(entries)
+    return unless entries.any? { |entry| entry[:for] }
+
+    'An entry with `for` is another patient of this phone: to change or cancel it find it first with search_appointments.'
+  end
+
+  def unlisted_appointments_note(entries)
+    more = @preload[:appointments_total].to_i - entries.size
+    "#{more} more are not listed: list_my_appointments gives them." if more.positive?
+  end
+
+  # The id of an appointment only when a tool bound for the run takes it (Captain::PromptNumbers) and the agent's own tools act on it.
+  def appointment_row(entry)
+    row = entry.except(:own, :for)
+    row = row.except(:id) unless entry[:own] && Captain::PromptNumbers.shown?(:appointment, bound_tool_ids)
+    entry[:own] ? row : { for: entry[:for] }.merge(row)
+  end
+
+  def tool_bound?(tool_id)
+    Array(bound_tool_ids).include?(tool_id)
   end
 
   # "Patient ID: 7." when a bound tool takes that ID, else nothing.

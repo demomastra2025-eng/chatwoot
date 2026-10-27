@@ -158,6 +158,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   class ToolWrapperSpecSchedulingTool < Captain::Runtime::Tool
     param :service_id, type: :integer, required: false
     param :resource_ids, type: :array, required: false
+    param :services, type: :array, required: false
 
     attr_reader :calls
     attr_writer :result
@@ -236,6 +237,22 @@ RSpec.describe Captain::Runtime::ToolWrapper do
           'captain.generic_after_service_specific_attempt',
           hash_including(tool_name: 'search_available_slots', provider_call_blocked: true)
         )
+    end
+
+    it 'counts a booking search with services as a service-specific read: a generic free-time search after it is blocked' do
+      booking_tool = ToolWrapperSpecSchedulingTool.new(tool_name: 'account__search_booking_options')
+      described_class.new(booking_tool, context_wrapper).call(services: ['ultrasound'])
+
+      expect_tool_error(scheduling_wrapper.call(resource_ids: ['157']), 'Service-specific availability requires a confirmed service_id.',
+                        retryable: false)
+      expect(scheduling_tool.calls).to eq(0)
+    end
+
+    it 'does not count a booking search of a specialist alone: no service was asked for' do
+      booking_tool = ToolWrapperSpecSchedulingTool.new(tool_name: 'account__search_booking_options')
+      described_class.new(booking_tool, context_wrapper).call(resource_ids: ['157'])
+
+      expect(scheduling_wrapper.call(resource_ids: ['157'])).to eq('slots')
     end
 
     it 'allows a generic first call in a fresh run' do

@@ -7,6 +7,9 @@ module Captain::ReplySuggestion::OutcomeEvent
   EVENT = 'captain.reply_suggestion.complete'
   FEATURE = 'reply_suggestion'
   REASON_PREVIEW_LIMIT = 300
+  # The counters of the run that the event carries: the tool calls, the model steps (and how many asked for several tools), what was
+  # read at the start instead of with tools. total_ms (the whole request) is set in #fill!.
+  STAT_KEYS = %w[tools_called turns handoffs_count steps tool_steps parallel_steps max_tools_in_step preloaded preload_ms].freeze
 
   class << self
     # What is known before the run starts.
@@ -29,7 +32,7 @@ module Captain::ReplySuggestion::OutcomeEvent
         'current_agent' => outcome.dig(:agent, 'name'), 'stage' => outcome[:stage], 'detail' => outcome[:detail],
         'error_class' => outcome[:error_class], 'total_ms' => total_ms(state), 'stale' => stale?(state)
       )
-      event.merge!(stats.to_h.stringify_keys.slice('tools_called', 'turns', 'handoffs_count'))
+      event.merge!(stats.to_h.stringify_keys.slice(*STAT_KEYS))
       event.compact!
       event
     end

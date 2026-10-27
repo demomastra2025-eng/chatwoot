@@ -72,6 +72,17 @@ RSpec.describe Captain::ReplySuggestion::SearchedSlots do
     expect(returned?(context, at: '2026-10-31T15:31:00+05:00')).to be(false)
   end
 
+  it 'finds a start that the booking search lists in the days of one of its results' do
+    answer = { results: [{ query: 'q', status: 'found', slots_service_id: 12, days: [day(217, '2026-10-31', '14:30', '15:00')] }],
+               specialists: { days: [day(218, '2026-11-02', '09:00')] } }
+    context = context_with(['search_booking_options', { success: true, message: JSON.generate(answer) }])
+
+    expect(returned?(context)).to be(true)
+    expect(returned?(context, resource_id: 218, at: '2026-11-02T09:00:00+05:00')).to be(true)
+    expect(returned?(context, at: '2026-10-31T14:20:00+05:00')).to be(false)
+    expect(described_class.new(context).searched?).to be(true)
+  end
+
   it 'counts only the slot reads: the times of the schedule or of an appointment list are no free times' do
     schedule = { success: true, message: JSON.generate(days: [day(217, '2026-10-31', '14:30')]) }
     context = context_with(['get_scheduling_resource_schedule', schedule], ['list_my_appointments', schedule])

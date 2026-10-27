@@ -32,6 +32,8 @@ class Captain::Assistant::AgentRunnerService
   MCP_TOOL_ID_PREFIX = 'mcp__'.freeze
   ZERO_COMPLETION_BLANK_RETRY = 'blank_response_retry'.freeze
   ZERO_COMPLETION_FINALIZATION_RETRY = 'finalization_only_retry'.freeze
+  # What a reply suggestion reads at its start (see #preload_suggestion_context), as the outcome event names it.
+  PRELOAD_PARTS = %i[card appointments faq].freeze
 
   class BlankResponseError < StandardError; end
 
@@ -196,6 +198,7 @@ class Captain::Assistant::AgentRunnerService
     start_patient_language_detection
     message_to_process, context = time_phase('run_payload') { run_payload(message_history) }
     Llm::EventBus.with_context(request_event_context(context)) do
+      start_faq_preload(message_to_process, context)
       time_phase('routing_start') { start_routing(context) }
       input_moderation_response = time_phase('moderate_input') { moderate_input(message_to_process, context) }
       if input_moderation_response
@@ -225,6 +228,7 @@ class Captain::Assistant::AgentRunnerService
     time_phase('dispatch') { turn_dispatcher.prepare!(context) } if graph_run?
     # The chosen agent (or the acting agent of a council) holds the conversation now: a failure of its run answers as it.
     @acting_assistant_id = context[:acting_assistant_id] if context[:acting_assistant_id]
+    time_phase('preload') { preload_suggestion_context(context) }
     time_phase('run_agent_with_retries') { run_agent_with_blank_response_retries(message_to_process, context) }
   rescue Captain::Runtime::DecisionRouter::UnavailableError => e
     routing_failure_response(e, context)
@@ -241,6 +245,66 @@ class Captain::Assistant::AgentRunnerService
   def no_agent_response(context)
     reason = agent_run_context.graph.unavailable_reason
     technical_failure_response({ 'kind' => Captain::Runtime::ToolFailure::TECHNICAL, 'tool' => 'agent_router', 'reason' => reason.to_s }, context)
+  end
+
+  # What a reply suggestion reads once at its start instead of with tools, so that the model spends no step on it: the patient card and
+  # the upcoming appointments of the patient circle (Captain::ReplySuggestion::PatientPreload), for the agents that have the tools that
+  # read them. It goes to the prompt through the run context (Concerns::Agentable). The tools stay for everything else. A preload that
+  # fails is dropped with a log line: the agent then reads with its tools as it did before.
+  def preload_suggestion_context(context)
+    return unless preload_suggestion?
+
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    preload = read_suggestion_preload(context)
+    context[:suggestion_preload] = preload if preload.present?
+    elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+    @callbacks[:on_suggestion_preload]&.call('parts' => PRELOAD_PARTS.select { |part| preload.key?(part) }.map(&:to_s), 'ms' => elapsed_ms)
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][ReplySuggestion] preload skipped error_class=#{e.class.name}")
+  end
+
+  def preload_suggestion?
+    suggestion_run? && @assistant.persisted? && @conversation.present?
+  end
+
+  def read_suggestion_preload(context)
+    patient = Captain::ReplySuggestion::PatientPreload.build(
+      assistant: @assistant, conversation: @conversation, tool_ids: preload_tool_ids(context)
+    )
+    faq = preload_faq(context)
+    faq.present? ? patient.merge(faq: faq) : patient
+  end
+
+  # The message of the patient is embedded while the router decides (Captain::ReplySuggestion::FaqPreload); the nearest FAQ answers of
+  # the agent that answers go to the prompt. A council has no single agent and no single question: its parts search with their tools.
+  def start_faq_preload(message_to_process, context)
+    @faq_preload = nil
+    return unless preload_suggestion?
+
+    @faq_preload = Captain::ReplySuggestion::FaqPreload.start(account: @assistant.account, text: latest_patient_text(message_to_process, context))
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][ReplySuggestion] faq preload not started error_class=#{e.class.name}")
+  end
+
+  def preload_faq(context)
+    return if @faq_preload.nil? || council_turn?
+
+    actor = agent_run_context.graph.find(context[:acting_assistant_id] || @acting_assistant_id || @assistant.id)
+    @faq_preload.matches(actor) if actor
+  end
+
+  # What the patient wrote since the clinic last answered: the messages of this turn without the send times the platform stamps on them,
+  # the latest one last. A long turn is the latest message alone, which holds the question.
+  def latest_patient_text(message_to_process, context)
+    current = (message_to_process.is_a?(RubyLLM::Content) ? message_to_process.text : message_to_process).to_s.squish
+    turn = [*unanswered_user_texts(context).map { |text| Captain::PromptClock.unstamped(text).squish }, current].reject(&:blank?).join("\n")
+    turn.length > Captain::ReplySuggestion::FaqPreload::MAX_QUERY_CHARS ? current : turn
+  end
+
+  # The tools of the agent that answers, or of every participant of a council.
+  def preload_tool_ids(context)
+    ids = @turn_decision&.council? ? Array(@turn_decision.agent_ids) : [context[:acting_assistant_id] || @acting_assistant_id || @assistant.id]
+    ids.flat_map { |id| Array(agent_run_context.graph.find(id)&.allowed_agent_tool_ids) }.uniq
   end
 
   # A routed reply suggestion starts with the time of a council (Captain::ReplySuggestion.budget_seconds(router: true)); when the

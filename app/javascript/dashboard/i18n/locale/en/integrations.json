@@ -1834,6 +1834,10 @@
               "TITLE": "Search available slots",
               "DESCRIPTION": "Search appointment slots for one or more specialists using specialist filters or a scheduling service."
             },
+            "search_booking_options": {
+              "TITLE": "Booking search",
+              "DESCRIPTION": "Find the services of a request with price and duration, the specialists who perform them and the nearest free times of each specialist in one call. It uses the same service search, specialist search and free-slot search, with the same rules."
+            },
             "create_appointment": {
               "TITLE": "Create appointment",
               "DESCRIPTION": "Create an appointment for the contact in the current conversation using a selected specialist and confirmed time details."

@@ -1240,6 +1240,19 @@ class Captain::ToolRegistry
           risk_level: 'low'
         ),
         definition(
+          id: 'search_booking_options',
+          title: 'Booking Search',
+          description: Captain::Tools::Account::SearchBookingOptionsService.description,
+          group_name: 'Scheduling',
+          icon: 'calendar-search',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_AGENT],
+          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          assistant_tool_class: Captain::Tools::Account::SearchBookingOptionsService,
+          required_features: %w[scheduling],
+          risk_level: 'low',
+          selected_by_default: false
+        ),
+        definition(
           id: 'create_appointment',
           title: 'Create Appointment',
           description: 'Create an appointment for the current conversation contact using a selected specialist and confirmed time details',

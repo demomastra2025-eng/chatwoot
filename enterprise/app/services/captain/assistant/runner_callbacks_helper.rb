@@ -7,6 +7,7 @@ module Captain::Assistant::RunnerCallbacksHelper
     runner = add_tool_progress_callback(runner) if @callbacks[:on_tool_progress]
     runner = add_tool_complete_callback(runner) if @callbacks[:on_tool_complete]
     runner = add_llm_call_complete_callback(runner) if @callbacks[:on_llm_call_complete]
+    runner = add_llm_step_callback(runner) if @callbacks[:on_llm_step]
     runner
   end
 
@@ -49,6 +50,14 @@ module Captain::Assistant::RunnerCallbacksHelper
       @callbacks[:on_tool_complete].call(*args)
     rescue StandardError => e
       Rails.logger.warn "[Captain] Callback error for tool_complete: #{e.message}"
+    end
+  end
+
+  def add_llm_step_callback(runner)
+    runner.on_llm_step do |*args|
+      @callbacks[:on_llm_step].call(*args)
+    rescue StandardError => e
+      Rails.logger.warn "[Captain] Callback error for llm_step: #{e.message}"
     end
   end
 

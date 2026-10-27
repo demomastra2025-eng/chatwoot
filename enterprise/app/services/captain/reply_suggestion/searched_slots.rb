@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# The free starts that the slot reads of one reply suggestion run returned (search_available_slots, get_scheduling_resource_availability),
+# The free starts that the slot reads of one reply suggestion run returned (search_available_slots, search_booking_options, get_scheduling_resource_availability),
 # read from the cache of the reads of the run (see Captain::Runtime::ToolWrapper#cache_suggestion_read_result). A start counts as
 # returned when the answer the agent read lists it for that specialist: a time of a specialist-day of the compact answer ({ resource_id,
 # date, times, more }, also under next_available) or a slot with its own start. The times of a day are a sample (at most five, the rest
@@ -11,11 +11,11 @@
 # time under a name can be checked against the specialist's own list (Captain::ReplySuggestion::DraftTimes.misattributed).
 class Captain::ReplySuggestion::SearchedSlots
   SEARCH_TOOL = 'search_available_slots'
-  READ_TOOLS = [SEARCH_TOOL, 'get_scheduling_resource_availability'].freeze
+  READ_TOOLS = [SEARCH_TOOL, 'search_booking_options', 'get_scheduling_resource_availability'].freeze
   # The reads that name specialists without listing their free times: a specialist found by the catalog is known by name too.
   CATALOG_TOOLS = %w[search_scheduling_resources list_scheduling_resources].freeze
   # The answer of a tool is JSON in a JSON string, in a result hash: this many levels are opened.
-  MAX_DEPTH = 5
+  MAX_DEPTH = 7
   CLOCK = /\A([01]?\d|2[0-3]):([0-5]\d)\z/
 
   def initialize(context)
