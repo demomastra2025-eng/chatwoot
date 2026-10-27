@@ -18,6 +18,19 @@ module Scheduling::ServiceIndex
 
   module_function
 
+  # The similarity below which no service of the catalog is the service of a mention, for one embedding model (config/llm.yml,
+  # service_min_score). A score means something only for the model that made it: the same mentions score far lower with another model
+  # (24% of the real services above the number of Gemini with text-embedding-3-large), and a search with the wrong number would tell
+  # patients that most services do not exist. nil when the model was not calibrated.
+  def min_score(model)
+    value = Llm::Models::CONFIG.dig('models', model.to_s, 'service_min_score')
+    value.nil? ? nil : Float(value)
+  end
+
+  def calibrated?(model)
+    !min_score(model).nil?
+  end
+
   # What a service is embedded as: "name | aliases | category", the parts that are empty left out. The description is not part of it:
   # the experiment gave no gain for it (MRR .904 with it, .906 without).
   def text(service)
@@ -37,40 +50,64 @@ module Scheduling::ServiceIndex
   # service any more.
   def stale_services(account_id, model)
     Scheduling::Service.where(account_id: account_id).find_each.select do |service|
-      service.embedding_model != model || service.embedding_checksum != checksum(service)
+      service.embedding_model != model || service.embedded_at.nil? || service.embedding_checksum != checksum(service)
     end
   end
 
   # Embeds the stale services of one account in batches (one request per batch) and stores each vector with its model and checksum.
-  # Returns how many services got a new vector.
+  # Returns how many services got a new vector. A model without a calibrated threshold (see .min_score) indexes nothing: the search
+  # could not use the vectors.
   def refresh!(account_id)
     embedder = Captain::Llm::EmbeddingService.new(account_id: account_id)
     model = embedder.embedding_model
+    unless calibrated?(model)
+      Rails.logger.warn("[Scheduling::ServiceIndex] account #{account_id}: #{model.inspect} has no service_min_score, services are not indexed")
+      return 0
+    end
+
     stale = stale_services(account_id, model)
     stale.each_slice(BATCH_SIZE) do |slice|
-      vectors = embedder.get_embeddings(slice.map { |service| text(service) }, input_type: Captain::Llm::EmbeddingService::SEARCH_DOCUMENT_INPUT_TYPE)
-      slice.zip(vectors).each { |service, vector| store!(service, vector, model) }
+      texts = slice.map { |service| text(service) }
+      vectors = embedder.get_embeddings(texts, input_type: Captain::Llm::EmbeddingService::SEARCH_DOCUMENT_INPUT_TYPE)
+      slice.zip(texts, vectors).each { |service, text, vector| store!(service, vector, model, text: text) }
     end
     stale.size
   end
 
-  # One UPDATE writes the vector with its model, checksum and time, so that a row is never half indexed. The checksum is the one of the
-  # text that was embedded: if the service changed meanwhile, its next save sees the difference and queues a refresh.
-  def store!(service, vector, model, checksum: self.checksum(service))
-    Scheduling::Service.where(id: service.id).update_all( # rubocop:disable Rails/SkipsModelValidations
-      ['embedding = ?::vector, embedding_model = ?, embedding_checksum = ?, embedded_at = ?',
-       vector_literal(Captain::Llm::EmbeddingService.normalize(vector)), model, checksum, Time.current]
-    )
+  # One UPDATE writes the vector with its model, checksum and time, so that a row is never half indexed. Only while the service still
+  # has the text that was embedded: the row is locked and read again, and a service that was renamed meanwhile keeps its old state (its
+  # save queued a new refresh). Returns whether the vector was stored.
+  def store!(service, vector, model, text: self.text(service))
+    stored = false
+    Scheduling::Service.transaction do
+      current = Scheduling::Service.lock.find_by(id: service.id)
+      if current && self.text(current) == text
+        Scheduling::Service.where(id: service.id).update_all( # rubocop:disable Rails/SkipsModelValidations
+          ['embedding = ?::vector, embedding_model = ?, embedding_checksum = ?, embedded_at = ?',
+           vector_literal(Captain::Llm::EmbeddingService.normalize(vector)), model, Captain::Llm::EmbeddingService.checksum(text), Time.current]
+        )
+        stored = true
+      end
+    end
+    stored
+  end
+
+  # A service whose embedded text changed has no usable vector until the refresh stores a new one: the old vector describes the old text.
+  def invalidate!(service_id)
+    Scheduling::Service.where(id: service_id).update_all(embedded_at: nil) # rubocop:disable Rails/SkipsModelValidations
   end
 
   def vector_literal(vector)
     "[#{vector.map(&:to_f).join(',')}]"
   end
 
-  # How many active services of the account can be found now (their vector is made by the model in force) and how many exist.
-  def readiness(account_id, model)
-    active = Scheduling::Service.where(account_id: account_id, active: true)
-    { active: active.count, searchable: active.where(embedding_model: model).where.not(embedded_at: nil).count }
+  # How many services of the scope can be found now (their vector is made by the model in force and is current) and how many there are.
+  def readiness(scope, model)
+    { total: scope.count, searchable: searchable(scope, model).count }
+  end
+
+  def searchable(scope, model)
+    scope.where(embedding_model: model).where.not(embedded_at: nil)
   end
 
   # The nearest services to each query vector, best first, up to limit per vector: [[Hit, ...], ...] in the order of the vectors. One
@@ -78,8 +115,8 @@ module Scheduling::ServiceIndex
   # scope: the services that may be found (the active ones of an account, or all of them for staff). Only services whose vector was
   # made by `model` take part.
   def nearest(scope, vectors, model:, limit:)
-    searchable = scope.where(embedding_model: model).where.not(embedded_at: nil)
-    vectors.map { |vector| hits_for(searchable, vector, limit) }
+    ready = searchable(scope, model)
+    vectors.map { |vector| hits_for(ready, vector, limit) }
   end
 
   def hits_for(searchable, vector, limit)

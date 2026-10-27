@@ -7,7 +7,7 @@ RSpec.describe Captain::AssistantResponse, type: :model do
 
     it 'embeds semantic queries as search_query input' do
       embedding = Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.1)
-      embedding_service = instance_double(Captain::Llm::EmbeddingService)
+      embedding_service = instance_double(Captain::Llm::EmbeddingService, embedding_model: 'google/gemini-embedding-001')
       expect(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(embedding_service)
       expect(embedding_service).to receive(:get_embedding)
         .with('shipping policy', input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE)
@@ -18,7 +18,24 @@ RSpec.describe Captain::AssistantResponse, type: :model do
       expect(results.to_sql).to include('captain_assistant_responses')
       expect(results.to_sql).to include(%("captain_assistant_responses"."account_id" = #{account.id}))
       expect(results.to_sql).to include(%("captain_assistant_responses"."embedding" IS NOT NULL))
+      expect(results.to_sql).to include(%("captain_assistant_responses"."embedding_model" = 'google/gemini-embedding-001'))
       expect(results.to_sql).to include("captain_assistant_responses.assistant_id = #{assistant.id}")
+    end
+
+    it 'compares the question only with the vectors that the same model made' do
+      query_vector = Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.0).tap { |vector| vector[0] = 1.0 }
+      same = create(:captain_assistant_response, account: account, assistant: assistant, question: 'Same model?', answer: 'Yes')
+      other = create(:captain_assistant_response, account: account, assistant: assistant, question: 'Other model?', answer: 'Yes')
+      unmarked = create(:captain_assistant_response, account: account, assistant: assistant, question: 'No marker?', answer: 'Yes')
+      same.update_columns(embedding: query_vector, embedding_model: 'google/gemini-embedding-001') # rubocop:disable Rails/SkipsModelValidations
+      other.update_columns(embedding: query_vector, embedding_model: 'text-embedding-3-large') # rubocop:disable Rails/SkipsModelValidations
+      unmarked.update_columns(embedding: query_vector, embedding_model: nil) # rubocop:disable Rails/SkipsModelValidations
+      embedding_service = instance_double(Captain::Llm::EmbeddingService, embedding_model: 'google/gemini-embedding-001', get_embedding: query_vector)
+      allow(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(embedding_service)
+
+      results = described_class.search('Same?', account_id: account.id, assistant_id: assistant.id)
+
+      expect(results.map(&:id)).to eq([same.id])
     end
   end
 

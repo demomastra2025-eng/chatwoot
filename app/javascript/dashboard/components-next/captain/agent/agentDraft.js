@@ -4,6 +4,13 @@
 // `config` because the server merges config keys (never resend the whole
 // config).
 
+import {
+  FAQ_LOOKUP_TOOL_ID,
+  SERVICE_SEARCH_TOOL_ID,
+  isSharedReadToolOn,
+  setSharedReadToolOn,
+} from 'dashboard/components-next/captain/pageComponents/assistant/toolAccessDefaults';
+
 export const AGENT_DESCRIPTION_MAX_LENGTH = 400;
 export const AGENT_INSTRUCTION_MAX_LENGTH = 20000;
 
@@ -14,6 +21,9 @@ const DRAFT_FIELDS = Object.freeze([
   'model',
   'thinkingEffort',
   'temperature',
+  'faqLookup',
+  'serviceSearch',
+  'toolAccess',
 ]);
 
 const hasOwn = (object, key) =>
@@ -62,6 +72,15 @@ export const buildAgentDraft = (assistant = {}) => {
     model: toText(config.model),
     thinkingEffort: toText(config.thinking_effort),
     temperature: toTemperature(config.temperature),
+    // The FAQ lookup and the service search are on for every agent until it
+    // switches them off. `toolAccess` is the saved access as it is: the
+    // server replaces the whole `tool_access` key, so a change sends all of it.
+    faqLookup: isSharedReadToolOn(config.tool_access, FAQ_LOOKUP_TOOL_ID),
+    serviceSearch: isSharedReadToolOn(
+      config.tool_access,
+      SERVICE_SEARCH_TOOL_ID
+    ),
+    toolAccess: JSON.parse(JSON.stringify(config.tool_access || {})),
   };
 };
 
@@ -110,13 +129,18 @@ const modelSettingsChanged = (base, draft, metadata) =>
   effectiveTemperature(base?.temperature ?? null, metadata) !==
     effectiveTemperature(draft?.temperature ?? null, metadata);
 
+const readToolsChanged = (base, draft) =>
+  Boolean(base?.faqLookup) !== Boolean(draft?.faqLookup) ||
+  Boolean(base?.serviceSearch) !== Boolean(draft?.serviceSearch);
+
 export const isAgentDraftDirty = (base, draft, modelMetadata = null) => {
   if (!base || !draft) return false;
   return (
     trimmed(base.name) !== trimmed(draft.name) ||
     trimmed(base.routingDescription) !== trimmed(draft.routingDescription) ||
     toText(base.instruction) !== toText(draft.instruction) ||
-    modelSettingsChanged(base, draft, modelMetadata)
+    modelSettingsChanged(base, draft, modelMetadata) ||
+    readToolsChanged(base, draft)
   );
 };
 
@@ -170,6 +194,21 @@ export const buildAgentUpdatePayload = (base, draft, modelMetadata = {}) => {
           ? toTemperature(draft.temperature)
           : null,
     };
+  }
+
+  if (readToolsChanged(base, draft)) {
+    let toolAccess = base.toolAccess || {};
+    toolAccess = setSharedReadToolOn(
+      toolAccess,
+      FAQ_LOOKUP_TOOL_ID,
+      Boolean(draft.faqLookup)
+    );
+    toolAccess = setSharedReadToolOn(
+      toolAccess,
+      SERVICE_SEARCH_TOOL_ID,
+      Boolean(draft.serviceSearch)
+    );
+    payload.config = { ...(payload.config || {}), tool_access: toolAccess };
   }
 
   return payload;

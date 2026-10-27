@@ -63,10 +63,13 @@ class Scheduling::Service < ApplicationRecord
   private
 
   # A save whose embedded text (name, aliases, category) is the one of the stored vector costs nothing: a MedElement catalog sync saves
-  # every service and changes only its last-seen mark. Saves in a burst share one delayed job per account.
+  # every service and changes only its last-seen mark. A save that changed the text takes the old vector out of the search at once (it
+  # describes the old text) and queues the refresh; saves in a burst share one delayed job per account.
   def refresh_embedding_later
-    return if embedding_checksum.present? && embedding_checksum == Scheduling::ServiceIndex.checksum(self)
+    current = Scheduling::ServiceIndex.checksum(self)
+    return if embedding_checksum == current || Scheduling::Service.exists?(id: id, embedding_checksum: current)
 
+    Scheduling::ServiceIndex.invalidate!(id)
     Scheduling::ServiceEmbeddingJob.enqueue(account_id)
   rescue StandardError => e
     Rails.logger.warn("[Scheduling::Service] embedding refresh not queued for service #{id}: #{e.class}: #{e.message}")

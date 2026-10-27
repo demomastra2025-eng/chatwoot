@@ -17,7 +17,7 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
 
   before do
     account.enable_features!('scheduling')
-    stub_embedder(account, 'терапевт' => unit_vector(0), 'пакет' => unit_vector(2), 'узи' => unit_vector(4))
+    stub_embedder(account, 'ЭКГ' => unit_vector(6), 'терапевт' => unit_vector(0), 'пакет' => unit_vector(2), 'узи' => unit_vector(4))
   end
 
   def doctor(name, **attributes)
@@ -105,16 +105,27 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
   end
 
   describe 'the package of services' do
-    it 'gives the services of a package with their ids and the total price' do
-      first = service('Консультация терапевта', base_price: 10_000)
-      second = service('ЭКГ', base_price: 5000)
-      package = service('Пакет: Консультация терапевта + ЭКГ', vector: vector_at(2, 0.9), base_price: 14_000)
+    let!(:first) { service('Консультация терапевта', vector: vector_at(0, 0.95), base_price: 10_000) }
+    let!(:second) { service('ЭКГ', vector: vector_at(6, 0.95), base_price: 5000) }
+    let!(:package) { service('Пакет: Консультация терапевта + ЭКГ', vector: vector_at(2, 0.9), base_price: 14_000) }
 
+    it 'gives the services of a package with their ids and the total price, found by the same vector search in one more request' do
       entry = first_entries(agent_tool.execute(queries: ['пакет'])).find { |item| item['id'] == package.id }
 
       expect(entry['component_services']).to contain_exactly({ 'id' => first.id, 'name' => 'Консультация терапевта', 'price' => 10_000 },
                                                              { 'id' => second.id, 'name' => 'ЭКГ', 'price' => 5000 })
       expect(entry['components_total_price']).to eq(15_000)
+    end
+
+    it 'adds no request when no package is among the answers, and leaves the entry plain when a part has no close service' do
+      embedder = stub_embedder(account, 'ЭКГ' => unit_vector(6), 'терапевт' => unit_vector(0), 'узи' => unit_vector(4))
+      agent_tool.execute(queries: ['терапевт'])
+      expect(embedder).to have_received(:get_embeddings).once
+
+      index_service(second, vector_at(6, 0.3))
+      stub_embedder(account, 'ЭКГ' => unit_vector(6), 'терапевт' => unit_vector(0), 'пакет' => unit_vector(2))
+      entry = first_entries(agent_tool.execute(queries: ['пакет'])).find { |item| item['id'] == package.id }
+      expect(entry).not_to have_key('component_services')
     end
   end
 
@@ -123,13 +134,15 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
       Array.new(23) { |index| service(format('УЗИ вариант %<number>02d', number: index), vector: vector_at(4, 0.95 - (index * 0.001))) }
     end
 
-    it 'is 5 per mention by default and at most 10 for the patient agent, whatever limit it asks for' do
-      expect(first_entries(agent_tool.execute(queries: ['узи'])).size).to eq(5)
+    it 'is 3 per mention by default and at most 10 for the patient agent, whatever limit it asks for' do
+      expect(first_entries(agent_tool.execute(queries: ['узи'])).size).to eq(3)
       expect(first_entries(agent_tool.execute(queries: ['узи'], limit: 50)).size).to eq(10)
     end
 
-    it 'is not limited to 10 for staff and Copilot' do
-      expect(JSON.parse(staff_tool.execute(queries: ['узи'], limit: 50)).dig('results', 0, 'services').size).to eq(23)
+    it 'is not limited to 10 for staff and Copilot, only by the cap of one answer' do
+      expect(JSON.parse(staff_tool.execute(queries: ['узи']))['results'][0]['services'].size).to eq(5)
+      expect(JSON.parse(staff_tool.execute(queries: ['узи'], limit: 50)).dig('results', 0, 'services').size)
+        .to eq(described_class::ENTRY_CAP)
     end
 
     it 'says nothing about paging: there is no next page of a search, the caller refines the mention instead' do
@@ -190,7 +203,7 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
       agent_size = agent_tool.execute(queries: ['терапевт']).bytesize
       RSpec.configuration.reporter.message("search_scheduling_services, 50 matches x 4 specialists: #{admin_size} bytes -> #{agent_size} bytes")
 
-      expect(admin_size).to be > 50_000
+      expect(admin_size).to be > 30_000
       expect(agent_size).to be < 3000
       expect(agent_size).to be < admin_size / 20
     end

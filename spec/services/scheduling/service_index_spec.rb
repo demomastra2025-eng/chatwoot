@@ -79,6 +79,15 @@ RSpec.describe Scheduling::ServiceIndex do
       expect(other.reload.embedded_at).to be_present
     end
 
+    it 'indexes nothing for a model without a calibrated threshold: the search could not use the vectors' do
+      other = instance_double(Captain::Llm::EmbeddingService, embedding_model: 'openai/text-embedding-3-large')
+      allow(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(other)
+      service
+
+      expect(described_class.refresh!(account.id)).to eq(0)
+      expect(service.reload.embedded_at).to be_nil
+    end
+
     it 'skips the services whose checksum and model are current: a second run asks the model nothing' do
       service
       described_class.refresh!(account.id)
@@ -120,14 +129,58 @@ RSpec.describe Scheduling::ServiceIndex do
   end
 
   describe '.readiness' do
-    it 'counts the active services and those whose vector was made by the model in force' do
+    it 'counts the services of the scope and those whose vector was made by the model in force' do
       ready = create(:scheduling_service, account: account)
       create(:scheduling_service, account: account)
       create(:scheduling_service, account: account, active: false)
       index_service(ready, unit_vector(0))
+      scope = account.scheduling_services.active
 
-      expect(described_class.readiness(account.id, ServiceEmbeddingHelpers::FAKE_MODEL)).to eq(active: 2, searchable: 1)
-      expect(described_class.readiness(account.id, 'another/model')).to eq(active: 2, searchable: 0)
+      expect(described_class.readiness(scope, ServiceEmbeddingHelpers::FAKE_MODEL)).to eq(total: 2, searchable: 1)
+      expect(described_class.readiness(scope, 'another/model')).to eq(total: 2, searchable: 0)
+      expect(described_class.readiness(account.scheduling_services, ServiceEmbeddingHelpers::FAKE_MODEL)).to eq(total: 3, searchable: 1)
+    end
+
+    it 'does not count a service whose vector was taken out of the search' do
+      ready = create(:scheduling_service, account: account)
+      index_service(ready, unit_vector(0))
+      described_class.invalidate!(ready.id)
+
+      expect(described_class.readiness(account.scheduling_services, ServiceEmbeddingHelpers::FAKE_MODEL)).to eq(total: 1, searchable: 0)
+    end
+  end
+
+  describe '.min_score and .calibrated?' do
+    it 'is the threshold of config/llm.yml for the model, and nothing for a model that was not calibrated' do
+      expect(described_class.min_score('google/gemini-embedding-001')).to eq(0.66)
+      expect(described_class).to be_calibrated('google/gemini-embedding-001')
+      expect(described_class.min_score('openai/text-embedding-3-large')).to be_nil
+      expect(described_class).not_to be_calibrated('openai/text-embedding-3-large')
+      expect(described_class.min_score(nil)).to be_nil
+    end
+  end
+
+  describe '.store!' do
+    it 'stores nothing, and says so, when the service was renamed after its text was embedded' do
+      stale_text = described_class.text(service)
+      service.update_columns(name: 'Совсем другое название') # rubocop:disable Rails/SkipsModelValidations
+
+      expect(described_class.store!(service, unit_vector(0), ServiceEmbeddingHelpers::FAKE_MODEL, text: stale_text)).to be(false)
+      expect(service.reload.embedded_at).to be_nil
+
+      expect(described_class.store!(service, unit_vector(0), ServiceEmbeddingHelpers::FAKE_MODEL)).to be(true)
+      expect(service.reload.embedded_at).to be_present
+    end
+  end
+
+  describe '.invalidate!' do
+    it 'takes the vector out of the search and makes the service stale until it is embedded again' do
+      index_service(service, unit_vector(0))
+
+      described_class.invalidate!(service.id)
+
+      expect(service.reload.embedded_at).to be_nil
+      expect(described_class.stale_services(account.id, ServiceEmbeddingHelpers::FAKE_MODEL).map(&:id)).to eq([service.id])
     end
   end
 

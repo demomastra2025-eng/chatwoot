@@ -14,8 +14,9 @@
 # * The checklist never saves an empty list: a list with nothing ticked is refused («Отметьте хотя бы одну модель»), and the
 #   recommended models are saved as a list of those models when a list was saved before (a blank value would let accounts
 #   choose any model, while the page says the list limits them). A blank TEXT still clears the list, as it always did.
-# * The model of the knowledge base search is changed only on an explicit confirmation (`confirmed_embedding`): a new model
-#   makes the search worse until the bases are indexed again.
+# * The model of the knowledge base search is not changed here at all: vectors of two models cannot be compared, so the model changes
+#   only together with the full re-embedding (rake onelink:embeddings:apply), which stores the new vectors and switches the setting in
+#   one transaction. A value that is the model in force is accepted and changes nothing.
 # * A secret that is left empty keeps the stored value.
 class SuperAdmin::AiModelsForm
   # old/new: the stored value and the value to store (nil for a secret: its value is never shown anywhere)
@@ -32,12 +33,11 @@ class SuperAdmin::AiModelsForm
   attr_reader :errors, :changes, :input
 
   # submitted: name => what was sent (a String, or an Array for the short list); stored: name => the stored value
-  def initialize(submitted:, stored:, keys:, masked_keys:, confirmed_embedding: false)
+  def initialize(submitted:, stored:, keys:, masked_keys:)
     @keys = keys.to_a
     @masked = masked_keys.to_a
     @stored = stored.to_h
     @submitted = submitted.to_h.slice(*@keys)
-    @confirmed_embedding = confirmed_embedding
     @errors = {}
     @changes = []
     @input = {}
@@ -106,22 +106,23 @@ class SuperAdmin::AiModelsForm
   # --- a model of one function ---------------------------------------------------------------------------------------
 
   def check_model(key, value)
+    return check_embedding_model(value) if key == EMBEDDING_MODEL
+
     wanted = Llm::Models.canonical_model_name(value.to_s.strip)
     return if wanted == Llm::Models.canonical_model_name(@stored[key].to_s.strip)
 
     result = Llm::InstallationModelConfig.normalize(key, value)
     return add_error(key, result.error) unless result.valid?
-    return add_error(key, I18n.t("#{SCOPE}.embedding_unconfirmed")) if key == EMBEDDING_MODEL && !embedding_confirmed?(result.value)
 
     change(key, result.value)
   end
 
-  # The search of the knowledge base follows the model that is in force: a change of it needs the confirmation
-  def embedding_confirmed?(new_value)
-    return true if @confirmed_embedding
-
+  # The model of the knowledge base search is read-only on this page (see the comment of the class).
+  def check_embedding_model(value)
     builtin = Llm::Models.configured_default_model_for('help_center_search')
-    (@stored[EMBEDDING_MODEL].presence || builtin) == (new_value.presence || builtin)
+    return if (@stored[EMBEDDING_MODEL].presence || builtin) == (value.to_s.strip.presence || builtin)
+
+    add_error(EMBEDDING_MODEL, I18n.t("#{SCOPE}.embedding_readonly"))
   end
 
   # --- the short list and the default model, together -----------------------------------------------------------------

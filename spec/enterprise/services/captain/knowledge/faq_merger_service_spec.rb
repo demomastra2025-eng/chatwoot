@@ -128,4 +128,39 @@ RSpec.describe Captain::Knowledge::FaqMergerService do
       expect(Captain::AssistantResponse.exists?(faq2.id)).to be(false)
     end
   end
+
+  describe 'the semantic neighbour' do
+    let(:account) { create(:account) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+    let(:merger) { described_class.new(account) }
+
+    def faq(question, vector, model_name: 'google/gemini-embedding-001')
+      create(:captain_assistant_response, account: account, assistant: assistant, question: question, answer: 'Ответ', status: :approved)
+        .tap { |record| record.update_columns(embedding: vector, embedding_model: model_name) } # rubocop:disable Rails/SkipsModelValidations
+    end
+
+    it 'is a FAQ at cosine similarity 0.95 or more: different FAQs written from one template are 0.88-0.92 close' do
+      record = faq('Где принимает врач А?', unit_vector(0))
+      template_twin = faq('Где принимает врач Б?', vector_at(0, 0.92))
+      paraphrase = faq('Где ведёт приём врач А?', vector_at(0, 0.97))
+
+      ids = merger.send(:semantic_duplicate_ids, record, account.captain_assistant_responses.where.not(id: record.id))
+
+      expect(ids).to eq(Set[paraphrase.id])
+      expect(ids).not_to include(template_twin.id)
+      expect(described_class::EMBEDDING_DUPLICATE_DISTANCE).to eq(0.05)
+    end
+
+    it 'is searched only among the FAQs whose vector the model of the record made, and not at all for a record without a model' do
+      record = faq('Где принимает врач А?', unit_vector(0))
+      same_model = faq('Где ведёт приём врач А?', vector_at(0, 0.97))
+      faq('Где врач А принимает?', vector_at(0, 0.99), model_name: 'text-embedding-3-large')
+      scope = account.captain_assistant_responses.where.not(id: record.id)
+
+      expect(merger.send(:semantic_duplicate_ids, record, scope)).to eq(Set[same_model.id])
+
+      record.update_columns(embedding_model: nil) # rubocop:disable Rails/SkipsModelValidations
+      expect(merger.send(:semantic_duplicate_ids, record.reload, scope)).to eq(Set.new)
+    end
+  end
 end

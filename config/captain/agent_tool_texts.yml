@@ -91,10 +91,10 @@ tools:
     hidden_params: []
 
   search_scheduling_services:
-    description: "Find clinic services and their prices. Put every service of the request in queries, one string per mention, in ONE call. Each mention gets its best matches with a score, best first. not_in_catalog means no service is close: say so, do not offer another one. Use the exact catalog name in replies and bookings; ask the patient only when several results fit equally. To book, find the specialist first with search_scheduling_resources."
+    description: "Find clinic services and prices. Send every service of the request in queries (one string per mention) in ONE call. Results are candidates by meaning, best first, each with a score: use one only if its name is the service asked for (with or without, body part, first or repeat visit must match). When no candidate fits, or the status is not_in_catalog or catalog_updating, do not name a price or offer another service: say staff will confirm. Mentions in queries_not_searched were skipped: ask for them again. To book, find the specialist first with search_scheduling_resources."
     params:
       queries: "Service mentions, one string each (a name, an abbreviation or the patient's words). All services of the request in one list."
-      limit: "Max services per mention, up to 10."
+      limit: "Max services per mention, up to 10 (default 3)."
     hidden_params:
       - include_inactive
       - offset

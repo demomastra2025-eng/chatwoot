@@ -10,6 +10,8 @@ module Captain::ToolAccess
   # service catalog with prices. Any agent can then answer a question itself, and a transfer is only for an action that its own
   # tools cannot do. The writing tools and the patient-data tools stay as the clinic configured them.
   SHARED_READ_TOOL_IDS = %w[faq_lookup search_scheduling_services].freeze
+  # The key of the agent scope that lists the tools of the shared read layer one agent has switched off (config.tool_access.agent).
+  DISABLED_TOOL_IDS_KEY = 'disabled_tool_ids'.freeze
   PER_ASSISTANT_WEB_TOOL_IDS = %w[web_search web_scrape_url].freeze
   # These tools follow a workspace setting, never an @-mention in the instruction. The notes and the staff notification
   # (add_private_note, add_contact_note, send_notification) are not here: an instruction that mentions one binds it.
@@ -26,6 +28,17 @@ module Captain::ToolAccess
     access = config.is_a?(Hash) ? config['tool_access'] : nil
     scope = access.is_a?(Hash) ? access[scope_name.to_s] : nil
     scope.is_a?(Hash) ? scope : nil
+  end
+
+  # The tools of the shared read layer (SHARED_READ_TOOL_IDS) that one agent has switched off. Both are on for every customer-facing
+  # agent until its settings say otherwise; a switched-off tool is not offered to the agent even when its instruction mentions it.
+  def switched_off_tool_ids(assistant)
+    raw = raw_scope(assistant.config.to_h.deep_stringify_keys, SCOPE_AGENT) || {}
+    Array(raw[DISABLED_TOOL_IDS_KEY]).map(&:to_s) & SHARED_READ_TOOL_IDS
+  end
+
+  def tool_switched_off?(assistant, tool_id)
+    switched_off_tool_ids(assistant).include?(tool_id.to_s)
   end
 
   def definitions_for(assistant)
@@ -83,15 +96,17 @@ module Captain::ToolAccess
     selected -= %w[web_search web_scrape_url resolve_conversation]
     selected |= %w[handoff] & available_ids
     selected |= shared_read_tool_ids_for(assistant, available_ids)
+    selected -= switched_off_tool_ids(assistant)
     selected << 'resolve_conversation' if settings.section('handoff')['auto_completion_enabled'] && available_ids.include?('resolve_conversation')
     selected << 'web_search' if understanding['web_search'] && available_ids.include?('web_search')
     selected << 'web_scrape_url' if understanding['web_page_reading'] && available_ids.include?('web_scrape_url')
     selected
   end
 
-  # The ids of the shared read layer (SHARED_READ_TOOL_IDS) that this agent gets: the tool is in the catalog of the agent, the FAQ
-  # lookup only where the platform has the FAQ on for the agent, and every tool only where its own requirements hold (the service
-  # catalog needs the scheduling feature of the account, so a clinic without a calendar has no catalog tool that would always fail).
+  # The ids of the shared read layer (SHARED_READ_TOOL_IDS) that this agent gets: the tool is in the catalog of the agent and the agent
+  # has not switched it off, the FAQ lookup only where the platform has the FAQ on for the agent, and every tool only where its own
+  # requirements hold (the service catalog needs the scheduling feature of the account, so a clinic without a calendar has no catalog
+  # tool that would always fail).
   def shared_read_tool_ids_for(assistant, available_ids)
     SHARED_READ_TOOL_IDS.select do |tool_id|
       available_ids.include?(tool_id) && shared_read_tool_open?(assistant, tool_id)
@@ -99,6 +114,7 @@ module Captain::ToolAccess
   end
 
   def shared_read_tool_open?(assistant, tool_id)
+    return false if tool_switched_off?(assistant, tool_id)
     return false if tool_id == 'faq_lookup' && !assistant.faq_enabled?
 
     definition = Captain::ToolRegistry.definition_for(tool_id)

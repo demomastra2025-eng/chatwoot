@@ -7,15 +7,11 @@ RSpec.describe Captain::Llm::EmbeddingReindexService do
   let(:legacy) { 'text-embedding-3-large' }
   let(:account) { create(:account) }
   let(:assistant) { create(:captain_assistant, account: account) }
-  let(:backup_dir) { Rails.root.join('tmp', "embedding-backup-spec-#{SecureRandom.hex(4)}").to_s }
+  let(:backup_dir) { Rails.root.join("tmp/embedding-backup-spec-#{SecureRandom.hex(4)}").to_s }
   let(:out) { StringIO.new }
   let(:embedder) { instance_double(Captain::Llm::EmbeddingService) }
   let(:calls) { [] }
   let!(:faq) { create(:captain_assistant_response, account: account, assistant: assistant, question: 'Где вы находитесь?', answer: 'Абая 1') }
-  let!(:cache_entry) do
-    Captain::KnowledgeAnswerCacheEntry.create!(account: account, assistant: assistant, query: 'где вы находитесь', query_sha256: 'abc',
-                                               source_fingerprint: 'fp', payload: { 'a' => 1 }, embedding: old_vector)
-  end
   let!(:chunk) do
     document = create(:captain_document, account: account, assistant: assistant)
     create(:captain_document_chunk, account: account, assistant: assistant, document: document, content: 'Текст фрагмента')
@@ -32,7 +28,7 @@ RSpec.describe Captain::Llm::EmbeddingReindexService do
     upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'test-key')
     upsert_installation_config('CAPTAIN_EMBEDDING_MODEL', legacy)
     [faq, chunk].each { |record| record.update_columns(embedding: old_vector, embedding_model: legacy) } # rubocop:disable Rails/SkipsModelValidations
-    [cache_entry, article_embedding].each { |record| record.update_columns(embedding_model: legacy) } # rubocop:disable Rails/SkipsModelValidations
+    article_embedding.update_columns(embedding_model: legacy) # rubocop:disable Rails/SkipsModelValidations
     allow(embedder).to receive(:get_embeddings) do |texts, **options|
       calls << { texts: texts, **options }
       texts.map { new_vector }
@@ -65,9 +61,9 @@ RSpec.describe Captain::Llm::EmbeddingReindexService do
       plan = service_for.preview
 
       expect(plan).to include(model: target, current_model: legacy, switches_model: true, key_configured: true)
-      expect(plan[:sources].transform_values { |item| item[:rows] }).to eq('faq' => 1, 'cache' => 1, 'articles' => 1, 'chunks' => 1, 'services' => 1)
+      expect(plan[:sources].transform_values { |item| item[:rows] }).to eq('faq' => 1, 'articles' => 1, 'chunks' => 1, 'services' => 1)
       expect(plan[:sources]['faq']).to include(chars: 'Где вы находитесь?: Абая 1'.length, requests: 1, with_vector_now: 1)
-      expect(plan).to include(rows: 5, requests: 5)
+      expect(plan).to include(rows: 4, requests: 4, calibrated: true, max_tokens: described_class::MAX_ESTIMATED_TOKENS)
       expect(plan[:estimated_tokens]).to eq((plan[:chars] * described_class::TOKENS_PER_CHAR).round)
       expect(Captain::Llm::EmbeddingService).not_to have_received(:new)
       expect(InstallationConfig.find_by(name: 'CAPTAIN_EMBEDDING_MODEL').value).to eq(legacy)
@@ -80,15 +76,42 @@ RSpec.describe Captain::Llm::EmbeddingReindexService do
 
       expect(service_for.preview[:key_configured]).to be(false)
     end
+
+    it 'says that a model has no calibrated threshold for the service search' do
+      expect(described_class.new(model: legacy).preview[:calibrated]).to be(false)
+    end
   end
 
   describe '#status' do
     it 'shows which model made the vectors of each table and the vectors of a wrong size' do
       status = service_for.status
 
-      expect(status['faq'][:vectors_by_model]).to eq(legacy => 1)
-      expect(status['services']).to include(rows: 1, vectors_by_model: {}, wrong_size: 0)
+      expect(status['faq']).to include(vectors_by_model: { legacy => 1 }, stale: 0)
+      expect(status['services']).to include(rows: 1, vectors_by_model: {}, wrong_size: 0, stale: 1)
       expect(status.values.sum { |item| item[:wrong_size] }).to eq(0)
+    end
+
+    it 'counts the rows without a current vector of the model in force, and is consistent only when there are none' do
+      expect(service_for.consistent?).to be(false)
+
+      Scheduling::ServiceIndex.store!(service, new_vector, legacy)
+      expect(service_for.status['services'][:stale]).to eq(0)
+      expect(service_for.consistent?).to be(true)
+
+      faq.update_columns(embedding_model: target, embedding_checksum: 'old') # rubocop:disable Rails/SkipsModelValidations
+      expect(service_for.status['faq'][:stale]).to eq(1)
+      expect(service_for.consistent?).to be(false)
+    end
+
+    it 'counts a FAQ whose vector was made from another text, and a service taken out of the search' do
+      faq.update_columns(embedding_checksum: Captain::Llm::EmbeddingService.checksum('Другой текст')) # rubocop:disable Rails/SkipsModelValidations
+      Scheduling::ServiceIndex.store!(service, new_vector, legacy)
+      Scheduling::ServiceIndex.invalidate!(service.id)
+
+      status = service_for.status
+
+      expect(status['faq'][:stale]).to eq(1)
+      expect(status['services'][:stale]).to eq(1)
     end
 
     it 'counts a vector without a model name as unknown' do
@@ -106,7 +129,6 @@ RSpec.describe Captain::Llm::EmbeddingReindexService do
 
       expect(faq.reload).to have_attributes(embedding_model: target,
                                             embedding_checksum: Captain::Llm::EmbeddingService.checksum('Где вы находитесь?: Абая 1'))
-      expect(cache_entry.reload.embedding_model).to eq(target)
       expect(chunk.reload.embedding_model).to eq(target)
       expect(article_embedding.reload.embedding_model).to eq(target)
       expect(service.reload).to have_attributes(embedding_model: target, embedding_checksum: Scheduling::ServiceIndex.checksum(service))
@@ -114,23 +136,21 @@ RSpec.describe Captain::Llm::EmbeddingReindexService do
       expect(vector_text('captain_assistant_responses', faq.id)).not_to eq(old_faq_vector)
       expect(InstallationConfig.find_by(name: 'CAPTAIN_EMBEDDING_MODEL').value).to eq(target)
       expect(manifest['status'].values.map { |item| item[:vectors_by_model] }).to all(eq(target => 1))
+      expect(manifest['status'].values.sum { |item| item[:stale] }).to eq(0)
 
       manifest_file = JSON.parse(File.read(File.join(backup_dir, 'manifest.json')))
       expect(manifest_file['previous_setting']).to eq('exists' => true, 'value' => legacy)
       expect(manifest_file['files'].transform_values { |item| item['rows'] })
-        .to eq('faq' => 1, 'cache' => 1, 'articles' => 1, 'chunks' => 1, 'services' => 1)
+        .to eq('faq' => 1, 'articles' => 1, 'chunks' => 1, 'services' => 1)
       expect(Zlib::GzipReader.open(File.join(backup_dir, 'faq.jsonl.gz'), &:read)).to include(old_faq_vector)
       expect(File.stat(File.join(backup_dir, 'faq.jsonl.gz')).mode & 0o777).to eq(0o600)
       expect(File.stat(backup_dir).mode & 0o777).to eq(0o700)
     end
 
-    it 'embeds the cache queries as queries and everything else as documents, in batches per account' do
+    it 'embeds everything as documents, in batches per account' do
       service_for.apply!
 
-      by_type = calls.group_by { |call| call[:input_type] }
-      expect(by_type.keys).to contain_exactly(Captain::Llm::EmbeddingService::SEARCH_DOCUMENT_INPUT_TYPE,
-                                              Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE)
-      expect(by_type[Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE].flat_map { |call| call[:texts] }).to eq(['где вы находитесь'])
+      expect(calls.pluck(:input_type).uniq).to eq([Captain::Llm::EmbeddingService::SEARCH_DOCUMENT_INPUT_TYPE])
       expect(calls.pluck(:model).uniq).to eq([target])
       expect(calls.flat_map { |call| call[:texts] })
         .to include('Где вы находитесь?: Абая 1', 'Консультация терапевта | Консультации', 'Как записаться')
@@ -163,6 +183,81 @@ RSpec.describe Captain::Llm::EmbeddingReindexService do
       expect { described_class.new(model: target).apply! }.to raise_error(described_class::Error, /BACKUP_DIR/)
     end
 
+    it 'refuses a model without a calibrated threshold for the service search, before any call and any backup' do
+      expect { described_class.new(model: legacy, backup_dir: backup_dir, out: out).apply! }
+        .to raise_error(described_class::Error, /text-embedding-3-large has no service_min_score/)
+
+      expect(Captain::Llm::EmbeddingService).not_to have_received(:new)
+      expect(File.exist?(backup_dir)).to be(false)
+    end
+
+    it 'refuses a plan above the cost cap, before any call and any backup' do
+      expect { service_for(max_tokens: 1).apply! }.to raise_error(described_class::Error, /above the cap of 1/)
+
+      expect(Captain::Llm::EmbeddingService).not_to have_received(:new)
+      expect(File.exist?(backup_dir)).to be(false)
+    end
+
+    describe 'what changes while the vectors are being made' do
+      it 'embeds again a FAQ that was added meanwhile, so that no row is left without a current vector' do
+        added = nil
+        allow(embedder).to receive(:get_embeddings) do |texts, **|
+          added ||= create(:captain_assistant_response, account: account, assistant: assistant, question: 'Новый вопрос', answer: 'Новый ответ')
+          texts.map { new_vector }
+        end
+
+        manifest = service_for.apply!
+
+        expect(added.reload).to have_attributes(embedding_model: target,
+                                                embedding_checksum: Captain::Llm::EmbeddingService.checksum('Новый вопрос: Новый ответ'))
+        expect(out.string).to include('Embedding again, changed meanwhile: faq 1')
+        expect(manifest['status'].values.sum { |item| item[:stale] }).to eq(0)
+        expect(service_for.consistent?).to be(true)
+      end
+
+      it 'does not store the vector of the old text of a FAQ that was edited meanwhile, and stores the one of the new text' do
+        allow(embedder).to receive(:get_embeddings) do |texts, **|
+          faq.update_columns(answer: 'Абая 2') if texts.include?('Где вы находитесь?: Абая 1') # rubocop:disable Rails/SkipsModelValidations
+          texts.map { new_vector }
+        end
+
+        service_for.apply!
+
+        expect(faq.reload).to have_attributes(embedding_model: target,
+                                              embedding_checksum: Captain::Llm::EmbeddingService.checksum('Где вы находитесь?: Абая 2'))
+        expect(out.string).to include('changed meanwhile: faq 1')
+      end
+
+      it 'fails, naming the rows, when a row keeps changing and has no current vector after the last pass' do
+        edits = 0
+        allow(embedder).to receive(:get_embeddings) do |texts, **|
+          if texts.any? { |text| text.start_with?('Где вы находитесь?') }
+            edits += 1
+            faq.update_columns(answer: "Абая #{edits + 1}") # rubocop:disable Rails/SkipsModelValidations
+          end
+          texts.map { new_vector }
+        end
+
+        expect { service_for.apply! }.to raise_error(described_class::Error, /1 rows still have no current vector of #{Regexp.escape(target)}/)
+
+        expect(edits).to eq(1 + described_class::CONVERGE_PASSES)
+        expect(InstallationConfig.find_by(name: 'CAPTAIN_EMBEDDING_MODEL').value).to eq(target)
+        expect(service_for.consistent?).to be(false)
+      end
+
+      it 'locks the rows before it stores, so that a save waits for the end of the store' do
+        locked = {}
+        allow(Captain::Llm::EmbeddingSources).to receive(:lock_rows!).and_wrap_original do |original, key, ids|
+          locked[key] = ids
+          original.call(key, ids)
+        end
+
+        service_for.apply!
+
+        expect(locked).to include('faq' => [faq.id], 'services' => [service.id])
+      end
+    end
+
     it 'rolls the whole store back, setting included, when one write fails' do
       allow(InstallationConfig).to receive(:find_or_initialize_by).and_raise(ActiveRecord::StatementInvalid, 'boom')
 
@@ -173,9 +268,45 @@ RSpec.describe Captain::Llm::EmbeddingReindexService do
     end
   end
 
+  describe '#refresh!' do
+    before do
+      service_for.apply!
+      calls.clear
+    end
+
+    it 'embeds again only the rows without a current vector of the model in force: no backup, no switch' do
+      added = create(:captain_assistant_response, account: account, assistant: assistant, question: 'Новый вопрос', answer: 'Ответ')
+      faq.update_columns(embedding_model: nil) # rubocop:disable Rails/SkipsModelValidations
+      backups = Dir.glob(Rails.root.join('tmp/embedding-backup-spec-*').to_s).size
+
+      found = described_class.new(out: out).refresh!
+
+      expect(found).to eq(2)
+      expect(calls.flat_map { |call| call[:texts] }).to contain_exactly('Где вы находитесь?: Абая 1', 'Новый вопрос: Ответ')
+      expect(faq.reload.embedding_model).to eq(target)
+      expect(added.reload.embedding_model).to eq(target)
+      expect(service_for.consistent?).to be(true)
+      expect(Dir.glob(Rails.root.join('tmp/embedding-backup-spec-*').to_s).size).to eq(backups)
+    end
+
+    it 'calls no model when every row is current' do
+      expect(described_class.new(out: out).refresh!).to eq(0)
+      expect(calls).to be_empty
+    end
+
+    it 'refuses a model in force that has no calibrated threshold, and stops without a key' do
+      upsert_installation_config('CAPTAIN_EMBEDDING_MODEL', legacy)
+      expect { described_class.new(out: out).refresh! }.to raise_error(described_class::Error, /no service_min_score/)
+
+      upsert_installation_config('CAPTAIN_EMBEDDING_MODEL', target)
+      InstallationConfig.find_by(name: 'CAPTAIN_OPENROUTER_API_KEY').destroy!
+      expect { described_class.new(out: out).refresh! }.to raise_error(described_class::Error, /not configured/)
+    end
+  end
+
   describe '#restore!' do
     it 'puts back the old vectors, models and setting exactly, and clears the vectors of rows made after the backup' do
-      old = { faq: vector_text('captain_assistant_responses', faq.id), cache: vector_text('captain_knowledge_answer_cache_entries', cache_entry.id) }
+      old = { faq: vector_text('captain_assistant_responses', faq.id), article: vector_text('article_embeddings', article_embedding.id) }
       service_for.apply!
       newer = create(:scheduling_service, account: account, name: 'Новая услуга')
       Scheduling::ServiceIndex.store!(newer, new_vector, target)
@@ -183,7 +314,7 @@ RSpec.describe Captain::Llm::EmbeddingReindexService do
       service_for.restore!
 
       expect(vector_text('captain_assistant_responses', faq.id)).to eq(old[:faq])
-      expect(vector_text('captain_knowledge_answer_cache_entries', cache_entry.id)).to eq(old[:cache])
+      expect(vector_text('article_embeddings', article_embedding.id)).to eq(old[:article])
       expect(faq.reload).to have_attributes(embedding_model: legacy, embedding_checksum: nil)
       expect(service.reload).to have_attributes(embedding_model: nil, embedding_checksum: nil, embedded_at: nil)
       expect(newer.reload).to have_attributes(embedding_model: nil, embedded_at: nil)

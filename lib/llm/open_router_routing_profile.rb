@@ -59,7 +59,7 @@ class Llm::OpenRouterRoutingProfile
     'image_recognition' => %w[openai/gpt-5.4-mini openai/gpt-5.4],
     'audio_transcription' => %w[openai/gpt-4o-mini-transcribe openai/gpt-audio-mini],
     'moderation' => %w[openai/gpt-oss-safeguard-20b],
-    # Vectors of two models cannot be compared: an embedding request never falls back to another model.
+    # Vectors of two models cannot be compared: the embedding client sends one model and never a list of fallbacks.
     'embedding' => [],
     'knowledge_rerank' => []
   }.freeze
@@ -204,7 +204,9 @@ class Llm::OpenRouterRoutingProfile
                               sort: { by: 'latency', partition: 'model' },
                               preferred_max_latency: { p90: 3 }
                             }
-                          when 'moderation', 'outcome_classification', 'language_detection'
+                          when 'moderation', 'outcome_classification', 'language_detection', 'embedding'
+                            # For an embedding: a provider that ignores `dimensions` answers with 3072 numbers, which is refused as a
+                            # failed search; OpenRouter then routes only to providers that honour every parameter of the request.
                             { require_parameters: true }
                           when 'copilot'
                             { require_parameters: true, sort: { by: 'latency', partition: 'none' } }

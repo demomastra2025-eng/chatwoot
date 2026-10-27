@@ -141,6 +141,19 @@ RSpec.describe Captain::Llm::EmbeddingService do
         .to raise_error(described_class::EmbeddingsError, %r{google/gemini-embedding-001 returned 3072 dimensions, expected 1536})
     end
 
+    it 'refuses the answer of another model than the one asked for, and accepts the name OpenRouter gives without the vendor' do
+      other = instance_double(Llm::OpenRouterEmbeddingClient::Result, vectors: [openrouter_vector], model: 'text-embedding-3-small')
+      allow(Llm::Runtime).to receive(:embed).and_return(other)
+
+      expect { service.get_embedding('hello', model: 'google/gemini-embedding-001') }
+        .to raise_error(described_class::EmbeddingsError, %r{google/gemini-embedding-001 was asked for, text-embedding-3-small answered})
+
+      served = instance_double(Llm::OpenRouterEmbeddingClient::Result, vectors: [openrouter_vector], model: 'gemini-embedding-001')
+      allow(Llm::Runtime).to receive(:embed).and_return(served)
+      expect(service.get_embedding('hello', model: 'google/gemini-embedding-001')).to eq(openrouter_vector)
+      expect(service.get_embeddings(['hello'], model: 'google/gemini-embedding-001')).to eq([openrouter_vector])
+    end
+
     it 'returns an empty array when content is blank' do
       expect(Llm::ApiClient).not_to receive(:embed)
       expect(Llm::OpenRouterEmbeddingClient).not_to receive(:embed)

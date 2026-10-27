@@ -61,6 +61,26 @@ RSpec.describe Scheduling::Service, '#refresh_embedding_later' do
     expect { service.update!(category: 'Диагностика') }.to have_enqueued_job(Scheduling::ServiceEmbeddingJob)
   end
 
+  it 'takes the old vector out of the search at once when the text changes, and keeps it when the text stays' do
+    service = indexed_service(name: 'УЗИ почек')
+
+    service.update!(base_price: 5)
+    expect(service.reload.embedded_at).to be_present
+
+    service.update!(name: 'УЗИ почек и надпочечников')
+    expect(service.reload.embedded_at).to be_nil
+  end
+
+  it 'compares with the checksum in the database, not with a copy of the service that was read before the vector was stored' do
+    service = create(:scheduling_service, account: account, name: 'УЗИ почек')
+    copy = described_class.find(service.id)
+    index_service(service, unit_vector(0))
+    Redis::Alfred.delete(queued_key)
+
+    expect { copy.update!(base_price: 7) }.not_to have_enqueued_job(Scheduling::ServiceEmbeddingJob)
+    expect(service.reload.embedded_at).to be_present
+  end
+
   it 'does not break the save when the queue is not reachable' do
     allow(Scheduling::ServiceEmbeddingJob).to receive(:enqueue).and_raise(RuntimeError, 'redis is down')
 

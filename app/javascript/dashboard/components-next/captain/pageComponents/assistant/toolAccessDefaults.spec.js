@@ -6,9 +6,12 @@ import {
   AGENT_TOOL_SCOPE,
   FAQ_LOOKUP_TOOL_ID,
   HANDOFF_TOOL_ID,
+  SERVICE_SEARCH_TOOL_ID,
   buildDefaultAgentToolAccess,
+  isSharedReadToolOn,
   isToolEnabled,
   normalizeCapabilityToolAccess,
+  setSharedReadToolOn,
   setToolEnabled,
 } from './toolAccessDefaults';
 
@@ -138,5 +141,45 @@ describe('toolAccessDefaults', () => {
     expect(
       isToolEnabled(toolAccess, AGENT_TOOL_SCOPE, ADD_CONTACT_NOTE_TOOL_ID)
     ).toBe(false);
+  });
+});
+
+describe('shared read tools (FAQ lookup and service search)', () => {
+  it('are on until the agent lists them as switched off', () => {
+    expect(isSharedReadToolOn({}, FAQ_LOOKUP_TOOL_ID)).toBe(true);
+    expect(isSharedReadToolOn(undefined, SERVICE_SEARCH_TOOL_ID)).toBe(true);
+    const access = {
+      agent: { enabled: true, disabled_tool_ids: [SERVICE_SEARCH_TOOL_ID] },
+    };
+    expect(isSharedReadToolOn(access, SERVICE_SEARCH_TOOL_ID)).toBe(false);
+    expect(isSharedReadToolOn(access, FAQ_LOOKUP_TOOL_ID)).toBe(true);
+  });
+
+  it('are switched off and on again without touching the rest of the access', () => {
+    const access = {
+      agent: { enabled: true, tool_ids: [HANDOFF_TOOL_ID] },
+      assistant: { enabled: true, tool_ids: ['x'] },
+    };
+    const off = setSharedReadToolOn(access, FAQ_LOOKUP_TOOL_ID, false);
+    expect(off.agent).toEqual({
+      enabled: true,
+      tool_ids: [HANDOFF_TOOL_ID],
+      disabled_tool_ids: [FAQ_LOOKUP_TOOL_ID],
+    });
+    expect(off.assistant).toEqual(access.assistant);
+    expect(access.agent.disabled_tool_ids).toBeUndefined();
+
+    const on = setSharedReadToolOn(off, FAQ_LOOKUP_TOOL_ID, true);
+    expect(on.agent).toEqual({ enabled: true, tool_ids: [HANDOFF_TOOL_ID] });
+  });
+
+  it('start from the default agent access when the agent has none, and ignore other tools', () => {
+    const off = setSharedReadToolOn({}, SERVICE_SEARCH_TOOL_ID, false);
+    expect(off.agent).toEqual({
+      enabled: true,
+      tool_ids: [FAQ_LOOKUP_TOOL_ID, HANDOFF_TOOL_ID],
+      disabled_tool_ids: [SERVICE_SEARCH_TOOL_ID],
+    });
+    expect(setSharedReadToolOn({}, 'web_search', false)).toEqual({});
   });
 });

@@ -5,6 +5,15 @@ export const ADD_CONTACT_NOTE_TOOL_ID = 'add_contact_note';
 export const ADD_PRIVATE_NOTE_TOOL_ID = 'add_private_note';
 export const WEB_SEARCH_TOOL_ID = 'web_search';
 export const WEB_SCRAPE_URL_TOOL_ID = 'web_scrape_url';
+export const SERVICE_SEARCH_TOOL_ID = 'search_scheduling_services';
+// The key of the agent scope that lists the shared read tools this agent has
+// switched off (the server skips them even when the instruction mentions one).
+export const DISABLED_TOOL_IDS_KEY = 'disabled_tool_ids';
+// Both are on for every customer-facing agent until its settings say otherwise.
+export const SHARED_READ_TOOL_IDS = Object.freeze([
+  FAQ_LOOKUP_TOOL_ID,
+  SERVICE_SEARCH_TOOL_ID,
+]);
 
 const CAPABILITY_TOOL_IDS = Object.freeze([
   FAQ_LOOKUP_TOOL_ID,
@@ -127,4 +136,38 @@ export const setToolEnabled = (toolAccess, scopeName, toolId, enabled) => {
   };
 
   return normalizeCapabilityToolAccess(nextAccess);
+};
+
+// The FAQ lookup and the service search are on until the agent lists them as
+// switched off.
+export const isSharedReadToolOn = (toolAccess, toolId) =>
+  !toStringArray(
+    toolAccess?.[AGENT_TOOL_SCOPE]?.[DISABLED_TOOL_IDS_KEY]
+  ).includes(toolId);
+
+export const setSharedReadToolOn = (toolAccess, toolId, on) => {
+  const nextAccess = cloneAccess(toolAccess);
+  if (!SHARED_READ_TOOL_IDS.includes(toolId)) return nextAccess;
+
+  const scopeAccess = {
+    ...(nextAccess[AGENT_TOOL_SCOPE] ||
+      cloneAccess(buildDefaultAgentToolAccess())[AGENT_TOOL_SCOPE]),
+  };
+  const disabledIds = new Set(
+    toStringArray(scopeAccess[DISABLED_TOOL_IDS_KEY])
+  );
+  if (on) {
+    disabledIds.delete(toolId);
+  } else {
+    disabledIds.add(toolId);
+  }
+
+  if (disabledIds.size) {
+    scopeAccess[DISABLED_TOOL_IDS_KEY] = Array.from(disabledIds);
+  } else {
+    delete scopeAccess[DISABLED_TOOL_IDS_KEY];
+  }
+  nextAccess[AGENT_TOOL_SCOPE] = scopeAccess;
+
+  return nextAccess;
 };

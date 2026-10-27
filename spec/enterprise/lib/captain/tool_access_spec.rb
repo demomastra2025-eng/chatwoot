@@ -172,6 +172,82 @@ RSpec.describe Captain::ToolAccess do
     end
   end
 
+  describe 'the switch of one agent for the shared read layer' do
+    def config_with(disabled, tool_ids: %w[handoff faq_lookup search_scheduling_services])
+      { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => tool_ids, 'disabled_tool_ids' => disabled } } }
+    end
+
+    def agent_tool_ids(record)
+      described_class.allowed_tool_ids_for(record, Captain::ToolAccess::SCOPE_AGENT, fallback_ids: [])
+    end
+
+    before { account.enable_features!('scheduling') }
+
+    it 'keeps both tools on for every agent until it switches one off' do
+      assistant.update!(config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] } } })
+
+      expect(described_class.switched_off_tool_ids(assistant)).to eq([])
+      expect(agent_tool_ids(assistant)).to include('faq_lookup', 'search_scheduling_services')
+      expect(assistant.faq_enabled?).to be(true)
+    end
+
+    it 'takes the service search away from an agent that switched it off, even when the clinic selected it' do
+      assistant.update!(config: config_with(['search_scheduling_services']))
+
+      expect(described_class.tool_switched_off?(assistant, 'search_scheduling_services')).to be(true)
+      expect(agent_tool_ids(assistant)).to include('faq_lookup', 'handoff')
+      expect(agent_tool_ids(assistant)).not_to include('search_scheduling_services')
+      expect(described_class.normalized_access_for(assistant).dig(described_class::SCOPE_AGENT, 'tool_ids'))
+        .not_to include('search_scheduling_services')
+    end
+
+    it 'takes the FAQ lookup away from an agent that switched it off, and says so through faq_enabled?' do
+      assistant.update!(config: config_with(['faq_lookup']))
+
+      expect(assistant.faq_enabled?).to be(false)
+      expect(agent_tool_ids(assistant)).not_to include('faq_lookup')
+      expect(agent_tool_ids(assistant)).to include('search_scheduling_services', 'handoff')
+      expect(assistant.selected_agent_tool_ids).not_to include('faq_lookup')
+      expect(assistant.selected_agent_tool_ids).to include('handoff', 'search_scheduling_services')
+    end
+
+    it 'switches both off and leaves the rest of the tools alone' do
+      assistant.update!(config: config_with(%w[faq_lookup search_scheduling_services], tool_ids: %w[handoff web_search]))
+
+      expect(agent_tool_ids(assistant)).to include('handoff')
+      expect(agent_tool_ids(assistant)).not_to include('faq_lookup', 'search_scheduling_services')
+    end
+
+    it 'does not let the instruction bring a switched-off tool back by mentioning it' do
+      assistant.update!(config: config_with(['search_scheduling_services']))
+
+      expect(assistant.effective_agent_tool_ids(referenced_tool_ids: ['search_scheduling_services'])).not_to include('search_scheduling_services')
+      expect(assistant.scenario_agent_tool_ids(referenced_tool_ids: ['search_scheduling_services'])).not_to include('search_scheduling_services')
+
+      assistant.update!(config: config_with([]))
+      expect(assistant.effective_agent_tool_ids(referenced_tool_ids: ['search_scheduling_services'])).to include('search_scheduling_services')
+    end
+
+    it 'ignores ids that are not tools of the shared layer, and a malformed list' do
+      assistant.update!(config: config_with(%w[handoff web_search]))
+      expect(described_class.switched_off_tool_ids(assistant)).to eq([])
+      expect(agent_tool_ids(assistant)).to include('handoff')
+
+      assistant.update!(config: config_with('faq_lookup'))
+      expect(described_class.switched_off_tool_ids(assistant)).to eq(['faq_lookup'])
+
+      assistant.update!(config: { 'tool_access' => 'broken' })
+      expect(described_class.switched_off_tool_ids(assistant)).to eq([])
+    end
+
+    it 'is a setting of the agent: another agent of the account keeps both tools' do
+      other = create(:captain_assistant, account: account)
+      assistant.update!(config: config_with(%w[faq_lookup search_scheduling_services]))
+
+      expect(agent_tool_ids(other)).to include('faq_lookup', 'search_scheduling_services')
+    end
+  end
+
   describe '.per_assistant_web_tool_enabled?' do
     it 'uses the account default when no per-agent permission fields are stored' do
       assistant.config = {}

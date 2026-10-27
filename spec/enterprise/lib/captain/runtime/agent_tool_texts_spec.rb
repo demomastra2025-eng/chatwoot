@@ -200,8 +200,10 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     expect(resources.description).to include('Start here for any booking or slot question', 'then use the ID with search_available_slots',
                                              'A service link is never needed to find or book a specialist')
     expect(resources.params['service_id']).to include('Optional', 'leave it out')
-    expect(services.description).to include('Put every service of the request in queries', 'ONE call', 'not_in_catalog',
+    expect(services.description).to include('Send every service of the request in queries', 'ONE call', 'candidates by meaning',
+                                            'not_in_catalog', 'catalog_updating', 'queries_not_searched', 'say staff will confirm',
                                             'To book, find the specialist first with search_scheduling_resources')
+    expect(services.description.length).to be < 700
     expect(services.description).not_to include('before searching slots or booking a named service')
     expect(slots.description).to include('find the specialist first with search_scheduling_resources',
                                          'service_id is optional and only sets the visit length')

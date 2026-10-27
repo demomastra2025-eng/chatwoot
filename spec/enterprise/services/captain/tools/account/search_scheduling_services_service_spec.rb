@@ -1,15 +1,16 @@
 require 'rails_helper'
 
 # The service search is a vector search: the caller gives a LIST of mentions, they are embedded in one request, and each one gets the
-# nearest services of the account with a score, or "not in the catalog" when none is close enough. The embedding model is a fake whose
-# concepts are the axes of the vector space (see ServiceEmbeddingHelpers), so every similarity here is exact. All data is synthetic.
+# nearest services of the account with a score as candidates, or "not in the catalog" when none is close enough. The embedding model is a
+# fake whose concepts are the axes of the vector space (see ServiceEmbeddingHelpers), so every similarity here is exact. All data is
+# synthetic.
 RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:conversation) { create(:conversation, account: account) }
   let(:tool) { described_class.new(assistant, user: user) }
-  let(:min_score) { described_class::MIN_SCORE }
+  let(:min_score) { Scheduling::ServiceIndex.min_score(ServiceEmbeddingHelpers::FAKE_MODEL) }
   # concepts: 0 thyroid ultrasound, 2 knee MRI, 4 blood test, 6 massage (not in the catalog)
   let!(:thyroid) { create(:scheduling_service, account: account, name: 'УЗИ щитовидной железы', base_price: 7000) }
   let!(:thyroid_neck) { create(:scheduling_service, account: account, name: 'УЗИ щитовидной железы и шеи', base_price: 9000) }
@@ -22,7 +23,7 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
   before do
     account.enable_features!('scheduling')
     index_service(thyroid, vector_at(0, 0.92))
-    index_service(thyroid_neck, vector_at(0, 0.80))
+    index_service(thyroid_neck, vector_at(0, 0.90))
     index_service(knee, vector_at(2, 0.85))
     index_service(blood, vector_at(4, 0.75))
   end
@@ -35,8 +36,9 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
     JSON.parse(tool.execute(**arguments))
   end
 
-  it 'takes the threshold from the calibration: a service that exists is kept, a look-alike below it is not' do
+  it 'takes the threshold from the calibration of the embedding model in force, not from a constant of the tool' do
     expect(min_score).to eq(0.66)
+    expect(Scheduling::ServiceIndex.min_score('openai/text-embedding-3-large')).to be_nil
   end
 
   it 'declares queries as a list of strings and requires no parameter' do
@@ -58,12 +60,22 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
       expect(payload['results'].map { |result| result['services'].first['id'] }).to eq([thyroid.id, knee.id, blood.id])
     end
 
-    it 'lists the best match first with its score and drops every service below the threshold' do
+    it 'lists the best match first with its score' do
       result = search(queries: ['щитовидки'])['results'].first
 
       expect(result).to include('status' => 'found')
       expect(result['services'].pluck('id')).to eq([thyroid.id, thyroid_neck.id])
-      expect(result['services'].pluck('score')).to eq([0.92, 0.8])
+      expect(result['services'].pluck('score')).to eq([0.92, 0.9])
+    end
+
+    it 'drops a service that scores more than 0.05 below the best one of its mention, and keeps the twins within the band' do
+      index_service(thyroid_neck, vector_at(0, 0.80))
+      twin = create(:scheduling_service, account: account, name: 'УЗИ щитовидной железы с контрастом')
+      index_service(twin, vector_at(0, 0.88))
+
+      result = search(queries: ['щитовидки'])['results'].first
+
+      expect(result['services'].pluck('id')).to eq([thyroid.id, twin.id])
     end
 
     it 'says not_in_catalog for a mention whose best score is below the threshold, and finds the others' do
@@ -87,13 +99,20 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
       expect(result['services'].pluck('id')).to eq([thyroid.id])
     end
 
-    it 'accepts one string or a JSON list in a string instead of a list, drops blanks and repeats, and stops at the mention cap' do
+    it 'accepts one string or a JSON list in a string instead of a list, drops blanks and repeats' do
       expect(search(queries: 'щитовидки')['results'].pluck('query')).to eq(['щитовидки'])
       expect(search(queries: '["щитовидки", "кровь"]')['results'].pluck('query')).to eq(%w[щитовидки кровь])
       expect(search(queries: ['щитовидки', ' ', 'щитовидки', ' щитовидки '])['results'].pluck('query')).to eq(['щитовидки'])
+    end
 
+    it 'searches the first mentions up to the cap and names the others, so that the caller can ask for them again' do
       many = Array.new(12) { |index| "щитовидки #{index}" }
-      expect(search(queries: many)['results'].size).to eq(described_class::MAX_MENTIONS)
+
+      payload = search(queries: many)
+
+      expect(payload['results'].size).to eq(described_class::MAX_MENTIONS)
+      expect(payload['queries_not_searched']).to eq(many.drop(described_class::MAX_MENTIONS))
+      expect(search(queries: ['щитовидки'])).not_to have_key('queries_not_searched')
     end
 
     it 'finds nothing of another account and nothing that another model embedded' do
@@ -116,6 +135,81 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
 
       as_agent
       expect(search(queries: ['щитовидки'], include_inactive: true)['results'].first['status']).to eq('not_in_catalog')
+    end
+  end
+
+  describe 'how many services one answer holds' do
+    before do
+      Array.new(12) do |index|
+        index_service(create(:scheduling_service, account: account, name: "МРТ вариант #{index}"), vector_at(2, 0.95 - (index * 0.001)))
+      end
+    end
+
+    it 'is 5 per mention for staff and 3 for the patient agent, when no limit is given' do
+      expect(search(queries: ['колено'])['results'].first['services'].size).to eq(described_class::STAFF_DEFAULT_LIMIT)
+
+      as_agent
+      expect(search(queries: ['колено'])['results'].first['services'].size).to eq(described_class::AGENT_DEFAULT_LIMIT)
+    end
+
+    it 'is cut to the cap of the whole answer, and every mention keeps its best service' do
+      index_service(thyroid, vector_at(0, 0.95))
+      Array.new(10) do |index|
+        index_service(create(:scheduling_service, account: account, name: "УЗИ вариант #{index}"), vector_at(0, 0.94 - (index * 0.001)))
+      end
+
+      payload = search(queries: %w[щитовидки колено], limit: 10)
+
+      sizes = payload['results'].map { |result| result['services'].size }
+      expect(sizes.sum).to eq(described_class::ENTRY_CAP)
+      expect(payload['results'].map { |result| result['services'].first['id'] }).to include(thyroid.id)
+      expect(sizes).to all(be >= 1)
+    end
+  end
+
+  describe 'when some services of the catalog are not searchable yet' do
+    it 'says catalog_updating instead of not_in_catalog for a mention that matches nothing, and queues the refresh' do
+      create(:scheduling_service, account: account, name: 'Новая услуга')
+      Redis::Alfred.delete(Scheduling::ServiceEmbeddingJob.queued_key(account.id))
+
+      payload = nil
+      expect { payload = search(queries: %w[массаж колено]) }.to have_enqueued_job(Scheduling::ServiceEmbeddingJob).with(account.id)
+
+      expect(payload['results'].first).to eq('query' => 'массаж', 'status' => 'catalog_updating')
+      expect(payload['results'].second['services'].first['id']).to eq(knee.id)
+    end
+
+    it 'does not search a service that was renamed until its new vector is stored, and says so' do
+      thyroid.update!(name: 'Эхография щитовидной железы')
+      thyroid_neck.update!(name: 'Эхография щитовидной железы и шеи')
+
+      expect(thyroid.reload.embedded_at).to be_nil
+      result = search(queries: ['щитовидки'])['results'].first
+      expect(result).to eq('query' => 'щитовидки', 'status' => 'catalog_updating')
+
+      stub_embedder(account, 'Эхография' => vector_at(0, 0.91), 'щитовидки' => unit_vector(0))
+      Scheduling::ServiceIndex.refresh!(account.id)
+      expect(search(queries: ['щитовидки'])['results'].first['status']).to eq('found')
+    end
+
+    it 'keeps saying not_in_catalog while the whole catalog is searchable' do
+      expect(search(queries: ['массаж'])['results'].first['status']).to eq('not_in_catalog')
+    end
+  end
+
+  describe 'when the model in force has no calibrated threshold' do
+    let(:other_model) { 'openai/text-embedding-3-large' }
+
+    before do
+      stub_embedder(account, { 'щитовидки' => unit_vector(0) }, model: other_model)
+      Scheduling::Service.where(account_id: account.id).find_each { |service| index_service(service, unit_vector(0), model: other_model) }
+    end
+
+    it 'refuses to search, whatever vectors the services have, and does not queue an index' do
+      output = nil
+      expect { output = tool.execute(queries: ['щитовидки']) }.not_to have_enqueued_job(Scheduling::ServiceEmbeddingJob)
+
+      expect(output).to include(described_class::INDEX_NOT_READY)
     end
   end
 
@@ -146,7 +240,7 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
           { 'query' => 'щитовидки', 'status' => 'found',
             'services' => [{ 'id' => thyroid.id, 'name' => 'УЗИ щитовидной железы', 'price' => 7000, 'duration_min' => 30, 'score' => 0.92 },
                            { 'id' => thyroid_neck.id, 'name' => 'УЗИ щитовидной железы и шеи', 'price' => 9000, 'duration_min' => 30,
-                             'score' => 0.8 }] },
+                             'score' => 0.9 }] },
           { 'query' => 'массаж', 'status' => 'not_in_catalog' }
         ]
       )
@@ -189,16 +283,6 @@ RSpec.describe Captain::Tools::Account::SearchSchedulingServicesService do
       expect { output = tool.execute(queries: ['щитовидки']) }.to have_enqueued_job(Scheduling::ServiceEmbeddingJob).with(account.id)
       expect(output).to include(described_class::INDEX_NOT_READY)
       expect(embedder).not_to have_received(:get_embeddings)
-    end
-
-    it 'answers from the services that are searchable while a few still wait for their vector, and queues their refresh' do
-      waiting = create(:scheduling_service, account: account, name: 'Новая услуга')
-      Redis::Alfred.delete(Scheduling::ServiceEmbeddingJob.queued_key(account.id))
-
-      payload = nil
-      expect { payload = search(queries: ['колено']) }.to have_enqueued_job(Scheduling::ServiceEmbeddingJob).with(account.id)
-      expect(payload['results'].first['services'].first['id']).to eq(knee.id)
-      expect(waiting.reload.embedded_at).to be_nil
     end
 
     it 'tells an account without any service that nothing is listed (an empty catalog needs no vectors)' do

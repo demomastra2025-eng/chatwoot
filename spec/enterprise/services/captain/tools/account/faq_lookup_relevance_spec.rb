@@ -28,7 +28,7 @@ RSpec.describe Captain::Tools::Account::FaqLookupService, 'short query relevance
     translation = instance_double(Captain::Llm::TranslateQueryService)
     allow(Captain::Llm::TranslateQueryService).to receive(:new).with(account: account).and_return(translation)
     allow(translation).to receive(:translate) { |query, **| query }
-    embedding_service = instance_double(Captain::Llm::EmbeddingService)
+    embedding_service = instance_double(Captain::Llm::EmbeddingService, embedding_model: 'test-model')
     allow(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(embedding_service)
     allow(embedding_service).to receive(:get_embedding).and_return(query_embedding)
     allow(Captain::AssistantResponse).to receive(:search).and_call_original
@@ -40,8 +40,9 @@ RSpec.describe Captain::Tools::Account::FaqLookupService, 'short query relevance
 
   def seed_corpus(scores)
     questions.to_h do |key, question|
+      embedding = vector_with_similarity(scores.fetch(key, 0.1))
       [key, create(:captain_assistant_response, account: account, assistant: assistant, question: question,
-                                              answer: "Approved answer for #{key}", embedding: vector_with_similarity(scores.fetch(key, 0.1)))]
+                                              answer: "Approved answer for #{key}", embedding: embedding, embedding_model: 'test-model')]
     end
   end
 

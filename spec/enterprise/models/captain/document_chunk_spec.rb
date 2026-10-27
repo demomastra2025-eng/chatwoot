@@ -31,7 +31,7 @@ RSpec.describe Captain::DocumentChunk, type: :model do
 
   it 'searches indexed chunk embeddings scoped to account' do
     embedding = Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.1)
-    embedding_service = instance_double(Captain::Llm::EmbeddingService)
+    embedding_service = instance_double(Captain::Llm::EmbeddingService, embedding_model: 'google/gemini-embedding-001')
     expect(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(embedding_service)
     expect(embedding_service).to receive(:get_embedding)
       .with('refund policy', input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE)
@@ -41,6 +41,7 @@ RSpec.describe Captain::DocumentChunk, type: :model do
 
     expect(results.to_sql).to include('"captain_document_chunks"."account_id" =')
     expect(results.to_sql).to include('"captain_document_chunks"."embedding_status" =')
+    expect(results.to_sql).to include(%("captain_document_chunks"."embedding_model" = 'google/gemini-embedding-001'))
   end
 
   it 'does not run semantic search without an account scope' do

@@ -862,7 +862,6 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_27_120000) do
     t.datetime "expires_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.string "embedding_model"
     t.index ["account_id", "assistant_id", "query_sha256", "source_fingerprint"], name: "idx_captain_answer_cache_exact", unique: true
     t.index ["account_id"], name: "index_captain_knowledge_answer_cache_entries_on_account_id"
     t.index ["assistant_id"], name: "index_captain_knowledge_answer_cache_entries_on_assistant_id"

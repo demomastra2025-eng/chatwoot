@@ -158,7 +158,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     form = with_llm_snapshots do
       SuperAdmin::AiModelsForm.new(
         submitted: params.fetch('app_config', {}).to_unsafe_h, stored: stored, keys: @allowed_configs,
-        masked_keys: @allowed_configs.select { |key| masked_secret_config?(key) }, confirmed_embedding: params[:confirm_embedding_change] == '1'
+        masked_keys: @allowed_configs.select { |key| masked_secret_config?(key) }
       )
     end
     errors = form.save(actor: current_super_admin, request: request)

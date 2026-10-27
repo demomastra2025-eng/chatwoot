@@ -4,7 +4,7 @@ RSpec.describe Captain::Llm::ConversationFaqService do
   let(:captain_assistant) { create(:captain_assistant) }
   let(:conversation) { create(:conversation, first_reply_created_at: Time.zone.now) }
   let(:service) { described_class.new(captain_assistant, conversation) }
-  let(:embedding_service) { instance_double(Captain::Llm::EmbeddingService) }
+  let(:embedding_service) { instance_double(Captain::Llm::EmbeddingService, embedding_model: 'google/gemini-embedding-001') }
   let(:mock_chat) { instance_double(RubyLLM::Chat) }
   let(:sample_faqs) do
     [
@@ -236,6 +236,48 @@ RSpec.describe Captain::Llm::ConversationFaqService do
 
         service.generate_and_deduplicate
       end
+    end
+  end
+
+  describe 'the embedding duplicate check' do
+    let(:model) { 'google/gemini-embedding-001' }
+    let(:account) { captain_assistant.account }
+    let(:conversation) { create(:conversation, account: account, first_reply_created_at: Time.zone.now) }
+
+    def faq(question, vector, model_name: model)
+      create(:captain_assistant_response, account: account, assistant: captain_assistant, question: question, answer: 'Ответ', status: :approved)
+        .tap { |record| record.update_columns(embedding: vector, embedding_model: model_name) } # rubocop:disable Rails/SkipsModelValidations
+    end
+
+    it 'calls two FAQs the same only at cosine similarity 0.95 or more: FAQs written from one template are 0.88-0.92 close' do
+      template_twin = faq('Где принимает врач А?', vector_at(0, 0.92))
+      paraphrase = faq('Где ведёт приём врач Б?', vector_at(0, 0.96))
+
+      duplicates = service.send(:find_similar_faqs, unit_vector(0), model)
+
+      expect(duplicates.map(&:id)).to eq([paraphrase.id])
+      expect(duplicates.map(&:id)).not_to include(template_twin.id)
+      expect(described_class::DISTANCE_THRESHOLD).to eq(0.05)
+    end
+
+    it 'compares the new FAQ only with the FAQs whose vector the same model made' do
+      same_model = faq('Один вопрос', vector_at(0, 0.99))
+      faq('Другой вопрос', vector_at(0, 0.99), model_name: 'text-embedding-3-large')
+      faq('Без отметки', vector_at(0, 0.99), model_name: nil)
+
+      expect(service.send(:find_similar_faqs, unit_vector(0), model).map(&:id)).to eq([same_model.id])
+    end
+
+    it 'embeds the new FAQ with the model in force and compares it with the vectors of that model' do
+      existing = faq('Один вопрос', vector_at(0, 0.99))
+      allow(embedding_service).to receive(:get_embedding).and_return(unit_vector(0))
+
+      faq_hash = { 'question' => 'Совсем другое', 'answer' => 'Другое' }
+      duplicates = service.send(:find_embedding_duplicates, faq_hash)
+
+      expect(duplicates.map(&:id)).to eq([existing.id])
+      expect(embedding_service).to have_received(:get_embedding)
+        .with('Совсем другое: Другое', input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE)
     end
   end
 end

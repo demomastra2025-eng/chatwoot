@@ -72,9 +72,11 @@ RSpec.describe 'Super admin settings pages', type: :request do
       keys.each do |key|
         expect(page.css(%([data-testid="ai-models-form"] [data-config~="#{key}"])).size).to eq(1), "card of #{key}"
       end
-      (keys - %w[CAPTAIN_DEFAULT_MODEL CAPTAIN_ASSISTANT_MODEL_ALLOWLIST]).each do |key|
+      (keys - %w[CAPTAIN_DEFAULT_MODEL CAPTAIN_ASSISTANT_MODEL_ALLOWLIST CAPTAIN_EMBEDDING_MODEL]).each do |key|
         expect(page.css(%([name="app_config[#{key}]"])).size).to eq(1), "control of #{key}"
       end
+      # the model of the knowledge search is only shown: it changes with the full re-embedding, not on this page
+      expect(page.css('[name="app_config[CAPTAIN_EMBEDDING_MODEL]"]')).to be_empty
     end
 
     it 'gives every card a Russian title in plain words' do

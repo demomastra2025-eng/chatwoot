@@ -77,8 +77,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
 
     it 'is a plain select with «Встроенная» first, never a field to type a model into' do
       %w[CAPTAIN_MODERATION_MODEL CAPTAIN_CUSTOM_GUARDRAIL_MODEL CAPTAIN_AUDIO_TRANSCRIPTION_MODEL CAPTAIN_IMAGE_RECOGNITION_MODEL
-         CAPTAIN_OUTCOME_CLASSIFIER_MODEL CAPTAIN_LANGUAGE_DETECTION_MODEL CAPTAIN_LABEL_SUGGESTION_MODEL CAPTAIN_CUSTOMER_NOTICE_MODEL
-         CAPTAIN_EMBEDDING_MODEL].each do |key|
+         CAPTAIN_OUTCOME_CLASSIFIER_MODEL CAPTAIN_LANGUAGE_DETECTION_MODEL CAPTAIN_LABEL_SUGGESTION_MODEL CAPTAIN_CUSTOMER_NOTICE_MODEL].each do |key|
         select = page.at_css(%(select[name="app_config[#{key}]"]))
 
         expect(select).to be_present, key
@@ -486,33 +485,28 @@ RSpec.describe 'Super admin AI models page', type: :request do
       open_page
     end
 
-    it 'is under «Для разработчика», in a folded block, with a warning, and not on a tab' do
+    it 'is under «Для разработчика», in a folded block, shown with the model in force and not editable' do
       developer = page.at_css('details#ai-developer')
+      embedding_card = developer.at_css('[data-config="CAPTAIN_EMBEDDING_MODEL"]')
 
       expect(developer['open']).to be_nil
-      expect(developer.at_css('select[name="app_config[CAPTAIN_EMBEDDING_MODEL]"]')).to be_present
-      expect(page.at_css('[data-tab-panel] select[name="app_config[CAPTAIN_EMBEDDING_MODEL]"]')).to be_nil
-      expect(text(developer.at_css('[data-config="CAPTAIN_EMBEDDING_MODEL"] .admin-notice')))
-        .to include('поиск по базам знаний и FAQ всех аккаунтов станет хуже', 'Переиндексацию эта страница не запускает')
+      expect(embedding_card).to be_present
+      expect(embedding_card.css('select, input, textarea')).to be_empty
+      expect(page.css('[name="app_config[CAPTAIN_EMBEDDING_MODEL]"], #confirm_embedding_change')).to be_empty
+      expect(text(embedding_card.at_css('.admin-notice'))).to include('rake onelink:embeddings:apply', 'только показана')
+      expect(text(embedding_card.at_css('[data-testid="slot-status"]'))).to include('old-embedding')
     end
 
-    it 'is not changed without the tick, and the block opens to show why' do
-      submit_form('app_config[CAPTAIN_EMBEDDING_MODEL]' => '')
+    it 'is not changed by a request that sends it, and the block opens to show why' do
+      submit_form('app_config[CAPTAIN_EMBEDDING_MODEL]' => 'google/gemini-embedding-001')
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(stored('CAPTAIN_EMBEDDING_MODEL')).to eq('vendor/old-embedding')
-      expect(refused('CAPTAIN_EMBEDDING_MODEL')).to include('Я понимаю последствия')
+      expect(refused('CAPTAIN_EMBEDDING_MODEL')).to include('rake onelink:embeddings:apply')
       expect(page.at_css('details#ai-developer').has_attribute?('open')).to be(true)
     end
 
-    it 'is changed with the tick' do
-      submit_form('app_config[CAPTAIN_EMBEDDING_MODEL]' => '', 'confirm_embedding_change' => '1')
-
-      expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
-      expect(stored('CAPTAIN_EMBEDDING_MODEL').to_s).to eq('')
-    end
-
-    it 'is not asked for when another setting is saved and the model is left as it is' do
+    it 'is left as it is when another setting is saved' do
       submit_form('app_config[CAPTAIN_MODERATION_MODEL]' => 'openai/gpt-oss-safeguard-20b')
 
       expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))

@@ -22,7 +22,8 @@ module ServiceEmbeddingHelpers
   # The embedder of an account: a text is embedded as the vector of the first key of `mapping` (text => vector) that it contains; any other
   # text raises.
   # Returns the double, so a spec can expect how often and with which texts it was asked.
-  def stub_embedder(account, model: FAKE_MODEL, **mapping)
+  def stub_embedder(account, mapping = {}, model: FAKE_MODEL, **inline)
+    mapping = mapping.merge(inline)
     embedder = instance_double(Captain::Llm::EmbeddingService, embedding_model: model)
     allow(embedder).to receive(:get_embeddings) do |texts, **|
       texts.map do |text|

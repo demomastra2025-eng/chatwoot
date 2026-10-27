@@ -1,9 +1,12 @@
 # The platform embedding model and the full re-embedding that a change of it needs, see Captain::Llm::EmbeddingReindexService.
 #
-#   rake onelink:embeddings:status                                   # which model made the vectors of each table
+#   rake onelink:embeddings:status                                   # which model made the vectors of each table; fails if a row has no
+#                                                                    # current vector of the model in force
 #   rake onelink:embeddings:preview MODEL=google/gemini-embedding-001  # dry run: counts, characters, requests; calls no model, writes nothing
 #   rake onelink:embeddings:apply MODEL=google/gemini-embedding-001 BACKUP_DIR=/path CONFIRM=yes
-#                                                                    # backup, re-embed everything, switch the model (one transaction)
+#                                                                    # backup, re-embed everything, switch the model (one transaction),
+#                                                                    # embed again what changed meanwhile; MAX_TOKENS=... raises the cost cap
+#   rake onelink:embeddings:refresh CONFIRM=yes                      # embed again the rows without a current vector of the model in force
 #   rake onelink:embeddings:restore BACKUP_DIR=/path CONFIRM=yes     # put the old vectors and the old setting back
 #
 # Without CONFIRM=yes `apply` and `restore` only show what they would do. BACKUP_DIR of `apply` defaults to
@@ -19,22 +22,31 @@ namespace :onelink do
                     key: key, rows: item[:rows], chars: item[:chars], accounts: item[:accounts], requests: item[:requests],
                     now: item[:with_vector_now])
       end
-      puts "Total: #{plan[:rows]} rows, #{plan[:chars]} characters (about #{plan[:estimated_tokens]} tokens), #{plan[:requests]} requests."
+      puts "Total: #{plan[:rows]} rows, #{plan[:chars]} characters (about #{plan[:estimated_tokens]} tokens, cap #{plan[:max_tokens]}), " \
+           "#{plan[:requests]} requests."
+      puts "Service search threshold (service_min_score) for the model: #{plan[:calibrated] ? 'calibrated' : 'MISSING (apply would refuse)'}"
       puts "OpenRouter key: #{plan[:key_configured] ? 'configured' : 'MISSING (apply would stop at once)'}"
     end
 
     def embeddings_print_status(status)
       status.each do |key, item|
         models = item[:vectors_by_model].map { |name, count| "#{name}: #{count}" }.join(', ').presence || 'no vectors'
-        puts format('  %-9<key>s rows %<rows>5d  %<models>s%<wrong>s', key: key, rows: item[:rows], models: models,
-                                                                       wrong: item[:wrong_size].positive? ? "  WRONG SIZE: #{item[:wrong_size]}" : '')
+        wrong = item[:wrong_size].positive? ? "  WRONG SIZE: #{item[:wrong_size]}" : ''
+        stale = item[:stale].positive? ? "  NO CURRENT VECTOR: #{item[:stale]}" : ''
+        puts format('  %-9<key>s rows %<rows>5d  %<models>s%<wrong>s%<stale>s',
+                    key: key, rows: item[:rows], models: models, wrong: wrong, stale: stale)
       end
     end
 
     desc 'Which embedding model made the vectors of each table'
     task status: :environment do
       puts "CAPTAIN_EMBEDDING_MODEL: #{Captain::Llm::EmbeddingService.configured_embedding_model || '(not set: built-in default)'}"
-      embeddings_print_status(Captain::Llm::EmbeddingReindexService.new.status)
+      service = Captain::Llm::EmbeddingReindexService.new
+      status = service.status
+      embeddings_print_status(status)
+      abort 'Not consistent: some rows have no current vector of the model in force, or a vector of a wrong size.' unless service.consistent?(status)
+
+      puts 'Consistent: every row has a current vector of the model in force.'
     end
 
     desc 'Dry run of the re-embedding: counts, characters and requests (MODEL=...); calls no model and writes nothing'
@@ -46,16 +58,43 @@ namespace :onelink do
     task apply: :environment do
       model = ENV.fetch('MODEL') { abort 'MODEL=provider/model is required' }
       backup_dir = ENV.fetch('BACKUP_DIR') { Rails.root.join('storage/onelink_backups', "embeddings-#{Time.now.utc.strftime('%Y%m%d-%H%M%S')}").to_s }
-      service = Captain::Llm::EmbeddingReindexService.new(model: model, backup_dir: backup_dir)
+      service = Captain::Llm::EmbeddingReindexService.new(
+        model: model, backup_dir: backup_dir,
+        max_tokens: ENV.fetch('MAX_TOKENS', Captain::Llm::EmbeddingReindexService::MAX_ESTIMATED_TOKENS)
+      )
       embeddings_print_plan(service.preview)
       abort "BACKUP_DIR #{backup_dir} already exists" if File.exist?(backup_dir)
 
       if ENV['CONFIRM'] == 'yes'
-        result = service.apply!
+        begin
+          result = service.apply!
+        rescue Captain::Llm::EmbeddingReindexService::Error => e
+          abort "Stopped: #{e.message}"
+        end
         puts "Done. Backup: #{backup_dir}"
         embeddings_print_status(result['status'])
       else
         puts "\nDry run, nothing changed. Backup would go to #{backup_dir}. Run again with CONFIRM=yes to apply."
+      end
+    end
+
+    desc 'Embed again the rows that have no current vector of the model in force (no backup, no switch); needs CONFIRM=yes'
+    task refresh: :environment do
+      service = Captain::Llm::EmbeddingReindexService.new
+      status = service.status
+      embeddings_print_status(status)
+      stale = status.values.sum { |item| item[:stale] }
+      if ENV['CONFIRM'] == 'yes'
+        begin
+          found = service.refresh!
+        rescue Captain::Llm::EmbeddingReindexService::Error => e
+          abort "Stopped: #{e.message}"
+        end
+        puts "Embedded again: #{found} rows."
+        embeddings_print_status(service.status)
+      else
+        puts "
+Dry run, nothing changed: #{stale} rows would be embedded again. Run again with CONFIRM=yes."
       end
     end
 

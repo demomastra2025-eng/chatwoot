@@ -13,6 +13,8 @@ class Captain::Llm::EmbeddingService
   # in several requests, in order.
   BATCH_MAX_INPUTS = 64
   BATCH_MAX_CHARS = 40_000
+  # Tokens per character that the Gemini tokenizer measured on a real clinic catalog (Russian text): an estimate for plans and logs only.
+  TOKENS_PER_CHAR = 0.41
 
   attr_reader :embedding_model
 
@@ -119,7 +121,17 @@ class Captain::Llm::EmbeddingService
       observability: observability.merge(provider: provider.presence || 'openrouter', runtime_mode: 'captain_embedding'),
       options: { dimensions: VECTOR_DIMENSIONS, input_type: input_type }.compact
     )
+    verify_served_model!(result, model)
     checked_vectors(result.vectors, contents.size, model)
+  end
+
+  # The model that answered is the model that was asked for. OpenRouter names it without the vendor ("gemini-embedding-001" for
+  # "google/gemini-embedding-001"); a response that names another model is refused (vectors of two models cannot be compared).
+  def verify_served_model!(result, requested)
+    served = result.respond_to?(:model) ? result.model.to_s : ''
+    return if served.blank? || served.split('/').last.casecmp?(requested.to_s.split('/').last)
+
+    raise EmbeddingsError, "Embedding model #{requested} was asked for, #{served} answered."
   end
 
   # The answer is checked here too, whatever the runtime did: one vector per text, each with exactly VECTOR_DIMENSIONS numbers (a model

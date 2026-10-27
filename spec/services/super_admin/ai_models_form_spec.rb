@@ -4,12 +4,11 @@ RSpec.describe SuperAdmin::AiModelsForm do
   let(:keys) { SuperAdmin::AppConfigsController::CAPTAIN_CONFIG_KEYS }
   let(:masked) { SuperAdmin::AppConfigsController::MASKED_SECRET_CONFIG_KEYS }
   let(:stored) { {} }
-  let(:confirmed) { false }
   let(:super_admin) { create(:super_admin) }
 
   # form('KEY' => 'value') or form({ 'KEY' => 'value' }, stored_values: { ... })
   def form(submitted = nil, stored_values: stored, **inline)
-    described_class.new(submitted: submitted || inline, stored: stored_values, keys: keys, masked_keys: masked, confirmed_embedding: confirmed)
+    described_class.new(submitted: submitted || inline, stored: stored_values, keys: keys, masked_keys: masked)
   end
 
   def changed(form_object)
@@ -193,32 +192,28 @@ RSpec.describe SuperAdmin::AiModelsForm do
   end
 
   describe 'the model of the knowledge base search' do
-    it 'is not changed without the confirmation, and says why' do
-      result = form('CAPTAIN_EMBEDDING_MODEL' => 'google/gemini-embedding-001', 'CAPTAIN_OPENROUTER_ENDPOINT' => '')
-      expect(result).to be_valid
-
+    it 'is not changed here: vectors of two models cannot be compared, so the model changes only with the full re-embedding' do
       stored_values = { 'CAPTAIN_EMBEDDING_MODEL' => 'openai/text-embedding-3-large' }
       refused = form({ 'CAPTAIN_EMBEDDING_MODEL' => 'google/gemini-embedding-001' }, stored_values: stored_values)
 
       expect(refused).not_to be_valid
-      expect(refused.errors['CAPTAIN_EMBEDDING_MODEL'].first).to include('Я понимаю последствия', 'переиндексируют')
+      expect(refused.changes).to be_empty
+      expect(refused.errors['CAPTAIN_EMBEDDING_MODEL'].first).to include('rake onelink:embeddings:apply')
     end
 
-    context 'when the change is confirmed' do
-      let(:confirmed) { true }
-
-      it 'is saved' do
-        stored_values = { 'CAPTAIN_EMBEDDING_MODEL' => 'openai/text-embedding-3-large' }
-        result = form({ 'CAPTAIN_EMBEDDING_MODEL' => 'google/gemini-embedding-001' }, stored_values: stored_values)
-
-        expect(result).to be_valid
-        expect(changed(result)).to eq('CAPTAIN_EMBEDDING_MODEL' => 'google/gemini-embedding-001')
-      end
+    it 'does not matter that the admin ticked a confirmation of the former page: there is none' do
+      expect(described_class.instance_method(:initialize).parameters.flatten).not_to include(:confirmed_embedding)
     end
 
-    it 'is not asked for again when the model in force stays the same' do
-      expect(form({ 'CAPTAIN_EMBEDDING_MODEL' => 'google/gemini-embedding-001' }, stored_values: {})).to be_valid
-      expect(form({ 'CAPTAIN_EMBEDDING_MODEL' => '' }, stored_values: { 'CAPTAIN_EMBEDDING_MODEL' => 'google/gemini-embedding-001' })).to be_valid
+    it 'accepts the model in force, written in full or left empty, and changes nothing' do
+      in_force = 'google/gemini-embedding-001'
+      builtin = Llm::Models.configured_default_model_for('help_center_search')
+
+      expect(form({ 'CAPTAIN_EMBEDDING_MODEL' => in_force }, stored_values: { 'CAPTAIN_EMBEDDING_MODEL' => in_force })).to be_valid
+      expect(form({ 'CAPTAIN_EMBEDDING_MODEL' => '' }, stored_values: { 'CAPTAIN_EMBEDDING_MODEL' => in_force })).to be_valid
+      expect(form({ 'CAPTAIN_EMBEDDING_MODEL' => '' }, stored_values: { 'CAPTAIN_EMBEDDING_MODEL' => 'text-embedding-3-large' })).not_to be_valid
+      expect(form({ 'CAPTAIN_EMBEDDING_MODEL' => '' }, stored_values: {})).to be_valid
+      expect(form({ 'CAPTAIN_EMBEDDING_MODEL' => builtin }, stored_values: {}).changes).to be_empty
     end
   end
 
