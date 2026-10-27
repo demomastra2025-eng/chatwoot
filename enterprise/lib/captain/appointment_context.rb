@@ -5,11 +5,14 @@ class Captain::AppointmentContext
   MAX_LIMIT = 20
   # Said with an empty result of any appointment lookup (this list, search_appointments): the lookups cover the visits booked from this
   # chat, or the exact details the agent gave, and nothing else, so an empty answer is no proof that the patient has no booking (the
-  # agent of the eval of 27.10 told patients that there was nothing to cancel).
+  # agent of the eval of 27.10 told patients that there was nothing to cancel). Staff are asked for only when the patient asked to
+  # cancel or move a visit: a new booking needs no visit found, and the eval of 27.10 handed plain bookings to staff on this note.
   NOTHING_FOUND_NOTE = 'Nothing matched. That does not prove the patient has no appointment: it may be booked on another phone, under ' \
                        'another name or in the clinic system only. Never tell the patient that there is no appointment or nothing to ' \
-                       'cancel. If you have not looked the visit up with search_appointments yet (the details it takes are in its ' \
-                       'description), do that; otherwise leave the request to staff and say that a staff member will check.'.freeze
+                       'cancel. Only when the patient asks to cancel or move a visit: if you have not looked it up with ' \
+                       'search_appointments yet (the details it takes are in its description), do that; otherwise leave that ' \
+                       'request to staff and say that a staff member will check. For a new booking an empty result changes ' \
+                       'nothing: go on with the booking and do not hand it to staff because of this note.'.freeze
 
   def initialize(account:, conversation: nil, contact_id: nil)
     @account = account

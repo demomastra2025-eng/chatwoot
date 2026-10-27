@@ -118,22 +118,28 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
 
   # Suggestion eval 27.10 (c76-1205215, c78-1186457, c77-1198258): after an agreed time (the voice notes of the operator had no text)
   # the patient wrote «Принял / Буду» and the agent booked the same time again, asked for the data again or greeted. Review of
-  # quality-fixes-1 (M1): a silence is safe only after a visit that exists; an unknown voice note is answered by staff.
+  # quality-fixes-1 (M1): a silence is safe only after a visit that exists (the code checks it, Captain::SilenceCheck). The eval of
+  # 27.10 after it (c76-1205215, c78-1222637, c78-1244961): the rule that left a bare thanks after a voice note to staff sent 3 of
+  # the 10 wrong handoffs; a bare thanks, ok or «буду» needs no reply after a voice note as after any other message.
   describe 'a bare confirmation after an agreed time and the voice notes of staff' do
     let(:voice_note) { Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE }
 
-    it 'tells a suggestion to stay silent for a thanks, ok or confirmation of a visit that exists, and to leave a voice note to staff' do
+    it 'tells a suggestion to stay silent for a bare thanks, ok or confirmation, also after a voice note of staff' do
       expect(suggestion_rules).to include(
         "- A voice note of staff in the history shows its transcript as text, or the line \"#{voice_note}\" when it has none.",
         'never offer or book again what it may have settled.',
-        'When the patient\'s message follows a voice note without a transcript (a thanks, an ok, a yes, a confirmation), leave the reply ' \
-        'to staff: response_mode human, operator_note naming the voice note; never suppress it.',
-        'A thanks, ok or confirmation that the patient will come ("спасибо, буду", "хорошо, придём", "рахмет, келемін") after a time or a ' \
-        'visit that the history shows in a message or a transcript as agreed, booked, confirmed or reminded, while the patient has an ' \
-        'upcoming appointment or a booking that waits for approval, needs no reply: set response_mode to suppress; never answer it with a ' \
-        'greeting alone, a new booking or a question for data already given.',
-        'A yes or ok to a time that staff offered, which is not the time of an appointment the patient has, accepts it: book that time.'
+        'A thanks, ok or confirmation that the patient will come ("спасибо, буду", "хорошо, придём", "рахмет, келемін") that asks ' \
+        'nothing and names no new time needs no reply, after a time or a visit that the history shows as agreed, booked, confirmed or ' \
+        'reminded and also after a voice note of staff: set response_mode to suppress; never answer it with a greeting alone, a new ' \
+        'booking or a question for data already given.',
+        'A yes or ok to a time that staff offered in a message, which is not the time of an appointment the patient has, accepts it: ' \
+        'book that time.'
       )
+    end
+
+    it 'never tells a suggestion to hand a voice note to staff' do
+      expect(suggestion_rules).not_to include('leave the reply to staff')
+      expect(suggestion_rules).not_to match(/follows a voice note/)
     end
 
     it 'names the exact line the history builder writes for a voice note without a transcript, in neutral words' do
@@ -221,8 +227,8 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
     let(:day_rule) do
       'the patient\'s last message has no stamp, its day is written under Now when it was sent before today. Read today, tomorrow, the ' \
         'day after tomorrow and weekdays in every patient message from the day that message was sent, never from Now (under Now they ' \
-        'are written out for the last message); if the day the patient meant has passed, say so and offer the nearest free times with ' \
-        'full dates.'
+        'are written out for the last message); if the day the patient meant has passed, say so, naming its date, and offer the nearest ' \
+        'free times with full dates.'
     end
     # Review of quality-fixes-1 (M6): later only on a day the patient named; a notice before a visit comes from the clinic instructions.
     let(:search_rule) do
@@ -245,9 +251,11 @@ RSpec.describe Captain::Assistant, '#agent_instructions' do
 
       rendered = assistant.agent_instructions(run_context('reply_suggestion', monday_clock))
 
-      expect(rendered).to include('Monday, 26 October 2026 (2026-10-26), 09:00, Almaty (UTC+5). Tomorrow: Tuesday, 27 October 2026',
+      expect(rendered).to include('Monday, 26 October 2026 (2026-10-26), 09:00, Almaty (UTC+5).',
                                   "Patient's last message was sent Saturday, 24 October 2026 (2026-10-24), 09:50 (2 days ago).",
-                                  'tomorrow (завтра, ертең) = Sunday, 25 October 2026 (2026-10-25)')
+                                  'tomorrow (завтра, ертең) = Sunday, 25 October 2026 (2026-10-25)',
+                                  '2026-10-26 is today, 2026-10-27 is tomorrow.')
+      expect(rendered).not_to include('Almaty (UTC+5). Tomorrow:')
     end
   end
 end

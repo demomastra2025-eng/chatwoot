@@ -450,6 +450,35 @@ RSpec.describe Captain::ReplySuggestionService do
           expect(service.perform).to include(outcome: 'no_reply', reason: 'Пациент отправил только эмодзи.')
         end
 
+        # The suggestion is made when the operator asks for it, hours after the patient wrote «буду» to the reminder: the visit it names has
+        # ended by then, but it was the visit of the patient when they wrote (the eval of 27.10, c76-1222650).
+        it 'keeps a no_reply for the confirmation of a visit that has ended since the patient wrote it' do
+          resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
+          conversation.messages.update_all(created_at: Time.zone.parse('2026-10-20 07:00:00 UTC')) # rubocop:disable Rails/SkipsModelValidations
+          travel_to(Time.zone.parse('2026-10-21 07:00:00 UTC')) do
+            create(:message, conversation: conversation, message_type: :outgoing, content: 'Напоминаем: сегодня в 14:00 у вас приём. Ждём вас.')
+            create(:message, conversation: conversation, message_type: :incoming, content: 'Спасибо, буду')
+            create(:scheduling_appointment, account: account, contact: conversation.contact, resource: resource,
+                                            starts_at: Time.zone.parse('2026-10-21 09:00:00 UTC'),
+                                            ends_at: Time.zone.parse('2026-10-21 09:30:00 UTC'))
+          end
+          allow(runner_double).to receive(:generate_response).and_return(emoji_only_no_reply)
+
+          travel_to(Time.zone.parse('2026-10-21 11:00:00 UTC')) do
+            expect(service.perform).to include(outcome: 'no_reply', reason: 'Пациент отправил только эмодзи.')
+          end
+        end
+
+        # The eval of 27.10 (c78-1214235, c78-1244961): the operator's voice note had no transcript and a thanks after it was sent to staff.
+        it 'keeps a no_reply for a bare thanks after a voice note of staff without a transcript' do
+          voice = create(:message, conversation: conversation, message_type: :outgoing, content: nil)
+          voice.attachments.create!(account_id: account.id, file_type: :audio, external_url: 'https://example.com/voice.ogg')
+          create(:message, conversation: conversation, message_type: :incoming, content: 'Ок, спасибо')
+          allow(runner_double).to receive(:generate_response).and_return(emoji_only_no_reply)
+
+          expect(service.perform).to include(outcome: 'no_reply', reason: 'Пациент отправил только эмодзи.')
+        end
+
         it 'answers human_needed with the note of the agent' do
           allow(runner_double).to receive(:generate_response).and_return(
             { 'response' => '', 'response_mode' => 'human', 'operator_note' => 'В базе нет ответа про оперирующего ЛОРа.' }

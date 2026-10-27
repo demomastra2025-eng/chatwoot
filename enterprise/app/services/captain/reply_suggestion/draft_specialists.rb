@@ -13,15 +13,23 @@
 # so a time stands under the nearest name after it. A sentence is read clause by clause, a clause ends at «а», «но», «однако» or «зато»
 # («Иванова в 10:00, а 14:00 у Петровой» is two clauses, each with its own order). Also left alone: a name the draft addresses the patient
 # with («Мария, есть 10:00 у Ивановой»), and the time of a booking the patient has, which the draft names without offering it.
+#
+# A word is the name of a specialist when it is a form of one of the words of her name, read as the search of specialists reads it
+# (Scheduling::SearchText: case, ё and the Kazakh letters folded, the case ending cut off): «Князовой» is «Князова», «Жанаргүл» is
+# «Жанаргуль», and «Жанаргүл» is never «Жанат». The same word never names two specialists. The suggestion eval of 27.10 flagged three
+# drafts, all by mistake: a Kazakh letter in a name (the shorter name of another doctor matched its first letters), a sentence that went
+# on after «₸.», and the initial «А.» of a doctor read as the conjunction «а».
 module Captain::ReplySuggestion::DraftSpecialists
-  # A word of a name carries it from this many letters; a case form is cut off so «Князова» is found in «Князовой».
+  # A word of a name counts from this many letters (shorter words are initials, particles and common words).
   MIN_NAME_WORD = 4
   WORD = /[[:alpha:]]{#{MIN_NAME_WORD},}/
-  # A line, or the end of a sentence (the full stop after an initial or a capital, «Ж.» or «УЗИ.», does not end one).
-  SENTENCE_END = /\n+|(?<=[[:lower:][:digit:])»"'][.!?])[[:space:]]+/
-  # Where a sentence turns to another specialist or to another time: «а», «но», «однако», «зато». A dash or a semicolon does not end a
-  # clause: «Князова Жанат — 11:00, 12:30; Турешева Акбаян — 09:00» lists the times under the names before them.
-  CLAUSE_END = /(?<![[:alpha:]])(?:а|но|однако|зато)(?![[:alpha:]])/i
+  # A line, or the end of a sentence: an exclamation or a question mark, or a full stop that no capital letter stands before (the full
+  # stop after an initial or a capital, «Ж.» or «УЗИ.», does not end one; the one after a digit, a sign like «₸» or a lower case letter does).
+  SENTENCE_END = /\n+|(?:(?<![[:upper:]])\.|[!?])[[:space:]]+/
+  # Where a sentence turns to another specialist or to another time: «а», «но», «однако», «зато», in lower case (the initial «А.» of a
+  # doctor is no conjunction, and a capital word starts a sentence, which is split before). A dash or a semicolon does not end a clause:
+  # «Князова Жанат — 11:00, 12:30; Турешева Акбаян — 09:00» lists the times under the names before them.
+  CLAUSE_END = /(?<![[:alpha:]])(?:а|но|однако|зато)(?![[:alpha:]])/
   # The words before a name that address the patient by it («Добрый день, Айгерим», «Здравствуйте, Мария»).
   GREETING = /\A(?:(?:добр\p{L}+[[:space:]]+\p{L}+|здравствуйте|привет|сәлеметсіз бе|сәлем)[,!]?[[:space:]]+)?\z/i
 
@@ -70,8 +78,8 @@ module Captain::ReplySuggestion::DraftSpecialists
       match = Regexp.last_match
       next if addressing?(sentence, match)
 
-      word = match[0].downcase
-      ids = people.keys.select { |id| stems[id].any? { |stem| word.start_with?(stem) } }
+      stem = stem_of(match[0])
+      ids = people.keys.select { |id| stems[id].include?(stem) }
       [match.begin(0), ids.first] if ids.one?
     end
   end
@@ -92,7 +100,13 @@ module Captain::ReplySuggestion::DraftSpecialists
     side&.last
   end
 
+  # The stems of the words of a name ("Князова Жанат" -> ["князов", "жанат"]).
   def name_stems(name)
-    name.to_s.downcase.scan(WORD).map { |word| word.length > 5 ? word[0, word.length - 2] : word[0, [word.length - 1, MIN_NAME_WORD].max] }
+    Scheduling::SearchText.normalize(name).scan(WORD).map { |word| Scheduling::SearchText.stem(word) }
+  end
+
+  # The stem of a word of the draft, read as the stems of a name are: the same word in another case, or with a Kazakh letter, is the same.
+  def stem_of(word)
+    Scheduling::SearchText.stem(Scheduling::SearchText.normalize(word))
   end
 end

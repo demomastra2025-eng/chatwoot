@@ -23,9 +23,8 @@
 #                    one: it opens or resumes the dialog. It is taken only when it is safe (#no_reply_outcome): an include answer yes
 #                    for another agent routes to that agent, and a message that asks or names something (a question mark, a digit, a
 #                    question word, more than NO_REPLY_MAX_WORDS words, a request to cancel or move a visit), answers a clinic question,
-#                    accepts a time the clinic offered, confirms a visit that nobody agreed, follows a clinic voice note whose words are
-#                    unknown (Captain::SilenceCheck) or opens the dialog stays with the current agent (with none, the most probable
-#                    agent): a wrong no_reply_needed silences a request
+#                    accepts a time the clinic offered, confirms a visit that nobody agreed (Captain::SilenceCheck) or opens the dialog
+#                    stays with the current agent (with none, the most probable agent): a wrong no_reply_needed silences a request
 #   nobody           no listed agent handles it (council parts)
 # A model that gives no probabilities counts its chosen key as the most probable one: a yes is 0.5 to 1 and a no 0 to 0.5 by its
 # confidence (0.5 + confidence / 2 and 0.5 - confidence / 2), so a yes always ranks above a no.
@@ -56,7 +55,7 @@ class Captain::Runtime::DecisionRouter::Questions
                          'no offered time or booking that still waits for an answer of the patient, and gives no personal data. An ok, ' \
                          '"хорошо", "жарайды" or a thumbs-up that answers a clinic question offering a time or a booking accepts it: ' \
                          'not this. A thanks, ok or "буду", "придём", "келемін" that only confirms a visit or a time the clinic already ' \
-                         'agreed, booked or confirmed closes the topic: this, but not after a clinic voice note whose words are unknown. ' \
+                         'agreed, booked or confirmed closes the topic: this. ' \
                          'A greeting opens or resumes the dialog: not this. A demand to stop writing is not this either. ' \
                          'Whoever the current agent is; never a council. ' \
                          "Every include_agent question is no, except the current agent's."
@@ -183,9 +182,8 @@ class Captain::Runtime::DecisionRouter::Questions
   # A bare thanks, ok, goodbye or emoji in a dialog: no question mark, digit or question word, NO_REPLY_MAX_WORDS words at most, no
   # request to cancel, move or make a visit («спасибо, не буду»), and the last clinic message asked the patient nothing (an ok to
   # «Записать вас?» accepts the offer). The facts the models cannot decide are checked by Captain::SilenceCheck: a confirmation that
-  # the patient will come needs a visit to confirm, an acceptance of a time that the clinic offered is not a courtesy, and a clinic voice
-  # note whose words are unknown is answered by staff or the agent. A message that opens the dialog (a first «Здравствуйте!») always
-  # gets an answer.
+  # the patient will come needs a visit to confirm, and an acceptance of a time that the clinic offered is not a courtesy. A message
+  # that opens the dialog (a first «Здравствуйте!») always gets an answer.
   def courtesy_only?
     return false unless @snapshot.mid_dialog?
 

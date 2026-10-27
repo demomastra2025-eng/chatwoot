@@ -96,6 +96,71 @@ RSpec.describe Captain::ReplySuggestion::DraftSpecialists do
     expect(misattributed('', two_gynecologists)).to eq([])
   end
 
+  # The suggestion eval 27.10 flagged three drafts and all three flags were wrong. Each draft below is one of them (the names and the
+  # times are those of the clinic's calendar of that run).
+  describe 'the drafts that the eval of 27.10 flagged by mistake' do
+    # c43-1242656: «Жанаргүл» (a Kazakh letter) was no name of the catalog («Жанаргуль»), and the first four letters of «Жанат» matched it, so
+    # the times of Ешимбаева were read under Князова.
+    it 'reads a Kazakh letter in a name as the Russian one: «Жанаргүл» is «Жанаргуль», and never «Жанат»' do
+      gynecologists = context_of(read({ days: [named_day(132, 'Бакирова Райхан', '09:00', '09:30', '10:30', '11:00', '11:30'),
+                                               named_day(123, 'Ешимбаева Жанаргуль', '09:00', '09:30', '10:30', '11:30', '12:30'),
+                                               named_day(131, 'Князова Жанат', '09:00', '10:00', '11:15', '12:15', '13:30')] }))
+      draft = 'Сәлеметсіз бе! Ертең, 31 қазанда гинекологқа бос орындар бар: Бакирова Райхан — 09:00 немесе 10:30; ' \
+              'Ешимбаева Жанаргүл — 09:30 немесе 12:30; Князова Жанат — 11:15. Қай уақыт ыңғайлы?'
+
+      expect(misattributed(draft, gynecologists)).to eq([])
+      expect(misattributed('Ешимбаева Жанаргүл — 11:15', gynecologists)).to eq([{ 'name' => 'Ешимбаева Жанаргуль', 'time' => '11:15' }])
+      expect(misattributed('У Жанаргүл 09:30, у Жаната 11:15.', gynecologists)).to eq([])
+    end
+
+    # c43-1241622: the sentence went on after «15 000 ₸.» (a full stop after a sign is the end of a sentence), so the first name of the draft
+    # was in the price sentence, and the times of the list after it were read under the name before them, not the name after them.
+    it 'ends a sentence at a full stop after a sign like «₸», so a list of «в 09:00 у Иванова» reads its times under the names after them' do
+      gynecologists = context_of(read({ days: [named_day(126, 'Амиркулова Анар', '11:00', '11:30', '12:15'),
+                                               named_day(132, 'Бакирова Райхан', '09:00', '09:30', '10:30'),
+                                               named_day(130, 'Шангараева Алия', '09:00', '10:30', '11:00')] }))
+      draft = 'Первичный приём гинеколога стоит от 10 000 до 15 000 ₸: у большинства врачей — 10 000 ₸, у Шангараевой Алии Аблаевны — ' \
+              '15 000 ₸. Ближайшие свободные окна: 31 октября в 09:00 у Бакировой Райхан (10 000 ₸), 31 октября в 11:00 у Амиркуловой ' \
+              'Анар (10 000 ₸), 2 ноября в 09:00 у Шангараевой Алии Аблаевны (15 000 ₸).'
+
+      expect(described_class.clauses_of('Стоит 15 000 ₸. Окна: в 09:00 у Ивановой')).to eq(['Стоит 15 000 ₸', 'Окна: в 09:00 у Ивановой'])
+      expect(misattributed(draft, gynecologists)).to eq([])
+      expect(misattributed(draft.sub('в 11:00 у Амиркуловой', 'в 09:00 у Амиркуловой'), gynecologists))
+        .to eq([{ 'name' => 'Амиркулова Анар', 'time' => '09:00' }])
+    end
+
+    # c76-1226318: the initial «А.» of «Агабек А.» was read as the conjunction «а», which cut the list in two and put the times of Агабек
+    # under the name after them.
+    it 'reads the initial of a doctor as part of the name, never as the conjunction «а»' do
+      days = [named_day(166, 'Жунусова Ж.', '08:10', '09:50', '12:00', '13:50', '15:50'),
+              named_day(163, 'Агабек А.', '13:40', '14:50', '16:10', '17:20', '18:40'),
+              named_day(167, 'Хаддадин Дани', '08:10', '09:20', '10:30', '11:40', '12:50')]
+      otolaryngologists = context_of(read({ days: days }))
+      draft = 'Здравствуйте! На сегодня есть свободные окна к детскому ЛОРу: Жунусова Ж. — 09:50, 12:00 или 15:50; ' \
+              'Агабек А. — 13:40, 16:10 или 18:40; Хаддадин Дани — 09:20, 11:40 или 12:50.'
+
+      expect(described_class.clauses_of('Агабек А. — 13:40, а 14:50 у Жунусовой')).to eq(['Агабек А. — 13:40,', '14:50 у Жунусовой'])
+      expect(described_class.clauses_of('Агабек А. — 13:40; Хаддадин Дани — 09:20')).to eq(['Агабек А. — 13:40; Хаддадин Дани — 09:20'])
+      expect(misattributed(draft, otolaryngologists)).to eq([])
+      expect(misattributed(draft.sub('Агабек А. — 13:40', 'Агабек А. — 09:20'), otolaryngologists))
+        .to eq([{ 'name' => 'Агабек А.', 'time' => '09:20' }])
+    end
+  end
+
+  describe 'the words of a name' do
+    it 'matches a word of the name as a whole, in any case, and never by its first letters' do
+      people = { 1 => { name: 'Князова Жанат' }, 2 => { name: 'Ешимбаева Жанаргуль' }, 3 => { name: 'Хаддадин Дани' } }
+      stems = people.transform_values { |person| described_class.name_stems(person[:name]) }
+
+      expect(stems).to eq(1 => %w[князов жанат], 2 => %w[ешимбаев жанаргул], 3 => %w[хаддадин дани])
+      forms = %w[Князова Князовой Князову Жанат Жаната Жанату]
+      expect(forms.map { |word| described_class.stem_of(word) }).to eq(%w[князов князов князов жанат жанат жанат])
+      expect(described_class.stem_of('Жанаргүл')).to eq(described_class.stem_of('Жанаргуль'))
+      expect(described_class.stem_of('Жанаргүл')).not_to eq(described_class.stem_of('Жанат'))
+      expect(described_class.stem_of('Данияр')).not_to eq(described_class.stem_of('Дани'))
+    end
+  end
+
   it 'knows a specialist of the catalog who has no free time listed' do
     catalog = read({ resources: [{ id: 128, name: 'Агабек Әлібек', specialty: 'ЛОР' }] }, tool: 'search_scheduling_resources')
     context = context_of(read({ days: [named_day(120, 'Турешева Акбаян', '11:00')] }), catalog)

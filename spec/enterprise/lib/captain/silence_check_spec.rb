@@ -3,7 +3,8 @@
 require 'rails_helper'
 
 # The review of quality-fixes-1 (M1, H2): a silence about a short answer swallowed an accepted offer («Да, подходит» to a time that staff
-# offered), an answer to a voice note of staff whose words nobody knows, and a confirmation of a visit that nobody agreed.
+# offered) and a confirmation of a visit that nobody agreed. The eval of 27.10 after it: a bare thanks, ok or «буду» after a voice note of
+# staff, and after any message of the clinic that the history stamped with its send time, was sent to staff (8 of 10 wrong handoffs).
 RSpec.describe Captain::SilenceCheck do
   let(:visit) { Captain::Runtime::AgreedVisit.new(times: ['10:00']) }
   let(:none) { Captain::Runtime::AgreedVisit::NONE }
@@ -18,17 +19,46 @@ RSpec.describe Captain::SilenceCheck do
   describe 'a clinic voice note whose words are unknown' do
     let(:voice) { Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE }
 
-    it 'is never closed by a courtesy, whatever the patient answers and whether a visit exists' do
-      ['Спасибо', 'Ок', 'Спасибо, буду', 'Рахмет, келемін', 'Да'].each do |text|
-        expect(reason(text, voice, visit)).to eq(:unknown_voice_note), text
-        expect(reason(text, voice, none)).to eq(:unknown_voice_note), text
+    it 'is closed by a bare thanks, ok or confirmation as any other message of the clinic is, whether a visit exists or not' do
+      ['Спасибо', 'Ок', 'Рахмет', 'Ок, спасибо', 'Да'].each do |text|
+        expect(reason(text, voice, visit)).to be_nil, text
+        expect(reason(text, "[Sat 24.10 09:50] #{voice}", visit)).to be_nil, text
+        expect(reason(text, voice, none)).to be_nil, text
+      end
+      ['Спасибо, буду', 'Рахмет, келемін'].each do |text|
+        expect(reason(text, "[Sat 24.10 09:50] #{voice}", visit)).to be_nil, text
+        expect(reason(text, "[Sat 24.10 09:50] #{voice}", none)).to eq(:no_agreed_visit), text
       end
     end
 
-    it 'names a voice note by the placeholder the history shows, even with the send stamp in front' do
-      expect(reason('Спасибо', "[Sat 24.10 09:50] #{voice}", visit)).to eq(:unknown_voice_note)
-      expect(described_class.staff_voice_note?('Здравствуйте')).to be(false)
-      expect(described_class.staff_voice_note?(nil)).to be(false)
+    it 'has no check of its own: the placeholder offers no time, and the reasons are the two of the words and the facts' do
+      expect(described_class::REASONS).to eq(%i[no_agreed_visit offered_time])
+      expect(described_class).not_to respond_to(:staff_voice_note?)
+    end
+  end
+
+  # The history writes the send time in front of every message of the clinic («[Sat 24.10 09:50] ...»): it is a date and a clock time, but
+  # no time the clinic offered. The eval of 27.10 read it as one for every ok and «буду», and sent those to staff.
+  describe 'the send time that the history writes in front of the message of the clinic' do
+    it 'is no time the clinic offered: an ok or «буду» to a reminder of the visit the contact has is a courtesy' do
+      stamped = "[Sat 24.10 09:50] #{reminder}"
+
+      ['Ок', 'Хорошо', 'Да', 'Спасибо, буду', 'Хорошо, придём'].each do |text|
+        expect(reason(text, stamped, visit)).to be_nil, text
+      end
+    end
+
+    it 'leaves a message of the clinic without a time or a date offering nothing, whatever time it was sent at' do
+      expect(reason('Ок', '[Sat 24.10 09:50] УЗИ почек стоит 8000 тенге.', none)).to be_nil
+      expect(reason('Хорошо', '[Sat 24.10 09:50] Ждём ваш ответ', none)).to be_nil
+    end
+
+    it 'still reads the time the clinic offers in the words of the message' do
+      stamped_offer = "[Sat 24.10 09:50] #{offer}"
+
+      expect(reason('Да, подходит', stamped_offer, visit)).to eq(:offered_time)
+      expect(reason('Ок', '[Sat 24.10 09:50] Ждём вас завтра.', none)).to eq(:offered_time)
+      expect(reason('Ок', '[Sat 24.10 09:50] Ждём вас завтра.', visit)).to be_nil
     end
   end
 

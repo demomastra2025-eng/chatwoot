@@ -603,11 +603,19 @@ module Enterprise::Captain::ReplySuggestionService
   def classify_agent_response(raw_response, history = [])
     outcome = Captain::ReplySuggestion::AgentOutcomeClassifier.new(
       raw_response, trace_collector: @trace_collector, patient_text: unanswered_patient_text(history),
-                    last_clinic: last_clinic_text(history), visit: Captain::Runtime::AgreedVisit.for(conversation)
+                    last_clinic: last_clinic_text(history),
+                    visit: Captain::Runtime::AgreedVisit.for(conversation, now: patient_message_time(history))
     ).perform
     return outcome unless outcome[:outcome] == 'draft' && build_follow_up_context?
 
     outcome.merge(follow_up_context: build_follow_up_context([{ role: 'user', content: formatted_conversation }], outcome))
+  end
+
+  # The moment the patient wrote the message the suggestion answers (the last patient message of the history; now without one): the visits
+  # that had not ended by then are the ones it can answer about (Captain::Runtime::AgreedVisit), as for the router of the same turn.
+  def patient_message_time(history)
+    message = Array(history).reverse.map { |item| item.to_h.with_indifferent_access }.find { |item| item[:role].to_s == 'user' }
+    Captain::PromptClock.parse_time(message&.dig(:sent_at)) || Time.current
   end
 
   # The text of the last message of the clinic before the patient's unanswered ones (the same as the router's last recent message);

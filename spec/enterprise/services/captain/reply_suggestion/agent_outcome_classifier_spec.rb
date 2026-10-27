@@ -369,9 +369,9 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
   end
 
   # Review of quality-fixes-1 (M1): the router and the agent both decide a silence; the check of the words and the facts is made on their
-  # outcome (Captain::SilenceCheck). A yes to a time staff offered, an answer to a voice note nobody can read, and a confirmation of a
-  # visit nobody agreed are not swallowed.
-  describe 'a silence about an offer, a voice note of staff whose words are unknown, or a visit nobody agreed' do
+  # outcome (Captain::SilenceCheck). A yes to a time staff offered and a confirmation of a visit nobody agreed are not swallowed; a
+  # plain thanks, ok or «буду» is silent also after a voice note of staff (the eval of 27.10: 6 of the 10 wrong handoffs).
+  describe 'a silence about an offer or a visit nobody agreed' do
     let(:suppressed) do
       { 'response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true, 'operator_note' => 'Пациент только благодарит.',
         'usage' => usage }
@@ -400,13 +400,28 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
         .to include(outcome: 'human_needed', reason: note, pending_actions: [{ 'action_id' => 'a-1' }])
     end
 
-    it 'does it for any answer to a voice note of staff without a transcript, and for a confirmation when nothing is booked' do
-      voice = Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE
-
-      ['Спасибо', 'Ок', 'Рахмет, келемін'].each do |text|
-        expect(classify(suppressed, text, last_clinic: voice, visit: booked)).to include(outcome: 'human_needed', reason: note), text
-      end
+    it 'does it for a confirmation when nothing is booked' do
       expect(classify(suppressed, 'Спасибо, буду', last_clinic: 'Ваша стоимость 8000 тенге.', visit: none))
+        .to include(outcome: 'human_needed', reason: note)
+    end
+
+    # The eval of 27.10 (c78-1214235, c78-1244961, c76-1205215): a thanks after a voice note of staff was sent to staff.
+    it 'keeps the no_reply of a bare thanks, ok or confirmation after a voice note of staff without a transcript' do
+      voice = "[Mon 26.10 18:59] #{Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE}"
+
+      ['Спасибо', 'Ок', 'Ок, спасибо', 'Рахмет, келемін', 'Спасибо, буду'].each do |text|
+        expect(classify(suppressed, text, last_clinic: voice, visit: booked)).to include(outcome: 'no_reply'), text
+      end
+    end
+
+    # The history writes the send time in front of every message: it is no time that the clinic offered.
+    it 'does not take the send time of the last message of the clinic for a time it offered' do
+      reminder = '[Sat 24.10 09:50] Напоминаем: завтра в 10:00 у вас приём.'
+
+      ['Ок', 'Спасибо, буду', 'Хорошо, придём'].each do |text|
+        expect(classify(suppressed, text, last_clinic: reminder, visit: booked)).to include(outcome: 'no_reply'), text
+      end
+      expect(classify(suppressed, 'Да, подходит', last_clinic: '[Sat 24.10 09:50] Есть окно завтра в 14:00.', visit: booked))
         .to include(outcome: 'human_needed', reason: note)
     end
 

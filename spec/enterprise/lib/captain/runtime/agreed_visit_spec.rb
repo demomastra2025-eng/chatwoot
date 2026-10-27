@@ -40,6 +40,16 @@ RSpec.describe Captain::Runtime::AgreedVisit do
     expect(agreed.times).to eq(%w[10:00 14:30])
   end
 
+  # A suggestion is made when the operator asks for it. The patient answered the reminder of a visit at 14:00 («буду») at noon, the
+  # operator answered at 16:00: the visit had ended by then, but it is the visit the patient confirmed.
+  it 'reads the visits as they stood when the patient wrote, not when the suggestion is made' do
+    visit(Time.zone.parse('2026-10-09 09:00:00 UTC'))
+    visit(Time.zone.parse('2026-10-10 03:30:00 UTC'))
+
+    expect(described_class.for(conversation).times).to eq(['08:30'])
+    expect(described_class.for(conversation, now: Time.zone.parse('2026-10-09 07:00:00 UTC')).times).to eq(%w[14:00 08:30])
+  end
+
   it 'counts a booking or a move card that waits for the approval of staff, and no other card' do
     allow(Captain::ReplySuggestion::ActionApprovalService).to receive(:pending_for).and_return([{ 'tool_name' => 'cancel_appointment' }])
     expect(described_class.for(conversation)).not_to be_agreed

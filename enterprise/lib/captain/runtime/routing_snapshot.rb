@@ -190,8 +190,10 @@ class Captain::Runtime::RoutingSnapshot
       { role: role, agent_id: (agent_id_of(message) if role == 'clinic'), text: text_of(message[:content]).first(TEXT_LIMIT) }.compact
     end
 
+    # The patient's words of the turn. The history writes the send time in front of every message ("[Sat 24.10 09:50]"): it is no word of
+    # the patient (its digits would keep a bare thanks from being one).
     def latest_text(current_input, unanswered)
-      texts = unanswered.map { |message| text_of(message[:content]) } + [text_of(current_input)]
+      texts = unanswered.map { |message| Captain::PromptClock.unstamped(text_of(message[:content])) } + [text_of(current_input)]
       texts.compact_blank.join("\n").first(LATEST_LIMIT)
     end
 

@@ -122,8 +122,50 @@ RSpec.describe Captain::PromptClock do
         'Read its relative days from that day, never from the clock above: ' \
         'today (сегодня, бүгін) = Saturday, 24 October 2026 (2026-10-24), ' \
         'tomorrow (завтра, ертең) = Sunday, 25 October 2026 (2026-10-25), ' \
-        'the day after tomorrow (послезавтра) = Monday, 26 October 2026 (2026-10-26).'
+        'the day after tomorrow (послезавтра) = Monday, 26 October 2026 (2026-10-26). ' \
+        'By the clock above: 2026-10-24 has passed (2 days ago), 2026-10-25 has passed (yesterday), 2026-10-26 is today, ' \
+        '2026-10-27 is tomorrow. ' \
+        'In your reply name such a day by its date, and call a day today or tomorrow only when it is today or tomorrow by the clock above.'
       )
+    end
+
+    # Suggestion eval 27.10 (c77-1167712): the patient wrote «завтра 09:00» on Tuesday 27 October and the operator answered on Wednesday
+    # 28 October; the model searched Thursday, the clock's tomorrow. The line says that the patient's tomorrow is today by the clock.
+    it 'says where each of the three days stands by the clock, so the patient\'s tomorrow of yesterday is read as today' do
+      wednesday = clock('Asia/Almaty', '2026-10-28T02:01:37Z')
+      line = described_class.message_line(wednesday.merge(message_sent_at: '2026-10-27T03:30:00Z'))
+
+      expect(line).to include('sent Tuesday, 27 October 2026 (2026-10-27), 08:30 (yesterday)',
+                              'tomorrow (завтра, ертең) = Wednesday, 28 October 2026 (2026-10-28)',
+                              'By the clock above: 2026-10-27 has passed (yesterday), 2026-10-28 is today, 2026-10-29 is tomorrow.',
+                              'In your reply name such a day by its date')
+    end
+
+    # Suggestion eval 27.10 (c77-1167712): the model read the «ертең» of yesterday's message as the "Tomorrow:" of the clock line, though the
+    # message line named the day. With a message of an earlier day the clock line has no "Tomorrow:", and the message line says which
+    # day is the clock's tomorrow.
+    it 'leaves the "Tomorrow" out of the clock line when the message being answered was sent on an earlier day' do
+      wednesday = clock('Asia/Almaty', '2026-10-28T02:01:37Z')
+
+      expect(described_class.now_line(wednesday.merge(message_sent_at: '2026-10-27T03:30:00Z')))
+        .to eq('Wednesday, 28 October 2026 (2026-10-28), 07:01, Almaty (UTC+5).')
+      expect(described_class.now_line(wednesday.merge(message_sent_at: '2026-10-27T03:30:00Z'))).not_to include('Tomorrow')
+      expect(described_class.now_line(wednesday.merge(message_sent_at: '2026-10-28T01:30:00Z')))
+        .to eq('Wednesday, 28 October 2026 (2026-10-28), 07:01, Almaty (UTC+5). Tomorrow: Thursday, 29 October 2026 (2026-10-29).')
+      expect(described_class.now_line(wednesday)).to end_with('Tomorrow: Thursday, 29 October 2026 (2026-10-29).')
+    end
+
+    # Suggestion eval 27.10 (c78-1186952): the patient's «сегодня» of yesterday was named «Сегодня, 29 октября» in the reply.
+    it 'says that the patient\'s today of an earlier day has passed, and when a day is further ahead' do
+      friday = clock('Asia/Almaty', '2026-10-30T08:51:00Z')
+
+      expect(described_class.message_line(friday.merge(message_sent_at: '2026-10-29T08:33:00Z')))
+        .to include('By the clock above: 2026-10-29 has passed (yesterday), 2026-10-30 is today, 2026-10-31 is tomorrow.')
+      expect(described_class.message_line(friday.merge(message_sent_at: '2026-10-23T08:33:00Z')))
+        .to include('By the clock above: 2026-10-23 has passed (7 days ago), 2026-10-24 has passed (6 days ago), ' \
+                    '2026-10-25 has passed (5 days ago), 2026-10-30 is today, 2026-10-31 is tomorrow.')
+      future = clock('Asia/Almaty', '2026-10-24T08:00:00Z').merge(message_sent_at: '2026-10-23T08:33:00Z')
+      expect(described_class.message_line(future)).to include('2026-10-23 has passed (yesterday), 2026-10-24 is today, 2026-10-25 is tomorrow.')
     end
 
     it 'writes the dates of the message across the end of a month, not those of the clock' do

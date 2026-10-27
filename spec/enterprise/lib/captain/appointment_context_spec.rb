@@ -163,6 +163,16 @@ RSpec.describe Captain::AppointmentContext do
     it 'is empty without a visit' do
       expect(context.upcoming_booked_clocks).to eq([])
     end
+
+    # A suggestion is made when the operator asks for it, hours after the patient wrote: the visit of the reminder the patient answered
+    # («буду») may have ended by then (the eval of 27.10, c76-1222650: the reminder named 14:00, the operator answered at 16:00).
+    it 'reads the visits as they stood at the moment given: one that had not ended by then counts' do
+      appointment(starts_at: Time.zone.parse('2026-10-10 09:00:00 UTC'))
+      appointment(starts_at: Time.zone.parse('2026-10-11 03:30:00 UTC'))
+
+      expect(context.upcoming_booked_clocks(now: Time.zone.parse('2026-10-10 11:00:00 UTC'))).to eq(['08:30'])
+      expect(context.upcoming_booked_clocks(now: Time.zone.parse('2026-10-10 06:00:00 UTC'))).to eq(%w[14:00 08:30])
+    end
   end
 
   # The list covers the visits booked from this chat only, so an empty list proves nothing: it says so to the agent.
@@ -174,6 +184,17 @@ RSpec.describe Captain::AppointmentContext do
     appointment(starts_at: 1.day.from_now)
     expect(context.list).not_to have_key(:note)
     expect(context.list(offset: 10_000)).not_to have_key(:note)
+  end
+
+  # The eval of 27.10 (c43-1201871, c43-1249742): the note told the agent to leave the request to staff after an empty list also for a plain
+  # booking. Staff are asked for only when the patient asks to cancel or move a visit; a new booking goes on.
+  it 'asks for staff only for a request to cancel or move a visit, and tells a new booking to go on' do
+    note = described_class::NOTHING_FOUND_NOTE
+
+    expect(note).to include('Only when the patient asks to cancel or move a visit:', 'leave that request to staff',
+                            'For a new booking an empty result changes nothing: go on with the booking and do not hand it to staff')
+    expect(note.index('Only when the patient asks to cancel or move a visit')).to be < note.index('staff')
+    expect(note).not_to include('leave the request to staff')
   end
 
   it 'renders empty, single, and capped many-appointment blocks without system data' do

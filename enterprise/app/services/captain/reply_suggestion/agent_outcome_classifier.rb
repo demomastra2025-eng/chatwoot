@@ -29,8 +29,7 @@
 # («Отмена завтра», «не смогу прийти», «не буду», «запишите», «болдырмаңыз», «жазылғым келеді», see Captain::PatientIntent) is turned into
 # human_needed with a note of its own: a request is never swallowed by an emoji that came after it. A thanks that only names the action
 # as done («Спасибо, что перенесли», «Благодарю за перенос») is no request and stays a no_reply. The same turn into human_needed (another
-# note) for a short answer that accepts a time the clinic offered, follows a voice note of staff whose words are unknown, or confirms a
-# visit that nobody agreed (Captain::SilenceCheck).
+# note) for a short answer that accepts a time the clinic offered or confirms a visit that nobody agreed (Captain::SilenceCheck).
 #
 # A text never comes out of an outcome other than draft. An outcome of a turn that the router gave to the anchor only because no
 # agent leads the dialog says so (routing_default_to: anchor): its agent does not become the sticky agent (see StickyAgent).
@@ -247,9 +246,8 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
     )
   end
 
-  # Why a no_reply is not taken: the patient asks to cancel, move or make a visit, or answers an offer, a voice note of staff whose words
-  # are unknown, or a visit nobody agreed with a short courtesy (Captain::SilenceCheck). The router and the agent both decide a
-  # silence, so the check is made here, on their outcome.
+  # Why a no_reply is not taken: the patient asks to cancel, move or make a visit, or answers an offer, or a visit nobody agreed with a
+  # short courtesy (Captain::SilenceCheck). The router and the agent both decide a silence, so the check is made here, on their outcome.
   def swallowed_reason_key
     return 'swallowed_request' if Captain::PatientIntent.booking_change?(@patient_text)
     return unless @visit && Captain::SilenceCheck.unsafe_reason(text: @patient_text, last_clinic: @last_clinic, visit: @visit)

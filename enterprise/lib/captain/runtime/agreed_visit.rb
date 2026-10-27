@@ -5,7 +5,8 @@
 # booking or a move waits for the approval of staff in the conversation (pending). Database and Redis reads only, never a model call.
 #
 # A confirmation that the patient will come («спасибо, буду») is a courtesy only when there is a visit to confirm, and a «да» to a time
-# is an acceptance unless that time is the one of a visit that exists.
+# is an acceptance unless that time is the one of a visit that exists. The visits are read as they stood when the patient wrote: a
+# suggestion is made when the operator asks for it, hours later, and the visit of a reminder the patient answered may have ended by then.
 class Captain::Runtime::AgreedVisit
   BOOKING_CARD_TOOLS = %w[create_appointment update_appointment].freeze
 
@@ -24,8 +25,9 @@ class Captain::Runtime::AgreedVisit
   def agreed? = @pending || @times.any?
 
   class << self
-    # conversation: the conversation of the turn (nil for a run without one: nothing is agreed). Never raises: an unreadable store is
-    # no agreed visit, which only makes the check stricter.
+    # conversation: the conversation of the turn (nil for a run without one: nothing is agreed). now: the moment the patient wrote the
+    # message the turn answers; a visit that had not ended by then counts. Never raises: an unreadable store is no agreed visit, which
+    # only makes the check stricter.
     def for(conversation, now: Time.current)
       return NONE if conversation.blank? || conversation.contact_id.blank?
 

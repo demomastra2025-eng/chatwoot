@@ -42,6 +42,20 @@ RSpec.describe Captain::Runtime::RoutingSnapshot do
       expect(state[:latest_message]).to eq("Вот снимок [image]\nДавайте на 15:00, Ерлан")
     end
 
+    # The history writes the send time in front of every message ("[Wed 28.10 12:53] Спасибо"). It is no word of the patient: its digits
+    # would keep a bare thanks that came in two messages from being one.
+    it 'gives the words of the unanswered messages of the patient, without the send time the history writes in front of them' do
+      stamped = { state: { source: 'reply_suggestion' },
+                  conversation_history: [{ role: :assistant, content: '[Wed 28.10 12:01] Напоминаем: завтра в 10:00 у вас приём.' },
+                                         { role: :user, content: '[Wed 28.10 12:53] Спасибо' }],
+                  captain_v2_current_input: 'Буду' }
+
+      state = described_class.from_context(stamped, candidates: candidates).to_state
+
+      expect(state[:latest_message]).to eq("Спасибо\nБуду")
+      expect(state[:recent_messages]).to eq([{ role: 'clinic', text: '[Wed 28.10 12:01] Напоминаем: завтра в 10:00 у вас приём.' }])
+    end
+
     it 'gives the router the open questions, the source and whether staff can take over' do
       snapshot = described_class.from_context(context, candidates: candidates, human_available: true)
 

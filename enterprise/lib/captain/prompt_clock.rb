@@ -28,6 +28,7 @@ class Captain::PromptClock
   MESSAGE_LINE = <<~LINE.squish.freeze
     Patient's last message was sent %<sent>s, %<time>s (%<ago>s). Read its relative days from that day, never from the clock above:
     today (сегодня, бүгін) = %<today>s, tomorrow (завтра, ертең) = %<tomorrow>s, the day after tomorrow (послезавтра) = %<after>s.
+    %<standing>s
   LINE
 
   # The same for a message sent after midnight (before NIGHT_ENDS_AT_HOUR): the patient who writes at that hour often means the day that has
@@ -35,19 +36,29 @@ class Captain::PromptClock
   MESSAGE_NIGHT_LINE = <<~LINE.squish.freeze
     Patient's last message was sent %<sent>s, %<time>s (%<ago>s), after midnight. Read its relative days from that day, never from the
     clock above: today (сегодня, бүгін) = %<today>s, tomorrow (завтра, ертең) = %<today>s or %<tomorrow>s (after midnight "tomorrow" may mean
-    the same day), the day after tomorrow (послезавтра) = %<tomorrow>s or %<after>s. For such a day offer free slots with the full date
-    and book after the patient picks one.
+    the same day), the day after tomorrow (послезавтра) = %<tomorrow>s or %<after>s. %<standing>s For such a day offer free slots with the
+    full date and book after the patient picks one.
   LINE
+
+  # Where the three days stand by the clock of the run, and how the reply names them. A model that is told the dates still named the
+  # patient's «сегодня» of yesterday "today" in its reply and searched the patient's «завтра» from the clock's tomorrow (suggestion eval
+  # 27.10, c78-1186952 and c77-1167712): the line says it for each date, so nothing is counted.
+  STANDING_LINE = 'By the clock above: %<days>s. In your reply name such a day by its date, and call a day today or tomorrow only when ' \
+                  'it is today or tomorrow by the clock above.'
 
   class << self
     # "Monday, 12 October 2026 (2026-10-12), 12:34, Almaty (UTC+5). Tomorrow: Tuesday, 13 October 2026 (2026-10-13)." or nil when
-    # the clock holds no usable time.
+    # the clock holds no usable time. When the patient's last message was sent on an earlier day, the line has no "Tomorrow": the model
+    # took it for the «завтра» of the patient (suggestion eval 27.10, c77-1167712: «ертең» written yesterday was searched on the clock's
+    # tomorrow, with the day it means written out in the next line); the message line (#message_line) says where each day stands.
     def now_line(runtime_clock)
       local, city = local_clock(runtime_clock)
       return if local.blank?
 
-      "#{local.strftime(LONG_DATE_FORMAT)}, #{local.strftime('%H:%M')}, #{city} (#{offset_label(local)}). " \
-        "Tomorrow: #{(local + 1.day).strftime(LONG_DATE_FORMAT)}."
+      line = "#{local.strftime(LONG_DATE_FORMAT)}, #{local.strftime('%H:%M')}, #{city} (#{offset_label(local)})."
+      return line if earlier_day?(message_time(runtime_clock, local.time_zone), local)
+
+      "#{line} Tomorrow: #{(local + 1.day).strftime(LONG_DATE_FORMAT)}."
     end
 
     # One more line for the hours after midnight, when "today" and "tomorrow" are ambiguous. It names the date of today, so the
@@ -83,7 +94,7 @@ class Captain::PromptClock
       template = night?(sent) ? MESSAGE_NIGHT_LINE : MESSAGE_LINE
       format(template, sent: sent.strftime(LONG_DATE_FORMAT), time: sent.strftime('%H:%M'), ago: days == 1 ? 'yesterday' : "#{days} days ago",
                        today: sent.strftime(LONG_DATE_FORMAT), tomorrow: (sent + 1.day).strftime(LONG_DATE_FORMAT),
-                       after: (sent + 2.days).strftime(LONG_DATE_FORMAT))
+                       after: (sent + 2.days).strftime(LONG_DATE_FORMAT), standing: standing_line(sent, local))
     end
 
     # "[Sat 24.10 09:50]": the send time of a message (a time or an ISO 8601 string) in the given zone; nil without a usable time.
@@ -162,6 +173,23 @@ class Captain::PromptClock
       return if zone.blank? || time.blank?
 
       [time.in_time_zone(zone), CITIES[zone_id] || CITIES[zone.tzinfo.name] || zone_id]
+    end
+
+    # "By the clock above: 2026-10-24 has passed (2 days ago), 2026-10-25 has passed (yesterday), 2026-10-26 is today, 2026-10-27 is
+    # tomorrow. In your reply ...": the three days of the patient's message and the clock's today and tomorrow, oldest first.
+    def standing_line(sent, local)
+      today = local.to_date
+      days = ((0..2).map { |offset| (sent + offset.days).to_date } + [today, today + 1]).uniq.sort
+      format(STANDING_LINE, days: days.map { |day| "#{day.iso8601} #{standing(day, today)}" }.join(', '))
+    end
+
+    def standing(day, today)
+      gap = (day - today).to_i
+      return 'is today' if gap.zero?
+      return 'is tomorrow' if gap == 1
+      return "is in #{gap} days" if gap.positive?
+
+      gap == -1 ? 'has passed (yesterday)' : "has passed (#{-gap} days ago)"
     end
 
     def message_time(runtime_clock, zone)

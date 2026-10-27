@@ -20,7 +20,7 @@ en:
         patient_requested_human: The patient asks for a live staff member, please answer yourself.
         router_no_reply: The patient only thanks or says goodbye — no reply is needed; nothing was prepared.
         swallowed_request: The patient asks to cancel, move or make a booking, but the AI decided that no reply is needed. Check the message and answer yourself.
-        unsafe_silence: The patient answers an offer or a time of the clinic, or a voice note of staff whose words the AI does not know, or confirms a visit that is not booked, but the AI decided that no reply is needed. Check the message and answer yourself.
+        unsafe_silence: The patient answers an offer or a time of the clinic, or confirms a visit that is not booked, but the AI decided that no reply is needed. Check the message and answer yourself.
         unverified_times: 'Check the time %{times}: the AI did not find it among the free times it searched.'
         misattributed_times: 'Check the specialist for %{times}: in the search results this time belongs to another specialist, not the one named.'
         unsupported_claims: 'Check the draft: it says %{claims}, but the AI did not do that or find it, and its lookups cover the visits booked from this chat only.'

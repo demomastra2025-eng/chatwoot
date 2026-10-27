@@ -48,15 +48,15 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
   end
 
   # Suggestion eval 27.10 (c76-1205215, c78-1186457, c77-1198258): after a time was agreed (a voice note of the operator had no text)
-  # the patient wrote «Ок Рахмет / Принял / Буду» and the agent started the booking again.
-  it 'describes a bare confirmation of an agreed visit as no_reply_needed, but not after a clinic voice note whose words are unknown' do
+  # the patient wrote «Ок Рахмет / Принял / Буду» and the agent started the booking again. The platform sends no such confirmation to
+  # staff, also after a voice note: nothing in the questions mentions one.
+  it 'describes a bare confirmation of an agreed visit as no_reply_needed, with no exception for a clinic voice note' do
     description = build(3).to_h['route_mode'][:criteria]['no_reply_needed']
 
     expect(description).to include('A thanks, ok or "буду", "придём", "келемін" that only confirms a visit or a time the clinic already ' \
-                                   'agreed, booked or confirmed closes the topic: this, but not after a clinic voice note whose words ' \
-                                   'are unknown.',
-                                   'A greeting opens or resumes the dialog: not this',
+                                   'agreed, booked or confirmed closes the topic: this. A greeting opens or resumes the dialog: not this',
                                    'a thumbs-up that answers a clinic question offering a time or a booking accepts it: not this')
+    expect(description).not_to match(/voice/i)
     expect(description.length).to be <= described_class::MAX_DESCRIPTION
   end
 
@@ -227,17 +227,31 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
       expect(build(3, message: 'Рахмет, сау болыңыз 🙏').resolve(answered('no_reply_needed')).kind).to eq('no_reply')
     end
 
-    # Suggestion eval 27.10: a voice note of the clinic has no text, so the last clinic message asks nothing. Review of quality-fixes-1
-    # (M1): what the patient answers to it may accept or decline anything in it, so nothing is closed after it: the agent or staff answer.
-    it 'never takes a no_reply_needed after a clinic voice note whose words are unknown' do
-      voice = [{ role: 'clinic', agent_id: 20, text: Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE }]
+    # Suggestion eval 27.10 (c78-1214235, c78-1244961): the operator's voice note had no text, so the last clinic message asks nothing, and a
+    # bare thanks, ok or «буду» after it needs no answer, as after any other message. A question, or a refusal to come, is still answered.
+    it 'takes a no_reply_needed for a bare thanks, ok or confirmation after a clinic voice note whose words are unknown' do
+      voice = [{ role: 'clinic', agent_id: 20, text: "[Mon 26.10 18:59] #{Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE}" }]
 
-      ['Ок Рахмет Принял Буду', 'Спасибо, буду', 'Рахмет, келемін', 'Да', 'Спасибо', 'А во сколько?'].each do |text|
+      ['Ок Рахмет Принял Буду', 'Спасибо, буду', 'Рахмет, келемін', 'Спасибо', 'Ок, спасибо'].each do |text|
+        expect(build(3, current: 20, message: text, history: voice).resolve(answered('no_reply_needed')))
+          .to have_attributes(kind: 'no_reply', key: 'no_reply_needed'), text
+      end
+      ['А во сколько?', 'Спасибо, не буду'].each do |text|
         expect(build(3, current: 20, message: text, history: voice).resolve(answered('no_reply_needed')))
           .to have_attributes(kind: 'stay', key: 'stay_current'), text
       end
       expect(build(3, message: 'Спасибо, буду', history: voice).resolve(answered('no_reply_needed', include_probabilities: { 10 => 0.1, 20 => 0.4 })))
-        .to have_attributes(kind: 'agent', key: 'route_agent_20')
+        .to have_attributes(kind: 'no_reply')
+    end
+
+    # The history writes the send time in front of every message ("[Wed 28.10 12:53] Спасибо"): its digits are no word of the patient, and
+    # its clock is no time that the clinic offered.
+    it 'reads the words of the messages, not the send time the history writes in front of them' do
+      reminder = [{ role: 'clinic', agent_id: 20, text: '[Wed 28.10 12:01] Напоминаем: завтра в 10:00 у вас приём. Ждём вас.' }]
+
+      ['Ок', 'Спасибо, буду', 'Хорошо, придём', "Спасибо\nБуду"].each do |text|
+        expect(build(3, current: 20, message: text, history: reminder).resolve(answered('no_reply_needed')).kind).to eq('no_reply'), text
+      end
     end
 
     # Review of quality-fixes-1 (H2): «спасибо, буду» is a courtesy, «спасибо, не буду» is a cancellation. The words of the cancellation
