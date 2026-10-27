@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require 'rails_helper'
-require Rails.root.join('db/migrate/20261027120000_enable_communication_threads_default_feature_flag')
+require Rails.root.join('db/migrate/20261027130000_enable_communication_threads_default_feature_flag')
 
 RSpec.describe EnableCommunicationThreadsDefaultFeatureFlag do
   let(:migration) { described_class.new }
