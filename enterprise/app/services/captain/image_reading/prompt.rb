@@ -15,6 +15,9 @@ module Captain::ImageReading::Prompt
   # What the agent reads in front of the description. The description is made by a program from the pixels: it can be wrong, so
   # the agent is told so, and an agent that must rely on a detail asks the customer instead of trusting it.
   AGENT_LABEL = 'Image attachment (automatic description, it may be inaccurate)'
+  # In place of the description of an older image when the conversation has more image text than the agent is given (see
+  # Captain::Conversation::HistoryBudget#image_text).
+  IMAGE_LEFT_OUT = 'Image attachment (its description is left out: the conversation has many images)'
 
   module_function
 

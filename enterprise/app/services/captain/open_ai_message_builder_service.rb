@@ -58,7 +58,7 @@ class Captain::OpenAiMessageBuilderService
   def describable_images
     return [] unless image_understanding_enabled?
 
-    @message.attachments.where(file_type: :image).filter_map do |attachment|
+    @message.attachments.where(file_type: :image).order(:id).filter_map do |attachment|
       next if sticker_or_gif_attachment?(attachment)
 
       url = get_attachment_url(attachment)
@@ -137,11 +137,14 @@ class Captain::OpenAiMessageBuilderService
     ).perform
   end
 
+  # The text of an image goes through the image budget of the history (like the text of a document, but apart from the text of the
+  # conversation): the newest image gets all it needs, an older one what is left, and the dialogue is never pushed out by it.
   def image_text_part(description)
     return if description.blank?
     return text_part("Image attachment: #{description}") if description == Captain::ImageRecognitionService::FALLBACK_DESCRIPTION
 
-    text_part(Captain::ImageReading::Prompt.agent_text(description))
+    text = @budget ? @budget.image_text(description) : description
+    text.present? ? text_part(Captain::ImageReading::Prompt.agent_text(text)) : text_part(Captain::ImageReading::Prompt::IMAGE_LEFT_OUT)
   end
 
   # The text of an image: the map made beforehand, else the description kept on the attachment (it stays when an administrator purges
@@ -164,7 +167,8 @@ class Captain::OpenAiMessageBuilderService
   end
 
   def attachment_parts(attachments)
-    image_attachments = attachments.where(file_type: :image)
+    # In the order the customer sent them: the budget of the image texts goes to the first ones, and the agent reads them in that order.
+    image_attachments = attachments.where(file_type: :image).order(:id)
     image_content = image_parts(image_attachments)
 
     transcription = extract_audio_transcriptions(attachments)

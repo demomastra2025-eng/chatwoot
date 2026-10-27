@@ -669,6 +669,41 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       expect(image_parts_in(content)).to be_empty
     end
 
+    context 'with long descriptions (a transcription of a page is 2-5 KB)' do
+      let(:long_text) { 'я' * 2_500 } # 5,000 bytes
+
+      before { attachments.each { |attachment| attachment.update!(meta: { 'image_recognition_description' => "#{attachment.id} #{long_text}" }) } }
+
+      def image_texts(content)
+        content.select { |part| part[:type] == 'text' && part[:text].start_with?('Image attachment') }.pluck(:text)
+      end
+
+      it 'sends them through the budget of the images: whole while it lasts, then cut and marked, then a note that the text is left out' do
+        content = described_class.new(message: message, budget: Captain::Conversation::HistoryBudget.new).generate_content
+
+        first, second, third = image_texts(content)
+        expect(first).to end_with("#{attachments.first.id} #{long_text}")
+        expect(second).to end_with(Captain::Conversation::HistoryBudget::IMAGE_CUT_MARK)
+        expect(third).to eq(Captain::ImageReading::Prompt::IMAGE_LEFT_OUT)
+      end
+
+      it 'does not count them against the text of the conversation' do
+        budget = Captain::Conversation::HistoryBudget.new
+
+        content = described_class.new(message: message, budget: budget).generate_content
+
+        expect(budget.include_message?(content)).to be(true)
+        expect(budget.include_message?('q' * (Captain::Conversation::HistoryBudget::MAX_TEXT_BYTES - 400))).to be(true)
+      end
+
+      it 'sends them whole when there is no budget (a campaign, a reminder)' do
+        content = described_class.new(message: message).generate_content
+
+        expect(image_texts(content).size).to eq(3)
+        expect(image_texts(content)).to all(end_with(long_text))
+      end
+    end
+
     it 'does not touch the network to learn the type of an image' do
       attachments.first
       stub_request(:any, /example\.com/)
