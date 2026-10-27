@@ -265,15 +265,8 @@ class Integrations::Medelement::ProviderCommands::Preflight
   end
 
   def calendar_range(starts_at, ends_at)
-    zone = ActiveSupport::TimeZone[reception_snapshot.fetch('time_zone')]
-    starts_on = starts_at.in_time_zone(zone).to_date
-    ends_on = ends_at.in_time_zone(zone).to_date
-    exclusive_end = ends_on + 1.day
-
-    Range.new(
-      zone.local(starts_on.year, starts_on.month, starts_on.day),
-      zone.local(exclusive_end.year, exclusive_end.month, exclusive_end.day),
-      true
+    Integrations::Medelement::ReceptionCalendarRange.for(
+      starts_at, ends_at, time_zone: reception_snapshot.fetch('time_zone')
     )
   end
 

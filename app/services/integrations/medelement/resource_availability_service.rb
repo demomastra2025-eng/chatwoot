@@ -87,14 +87,15 @@ class Integrations::Medelement::ResourceAvailabilityService
 
   def provider_receptions(cabinet_code)
     rows = []
+    range = Integrations::Medelement::ReceptionCalendarRange.for(@from, @to, time_zone: provider_time_zone.name)
 
     MAX_PAGES.times do |page|
       batch = Array(
         client.get_receptions(
           company_cabinet_code: cabinet_code,
           specialist_code: specialist_code,
-          begin_datetime: provider_time(@from),
-          end_datetime: provider_time(@to),
+          begin_datetime: provider_time(range.begin),
+          end_datetime: provider_time(range.end),
           skip: page * PAGE_SIZE
         )
       )
