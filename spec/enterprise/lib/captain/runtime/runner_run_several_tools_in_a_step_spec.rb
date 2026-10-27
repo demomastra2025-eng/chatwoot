@@ -55,7 +55,11 @@ RSpec.describe Captain::Runtime::Runner, '#run' do # rubocop:disable RSpec/Multi
   end
   let(:draft) { 'Приём терапевта стоит 8000 тенге.' }
   let(:final_answer) { { patient_language: 'ru', response: draft, response_mode: 'reply', reasoning: 'ok', artifact_ids: [] } }
-  let(:collector) { Enterprise::Captain::ReplySuggestionService::TraceCollector.new(assistant: assistant, conversation: conversation, user: user) }
+  let(:collector) do
+    Enterprise::Captain::ReplySuggestionService::TraceCollector.new(
+      scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation, user: user
+    )
+  end
   let(:events) { [] }
   let(:independent_reads) { %w[faq_lookup get_my_contact search_scheduling_services].zip(['адрес', nil, 'терапевт']) }
   let(:callbacks) do
@@ -95,7 +99,7 @@ RSpec.describe Captain::Runtime::Runner, '#run' do # rubocop:disable RSpec/Multi
 
   def suggest
     state = { source: 'reply_suggestion', account_id: account.id, conversation: { id: conversation.id, display_id: conversation.display_id } }
-    session = Captain::Conversation::AgentSession.new(entry: build_stubbed(:captain_assistant))
+    session = Captain::Conversation::AgentSession.new(conversation: conversation, ephemeral: true)
     options = { context: { state: state, agent_session: session }, registry: { agent.name => agent }, llm_context: llm_context, account: account,
                 callbacks: callbacks }
     described_class.new.run(agent, 'Сколько стоит приём терапевта и где вы находитесь?', **options)

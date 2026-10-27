@@ -22,7 +22,8 @@ RSpec.describe Enterprise::Captain::ReplySuggestionService::TraceCollector do
         deadline_at: 60.seconds.from_now, budget_seconds: 60 }
     end
     let(:collector) do
-      described_class.new(assistant: assistant, conversation: conversation, user: user, progress_context: progress_context)
+      described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation, user: user,
+                          progress_context: progress_context)
     end
     let(:run) { OpenStruct.new(context: { state: { assistant_id: assistant.id } }) }
     let(:answer) { '{"patient_language":"ru","response_mode":"reply","response":"Здравствуйте, Анна! Приём стоит 8000 тенге."}' }
@@ -42,7 +43,7 @@ RSpec.describe Enterprise::Captain::ReplySuggestionService::TraceCollector do
     end
 
     it 'listens to the answer of the agent only for a request that has an id' do
-      plain = described_class.new(assistant: assistant, conversation: conversation, user: user)
+      plain = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation, user: user)
 
       expect(collector.callbacks).to include(:on_answer_delta)
       expect(plain.callbacks).not_to include(:on_answer_delta)
