@@ -191,16 +191,11 @@ class Outbound::DeliveryPolicy
   def incoming_messages_scope
     return if conversation.blank?
 
-    Message.incoming
-           .joins(:conversation)
-           .where(
-             account_id: conversation.account_id,
-             conversations: {
-               account_id: conversation.account_id,
-               contact_id: conversation.contact_id,
-               inbox_id: inbox&.id || conversation.inbox_id
-             }
-           )
+    Conversations::MessageWindowService.incoming_messages(
+      account_id: conversation.account_id,
+      contact_id: conversation.contact_id,
+      inbox_id: inbox&.id || conversation.inbox_id
+    )
   end
 
   def delivery_time

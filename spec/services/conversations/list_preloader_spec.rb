@@ -30,6 +30,20 @@ RSpec.describe Conversations::ListPreloader do
     expect(data.can_reply?(conversation)).to eq(conversation.can_reply?)
   end
 
+  it 'counts the reply window per customer in the inbox: a conversation the staff started is open when the customer just wrote' do
+    whatsapp_channel = create(:channel_twilio_sms, medium: :whatsapp, account: account)
+    whatsapp_inbox = create(:inbox, channel: whatsapp_channel, account: account)
+    contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: whatsapp_inbox)
+    earlier = create(:conversation, account: account, inbox: whatsapp_inbox, contact: conversation.contact, contact_inbox: contact_inbox)
+    started_by_staff = create(:conversation, account: account, inbox: whatsapp_inbox, contact: conversation.contact,
+                                             contact_inbox: contact_inbox)
+    create(:message, account: account, inbox: whatsapp_inbox, conversation: earlier, message_type: :incoming, created_at: 10.minutes.ago)
+    data = load_list([earlier, started_by_staff])
+
+    expect(data.can_reply?(started_by_staff)).to be(true)
+    expect(data.can_reply?(started_by_staff)).to eq(started_by_staff.can_reply?)
+  end
+
   it 'counts all public incoming messages when last seen is nil, including pre-epoch imports' do
     conversation.update!(agent_last_seen_at: nil)
     message_at(Time.zone.at(-1))

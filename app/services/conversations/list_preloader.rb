@@ -111,8 +111,7 @@ class Conversations::ListPreloader
   end
 
   def preload_message_state
-    incoming = @account.messages.reorder(nil).where(conversation_id: @conversations_by_id.keys).incoming
-    @last_incoming_timestamps = incoming.group(:conversation_id).maximum(:created_at)
+    @last_incoming_timestamps = Conversations::MessageWindowService.last_incoming_timestamps(@conversations)
     shared_unread_state = Conversations::SharedUnreadStatePreloader.new(
       account: @account,
       conversation_ids: @conversations_by_id.keys

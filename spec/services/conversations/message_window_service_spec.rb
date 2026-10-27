@@ -633,4 +633,57 @@ RSpec.describe Conversations::MessageWindowService do
       expect(service.can_reply?).to be true
     end
   end
+
+  describe 'the window of a customer who has more than one conversation in the inbox' do
+    let(:account) { create(:account) }
+    let(:whatsapp_channel) { create(:channel_twilio_sms, medium: :whatsapp, account: account) }
+    let(:whatsapp_inbox) { create(:inbox, channel: whatsapp_channel, account: account) }
+    let(:contact) { create(:contact, account: account) }
+    let(:contact_inbox) { create(:contact_inbox, contact: contact, inbox: whatsapp_inbox) }
+    let!(:earlier) { create(:conversation, account: account, inbox: whatsapp_inbox, contact: contact, contact_inbox: contact_inbox) }
+    let!(:started_by_staff) { create(:conversation, account: account, inbox: whatsapp_inbox, contact: contact, contact_inbox: contact_inbox) }
+
+    def incoming_message(conversation, at, inbox: whatsapp_inbox)
+      create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :incoming, created_at: at)
+    end
+
+    it 'is opened by a message the customer wrote in another conversation of the inbox' do
+      incoming_message(earlier, 10.minutes.ago)
+
+      expect(described_class.new(started_by_staff).can_reply?).to be true
+    end
+
+    it 'is closed when the last message of the customer in any conversation of the inbox is older than the window' do
+      incoming_message(earlier, 30.hours.ago)
+
+      expect(described_class.new(started_by_staff).can_reply?).to be false
+    end
+
+    it 'is not opened by a message of another customer' do
+      other = create(:conversation, account: account, inbox: whatsapp_inbox)
+      incoming_message(other, 10.minutes.ago)
+
+      expect(described_class.new(started_by_staff).can_reply?).to be false
+    end
+
+    it 'is not opened by a message the customer wrote in another inbox' do
+      other_channel = create(:channel_twilio_sms, medium: :whatsapp, account: account)
+      other_inbox = create(:inbox, channel: other_channel, account: account)
+      other_conversation = create(:conversation, account: account, inbox: other_inbox, contact: contact,
+                                                 contact_inbox: create(:contact_inbox, contact: contact, inbox: other_inbox))
+      incoming_message(other_conversation, 10.minutes.ago, inbox: other_inbox)
+
+      expect(described_class.new(started_by_staff).can_reply?).to be false
+    end
+
+    it 'gives every conversation of the customer the same last incoming time in one query', :aggregate_failures do
+      message = incoming_message(earlier, 10.minutes.ago)
+      other = create(:conversation, account: account, inbox: whatsapp_inbox)
+
+      timestamps = described_class.last_incoming_timestamps([earlier, started_by_staff, other])
+
+      expect(timestamps.keys).to contain_exactly(earlier.id, started_by_staff.id)
+      expect(timestamps[started_by_staff.id]).to be_within(1.second).of(message.created_at)
+    end
+  end
 end

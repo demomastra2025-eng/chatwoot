@@ -160,8 +160,9 @@ module CommunicationThreads::ControllerContext
     conversation_ids = @accessible_links_by_thread_id.values.flatten.map(&:conversation_id).uniq
     return reset_channel_message_state if conversation_ids.empty?
 
-    incoming_messages = incoming_channel_messages(conversation_ids)
-    @last_incoming_message_timestamps_by_conversation_id = incoming_messages.group(:conversation_id).maximum(:created_at)
+    @last_incoming_message_timestamps_by_conversation_id = Conversations::MessageWindowService.last_incoming_timestamps(
+      @accessible_links_by_thread_id.values.flatten.map(&:conversation).uniq
+    )
     shared_unread_state = Conversations::SharedUnreadStatePreloader.new(
       account: Current.account,
       conversation_ids: conversation_ids
@@ -174,14 +175,6 @@ module CommunicationThreads::ControllerContext
     @channel_unread_counts_by_conversation_id = {}
     @last_incoming_message_timestamps_by_conversation_id = {}
     @channel_last_seen_timestamps_by_conversation_id = {}
-  end
-
-  def incoming_channel_messages(conversation_ids)
-    Message.reorder(nil).where(
-      account_id: Current.account.id,
-      conversation_id: conversation_ids,
-      message_type: Message.message_types[:incoming]
-    )
   end
 
   def preload_last_non_activity_messages_by_thread

@@ -1847,6 +1847,24 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
     end
 
+    it 'counts the WhatsApp window per customer: a conversation without messages is open when the customer wrote in another',
+       :aggregate_failures do
+      whatsapp_inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      resolved = create(:conversation, account: account, contact: contact, inbox: whatsapp_inbox, contact_inbox: contact_inbox, status: :resolved)
+      create(:message, account: account, inbox: whatsapp_inbox, conversation: resolved, message_type: 'incoming', created_at: 10.minutes.ago)
+      started_by_staff = create(:conversation, account: account, contact: contact, inbox: whatsapp_inbox, contact_inbox: contact_inbox, status: :open)
+      create(:inbox_member, user: agent, inbox: whatsapp_inbox)
+      thread = started_by_staff.reload.communication_thread
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/channels",
+          params: { status: 'open' }, headers: headers, as: :json
+
+      channel = response.parsed_body['payload'].find { |entry| entry['conversation_id'] == started_by_staff.display_id }
+      expect(channel).to include('reply_window_open' => true, 'requires_template' => false, 'can_send_text' => true)
+    end
+
     it 'returns linked channels and supported unlinked contact channels' do
       contact = create(:contact, :with_email, account: account)
       inbox = create(:inbox, account: account)

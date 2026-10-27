@@ -160,7 +160,8 @@ class CommunicationThreads::RealtimeUpdateService
   def preload_conversation_directional_timestamps(account, links)
     preloader = Conversations::DirectionalMessageTimestampPreloader.new(account: account)
     @conversation_directional_timestamps = preloader.for_conversations(links.filter_map(&:conversation))
-    @last_incoming_message_timestamps = @conversation_directional_timestamps.transform_values { |ts| ts[:incoming] }.compact
+    # The reply window is the customer's, not the conversation's, see Conversations::MessageWindowService.
+    @last_incoming_message_timestamps = Conversations::MessageWindowService.last_incoming_timestamps(links.filter_map(&:conversation))
   end
 
   def directional_message_timestamps(communication_thread, links)
