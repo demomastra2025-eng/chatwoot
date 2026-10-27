@@ -91,7 +91,7 @@ const mountComponent = (
             'selectedPatient',
             'patientContextEnabled',
           ],
-          template: '<div />',
+          template: '<div><slot name="after-profile" /></div>',
         },
         CrmConversationDealsSidebar: {
           name: 'CrmConversationDealsSidebar',
@@ -173,6 +173,30 @@ describe('ConversationSidebar', () => {
         },
       },
     });
+  });
+
+  it('hides the patient selector when the contact is the only patient', async () => {
+    mocks.uiSettings = ref({ is_contact_sidebar_open: true });
+    SchedulingContactsAPI.patients.mockResolvedValueOnce({
+      data: {
+        payload: {
+          contact_id: 42,
+          patients: [{ id: 42, account_id: 1, communication_contact_id: 42 }],
+        },
+      },
+    });
+    const wrapper = mountComponent({
+      id: 123,
+      inbox_id: 2,
+      meta: { sender: { id: 42 } },
+    });
+    await flushPromises();
+    expect(wrapper.findComponent({ name: 'ContactPanel' }).exists()).toBe(true);
+    expect(
+      wrapper
+        .findComponent({ name: 'SchedulingConversationPatientSelector' })
+        .exists()
+    ).toBe(false);
   });
 
   it('passes selected clinical context while keeping the chat recipient intact', async () => {

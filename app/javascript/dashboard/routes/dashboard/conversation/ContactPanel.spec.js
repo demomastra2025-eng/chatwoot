@@ -72,6 +72,11 @@ describe('ContactPanel selected patient details', () => {
               '<div><slot v-for="element in list" name="item" :element="element" /></div>',
           },
           AccordionItem: { template: '<div><slot /></div>' },
+          ContactInfo: {
+            name: 'ContactInfo',
+            props: ['contact'],
+            template: '<div><slot /></div>',
+          },
           SchedulingPatientDetails: {
             name: 'SchedulingPatientDetails',
             props: ['patient'],
@@ -97,6 +102,9 @@ describe('ContactPanel selected patient details', () => {
     });
     await flushPromises();
     expect(
+      wrapper.findComponent({ name: 'ContactInfo' }).props('contact').id
+    ).toBe(42);
+    expect(
       wrapper
         .findComponent({ name: 'SchedulingPatientDetails' })
         .props('patient').id
@@ -121,6 +129,17 @@ describe('ContactPanel selected patient details', () => {
       'integrations/get',
       'linear'
     );
+  });
+
+  it('keeps the contact profile visible without patient context', async () => {
+    const wrapper = shallowMount(ContactPanel, {
+      props: { conversationId: 123 },
+      global: { mocks: { $t: key => key } },
+    });
+    expect(wrapper.findComponent({ name: 'ContactInfo' }).exists()).toBe(true);
+    expect(
+      wrapper.findComponent({ name: 'SchedulingPatientDetails' }).exists()
+    ).toBe(false);
   });
 });
 

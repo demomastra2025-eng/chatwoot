@@ -20,6 +20,17 @@
       "captain": "ЖИ агенті"
     },
     "PATIENT_CONTEXT": {
+      "PATIENT": "Пациент",
+      "AGE_ONE": "{age} жас",
+      "AGE_FEW": "{age} жас",
+      "AGE_MANY": "{age} жас",
+      "AGE_OTHER": "{age} жас",
+      "CHANGE_PATIENT": "Ауыстыру",
+      "SEARCH_PATIENT": "Аты, тегі, телефоны немесе ЖСН",
+      "PATIENT_CARD": "Карта",
+      "MEDELEMENT_CARD": "МедЭлемент",
+      "CARD_LINKED": "карта байланыстырылған",
+      "EDIT_PATIENT": "Пациент деректерін өзгерту",
       "SELECT_PATIENT": "Клиент",
       "SELECTED_BADGE": "Таңдалған",
       "EDIT_TITLE": "Клиент картасын өңдеу",

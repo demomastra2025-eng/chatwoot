@@ -113,17 +113,17 @@ onMounted(() => {
       class="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden"
     >
       <slot name="after-header" />
-      <SchedulingPatientDetails
-        v-if="patientContextEnabled && selectedPatient"
-        :key="`${patientContextKey}:${selectedPatient.id}`"
-        :patient="selectedPatient"
-        :context-key="patientContextKey"
-      />
-      <ContactInfo
-        v-else-if="!patientContextEnabled"
-        :contact="contact"
-        :channel-type="channelType"
-      />
+      <ContactInfo :contact="contact" :channel-type="channelType">
+        <template v-if="patientContextEnabled && selectedPatient">
+          <slot name="after-profile" />
+          <SchedulingPatientDetails
+            :key="`${patientContextKey}:${selectedPatient.id}`"
+            :patient="selectedPatient"
+            :context-key="patientContextKey"
+            :show-name="false"
+          />
+        </template>
+      </ContactInfo>
       <div class="px-2 pb-8 list-group">
         <Draggable
           :list="conversationSidebarItems"

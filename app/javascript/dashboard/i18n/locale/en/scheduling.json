@@ -20,6 +20,17 @@
       "captain": "AI agent"
     },
     "PATIENT_CONTEXT": {
+      "PATIENT": "Patient",
+      "AGE_ONE": "{age} year old",
+      "AGE_FEW": "{age} years old",
+      "AGE_MANY": "{age} years old",
+      "AGE_OTHER": "{age} years old",
+      "CHANGE_PATIENT": "Change",
+      "SEARCH_PATIENT": "First name, last name, phone or IIN",
+      "PATIENT_CARD": "Profile",
+      "MEDELEMENT_CARD": "MedElement",
+      "CARD_LINKED": "card linked",
+      "EDIT_PATIENT": "Edit patient details",
       "SELECT_PATIENT": "Client",
       "SELECTED_BADGE": "Selected",
       "EDIT_TITLE": "Edit client card",
