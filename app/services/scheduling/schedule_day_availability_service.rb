@@ -159,13 +159,7 @@ class Scheduling::ScheduleDayAvailabilityService
     return false unless checked_at
 
     offset = (day.date - Time.current.in_time_zone(provider_zone).to_date).to_i
-    interval = if offset < 2
-                 Integrations::Medelement::SchedulesSyncService::NEAR_REFRESH
-               elsif offset < 14
-                 Integrations::Medelement::SchedulesSyncService::FAR_REFRESH
-               else
-                 Integrations::Medelement::SchedulesSyncService::LONG_REFRESH
-               end
+    interval = Integrations::Medelement::SchedulesSyncService.refresh_interval(offset)
     checked_at > Time.current - interval - FRESHNESS_MARGIN_MINUTES.minutes
   end
 end
