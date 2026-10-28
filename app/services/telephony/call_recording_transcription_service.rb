@@ -174,11 +174,17 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
           }
         ],
         observability: observability.merge(runtime_mode: 'call_recording_transcription'),
-        options: { temperature: 0 }
+        options: openrouter_chat_options
       )
     end
 
     TranscriptionResult.new(text: response&.content.to_s)
+  end
+
+  def openrouter_chat_options
+    return { temperature: 0 } unless model.to_s.include?('gemini-3')
+
+    { temperature: 0.1, params: { reasoning: { effort: 'minimal' } } }
   end
 
   def resolve_recording_file!
@@ -282,7 +288,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   end
 
   def transcription_metadata(result, source, recording)
-    result.merge('status' => 'completed', 'source' => source,
+    result.merge('status' => 'completed', 'source' => source, 'model' => model,
                  'channels' => @audio_probe&.dig('channels') || recording['channels'],
                  'completed_at' => Time.current.iso8601)
   end
@@ -343,13 +349,25 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
 
   def transcription_prompt
     [
-      'Transcribe the attached call recording accurately in the languages spoken. ' \
-      'Preserve code switching; do not translate. Return JSON with transcript_items ' \
-      '(speaker operator/client, timestamp MM:SS, start_sec, text), summary in Russian (1-2 factual sentences), ' \
-      'outcome (booked/rescheduled/cancelled/consultation/callback_requested/no_answer/other), and 1-5 topics.',
+      'Transcribe the attached clinic call recording accurately in the languages spoken (Russian, Kazakh, or mixed). ' \
+      'Preserve code switching; do not translate. Ignore carrier IVR pre-roll ' \
+      '("Сервисті жақсарту үшін жазамыз / Ведётся запись для улучшения сервиса"). ' \
+      'Return ONLY valid compact JSON with summary in Russian (1-2 factual sentences), ' \
+      'outcome (booked/rescheduled/cancelled/consultation/callback_requested/no_answer/other), 1-5 topics, ' \
+      'and items ([[start_sec, "op"|"cl", "text"]]) or transcript_items (speaker operator/client, timestamp MM:SS, start_sec, text).',
+      clinic_doctors_prompt,
       speaker_channel_prompt,
       account.captain_audio_transcription_prompt.presence
     ].compact.join("\n")
+  end
+
+  def clinic_doctors_prompt
+    names = Scheduling::Resource.where(account_id: account.id).where.not(name: [nil, '']).distinct.limit(80).pluck(:name)
+    return if names.empty?
+
+    "Clinic doctors and specialists: #{names.join('; ')}."
+  rescue StandardError
+    nil
   end
 
   def speaker_channel_prompt

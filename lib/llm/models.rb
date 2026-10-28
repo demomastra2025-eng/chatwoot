@@ -53,6 +53,7 @@ module Llm::Models
   OPENROUTER_REASONING_RUNTIME_FEATURES = %w[assistant copilot].freeze
   OPENROUTER_PREFERRED_FEATURE_MODELS = {
     'audio_transcription' => %w[
+      google/gemini-3.8-flash
       openai/gpt-4o-mini-transcribe
       openai/gpt-4o-transcribe
       openai/whisper-large-v3
@@ -721,9 +722,7 @@ module Llm::Models
 
     def model_config_allowed_for_feature?(feature_key, model_config, account: nil, runtime_filtered: true)
       return false if model_config.blank?
-      if model_config['type'] == 'decision'
-        return Llm::FeatureProfile.decision_feature?(feature_key) && decision_model?(model_config['id'])
-      end
+      return Llm::FeatureProfile.decision_feature?(feature_key) && decision_model?(model_config['id']) if model_config['type'] == 'decision'
 
       return true unless feature_key.to_s == 'help_center_search'
 

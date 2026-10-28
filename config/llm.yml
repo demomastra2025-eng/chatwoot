@@ -232,6 +232,33 @@ models:
         tools,
         verbosity,
       ]
+  google/gemini-3.8-flash:
+    id: google/gemini-3.8-flash
+    provider: openrouter
+    display_name: 'Gemini 3.8 Flash'
+    type: chat
+    source: static_openrouter_default
+    capabilities:
+      [text_input, text_output, structured_output, tool_calling, tool_choice, reasoning, image_input, audio_input, file_input, multimodal_input, transcription]
+    input_modalities: [text, image, video, file, audio]
+    output_modalities: [text]
+    context_length: 1048576
+    max_output_tokens: 65536
+    supported_parameters:
+      [
+        include_reasoning,
+        max_tokens,
+        reasoning,
+        reasoning_effort,
+        response_format,
+        seed,
+        stop,
+        structured_outputs,
+        temperature,
+        tool_choice,
+        tools,
+        top_p,
+      ]
   google/gemini-3.1-flash-lite:
     id: google/gemini-3.1-flash-lite
     provider: openrouter
@@ -550,7 +577,7 @@ features:
       ]
     default: openai/gpt-6-luna
   audio_transcription:
-    models: [openai/gpt-4o-mini-transcribe, openai/gpt-audio-mini, mistralai/voxtral-small-24b-2507, gpt-4o-transcribe, whisper-1]
+    models: [google/gemini-3.8-flash, openai/gpt-4o-mini-transcribe, openai/gpt-audio-mini, mistralai/voxtral-small-24b-2507, gpt-4o-transcribe, whisper-1]
     default: openai/gpt-4o-mini-transcribe
   # The customer images are read by two readers and one router (Captain::ImageRecognitionService). These features have a platform
   # default of their own and never follow CAPTAIN_DEFAULT_MODEL (Llm::Config::OWN_DEFAULT_MODEL_FEATURES).

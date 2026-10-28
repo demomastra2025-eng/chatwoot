@@ -232,4 +232,27 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
     expect(Storage::VoiceRecordingRemoteStorage).to have_received(:download)
       .with('voice-recordings/1/operator-call-1/recording.wav')
   end
+
+  it 'uses OpenRouter chat with minimal reasoning, clinic doctors and IVR pre-roll stripping for Gemini 3.8 Flash' do
+    create(:scheduling_resource, account: account, name: 'Куатова Алия Даулетбековна')
+    service = described_class.new(call_session)
+    allow(service).to receive(:model).and_return('google/gemini-3.8-flash')
+    allow(Llm::Config).to receive(:provider_for_model).with('google/gemini-3.8-flash', account: account).and_return('openrouter')
+    allow(Llm::Models).to receive(:type_for).with('google/gemini-3.8-flash', account: account).and_return('chat')
+    allow(Llm::Models).to receive(:supports_audio_input?).with('google/gemini-3.8-flash', account: account).and_return(true)
+
+    payload = '{"summary":"Запись к врачу.","outcome":"booked","topics":["УЗИ"],' \
+              '"items":[[1,"op","Добрый день"],[4,"cl","Здравствуйте"]]}'
+    chat_response = instance_double(RubyLLM::Message, content: payload)
+    expect(Llm::Runtime).to receive(:chat) do |args|
+      prompt_text = args[:messages].first[:content].text
+      expect(prompt_text).to include('Куатова Алия Даулетбековна', 'Сервисті жақсарту үшін жазамыз')
+      expect(args[:options]).to eq(temperature: 0.1, params: { reasoning: { effort: 'minimal' } })
+      chat_response
+    end
+
+    result = service.perform
+    expect(result).to include(success: true, transcript: "[00:01] Сотрудник: Добрый день\n[00:04] Клиент: Здравствуйте")
+    expect(call_session.reload.metadata.dig('recording', 'transcription', 'model')).to eq('google/gemini-3.8-flash')
+  end
 end

@@ -85,7 +85,9 @@ class Telephony::CallTranscript
 
   def self.decode(raw)
     cleaned = raw.to_s.strip.sub(/\A```(?:json)?\s*/, '').sub(/\s*```\z/, '')
-    cleaned.start_with?('{') ? JSON.parse(cleaned) : { 'text' => cleaned }
+    parsed = cleaned.start_with?('{') ? JSON.parse(cleaned) : { 'text' => cleaned }
+    parsed['transcript_items'] ||= parsed['items'] if parsed.is_a?(Hash) && parsed['items'].present?
+    parsed
   rescue JSON::ParserError
     { 'text' => raw.to_s.strip }
   end
@@ -108,6 +110,8 @@ class Telephony::CallTranscript
   end
 
   def self.normalize_item(raw)
+    return normalize_array_item(raw) if raw.is_a?(Array)
+
     item = raw.to_h.stringify_keys
     text = item['text'].to_s.strip
     return if text.blank?
@@ -119,15 +123,23 @@ class Telephony::CallTranscript
       'start_sec' => seconds, 'text' => text }.compact
   end
 
+  def self.normalize_array_item(raw)
+    sec = raw[0].is_a?(Array) ? raw[0].first : raw[0]
+    normalize_item('start_sec' => sec.to_i, 'speaker' => raw[1], 'text' => raw[2])
+  end
+
   def self.speaker_for(value)
-    value.to_s.match?(/client|caller|customer|contact|user|клиент/i) ? 'client' : 'operator'
+    value.to_s.match?(/\Acl\z|client|caller|customer|contact|user|клиент/i) ? 'client' : 'operator'
   end
 
   def self.seconds_for(item)
-    return item['start_sec'].to_i if item['start_sec'].present?
+    if item['start_sec'].present?
+      val = item['start_sec']
+      return (val.is_a?(Array) ? val.first : val).to_i
+    end
     return if item['timestamp'].blank?
 
-    item['timestamp'].split(':').map(&:to_i).reduce(0) { |total, part| (total * 60) + part }
+    item['timestamp'].to_s.split(':').map(&:to_i).reduce(0) { |total, part| (total * 60) + part }
   end
 
   def self.timestamp_for(seconds)
