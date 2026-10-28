@@ -82,7 +82,8 @@ class Account < ApplicationRecord
   store_accessor :settings, :scheduling_contact_required, :scheduling_company_enabled, :scheduling_last_booking_time
   store_accessor :settings, :scheduling_last_booking_time_by_weekday
   store_accessor :settings, :conversation_assignment_policy_id
-  store_accessor :settings, :conversation_auto_assignment_enabled, :conversation_assign_on_first_reply_enabled
+  store_accessor :settings, :conversation_auto_assignment_enabled, :conversation_assign_on_first_reply_enabled,
+                 :conversation_assign_on_note_or_resolve_enabled
   include AccountCaptainAutoResolve
 
   # The paying parent (requisites, BIN, contract); an account without one works as before
@@ -275,6 +276,10 @@ class Account < ApplicationRecord
 
   def conversation_assign_on_first_reply_enabled?
     ActiveModel::Type::Boolean.new.cast(conversation_assign_on_first_reply_enabled)
+  end
+
+  def conversation_assign_on_note_or_resolve_enabled?
+    ActiveModel::Type::Boolean.new.cast(conversation_assign_on_note_or_resolve_enabled)
   end
 
   def workspace_assignment_policy

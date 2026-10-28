@@ -155,6 +155,7 @@ class Api::V1::AccountsController < Api::BaseController
       :conversation_assignment_policy_id,
       :conversation_auto_assignment_enabled,
       :conversation_assign_on_first_reply_enabled,
+      :conversation_assign_on_note_or_resolve_enabled,
       *DASHBOARD_NAVIGATION_SETTINGS_PARAMS
     ]
   end

@@ -43,6 +43,39 @@ RSpec.describe Conversations::StatusTransitionService do
     )
   end
 
+  it 'assigns an unassigned conversation to the resolving account user when enabled' do
+    account.update!(conversation_assign_on_note_or_resolve_enabled: true)
+
+    transition(params: { status: 'resolved' })
+
+    expect(conversation.reload.assignee).to eq(agent)
+  end
+
+  it 'does not assign an unassigned conversation when the setting is disabled' do
+    transition(params: { status: 'resolved' })
+
+    expect(conversation.reload.assignee).to be_nil
+  end
+
+  it 'does not replace an existing assignee on resolve' do
+    account.update!(conversation_assign_on_note_or_resolve_enabled: true)
+    other_agent = create(:user, account: account, role: :agent)
+    conversation.update!(assignee: other_agent)
+
+    transition(params: { status: 'resolved' })
+
+    expect(conversation.reload.assignee).to eq(other_agent)
+  end
+
+  it 'does not assign a resolving user outside the account' do
+    account.update!(conversation_assign_on_note_or_resolve_enabled: true)
+    outsider = create(:user, account: create(:account))
+
+    transition(params: { status: 'resolved' }, actor: outsider)
+
+    expect(conversation.reload.assignee).to be_nil
+  end
+
   it 'rolls back the status change if the audit transition cannot be written' do
     allow(ConversationStatusTransition).to receive(:create!).and_raise(ActiveRecord::RecordNotSaved, 'audit unavailable')
 

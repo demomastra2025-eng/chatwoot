@@ -65,6 +65,10 @@ class Conversations::StatusTransitionService
     prepare_captain_control_release!
     conversation.status = target_status
     assign_snoozed_until!
+    if target_status == 'resolved' && conversation.assignee_id.blank? && actor.is_a?(User) &&
+       account&.conversation_assign_on_note_or_resolve_enabled? && account.users.exists?(id: actor.id)
+      conversation.assignee = actor
+    end
     changed = conversation.changed?
     conversation.save! if changed
 

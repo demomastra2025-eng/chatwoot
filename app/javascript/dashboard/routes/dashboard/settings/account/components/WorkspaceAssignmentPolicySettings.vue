@@ -21,6 +21,7 @@ const fetchFailed = ref(false);
 const isSaving = ref(false);
 const autoAssignmentEnabled = ref(true);
 const assignOnFirstReplyEnabled = ref(false);
+const assignOnNoteOrResolveEnabled = ref(false);
 const isWorkspaceAdmin = computed(() => checkPermissions(['administrator']));
 const savedPolicyId = computed(
   () => currentAccount.value?.settings?.conversation_assignment_policy_id
@@ -37,6 +38,15 @@ watch(
     currentAccount.value?.settings?.conversation_assign_on_first_reply_enabled,
   value => {
     assignOnFirstReplyEnabled.value = value === true;
+  },
+  { immediate: true }
+);
+watch(
+  () =>
+    currentAccount.value?.settings
+      ?.conversation_assign_on_note_or_resolve_enabled,
+  value => {
+    assignOnNoteOrResolveEnabled.value = value === true;
   },
   { immediate: true }
 );
@@ -179,6 +189,27 @@ const saveAssignOnFirstReply = async () => {
     isSaving.value = false;
   }
 };
+
+const saveAssignOnNoteOrResolve = async () => {
+  if (!isWorkspaceAdmin.value || isSaving.value) return;
+  isSaving.value = true;
+  try {
+    await updateAccount(
+      {
+        conversation_assign_on_note_or_resolve_enabled:
+          assignOnNoteOrResolveEnabled.value,
+      },
+      { silent: true }
+    );
+  } catch {
+    assignOnNoteOrResolveEnabled.value = !assignOnNoteOrResolveEnabled.value;
+    useAlert(
+      t('GENERAL_SETTINGS.CONVERSATIONS.ASSIGNMENT_POLICY_UPDATE_ERROR')
+    );
+  } finally {
+    isSaving.value = false;
+  }
+};
 </script>
 
 <template>
@@ -216,6 +247,29 @@ const saveAssignOnFirstReply = async () => {
           {{
             t(
               'GENERAL_SETTINGS.CONVERSATIONS.ASSIGN_ON_FIRST_REPLY_DESCRIPTION'
+            )
+          }}
+        </span>
+      </label>
+      <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+        <span class="flex items-center gap-3">
+          <input
+            v-model="assignOnNoteOrResolveEnabled"
+            data-test="workspace-assign-on-note-or-resolve"
+            type="checkbox"
+            :disabled="!isWorkspaceAdmin || isSaving"
+            @change="saveAssignOnNoteOrResolve"
+          />
+          {{
+            t(
+              'GENERAL_SETTINGS.CONVERSATIONS.ASSIGN_ON_NOTE_OR_RESOLVE_ENABLED'
+            )
+          }}
+        </span>
+        <span class="pl-6 text-xs text-n-slate-11">
+          {{
+            t(
+              'GENERAL_SETTINGS.CONVERSATIONS.ASSIGN_ON_NOTE_OR_RESOLVE_DESCRIPTION'
             )
           }}
         </span>

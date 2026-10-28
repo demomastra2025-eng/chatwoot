@@ -94,6 +94,20 @@ describe('WorkspaceAssignmentPolicySettings', () => {
     );
   });
 
+  it('saves the private note or resolve assignment setting', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper
+      .get('[data-test="workspace-assign-on-note-or-resolve"]')
+      .setValue(true);
+
+    expect(updateAccountMock).toHaveBeenCalledWith(
+      { conversation_assign_on_note_or_resolve_enabled: true },
+      { silent: true }
+    );
+  });
+
   it('saves a selected policy as a workspace setting', async () => {
     const wrapper = mountComponent();
     await flushPromises();

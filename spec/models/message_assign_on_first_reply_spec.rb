@@ -43,6 +43,39 @@ RSpec.describe Message, 'assign_conversation_to_responding_agent' do
     expect(conversation.reload.assignee).to be_nil
   end
 
+  it 'assigns an unassigned conversation on a private note when enabled' do
+    account.update!(conversation_assign_on_note_or_resolve_enabled: true)
+    create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing, private: true, sender: agent)
+
+    expect(conversation.reload.assignee).to eq(agent)
+  end
+
+  it 'does not assign an automation private note' do
+    account.update!(conversation_assign_on_note_or_resolve_enabled: true)
+    create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing, private: true, sender: agent,
+                     content_attributes: { automation_rule_id: 42 })
+
+    expect(conversation.reload.assignee).to be_nil
+  end
+
+  it 'does not assign a scheduled private note' do
+    account.update!(conversation_assign_on_note_or_resolve_enabled: true)
+    create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing, private: true, sender: agent,
+                     content_attributes: { touch_id: 42 })
+
+    expect(conversation.reload.assignee).to be_nil
+  end
+
+  it 'does not assign a private note from a user outside the account' do
+    account.update!(conversation_assign_on_note_or_resolve_enabled: true)
+    outsider = create(:user, account: create(:account))
+    note = build(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing, private: true, sender: outsider)
+
+    note.assign_conversation_to_responding_agent
+
+    expect(conversation.reload.assignee).to be_nil
+  end
+
   it 'does not overwrite an existing assignee when another agent replies' do
     conversation.update!(assignee: other_agent)
 

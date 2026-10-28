@@ -230,7 +230,9 @@
       "CLEAR_ALL_CHANNELS": "Clear all",
       "NO_TEXT_CHANNELS": "No text channels connected yet.",
       "ASSIGN_ON_FIRST_REPLY_ENABLED": "Assign unassigned conversation to the first replying agent",
-      "ASSIGN_ON_FIRST_REPLY_DESCRIPTION": "When a conversation has no assignee, it will automatically be assigned to the first agent who sends a public reply."
+      "ASSIGN_ON_FIRST_REPLY_DESCRIPTION": "When a conversation has no assignee, it will automatically be assigned to the first agent who sends a public reply.",
+      "ASSIGN_ON_NOTE_OR_RESOLVE_ENABLED": "Assign on private note or resolve",
+      "ASSIGN_ON_NOTE_OR_RESOLVE_DESCRIPTION": "Assign an unassigned conversation to the agent who adds a private note or resolves it."
     },
     "SIDEBAR_VISIBILITY": {
       "TITLE": "Sidebar settings",

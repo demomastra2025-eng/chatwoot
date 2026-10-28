@@ -29,6 +29,7 @@ module AccountSettingsSchema
         'conversation_assignment_policy_id': { 'type': %w[integer null] },
         'conversation_auto_assignment_enabled': { 'type': %w[boolean null] },
         'conversation_assign_on_first_reply_enabled': { 'type': %w[boolean null] },
+        'conversation_assign_on_note_or_resolve_enabled': { 'type': %w[boolean null] },
         'workspace_timezone': { 'type': %w[string null] },
         'workspace_working_hours': {
           'type': %w[array null],

@@ -687,8 +687,14 @@ class Message < ApplicationRecord
   end
 
   def assign_conversation_to_responding_agent
-    return unless account&.conversation_assign_on_first_reply_enabled?
-    return unless human_response? && !private? && !scheduled_touch_message?
+    return if scheduled_touch_message?
+
+    if private?
+      return unless account&.conversation_assign_on_note_or_resolve_enabled?
+      return if message_attributes_hash(content_attributes)['automation_rule_id'].present?
+    else
+      return unless account&.conversation_assign_on_first_reply_enabled? && human_response?
+    end
     return unless sender.is_a?(User) && conversation.assignee_id.blank?
     return unless account.users.exists?(id: sender.id)
 
