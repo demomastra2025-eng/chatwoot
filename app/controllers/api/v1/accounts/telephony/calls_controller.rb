@@ -23,6 +23,19 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
     )
   end
 
+  def export
+    relation = Current.account.telephony_call_sessions.where(inbox_id: Current.user.assigned_inboxes.select(:id))
+    service = Telephony::CallTranscriptsExportService.new(
+      relation: relation, since: params.require(:since), until_at: params.require(:until),
+      filters: { inbox_id: params[:inbox_id], direction: params[:direction], status: params[:status] }
+    )
+    if params[:format] == 'csv'
+      send_data service.csv, type: 'text/csv; charset=utf-8', disposition: 'attachment', filename: 'call-transcripts.csv'
+    else
+      render json: { payload: service.rows }
+    end
+  end
+
   def show
     payload = @call_session.to_telephony_h
     payload[:recording_url] = recording_url_for_call_session if recording_available?

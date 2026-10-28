@@ -515,6 +515,8 @@ Rails.application.routes.draw do
             end
           end
 
+          get 'voice/calls/export', to: 'telephony/calls#export'
+
           namespace :telephony do
             resources :calls, only: [:index, :show], param: :call_ref, constraints: { call_ref: %r{[^/]+} } do
               member do
@@ -525,6 +527,7 @@ Rails.application.routes.draw do
               collection do
                 post :outbound
                 get :operator_activity
+                get :export
               end
             end
 

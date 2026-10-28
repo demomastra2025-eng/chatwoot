@@ -13,6 +13,42 @@ RSpec.describe 'Telephony Calls API', type: :request do
     account.enable_features!('channel_voice')
   end
 
+  describe 'GET /api/v1/accounts/:account_id/voice/calls/export' do
+    let(:export_path) { "/api/v1/accounts/#{account.id}/voice/calls/export" }
+    let(:agent) { create(:user, account: account, role: :agent) }
+
+    before do
+      create(:inbox_member, inbox: voice_inbox, user: agent)
+    end
+
+    it 'exports calls from the selected inbox in the requested period' do
+      call = create(:telephony_call_session, account: account, inbox: voice_inbox,
+                                             number_binding: voice_inbox.telephony_number_binding,
+                                             started_at: Time.zone.parse('2026-10-20 12:00'),
+                                             metadata: { 'recording' => { 'transcription' => {
+                                               'text' => '[00:02] Сотрудник: Добрый день', 'outcome' => 'booked'
+                                             } } })
+      other_inbox = create(:inbox, account: account)
+      create(:telephony_call_session, account: account, inbox: other_inbox,
+                                      started_at: Time.zone.parse('2026-10-20 12:00'))
+
+      get export_path, params: { since: '2026-10-20', until: '2026-10-21', inbox_id: voice_inbox.id },
+                       headers: agent.create_new_auth_token
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['payload'].pluck('call_id')).to eq([call.id])
+      expect(response.parsed_body.dig('payload', 0, 'outcome')).to eq('booked')
+    end
+
+    it 'returns a CSV download' do
+      get "#{export_path}.csv", params: { since: '2026-10-20', until: '2026-10-21' }, headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.media_type).to eq('text/csv')
+      expect(CSV.parse(response.body).first).to include('transcript', 'outcome')
+    end
+  end
+
   describe 'GET /api/v1/accounts/:account_id/telephony/calls/operator_activity' do
     let(:operator) { create(:user, account: account, role: :agent, name: 'Aigerim Operator', display_name: 'Aigerim') }
     let(:colleague) { create(:user, account: account, role: :agent) }
