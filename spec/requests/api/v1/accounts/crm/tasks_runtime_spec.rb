@@ -36,7 +36,7 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     task_outcome = task_type.outcomes.find_by!(code: 'answered')
     task = create(:crm_task, account: account, activity_type: 'call', outcome: 'answered')
     # rubocop:disable Rails/SkipsModelValidations -- Simulates a mixed-version writer against the expand schema.
-    task.update_columns(task_type_id: nil, task_outcome_id: nil, context_kind: nil, position: 0)
+    task.update_columns(task_type_id: task_type.id, task_outcome_id: nil, context_kind: nil, position: 0)
     # rubocop:enable Rails/SkipsModelValidations
     writes = []
     subscriber = lambda do |_name, _start, _finish, _id, payload|
@@ -59,7 +59,7 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
       'outcome' => 'answered',
       'position' => 0
     )
-    expect(task.reload).to have_attributes(task_type_id: nil, task_outcome_id: nil, context_kind: nil, position: 0)
+    expect(task.reload).to have_attributes(task_type_id: task_type.id, task_outcome_id: nil, context_kind: nil, position: 0)
 
     post "#{path}/#{task.id}/assign",
          params: { assignee_id: administrator.id, lock_version: task.lock_version },
@@ -70,11 +70,12 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     expect(task.reload).to have_attributes(assignee_id: administrator.id, position: 0)
   end
 
-  it 'reads the first old-writer task before catalogs exist and can assign it with position zero' do
+  it 'reads a task with only its required type before the remaining catalogs exist and can assign it with position zero' do
     empty_account = create(:account)
     empty_account.enable_features!('crm_tasks')
     empty_actor = create(:user, :administrator, account: empty_account)
     status = create(:crm_task_status, account: empty_account, code: 'legacy-open', default: true)
+    task_type = create(:crm_task_type, account: empty_account, code: 'call')
     now = Time.current
     # rubocop:disable Rails/SkipsModelValidations -- Simulates a pre-catalog SQL writer.
     task_id = Crm::Task.insert_all!([{
@@ -83,7 +84,7 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
                                       title: 'First task from old writer',
                                       activity_type: 'call',
                                       context_kind: nil,
-                                      task_type_id: nil,
+                                      task_type_id: task_type.id,
                                       task_outcome_id: nil,
                                       position: 0,
                                       created_at: now,
@@ -97,7 +98,7 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body['payload']['task_type']).to include(
-      'id' => nil,
+      'id' => task_type.id,
       'code' => 'call'
     )
     expect(response.parsed_body['payload']['position']).to eq(0)
@@ -665,10 +666,10 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
   it 'archives an old-writer row after bootstrapping missing catalogs' do
     task = create(:crm_task, account: account, status: account.crm_task_statuses.find_by!(code: 'todo'))
     # rubocop:disable Rails/SkipsModelValidations -- Simulates a mixed-version writer against the expand schema.
-    task.update_columns(task_type_id: nil, context_kind: nil)
+    task.update_columns(context_kind: nil)
     # rubocop:enable Rails/SkipsModelValidations
     Crm::TaskOutcome.where(account: account).delete_all
-    Crm::TaskType.where(account: account).delete_all
+    Crm::TaskType.where(account: account).where.not(id: task.task_type_id).delete_all
 
     post "#{path}/#{task.id}/archive",
          params: { lock_version: task.lock_version },
