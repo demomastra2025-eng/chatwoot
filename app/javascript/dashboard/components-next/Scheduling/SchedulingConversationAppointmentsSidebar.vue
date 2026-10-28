@@ -55,8 +55,11 @@ import {
   normalizePatientIin,
 } from 'dashboard/stores/scheduling/iin';
 import {
+  maskedPatientIin,
+  patientAgeLabel,
   patientBirthDate,
   patientContactId,
+  patientDisplayName,
   useConversationPatientContextStore,
 } from 'dashboard/stores/scheduling/patientContext';
 import {
@@ -127,6 +130,8 @@ const availabilityByForm = reactive({});
 const availabilityRequests = new Map();
 let availabilityRequestId = 0;
 const openAppointmentKeys = ref([]);
+const expandedClientForms = reactive({});
+const pickerKeyForForm = form => form?.pickerKey || NEW_APPOINTMENT_KEY;
 const editingAppointmentKeys = ref([]);
 const scrollContainer = ref(null);
 const isCreating = ref(false);
@@ -350,11 +355,18 @@ const fullPatientName = form =>
     .join(' ');
 
 const updatePatientIin = (form, value) => {
+  expandedClientForms[pickerKeyForForm(form)] = true;
   form.clientIdentifier = value;
   form.clientIdentifierInferred = false;
 };
 
+const updatePatientPhone = (form, value) => {
+  expandedClientForms[pickerKeyForForm(form)] = true;
+  form.clientPhone = value;
+};
+
 const updatePatientNamePart = (form, field, value) => {
+  expandedClientForms[pickerKeyForForm(form)] = true;
   if (form[field] !== value && form.clientIdentifierInferred) {
     form.clientIdentifier = '';
     form.clientIdentifierInferred = false;
@@ -422,6 +434,7 @@ const resetCreateForm = () => {
     middleName: patient.value?.middle_name || patient.value?.middleName,
   });
 
+  delete expandedClientForms[NEW_APPOINTMENT_KEY];
   Object.assign(createForm, {
     clientBirthDate: patientBirthDate(patient.value),
     clientGender: patientGender(patient.value),
@@ -950,7 +963,6 @@ const selectedResourceForForm = form =>
     resource => Number(resource.id) === Number(form?.resourceId)
   );
 
-const pickerKeyForForm = form => form?.pickerKey || NEW_APPOINTMENT_KEY;
 const availabilityForForm = form =>
   availabilityByForm[pickerKeyForForm(form)] || {
     state: '',
@@ -1194,6 +1206,9 @@ const restorePatientDraft = () => {
 
 const setAppointmentForms = () => {
   cancelAllFormWindows();
+  Object.keys(expandedClientForms).forEach(
+    key => delete expandedClientForms[key]
+  );
   Object.keys(appointmentForms).forEach(key => delete appointmentForms[key]);
   Object.keys(availabilityByForm).forEach(
     key => delete availabilityByForm[key]
@@ -2931,15 +2946,71 @@ watch(
   },
   { flush: 'sync' }
 );
-const expandedClientForms = reactive({});
+const toggleClientFields = key => {
+  expandedClientForms[key] = !expandedClientForms[key];
+};
+const startAnotherPatient = (form, key) => {
+  if (!form) return;
+  form.clientFirstName = '';
+  form.clientLastName = '';
+  form.clientMiddleName = '';
+  form.clientName = '';
+  form.clientNameStructured = true;
+  form.clientIdentifier = '';
+  form.clientIdentifierInferred = false;
+  form.clientBirthDate = '';
+  form.clientGender = '';
+  form.patientContactId = null;
+  expandedClientForms[key] = true;
+};
+const patientContextEntry = computed(() =>
+  props.patientContextEnabled && props.patientContextKey
+    ? patientContextStore.contexts?.[props.patientContextKey] || null
+    : null
+);
+const familyPatientChips = computed(() => {
+  const list = patientContextEntry.value?.patients || [];
+  if (list.length <= 1) return [];
+  return list.map(item => ({
+    value: item.id,
+    label: [
+      patientDisplayName(item),
+      patientAgeLabel(item, t, locale?.value || 'ru'),
+    ]
+      .filter(Boolean)
+      .join(', '),
+  }));
+});
+const isFamilyPatientSelected = option =>
+  Number(option?.value) ===
+  Number(
+    patientContextEntry.value?.selectedId ?? selectedPatientContextId.value
+  );
+const selectFamilyPatientChip = id => {
+  if (!props.patientContextEnabled || !props.patientContextKey) return;
+  delete expandedClientForms[NEW_APPOINTMENT_KEY];
+  patientContextStore.select(props.patientContextKey, id);
+};
+const patientSummaryText = form => {
+  const name =
+    fullPatientName(form) ||
+    String(form?.clientName || '').trim() ||
+    t('SCHEDULING.PATIENT_CONTEXT.SELECT_PATIENT');
+  const source = {
+    birth_date: form?.clientBirthDate,
+    identifier: form?.clientIdentifier,
+  };
+  const age = patientAgeLabel(source, t, locale?.value || 'ru');
+  const iin = maskedPatientIin(source);
+  return [name, age || iin, form?.clientPhone].filter(Boolean).join(' · ');
+};
 const isClientFieldsOpen = (form, key) =>
   Boolean(
     expandedClientForms[key] ||
-      (!props.patientContextEnabled &&
-        (!form?.clientFirstName?.trim() ||
-          medelementLastNameError(form) ||
-          medelementPhoneError(form) ||
-          medelementIinError(form)))
+      !form?.clientFirstName?.trim() ||
+      medelementLastNameError(form) ||
+      medelementPhoneError(form) ||
+      medelementIinError(form)
   );
 </script>
 
@@ -3048,6 +3119,76 @@ const isClientFieldsOpen = (form, key) =>
                       dropdown-placement="auto"
                       @update:model-value="createForm.status = $event"
                     />
+                  </div>
+
+                  <div
+                    class="grid min-w-0 gap-1.5 rounded-lg border border-n-weak bg-n-alpha-1 px-2.5 py-1.5"
+                    data-testid="appointment-patient-summary-bar"
+                  >
+                    <div
+                      v-if="familyPatientChips.length"
+                      class="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5"
+                      data-testid="appointment-patient-chips"
+                    >
+                      <button
+                        v-for="option in familyPatientChips"
+                        :key="option.value"
+                        type="button"
+                        :aria-pressed="isFamilyPatientSelected(option)"
+                        class="shrink-0 rounded-full border px-2 py-0.5 text-xs text-n-slate-12"
+                        :class="
+                          isFamilyPatientSelected(option)
+                            ? 'border-n-teal-7 bg-n-teal-3 text-n-teal-11'
+                            : 'border-n-weak bg-n-solid-1'
+                        "
+                        @click="selectFamilyPatientChip(option.value)"
+                      >
+                        {{ option.label }}
+                      </button>
+                    </div>
+                    <div
+                      class="flex min-w-0 items-center justify-between gap-2"
+                    >
+                      <div
+                        class="flex min-w-0 flex-1 items-center gap-1.5 text-xs"
+                        :title="patientSummaryText(createForm)"
+                      >
+                        <span
+                          class="i-lucide-user-round size-3.5 shrink-0 text-n-slate-10"
+                        />
+                        <span
+                          class="truncate font-medium text-n-slate-12"
+                          data-testid="appointment-patient-summary-text"
+                        >
+                          {{ patientSummaryText(createForm) }}
+                        </span>
+                      </div>
+                      <div class="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          class="inline-flex size-6 items-center justify-center rounded-md text-xs text-n-slate-11 hover:bg-n-alpha-2 hover:text-n-slate-12"
+                          :title="$t('SCHEDULING.GENERAL.EDIT')"
+                          :aria-label="$t('SCHEDULING.GENERAL.EDIT')"
+                          data-testid="toggle-create-client-fields"
+                          @click="toggleClientFields(NEW_APPOINTMENT_KEY)"
+                        >
+                          <span
+                            class="i-lucide-pencil size-3.5"
+                            aria-hidden="true"
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          class="inline-flex items-center rounded-md px-1.5 py-0.5 text-xs font-medium text-n-blue-11 hover:bg-n-alpha-2"
+                          data-testid="create-another-patient-button"
+                          @click="
+                            startAnotherPatient(createForm, NEW_APPOINTMENT_KEY)
+                          "
+                        >
+                          {{ $t('SCHEDULING.PATIENT_CONTEXT.ANOTHER_PATIENT') }}
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <div
@@ -3160,7 +3301,9 @@ const isClientFieldsOpen = (form, key) =>
                           medelementPhoneError(createForm) ? 'error' : 'info'
                         "
                         size="sm"
-                        @update:model-value="createForm.clientPhone = $event"
+                        @update:model-value="
+                          updatePatientPhone(createForm, $event)
+                        "
                       />
                     </div>
 
@@ -3907,6 +4050,59 @@ const isClientFieldsOpen = (form, key) =>
                   </div>
 
                   <div
+                    class="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-n-weak bg-n-alpha-1 px-2.5 py-1.5"
+                    :data-testid="`appointment-patient-summary-bar-${appointment.id}`"
+                  >
+                    <div
+                      class="flex min-w-0 flex-1 items-center gap-1.5 text-xs"
+                      :title="
+                        patientSummaryText(
+                          appointmentForms[appointmentKey(appointment)]
+                        )
+                      "
+                    >
+                      <span
+                        class="i-lucide-user-round size-3.5 shrink-0 text-n-slate-10"
+                      />
+                      <span class="truncate font-medium text-n-slate-12">
+                        {{
+                          patientSummaryText(
+                            appointmentForms[appointmentKey(appointment)]
+                          )
+                        }}
+                      </span>
+                    </div>
+                    <div class="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        class="inline-flex size-6 items-center justify-center rounded-md text-xs text-n-slate-11 hover:bg-n-alpha-2 hover:text-n-slate-12"
+                        :title="$t('SCHEDULING.GENERAL.EDIT')"
+                        :aria-label="$t('SCHEDULING.GENERAL.EDIT')"
+                        :data-testid="`toggle-edit-client-fields-${appointment.id}`"
+                        @click="toggleClientFields(appointmentKey(appointment))"
+                      >
+                        <span
+                          class="i-lucide-pencil size-3.5"
+                          aria-hidden="true"
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        class="inline-flex items-center rounded-md px-1.5 py-0.5 text-xs font-medium text-n-blue-11 hover:bg-n-alpha-2"
+                        :data-testid="`edit-another-patient-button-${appointment.id}`"
+                        @click="
+                          startAnotherPatient(
+                            appointmentForms[appointmentKey(appointment)],
+                            appointmentKey(appointment)
+                          )
+                        "
+                      >
+                        {{ $t('SCHEDULING.PATIENT_CONTEXT.ANOTHER_PATIENT') }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
                     v-show="
                       isClientFieldsOpen(
                         appointmentForms[appointmentKey(appointment)],
@@ -4050,9 +4246,10 @@ const isClientFieldsOpen = (form, key) =>
                         "
                         size="sm"
                         @update:model-value="
-                          appointmentForms[
-                            appointmentKey(appointment)
-                          ].clientPhone = $event
+                          updatePatientPhone(
+                            appointmentForms[appointmentKey(appointment)],
+                            $event
+                          )
                         "
                       />
                     </div>

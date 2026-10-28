@@ -253,6 +253,7 @@
       "LOAD_ERROR": "Unable to load clients for this conversation",
       "NEW_PATIENT": "Add client",
       "ADD_FAMILY_MEMBER": "Add family member",
+      "ANOTHER_PATIENT": "+ Another",
       "OWN_PHONE": "Client's own phone, if different",
       "CREATE_DESCRIPTION": "Create a separate client card for this shared number. The conversation will stay the same.",
       "PROVIDER_ID": "MedElement patient code",

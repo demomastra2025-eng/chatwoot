@@ -103,22 +103,50 @@ describe('conversation patient selector', () => {
     }
   );
 
-  it('shows one patient chip and a family member action in the contact panel', async () => {
+  it('hides patient chips when there is only one patient and shows chips for 2+ patients', async () => {
     const i18n = createI18n({
       legacy: false,
       locale: 'ru',
       messages: { ru },
     });
     mocks.t.mockImplementation(i18n.global.t);
-    const wrapper = await mountLoaded();
-    await wrapper.setProps({ chips: true });
+    const singleWrapper = await mountLoaded();
+    await singleWrapper.setProps({ chips: true });
+
+    expect(singleWrapper.find('[data-test="patient-chips"]').exists()).toBe(
+      false
+    );
+    expect(singleWrapper.find('label').exists()).toBe(false);
+    singleWrapper.unmount();
+
+    SchedulingContactsAPI.patients.mockResolvedValueOnce({
+      data: {
+        payload: {
+          contact_id: 42,
+          patients: [
+            { ...owner, full_name: 'Жандаулет', birth_date: '1995-01-01' },
+            { ...patient, full_name: 'Алия', birth_date: '2020-01-01' },
+          ],
+        },
+      },
+    });
+    const store = useConversationPatientContextStore();
+    await store.load(key, 42, { force: true });
+    const multiWrapper = shallowMount(SchedulingConversationPatientSelector, {
+      props: {
+        contextKey: key,
+        entry: store.contexts[key],
+        chips: true,
+      },
+      global: { plugins: [pinia] },
+    });
 
     expect(
-      wrapper.get('[data-test="patient-chips"]').findAll('button')
-    ).toHaveLength(1);
-    expect(wrapper.find('label').exists()).toBe(false);
+      multiWrapper.get('[data-test="patient-chips"]').findAll('button')
+    ).toHaveLength(2);
+    expect(multiWrapper.find('label').exists()).toBe(false);
     expect(
-      wrapper.findAllComponents({ name: 'Button' })[0].props('label')
+      multiWrapper.findAllComponents({ name: 'Button' })[0].props('label')
     ).toBe('+ Член семьи');
   });
 

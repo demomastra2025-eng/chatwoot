@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { shallowMount } from '@vue/test-utils';
 
 import ContactInfo from './ContactInfo.vue';
+import SocialIcons from './SocialIcons.vue';
 import {
   CRM_DEAL_MANAGE_PERMISSIONS,
   CRM_TASK_MANAGE_PERMISSIONS,
@@ -124,7 +125,7 @@ describe('ContactInfo', () => {
     window.history.replaceState({}, '', '/');
   });
 
-  it('keeps name and phone beside the avatar and omits MedElement or country subtitle', () => {
+  it('keeps name and phone beside the avatar without inline pencil icon and omits MedElement or country subtitle', async () => {
     const wrapper = buildWrapper({
       contact: {
         phone_number: '+77000000001',
@@ -132,29 +133,79 @@ describe('ContactInfo', () => {
       },
     });
     const header = wrapper.get('[data-test="contact-header"]');
-    expect(header.find('h3').classes()).toContain('line-clamp-2');
+    const heading = header.find('h3');
+    expect(heading.classes()).toContain('line-clamp-2');
+    expect(heading.find('.i-lucide-pencil').exists()).toBe(false);
     expect(header.findComponent({ name: 'ContactInfoRow' }).exists()).toBe(
       true
     );
     expect(header.find('[data-test="contact-header-meta"]').exists()).toBe(
       false
     );
+    expect(
+      wrapper.findComponent({ name: 'ContactChannelLabels' }).exists()
+    ).toBe(false);
+
+    await heading.trigger('click');
+    expect(wrapper.vm.isEditingName).toBe(true);
   });
 
-  it('shows compact profile actions without creation buttons or family action', () => {
+  it('shows 3 grey square NextButton profile actions without delete button even for admins', async () => {
+    useAdminMock.mockReturnValue({ isAdmin: true });
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     const wrapper = buildWrapper({
       showActions: true,
       canAddFamilyMember: true,
     });
     const actions = wrapper.get('[data-test="contact-panel-actions"]');
-    expect(actions.findAll('button')).toHaveLength(2);
-    expect(actions.findAll('a')).toHaveLength(1);
-    expect(actions.text()).not.toContain(
-      'SCHEDULING.PATIENT_CONTEXT.ADD_FAMILY_MEMBER'
+    const buttons = actions.findAllComponents({ name: 'NextButton' });
+    expect(buttons).toHaveLength(3);
+    expect(buttons.map(btn => btn.props('icon'))).toEqual([
+      'i-ph-pencil-simple',
+      'i-ph-arrows-merge',
+      'i-lucide-external-link',
+    ]);
+    buttons.forEach(btn => {
+      expect(btn.attributes('slate')).toBeDefined();
+      expect(btn.attributes('faded')).toBeDefined();
+      expect(btn.attributes('sm')).toBeDefined();
+    });
+    expect(actions.find('.i-lucide-trash-2').exists()).toBe(false);
+
+    await buttons[2].vm.$emit('click');
+    expect(openSpy).toHaveBeenCalledWith(
+      '/app/accounts/1/contacts/154',
+      '_blank',
+      'noopener,noreferrer'
     );
-    expect(
-      wrapper.findComponent({ name: 'CrmContactTaskDrawer' }).exists()
-    ).toBe(false);
+    openSpy.mockRestore();
+  });
+
+  it('renders monochrome social profile chips with @handle text and without double @', () => {
+    const wrapper = shallowMount(SocialIcons, {
+      props: {
+        socialProfiles: {
+          telegram: 'asselya_k',
+          instagram: '@clinic_kz',
+        },
+      },
+      global: {
+        mocks: {
+          $t: key => key,
+        },
+        stubs: {
+          'fluent-icon': true,
+        },
+      },
+    });
+    const tg = wrapper.get('[data-test="social-profile-telegram"]');
+    const ig = wrapper.get('[data-test="social-profile-instagram"]');
+    expect(tg.text()).toBe('@asselya_k');
+    expect(tg.get('a').attributes('href')).toBe('https://t.me/asselya_k');
+    expect(ig.text()).toBe('@clinic_kz');
+    expect(ig.get('a').attributes('href')).toBe(
+      'https://instagram.com/clinic_kz'
+    );
   });
 
   it('has no button that opens a message to the person whose dialog is already open', () => {

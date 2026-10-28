@@ -108,7 +108,7 @@ const mountComponent = (
             'patientContextKey',
           ],
           emits: ['patientBound'],
-          template: '<div />',
+          template: '<div><slot name="after-header" /></div>',
         },
       },
     },
@@ -180,7 +180,7 @@ describe('ConversationSidebar', () => {
     });
   });
 
-  it('passes the sole patient to the contact panel', async () => {
+  it('passes the sole patient to the contact panel and hides the top selector in appointments when there is only one patient', async () => {
     mocks.uiSettings = ref({ is_contact_sidebar_open: true });
     SchedulingContactsAPI.patients.mockResolvedValueOnce({
       data: {
@@ -199,6 +199,30 @@ describe('ConversationSidebar', () => {
     const panel = wrapper.findComponent({ name: 'ContactPanel' });
     expect(panel.props('patientEntry').patients).toHaveLength(1);
     expect(panel.props('selectedPatient').id).toBe(42);
+
+    mocks.uiSettings.value = { is_scheduling_appointments_panel_open: true };
+    await flushPromises();
+    expect(
+      wrapper
+        .findComponent({ name: 'SchedulingConversationPatientSelector' })
+        .exists()
+    ).toBe(false);
+  });
+
+  it('renders compact patient chips in the appointments panel when 2+ patients exist', async () => {
+    mocks.uiSettings = ref({ is_scheduling_appointments_panel_open: true });
+    const wrapper = mountComponent({
+      id: 123,
+      inbox_id: 2,
+      meta: { sender: { id: 42 } },
+    });
+    await flushPromises();
+    const selector = wrapper.findComponent({
+      name: 'SchedulingConversationPatientSelector',
+    });
+    expect(selector.exists()).toBe(true);
+    expect(selector.props('chips')).toBe(true);
+    expect(selector.props('showChips')).toBe(true);
   });
 
   it('passes selected clinical context while keeping the chat recipient intact', async () => {

@@ -35,7 +35,7 @@ const props = defineProps({
   conversationDisplayId: { type: [Number, String], default: null },
   compact: { type: Boolean, default: false },
   chips: { type: Boolean, default: false },
-  showChips: { type: Boolean, default: true },
+  showChips: { type: Boolean, default: undefined },
   showAddButton: { type: Boolean, default: true },
 });
 const { t, locale } = useI18n();
@@ -94,6 +94,11 @@ const selectedOption = computed(
 );
 const isOptionSelected = option =>
   Number(option?.value) === Number(props.entry?.selectedId);
+const hasVisibleChips = computed(() =>
+  props.showChips === undefined
+    ? options.value.length > 1
+    : Boolean(props.showChips && options.value.length > 1)
+);
 const closeDropdown = () => {
   isDropdownOpen.value = false;
 };
@@ -280,17 +285,23 @@ const savePatient = async () => {
 
 <template>
   <section
-    v-show="!chips || showChips || isCreating || isEditing || entry?.error"
+    v-show="
+      !chips || hasVisibleChips || isCreating || isEditing || entry?.error
+    "
     class="w-full min-w-0 shrink-0"
     :class="
-      compact || chips
+      compact
         ? 'py-1'
-        : 'border-b border-n-weak bg-n-alpha-1 px-3 py-2'
+        : chips
+          ? showAddButton
+            ? 'border-b border-n-weak bg-n-alpha-1 px-3 py-1.5'
+            : 'py-1'
+          : 'border-b border-n-weak bg-n-alpha-1 px-3 py-2'
     "
     data-test="patient-selector"
   >
     <div
-      v-if="chips && showChips && !isCreating && !isEditing"
+      v-if="chips && hasVisibleChips && !isCreating && !isEditing"
       class="flex flex-nowrap gap-1.5 overflow-x-auto"
       data-test="patient-chips"
     >

@@ -9,9 +9,9 @@ import ContactInfoRow from './ContactInfoRow.vue';
 import Avatar from 'next/avatar/Avatar.vue';
 import SocialIcons from './SocialIcons.vue';
 import EditContact from './EditContact.vue';
-import ContactChannelLabels from 'dashboard/components-next/Contacts/ContactChannelLabels.vue';
 import ContactMergeModal from 'dashboard/modules/contact/ContactMergeModal.vue';
 import InlineInput from 'dashboard/components-next/inline-input/InlineInput.vue';
+import NextButton from 'dashboard/components-next/button/Button.vue';
 import {
   maskedPatientIin,
   patientAgeLabel,
@@ -34,9 +34,9 @@ export default {
     EditContact,
     Avatar,
     SocialIcons,
-    ContactChannelLabels,
     ContactMergeModal,
     InlineInput,
+    NextButton,
   },
   props: {
     contact: {
@@ -181,6 +181,9 @@ export default {
     closeEditModal() {
       this.showEditModal = false;
     },
+    openContactProfile() {
+      window.open(this.contactProfileLink, '_blank', 'noopener,noreferrer');
+    },
     toggleDeleteModal() {
       this.showDeleteModal = !this.showDeleteModal;
     },
@@ -226,7 +229,7 @@ export default {
       this.editName = this.contact.name || '';
       this.isEditingName = true;
       this.$nextTick(() => {
-        this.$refs.nameInput?.focus();
+        this.$refs.nameInput?.focus?.();
       });
     },
     saveNameEdit() {
@@ -324,14 +327,11 @@ export default {
             />
             <h3
               v-else
-              class="group/name m-0 line-clamp-2 min-w-0 cursor-pointer text-base font-semibold text-n-slate-12 hover:text-n-slate-11"
+              class="m-0 line-clamp-2 min-w-0 cursor-pointer text-base font-semibold text-n-slate-12 hover:text-n-slate-11"
               :title="$t('CONTACT_PANEL.CLICK_TO_EDIT')"
               @click="startEditingName"
             >
               {{ contact.name }}
-              <span
-                class="i-lucide-pencil ml-1 align-middle text-xs text-n-slate-10 opacity-0 group-hover/name:opacity-100"
-              />
             </h3>
             <ContactInfoRow
               v-if="contact.phone_number"
@@ -426,60 +426,40 @@ export default {
               </select>
             </div>
             <SocialIcons :social-profiles="socialProfiles" />
-            <ContactChannelLabels
-              :contact-inboxes="
-                contact.contactInboxes || contact.contact_inboxes || []
-              "
-              :existing-conversation-inbox-ids="existingConversationInboxIds"
-              :title="$t('CONTACT_PANEL.CHANNEL_IDENTITIES')"
-              :copy-on-click="false"
-              icon-only
-            />
             <slot name="after-channels" />
           </div>
         </div>
         <div
-          class="flex w-full items-center gap-1"
+          class="flex w-full items-center gap-2 mt-0.5"
           data-test="contact-panel-actions"
         >
-          <button
-            v-tooltip.bottom="$t('EDIT_CONTACT.BUTTON_LABEL')"
-            type="button"
-            class="contact-panel-icon"
+          <NextButton
+            v-tooltip.top-end="$t('EDIT_CONTACT.BUTTON_LABEL')"
+            icon="i-ph-pencil-simple"
+            slate
+            faded
+            sm
             :aria-label="$t('EDIT_CONTACT.BUTTON_LABEL')"
             @click="openEditModal"
-          >
-            <span class="i-lucide-pencil size-4" aria-hidden="true" />
-          </button>
-          <button
-            v-tooltip.bottom="$t('CONTACT_PANEL.MERGE_CONTACT')"
-            type="button"
-            class="contact-panel-icon"
+          />
+          <NextButton
+            v-tooltip.top-end="$t('CONTACT_PANEL.MERGE_CONTACT')"
+            icon="i-ph-arrows-merge"
+            slate
+            faded
+            sm
             :aria-label="$t('CONTACT_PANEL.MERGE_CONTACT')"
             @click="openMergeModal"
-          >
-            <span class="i-lucide-git-merge size-4" aria-hidden="true" />
-          </button>
-          <a
-            v-tooltip.bottom="$t('CONTACT_PANEL.OPEN_PROFILE')"
-            :href="contactProfileLink"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="contact-panel-icon"
+          />
+          <NextButton
+            v-tooltip.top-end="$t('CONTACT_PANEL.OPEN_PROFILE')"
+            icon="i-lucide-external-link"
+            slate
+            faded
+            sm
             :aria-label="$t('CONTACT_PANEL.OPEN_PROFILE')"
-          >
-            <span class="i-lucide-external-link size-4" aria-hidden="true" />
-          </a>
-          <button
-            v-if="isAdmin"
-            v-tooltip.bottom="$t('DELETE_CONTACT.BUTTON_LABEL')"
-            type="button"
-            class="contact-panel-icon text-n-ruby-11"
-            :aria-label="$t('DELETE_CONTACT.BUTTON_LABEL')"
-            @click="toggleDeleteModal"
-          >
-            <span class="i-lucide-trash-2 size-4" aria-hidden="true" />
-          </button>
+            @click="openContactProfile"
+          />
         </div>
         <slot />
       </div>
@@ -505,13 +485,3 @@ export default {
     />
   </div>
 </template>
-
-<style scoped>
-.contact-panel-icon {
-  @apply inline-flex size-8 flex-none items-center justify-center rounded-lg text-n-slate-11;
-}
-.contact-panel-icon:hover,
-.contact-panel-icon:focus-visible {
-  @apply bg-n-alpha-2;
-}
-</style>

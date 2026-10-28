@@ -3769,4 +3769,68 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     });
     wrapper.unmount();
   });
+
+  it('collapses client fields into a 1-line patient summary bar when patient fields are valid and expands on pencil or + Another click', async () => {
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
+    const wrapper = mountComponent(defaultCurrentChat(), patientContextProps());
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment({ scroll: false });
+
+    const summaryBar = wrapper.get(
+      '[data-testid="appointment-patient-summary-bar"]'
+    );
+    expect(summaryBar.exists()).toBe(true);
+    expect(
+      wrapper.get('[data-testid="appointment-patient-summary-text"]').text()
+    ).toContain('Patient 84 Family');
+    expect(
+      wrapper.vm.isClientFieldsOpen(wrapper.vm.createForm, 'new-appointment')
+    ).toBe(false);
+
+    await wrapper
+      .get('[data-testid="toggle-create-client-fields"]')
+      .trigger('click');
+    expect(
+      wrapper.vm.isClientFieldsOpen(wrapper.vm.createForm, 'new-appointment')
+    ).toBe(true);
+
+    await wrapper
+      .get('[data-testid="toggle-create-client-fields"]')
+      .trigger('click');
+    expect(
+      wrapper.vm.isClientFieldsOpen(wrapper.vm.createForm, 'new-appointment')
+    ).toBe(false);
+
+    await wrapper
+      .get('[data-testid="create-another-patient-button"]')
+      .trigger('click');
+    expect(wrapper.vm.createForm.clientFirstName).toBe('');
+    expect(wrapper.vm.createForm.patientContactId).toBe(null);
+    expect(
+      wrapper.vm.isClientFieldsOpen(wrapper.vm.createForm, 'new-appointment')
+    ).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('auto-expands client fields when a MedElement required field is missing even with patientContextEnabled', async () => {
+    configureMedelementResource();
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
+    const props = patientContextProps();
+    props.selectedPatient = {
+      ...props.selectedPatient,
+      last_name: '',
+      lastName: '',
+      full_name: 'Алия',
+      name: 'Алия',
+    };
+    const wrapper = mountComponent(defaultCurrentChat(), props);
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment({ scroll: false });
+
+    expect(wrapper.vm.createForm.clientLastName).toBe('');
+    expect(
+      wrapper.vm.isClientFieldsOpen(wrapper.vm.createForm, 'new-appointment')
+    ).toBe(true);
+    wrapper.unmount();
+  });
 });

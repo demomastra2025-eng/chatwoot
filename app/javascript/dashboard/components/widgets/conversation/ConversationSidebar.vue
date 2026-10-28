@@ -247,7 +247,14 @@ const closeAppointmentsSidebar = () => closePanel();
         >
           <template #after-header>
             <SchedulingConversationPatientSelector
-              v-if="patientContextEnabled && patientContextKey"
+              v-if="
+                patientContextEnabled &&
+                patientContextKey &&
+                ((patientEntry?.patients?.length || 0) > 1 ||
+                  patientEntry?.error)
+              "
+              chips
+              :show-chips="(patientEntry?.patients?.length || 0) > 1"
               :context-key="patientContextKey"
               :entry="patientEntry"
               :conversation-display-id="patientConversationDisplayId"
