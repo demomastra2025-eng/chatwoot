@@ -189,5 +189,20 @@ RSpec.describe Captain::Tools::Account::SearchAvailableSlotsService do
         expect(payload).to include('total' => 3)
       end
     end
+
+    it 'explains a specialist vacation from calendar time off in the agent availability result' do
+      service.patient_scope = Captain::Tools::Agent::PatientScope.new(assistant: assistant, conversation: conversation)
+      zone = Time.find_zone!('Asia/Almaty')
+      create(:scheduling_time_off, account: account, resource: resource, kind: 'vacation',
+                                   starts_at: zone.local(2026, 4, 20), ends_at: zone.local(2026, 4, 22),
+                                   title: 'Annual leave')
+
+      travel_to(zone.local(2026, 4, 19, 12)) do
+        payload = JSON.parse(execute(resource_ids: [resource.id], limit: 1))
+        expect(payload['total']).to eq(0)
+        expect(payload['absences']).to eq([{ 'resource_id' => resource.id, 'name' => 'Aigerim', 'kind' => 'vacation',
+                                             'from' => '2026-04-20', 'through' => '2026-04-21', 'reason' => 'Annual leave' }])
+      end
+    end
   end
 end
