@@ -113,7 +113,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
         model: model,
         input: file_path,
         observability: observability.merge(runtime_mode: 'call_recording_transcription', provider: 'openrouter'),
-        options: { temperature: 0.2, prompt: transcription_prompt }
+        options: { temperature: 0.2 }
       )
     end
   end
@@ -127,7 +127,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
         model: model,
         input: file_path,
         observability: observability.merge(runtime_mode: 'call_recording_transcription'),
-        options: { temperature: 0.2, prompt: transcription_prompt }
+        options: { temperature: 0.2 }
       )
     end
   end
@@ -305,21 +305,22 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
 
   def transcription_prompt
     [
-      'Transcribe the attached call recording accurately. Return only the transcript text, without markdown or commentary.',
+      'Transcribe the attached call recording accurately in the languages spoken. ' \
+      'Preserve code switching; do not translate. Return only the transcript text.',
       speaker_channel_prompt,
       account.captain_audio_transcription_prompt.presence
     ].compact.join("\n")
   end
 
   def speaker_channel_prompt
-    return 'If speaker roles are clear, label them as Клиент and Оператор.' unless dual_channel_recording?
+    return 'If speaker roles are clear, label them as Client and Operator.' unless dual_channel_recording?
 
-    channel_1_role = channel_role_label('channel_1', default: 'Оператор (clinic manager)')
-    channel_2_role = channel_role_label('channel_2', default: 'Клиент (patient/customer)')
+    channel_1_role = channel_role_label('channel_1', default: 'Operator')
+    channel_2_role = channel_role_label('channel_2', default: 'Client')
     [
       'This is a 2-channel stereo call recording where each speaker is recorded on a separate channel:',
       "Channel 1 (Left channel) is #{channel_1_role}, and Channel 2 (Right channel) is #{channel_2_role}.",
-      'Use this stereo channel separation to attribute every turn accurately and label speakers as Оператор and Клиент.'
+      'Use this stereo channel separation to attribute every turn accurately and label speakers as Operator and Client.'
     ].join(' ')
   end
 
@@ -334,9 +335,9 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
     role = recording_metadata.dig('channel_map', channel_key).to_s
     case role
     when 'user_audio', 'operator', 'agent'
-      'Оператор (clinic manager)'
+      'Operator'
     when 'peer_audio', 'caller', 'customer', 'client'
-      'Клиент (patient/customer)'
+      'Client'
     else
       default
     end

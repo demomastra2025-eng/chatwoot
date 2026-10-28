@@ -41,7 +41,7 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
       }
     )
   end
-  let(:transcript) { 'Клиент: Алло\nОператор: Здравствуйте' }
+  let(:transcript) { 'Клиент: Сәлеметсіз бе, можно записаться?\nОператор: Иә, әрине.' }
   let(:recording_path) { Rails.root.join('storage/voice-recordings/1/operator-call-1/recording.wav') }
   let(:response) { described_class::TranscriptionResult.new(text: transcript) }
 
@@ -69,7 +69,7 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
         feature: :audio_transcription,
         account: account,
         input: recording_path.to_s,
-        options: hash_including(temperature: 0.2)
+        options: { temperature: 0.2 }
       )
     )
 
@@ -159,13 +159,13 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
       model: 'openai/gpt-4o-mini-transcribe',
       input: recording_path.to_s,
       observability: hash_including(runtime_mode: 'call_recording_transcription'),
-      options: hash_including(temperature: 0.2)
+      options: { temperature: 0.2 }
     ).and_return(response)
 
     expect(service.perform).to include(success: true, transcript: transcript)
   end
 
-  it 'includes explicit 2-channel stereo speaker mapping in the prompt for dual-channel recordings' do
+  it 'does not send a language or example prompt for dual-channel recordings' do
     call_session.update!(
       metadata: call_session.metadata.deep_merge(
         'recording' => {
@@ -180,16 +180,7 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
       )
     )
 
-    expect(Llm::Runtime).to receive(:transcribe).with(
-      hash_including(
-        options: hash_including(
-          prompt: a_string_including(
-            'Channel 1 (Left channel) is Оператор (clinic manager)',
-            'Channel 2 (Right channel) is Клиент (patient/customer)'
-          )
-        )
-      )
-    ).and_return(response)
+    expect(Llm::Runtime).to receive(:transcribe).with(hash_including(options: { temperature: 0.2 })).and_return(response)
 
     expect(described_class.new(call_session).perform).to include(success: true, transcript: transcript)
   end
