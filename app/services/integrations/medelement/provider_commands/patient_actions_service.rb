@@ -77,7 +77,7 @@ class Integrations::Medelement::ProviderCommands::PatientActionsService
     configuration = Integrations::Medelement::Configuration.new(hook: command.hook)
     @patient_resolver ||= Integrations::Medelement::ProviderCommands::PatientResolver.new(
       command: command,
-      client: Integrations::Medelement::Client.new(configuration: configuration),
+      client: Integrations::Medelement::Client.new(configuration: configuration, lane: :live),
       organization_id: configuration.organization_id
     )
   end

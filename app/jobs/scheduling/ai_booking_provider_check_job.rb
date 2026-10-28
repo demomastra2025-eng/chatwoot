@@ -97,6 +97,6 @@ class Scheduling::AiBookingProviderCheckJob < ApplicationJob
     hook = command.hook
     return unless hook&.enabled? && hook.app_id == 'medelement' && hook.account_id == command.account_id
 
-    Integrations::Medelement::Client.new(configuration: Integrations::Medelement::Configuration.new(hook: hook))
+    Integrations::Medelement::Client.new(configuration: Integrations::Medelement::Configuration.new(hook: hook), lane: :live)
   end
 end

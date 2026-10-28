@@ -46,6 +46,24 @@ RSpec.describe Integrations::Medelement::Configuration do
     end
   end
 
+  describe 'request volume settings' do
+    it 'starts with a conservative shared budget and protected live share' do
+      expect(configuration.request_budget_per_minute).to eq(30)
+      expect(configuration.live_reserve_per_minute).to eq(10)
+      expect(configuration.rate_alert_threshold_per_hour).to eq(3)
+    end
+
+    it 'clamps the live reserve below the configured budget' do
+      settings = { 'request_budget_per_minute' => 12, 'live_reserve_per_minute' => 20,
+                   'rate_alert_threshold_per_hour' => 2 }
+      allow(hook).to receive(:settings).and_return(settings)
+
+      expect(configuration.request_budget_per_minute).to eq(12)
+      expect(configuration.live_reserve_per_minute).to eq(11)
+      expect(configuration.rate_alert_threshold_per_hour).to eq(2)
+    end
+  end
+
   describe '#sync_services?' do
     it 'is enabled by default for existing hooks' do
       expect(configuration.sync_services?).to be(true)
