@@ -129,7 +129,8 @@ module Integrations::Medelement::AppointmentPatientIdentity
 
   def names_match?(identity, contact)
     names = contact_names(contact)
-    return false if names['first_name'].blank? || names['last_name'].blank?
+    return false if names['first_name'].blank?
+    return false if names['last_name'].blank? && identity[:last_name].present?
 
     %w[first_name last_name].all? { |key| normalize("client_#{key}", identity[key.to_sym]) == normalize("client_#{key}", names[key]) } &&
       middle_name_matches?(identity[:middle_name], names['middle_name'])

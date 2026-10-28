@@ -257,7 +257,13 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     )
   end
 
-  it 'rejects a Medelement appointment without a patient last name before persistence' do
+  it 'rejects a Medelement appointment without a patient last name when require_patient_last_name is enabled' do
+    create(
+      :integrations_hook,
+      :medelement,
+      account: account,
+      settings: { 'organization_id' => 'company-1', 'timezone' => 'Asia/Almaty', 'require_patient_last_name' => true }
+    )
     resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
     params = base_params.merge(client_first_name: 'Айжан', client_last_name: '', client_phone: '+77000000001')
     expect(Integrations::Medelement::ResourceAvailabilityService).not_to receive(:new)
@@ -268,6 +274,30 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
 
     expect(response).to have_http_status(:unprocessable_content)
     expect(response_body['code']).to eq('MEDELEMENT_PATIENT_NAME_INCOMPLETE')
+  end
+
+  it 'allows a Medelement appointment with only first name and phone by default when require_patient_last_name is disabled' do
+    stub_medelement_availability
+    resource.update!(
+      custom_attributes: {
+        'medelement_specialist_code' => 'specialist-1',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
+    params = base_params.except(:service_id).merge(
+      client_first_name: 'Айжан',
+      client_last_name: '',
+      client_phone: '+77000000001',
+      custom_attributes: { medelement_cabinet_code: 'cabinet-1' }
+    )
+
+    expect do
+      post path, params: params, headers: headers, as: :json
+    end.to change(Scheduling::Appointment, :count).by(1)
+
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'client_first_name')).to eq('Айжан')
+    expect(response_body.dig('payload', 'client_last_name')).to be_nil
   end
 
   it 'creates a Medelement appointment without a selected service' do

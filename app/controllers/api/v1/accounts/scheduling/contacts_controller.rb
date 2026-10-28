@@ -208,17 +208,60 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
     )
   end
 
+  def validate_required_middle_name!
+    middle_name = if params.key?(:middle_name)
+                    params[:middle_name]
+                  else
+                    @contact&.middle_name.presence || @contact&.custom_attributes&.dig('medelement_middle_name')
+                  end
+    return if middle_name.present?
+
+    raise Scheduling::Error.new(
+      code: 'CLIENT_MIDDLE_NAME_REQUIRED',
+      message: 'Middle name is required',
+      status: :unprocessable_content
+    )
+  end
+
+  def validate_required_birth_date!
+    incoming_custom = params[:custom_attributes]
+    custom_birth_date = incoming_custom[:birth_date] if incoming_custom.respond_to?(:[])
+    birth_date = if params.key?(:birth_date)
+                   params[:birth_date]
+                 elsif incoming_custom.respond_to?(:key?) && incoming_custom.key?(:birth_date)
+                   custom_birth_date
+                 else
+                   @contact&.custom_attributes&.dig('birth_date').presence ||
+                     @contact&.custom_attributes&.dig('medelement_birth_date')
+                 end
+    return if birth_date.present?
+
+    raise Scheduling::Error.new(
+      code: 'CLIENT_BIRTH_DATE_REQUIRED',
+      message: 'Birth date is required',
+      status: :unprocessable_content
+    )
+  end
+
+  def medelement_configuration
+    @medelement_configuration ||= Integrations::Medelement::Configuration.for_account(Current.account)
+  end
+
   def validate_required_contact_fields!
     return if action_name == 'update' && phone_only_update?
     return if action_name == 'update' && !contact_identity_update?
 
     validate_required_iin!
-    validate_required_last_name! if medelement_identity_required?
+    return unless medelement_identity_required?
+
+    validate_required_last_name! if medelement_configuration&.require_patient_last_name?
+    validate_required_middle_name! if medelement_configuration&.require_patient_middle_name?
+    validate_required_birth_date! if medelement_configuration&.require_patient_birth_date?
   end
 
   def validate_required_iin!
     if required_iin_value.blank?
-      return unless medelement_identity_required?
+      return unless medelement_identity_required? && medelement_configuration&.require_patient_iin?
 
       raise Scheduling::Error.new(code: 'IIN_REQUIRED', message: 'IIN is required', status: :unprocessable_content)
     end
@@ -238,7 +281,9 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
   end
 
   def contact_identity_update?
-    %w[first_name last_name middle_name full_name phone phone_number iin].any? { |key| params.key?(key) }
+    keys = %w[first_name last_name middle_name full_name phone phone_number iin]
+    keys << 'birth_date' if medelement_identity_required? && medelement_configuration&.require_patient_birth_date?
+    keys.any? { |key| params.key?(key) }
   end
 
   def phone_only_update?

@@ -74,6 +74,22 @@
         "REMOVE_RECEPTION_ON_CANCEL": {
           "LABEL": "Remove the reception in MedElement when an appointment is cancelled in OneLink",
           "HINT": "When off, cancelling changes the status only in OneLink. The reception stays in MedElement — free the doctor's time there manually. A removal already in progress may still finish if you turn this off."
+        },
+        "REQUIRE_PATIENT_LAST_NAME": {
+          "LABEL": "Patient last name is required when booking",
+          "HINT": "When off, appointments and patients can be created with only first name and phone."
+        },
+        "REQUIRE_PATIENT_IIN": {
+          "LABEL": "Patient IIN is required when booking",
+          "HINT": "When off, patient IIN is optional. If entered, its 12-digit format is still validated."
+        },
+        "REQUIRE_PATIENT_MIDDLE_NAME": {
+          "LABEL": "Patient middle name is required when booking",
+          "HINT": "When on, middle name must be filled in before saving a patient or appointment."
+        },
+        "REQUIRE_PATIENT_BIRTH_DATE": {
+          "LABEL": "Patient birth date is required when booking",
+          "HINT": "When on, birth date must be filled in before saving a patient or appointment."
         }
       },
       "NEXT_SYNC": "Next scheduled sync",

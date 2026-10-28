@@ -16,7 +16,10 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
 
     render_payload(
       resources.map { |resource| Scheduling::PayloadBuilder.resource(resource, provider_schedule: schedules[resource]) },
-      meta: { count: resources.size }
+      meta: {
+        count: resources.size,
+        medelement_required_patient_fields: Integrations::Medelement::Configuration.required_patient_fields_for(Current.account)
+      }
     )
   end
 

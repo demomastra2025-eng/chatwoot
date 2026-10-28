@@ -13,15 +13,22 @@ class Scheduling::PatientContactCreationService
 
     first_name = params[:first_name].to_s.strip.presence || params[:name].to_s.strip.presence
     last_name = params[:last_name].to_s.strip.presence
-    raise ArgumentError, 'Patient first and last name are required' if first_name.blank? || last_name.blank?
+    middle_name = params[:middle_name].to_s.strip.presence
+    raise ArgumentError, 'Patient first name is required' if first_name.blank?
+    raise ArgumentError, 'Patient first and last name are required' if last_name.blank? && medelement_configuration&.require_patient_last_name?
 
     # The appointment's date column would silently turn a non-existent date into nil and create a card without it.
     birth_date = Scheduling::BirthDate.validate!(params[:birth_date], plain: true).presence
+    validate_configured_patient_fields!(middle_name: middle_name, birth_date: birth_date)
     if params[:iin].present? && !Scheduling::IinValidator.valid?(params[:iin])
       raise Scheduling::Error.new(code: 'INVALID_IIN', message: 'Invalid IIN', status: :unprocessable_content)
     end
 
     identifier = Scheduling::IinValidator.normalize(params[:iin].presence || params[:identifier])
+    if medelement_configuration&.require_patient_iin? && identifier.blank?
+      raise Scheduling::Error.new(code: 'IIN_REQUIRED', message: 'IIN is required', status: :unprocessable_content)
+    end
+
     Scheduling::IinValidator.validate!(identifier)
     appointment = account.scheduling_appointments.new(
       contact: contact, conversation: conversation, client_first_name: first_name, client_last_name: last_name,
@@ -51,6 +58,20 @@ class Scheduling::PatientContactCreationService
   attr_reader :account, :contact, :params
 
   def request_key = params[:idempotency_key].to_s.strip
+
+  def medelement_configuration
+    @medelement_configuration ||= Integrations::Medelement::Configuration.for_account(account)
+  end
+
+  def validate_configured_patient_fields!(middle_name:, birth_date:)
+    if medelement_configuration&.require_patient_middle_name? && middle_name.blank?
+      raise Scheduling::Error.new(code: 'CLIENT_MIDDLE_NAME_REQUIRED', message: 'Patient middle name is required', status: :unprocessable_content)
+    end
+
+    return unless medelement_configuration&.require_patient_birth_date? && birth_date.blank?
+
+    raise Scheduling::Error.new(code: 'CLIENT_BIRTH_DATE_REQUIRED', message: 'Patient birth date is required', status: :unprocessable_content)
+  end
 
   def creation_fingerprint(appointment)
     fields = Integrations::Medelement::AppointmentPatientIdentity::FIELDS

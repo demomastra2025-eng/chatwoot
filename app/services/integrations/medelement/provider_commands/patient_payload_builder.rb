@@ -1,6 +1,8 @@
 class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
+  FALLBACK_LAST_NAME = '-'.freeze
+
   # rubocop:disable Metrics/ParameterLists
-  def initialize(contact:, patient_code: nil, phone_number: nil, identity: nil, organization_id: nil, desired_attributes: {})
+  def initialize(contact:, patient_code: nil, phone_number: nil, identity: nil, organization_id: nil, desired_attributes: {}, require_last_name: nil)
     @contact = contact
     @patient_code = patient_code
     @desired_attributes = desired_attributes.to_h.deep_stringify_keys
@@ -9,6 +11,7 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
                     Array(custom_attributes['secondary_phones']).first
     @identity = identity.to_h.stringify_keys
     @organization_id = organization_id
+    @require_last_name = require_last_name
   end
   # rubocop:enable Metrics/ParameterLists
 
@@ -45,19 +48,28 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
     }
   end
 
+  def require_last_name?
+    return @require_last_name == true unless @require_last_name.nil?
+
+    Integrations::Medelement::Configuration.for_account(contact&.account)&.require_patient_last_name? == true
+  end
+
   def name_values
     return appointment_name_values if appointment_identity?
 
     explicit = explicit_name_values
     return explicit if explicit[:first_name].present? && explicit[:last_name].present?
+    return explicit.merge(last_name: FALLBACK_LAST_NAME) if !require_last_name? && explicit[:first_name].present?
 
     contact_name_values
   end
 
   def explicit_name_values
     last_name = custom_attributes['medelement_last_name'].presence || contact_attribute('last_name').to_s.presence
+    single_word_name = contact_attribute('name').to_s.strip
+    first_name_fallback = single_word_name.presence if last_name.present? || (!require_last_name? && single_word_name.split.size == 1)
     {
-      first_name: custom_attributes['medelement_first_name'].presence || (contact_attribute('name').to_s.presence if last_name.present?),
+      first_name: custom_attributes['medelement_first_name'].presence || first_name_fallback,
       last_name: last_name,
       middle_name: custom_attributes['medelement_middle_name'].presence || contact_attribute('middle_name').to_s.presence
     }
@@ -65,6 +77,10 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
 
   def contact_name_values
     parts = contact_attribute('name').to_s.split
+    if parts.size == 1 && parts.first.present? && !require_last_name?
+      return { last_name: FALLBACK_LAST_NAME, first_name: parts.first, middle_name: nil }
+    end
+
     validate_name_parts!(parts)
 
     { last_name: parts.first, first_name: parts.second, middle_name: parts.drop(2).join(' ').presence }
@@ -77,11 +93,16 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
       middle_name: identity['middle_name'].to_s.presence
     }
     if explicit[:first_name].present?
+      explicit[:last_name] = FALLBACK_LAST_NAME if !require_last_name? && explicit[:last_name].blank?
       validate_name_values!(explicit)
       return explicit
     end
 
     parts = identity.fetch('full_name').to_s.split
+    if parts.size == 1 && parts.first.present? && !require_last_name?
+      return { last_name: FALLBACK_LAST_NAME, first_name: parts.first, middle_name: nil }
+    end
+
     validate_name_parts!(parts)
 
     { last_name: parts.first, first_name: parts.second, middle_name: parts.drop(2).join(' ').presence }

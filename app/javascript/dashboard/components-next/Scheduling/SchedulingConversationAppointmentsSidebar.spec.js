@@ -3812,7 +3812,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     wrapper.unmount();
   });
 
-  it('auto-expands client fields when a MedElement required field is missing even with patientContextEnabled', async () => {
+  it('keeps client fields collapsed by default for MedElement when firstName and phone are present and lastName is not required', async () => {
     configureMedelementResource();
     SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
     const props = patientContextProps();
@@ -3828,6 +3828,31 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await wrapper.vm.startCreateAppointment({ scroll: false });
 
     expect(wrapper.vm.createForm.clientLastName).toBe('');
+    expect(
+      wrapper.vm.isClientFieldsOpen(wrapper.vm.createForm, 'new-appointment')
+    ).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('auto-expands client fields when a MedElement required field is missing even with patientContextEnabled', async () => {
+    configureMedelementResource();
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
+    const props = patientContextProps();
+    props.selectedPatient = {
+      ...props.selectedPatient,
+      phone: '',
+      phone_number: '',
+      phoneNumber: '',
+      full_name: 'Алия',
+      name: 'Алия',
+    };
+    const currentChat = defaultCurrentChat();
+    currentChat.meta.sender.phone_number = '';
+    const wrapper = mountComponent(currentChat, props);
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment({ scroll: false });
+
+    expect(wrapper.vm.createForm.clientPhone).toBe('');
     expect(
       wrapper.vm.isClientFieldsOpen(wrapper.vm.createForm, 'new-appointment')
     ).toBe(true);

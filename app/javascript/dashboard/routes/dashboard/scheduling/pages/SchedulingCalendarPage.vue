@@ -1076,9 +1076,26 @@ const isInlineContactMedelementContext = computed(
     )
 );
 
+const medelementRequiredPatientFields = computed(() => {
+  const fromCalendar =
+    calendarStore.calendar?.medelementRequiredPatientFields ||
+    calendarStore.calendar?.medelement_required_patient_fields;
+  const fromRefs = referencesStore.medelementRequiredPatientFields;
+  const source = fromCalendar || fromRefs || {};
+  return {
+    firstName: true,
+    phone: true,
+    lastName: Boolean(source.lastName ?? source.last_name),
+    iin: Boolean(source.iin),
+    middleName: Boolean(source.middleName ?? source.middle_name),
+    birthDate: Boolean(source.birthDate ?? source.birth_date),
+  };
+});
+
 const inlineContactIinMessage = computed(() => {
   if (!inlineContactForm.iin) {
-    return isInlineContactMedelementContext.value
+    return isInlineContactMedelementContext.value &&
+      medelementRequiredPatientFields.value.iin
       ? t('SCHEDULING.CONTACT.IIN_REQUIRED')
       : '';
   }
@@ -1093,6 +1110,7 @@ const inlineContactIinMessage = computed(() => {
 const inlineContactLastNameMessage = computed(() => {
   if (
     isInlineContactMedelementContext.value &&
+    medelementRequiredPatientFields.value.lastName &&
     !String(formStore.form.clientLastName || '').trim()
   ) {
     return t('SCHEDULING.APPOINTMENT_FORM.ERRORS.CLIENT_LAST_NAME_REQUIRED');
@@ -2629,12 +2647,14 @@ watch(
     contactSelectionRequired,
     companySelectionEnabled,
     isSelectedFormResourceMedelement,
+    medelementRequiredPatientFields,
   ],
-  ([contactRequired, companyEnabled, medelementRequired]) => {
+  ([contactRequired, companyEnabled, medelementRequired, requiredFields]) => {
     formStore.setRequirements({
       contactRequired,
       companyEnabled,
-      medelementIdentityRequired: medelementRequired,
+      medelementIdentityRequired:
+        medelementRequired && Boolean(requiredFields?.lastName),
       medelementPhoneRequired: medelementRequired,
       medelementServiceRequired: false,
     });

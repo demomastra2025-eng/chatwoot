@@ -20,6 +20,26 @@ class Integrations::Medelement::Configuration # rubocop:disable Metrics/ClassLen
   DEFAULT_SYNC_TIME_OF_DAY = '06:15'.freeze
   SUPPORTED_SYNC_INTERVAL_HOURS = [0.25, 0.5, 1, 2, 4, 6, 12, 24].freeze
   TIME_OF_DAY_FORMAT = /\A([01]\d|2[0-3]):[0-5]\d\z/
+  DEFAULT_REQUIRED_PATIENT_FIELDS = {
+    first_name: true,
+    phone: true,
+    last_name: false,
+    iin: false,
+    middle_name: false,
+    birth_date: false
+  }.freeze
+
+  def self.for_account(account)
+    return unless account
+
+    hook = account.hooks.where(app_id: 'medelement', status: :enabled).order(:id).last ||
+           account.hooks.where(app_id: 'medelement').order(:id).last
+    new(hook: hook) if hook
+  end
+
+  def self.required_patient_fields_for(account)
+    for_account(account)&.required_patient_fields || DEFAULT_REQUIRED_PATIENT_FIELDS.dup
+  end
 
   def initialize(hook:)
     @hook = hook
@@ -174,6 +194,33 @@ class Integrations::Medelement::Configuration # rubocop:disable Metrics/ClassLen
   # Off by default: a OneLink cancellation keeps the MedElement reception (owner decision 01.10.2026).
   def remove_reception_on_cancel?
     boolean_setting('remove_reception_on_cancel', false)
+  end
+
+  def require_patient_last_name?
+    boolean_setting('require_patient_last_name', false)
+  end
+
+  def require_patient_iin?
+    boolean_setting('require_patient_iin', false)
+  end
+
+  def require_patient_middle_name?
+    boolean_setting('require_patient_middle_name', false)
+  end
+
+  def require_patient_birth_date?
+    boolean_setting('require_patient_birth_date', false)
+  end
+
+  def required_patient_fields
+    {
+      first_name: true,
+      phone: true,
+      last_name: require_patient_last_name?,
+      iin: require_patient_iin?,
+      middle_name: require_patient_middle_name?,
+      birth_date: require_patient_birth_date?
+    }
   end
 
   private

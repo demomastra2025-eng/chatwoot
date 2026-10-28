@@ -389,7 +389,9 @@
       "SELECTED_BADGE": "Таңдалған",
       "NEW_ACTION": "+ Жаңа контакт құру",
       "IIN": "ЖСН",
-      "IIN_ERROR_LENGTH": "ЖСН 12 цифрдан тұруы керек"
+      "IIN_ERROR_LENGTH": "ЖСН 12 цифрдан тұруы керек",
+      "MIDDLE_NAME_REQUIRED": "Пациенттің әкесінің атын енгізіңіз",
+      "BIRTH_DATE_REQUIRED": "Пациенттің туған күнін енгізіңіз"
     },
     "ERRORS": {
       "SLOT_CONFLICT": "Бұл уақыт бос емес.",

@@ -120,10 +120,18 @@ RSpec.describe Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
     )
   end
 
-  it 'rejects a name without separate first and last names' do
-    contact.update!(name: 'Ivan')
+  it 'uses a fallback dash for lastname when last name is not required and missing' do
+    contact.update!(name: 'Ivan', last_name: nil)
 
-    expect { described_class.new(contact: contact).build }
+    payload = described_class.new(contact: contact).build
+
+    expect(payload).to include('name' => 'Ivan', 'lastname' => '-')
+  end
+
+  it 'rejects a name without separate first and last names when require_last_name is true' do
+    contact.update!(name: 'Ivan', last_name: nil)
+
+    expect { described_class.new(contact: contact, require_last_name: true).build }
       .to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_PATIENT_NAME_INCOMPLETE') }
   end
 end

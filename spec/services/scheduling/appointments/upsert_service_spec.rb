@@ -630,6 +630,13 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     end
 
     it 'does not fill a missing Medelement custom last name from top-level contact fields' do
+      account.enable_features!('scheduling')
+      create(
+        :integrations_hook,
+        :medelement,
+        account: account,
+        settings: { 'organization_id' => 'company-1', 'timezone' => 'Asia/Almaty', 'require_patient_last_name' => true }
+      )
       appointment.update!(service: nil, custom_attributes: appointment.custom_attributes.except('service_ids', 'services'))
       appointment.contact.update!(
         name: 'Жандаулет',
@@ -644,7 +651,14 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       expect(appointment.reload.client_last_name).to be_nil
     end
 
-    it 'rejects an appointment without a patient last name before persistence' do
+    it 'rejects an appointment without a patient last name before persistence when require_patient_last_name is enabled' do
+      account.enable_features!('scheduling')
+      create(
+        :integrations_hook,
+        :medelement,
+        account: account,
+        settings: { 'organization_id' => 'company-1', 'timezone' => 'Asia/Almaty', 'require_patient_last_name' => true }
+      )
       request = -> { perform(client_first_name: 'Айжан', client_last_name: '', client_phone: '+77000000001') }
 
       expect(&request).to raise_error(Scheduling::Error) do |error|
@@ -652,6 +666,52 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       end
 
       expect(appointment.reload.client_first_name).to be_nil
+    end
+
+    it 'allows an appointment with only patient first name and phone by default when require_patient_last_name is false' do
+      appointment.update!(service: nil, custom_attributes: appointment.custom_attributes.except('service_ids', 'services'))
+
+      perform(client_first_name: 'Айжан', client_last_name: '', client_phone: '+77000000001')
+
+      expect(appointment.reload).to have_attributes(
+        client_first_name: 'Айжан',
+        client_last_name: nil,
+        client_name: 'Айжан'
+      )
+    end
+
+    it 'enforces middle name, birth date, and IIN when enabled in Medelement hook settings' do
+      account.enable_features!('scheduling')
+      hook = create(
+        :integrations_hook,
+        :medelement,
+        account: account,
+        settings: {
+          'organization_id' => 'company-1',
+          'timezone' => 'Asia/Almaty',
+          'require_patient_middle_name' => true,
+          'require_patient_birth_date' => true,
+          'require_patient_iin' => true
+        }
+      )
+      appointment.update!(service: nil, custom_attributes: appointment.custom_attributes.except('service_ids', 'services'))
+
+      expect do
+        perform(client_first_name: 'Айжан', client_phone: '+77000000001')
+      end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('CLIENT_MIDDLE_NAME_REQUIRED') }
+
+      expect do
+        perform(client_first_name: 'Айжан', client_middle_name: 'Ерлановна', client_phone: '+77000000001')
+      end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('CLIENT_BIRTH_DATE_REQUIRED') }
+
+      expect do
+        perform(client_first_name: 'Айжан', client_middle_name: 'Ерлановна', client_birth_date: '1994-07-20', client_phone: '+77000000001')
+      end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('IIN_REQUIRED') }
+
+      hook.update!(settings: hook.settings.merge('require_patient_iin' => false))
+      expect do
+        perform(client_first_name: 'Айжан', client_middle_name: 'Ерлановна', client_birth_date: '1994-07-20', client_phone: '+77000000001')
+      end.not_to raise_error
     end
 
     it 'rejects an appointment without a valid Kazakhstan phone before persistence' do

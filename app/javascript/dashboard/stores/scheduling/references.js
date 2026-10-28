@@ -22,6 +22,14 @@ export const useSchedulingReferencesStore = defineStore(
       cabinets: [],
       holidays: [],
       resources: [],
+      medelementRequiredPatientFields: {
+        firstName: true,
+        phone: true,
+        lastName: false,
+        iin: false,
+        middleName: false,
+        birthDate: false,
+      },
       products: [],
       moyskladStatus: {
         connected: false,
@@ -65,6 +73,26 @@ export const useSchedulingReferencesStore = defineStore(
         try {
           const { data } = await SchedulingResourcesAPI.get(params);
           this.resources = normalizePayload(data);
+          const meta = normalizeMeta(data);
+          if (meta?.medelementRequiredPatientFields) {
+            this.medelementRequiredPatientFields = {
+              firstName: true,
+              phone: true,
+              lastName: Boolean(
+                meta.medelementRequiredPatientFields.lastName ??
+                  meta.medelementRequiredPatientFields.last_name
+              ),
+              iin: Boolean(meta.medelementRequiredPatientFields.iin),
+              middleName: Boolean(
+                meta.medelementRequiredPatientFields.middleName ??
+                  meta.medelementRequiredPatientFields.middle_name
+              ),
+              birthDate: Boolean(
+                meta.medelementRequiredPatientFields.birthDate ??
+                  meta.medelementRequiredPatientFields.birth_date
+              ),
+            };
+          }
           return this.resources;
         } catch (error) {
           this.ui.error = extractSchedulingError(error);

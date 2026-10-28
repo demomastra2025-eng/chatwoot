@@ -43,6 +43,39 @@ RSpec.describe 'Medelement integration settings', type: :request do
     )
   end
 
+  it 'stores configurable required patient fields for Medelement and exposes them via Configuration' do
+    post api_v1_account_integrations_hooks_url(account_id: account.id),
+         params: {
+           app_id: 'medelement',
+           status: true,
+           secret_settings: {
+             company_login: 'company-login',
+             password: 'company-password'
+           },
+           settings: {
+             organization_id: 'company-1',
+             timezone: 'Asia/Almaty',
+             write_enabled: true,
+             require_patient_last_name: true,
+             require_patient_iin: false,
+             require_patient_middle_name: true,
+             require_patient_birth_date: true
+           }
+         },
+         headers: admin.create_new_auth_token,
+         as: :json
+
+    expect(response).to have_http_status(:success)
+    expect(Integrations::Medelement::Configuration.required_patient_fields_for(account)).to eq(
+      first_name: true,
+      phone: true,
+      last_name: true,
+      iin: false,
+      middle_name: true,
+      birth_date: true
+    )
+  end
+
   it 'updates the write setting without clearing existing credentials' do
     hook = create(:integrations_hook, :medelement, account: account)
     credentials = hook.secret_settings

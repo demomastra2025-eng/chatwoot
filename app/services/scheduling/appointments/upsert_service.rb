@@ -239,8 +239,15 @@ class Scheduling::Appointments::UpsertService
   # checks only read explicit values and service mappings; clinical selection
   # and binding are still validated again under the transaction locks.
   def validate_provider_draft!(services)
-    name_keys = %i[client_first_name client_last_name]
-    incomplete_medelement_patient! if name_keys.any? { |key| params.key?(key) && params[key].to_s.strip.blank? }
+    incomplete_medelement_patient! if params.key?(:client_first_name) && params[:client_first_name].to_s.strip.blank?
+    incomplete_medelement_patient! if require_medelement_last_name? && params.key?(:client_last_name) && params[:client_last_name].to_s.strip.blank?
+    if require_medelement_middle_name? && params.key?(:client_middle_name) && params[:client_middle_name].to_s.strip.blank?
+      missing_medelement_middle_name!
+    end
+    if require_medelement_birth_date? && params.key?(:client_birth_date) && params[:client_birth_date].to_s.strip.blank?
+      missing_medelement_birth_date!
+    end
+    missing_medelement_iin! if require_medelement_iin? && params.key?(:client_identifier) && params[:client_identifier].to_s.strip.blank?
     validate_draft_phone! if params.key?(:client_phone)
     service_ids = services.map(&:id)
     return if service_ids.empty?
@@ -611,7 +618,9 @@ class Scheduling::Appointments::UpsertService
   end
 
   def medelement_contact_identity_present?(contact)
-    medelement_contact_name_present?(contact) || (contact&.name.present? && contact&.last_name.present?)
+    return medelement_contact_name_present?(contact) || (contact&.name.present? && contact&.last_name.present?) if require_medelement_last_name?
+
+    medelement_contact_name_present?(contact) || contact&.name.present?
   end
 
   def medelement_contact_name_present?(contact)
@@ -648,16 +657,64 @@ class Scheduling::Appointments::UpsertService
     return unless medelement_resource?
     return if appointment.status == 'cancelled'
 
-    incomplete_medelement_patient! if appointment.client_first_name.blank? || appointment.client_last_name.blank?
+    incomplete_medelement_patient! if appointment.client_first_name.blank?
+    incomplete_medelement_patient! if require_medelement_last_name? && appointment.client_last_name.blank?
+    missing_medelement_middle_name! if require_medelement_middle_name? && appointment.client_middle_name.blank?
+    missing_medelement_birth_date! if require_medelement_birth_date? && appointment.client_birth_date.blank?
+    missing_medelement_iin! if require_medelement_iin? && appointment.client_identifier.blank?
 
     validate_medelement_phone! unless identified_medelement_patient?
     validate_medelement_services!
+  end
+
+  def medelement_configuration
+    @medelement_configuration ||= Integrations::Medelement::Configuration.for_account(account)
+  end
+
+  def require_medelement_last_name?
+    medelement_configuration&.require_patient_last_name? == true
+  end
+
+  def require_medelement_iin?
+    medelement_configuration&.require_patient_iin? == true
+  end
+
+  def require_medelement_middle_name?
+    medelement_configuration&.require_patient_middle_name? == true
+  end
+
+  def require_medelement_birth_date?
+    medelement_configuration&.require_patient_birth_date? == true
   end
 
   def incomplete_medelement_patient!
     raise Scheduling::Error.new(
       code: 'MEDELEMENT_PATIENT_NAME_INCOMPLETE',
       message: 'Patient first and last name are required for Medelement',
+      status: :unprocessable_content
+    )
+  end
+
+  def missing_medelement_middle_name!
+    raise Scheduling::Error.new(
+      code: 'CLIENT_MIDDLE_NAME_REQUIRED',
+      message: 'Patient middle name is required for Medelement',
+      status: :unprocessable_content
+    )
+  end
+
+  def missing_medelement_birth_date!
+    raise Scheduling::Error.new(
+      code: 'CLIENT_BIRTH_DATE_REQUIRED',
+      message: 'Patient birth date is required for Medelement',
+      status: :unprocessable_content
+    )
+  end
+
+  def missing_medelement_iin!
+    raise Scheduling::Error.new(
+      code: 'IIN_REQUIRED',
+      message: 'Patient IIN is required for Medelement',
       status: :unprocessable_content
     )
   end

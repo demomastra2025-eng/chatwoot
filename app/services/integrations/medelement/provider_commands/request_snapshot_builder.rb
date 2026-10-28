@@ -119,7 +119,8 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
       phone_number: phone_number,
       identity: appointment_identity,
       organization_id: configuration.organization_id,
-      desired_attributes: contact_desired_attributes
+      desired_attributes: contact_desired_attributes,
+      require_last_name: configuration.require_patient_last_name?
     ).build
     {
       'phone_number' => phone_number.to_s,

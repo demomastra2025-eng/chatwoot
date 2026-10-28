@@ -83,7 +83,25 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
     )
   end
 
-  it 'requires a last name when creating a contact' do
+  it 'allows creating a Medelement contact with only first name and phone by default' do
+    post path,
+         params: { first_name: 'Ivan', phone: valid_phone, resource_id: medelement_resource.id },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created), response_body.inspect
+    expect(response_body.dig('payload', 'first_name')).to eq('Ivan')
+    expect(response_body.dig('payload', 'last_name')).to be_blank
+  end
+
+  it 'requires a last name when creating a contact if require_patient_last_name is enabled' do
+    create(
+      :integrations_hook,
+      :medelement,
+      account: account,
+      settings: { 'organization_id' => 'company-1', 'timezone' => 'Asia/Almaty', 'require_patient_last_name' => true }
+    )
+
     post path,
          params: { first_name: 'Ivan', iin: '940720300129', resource_id: medelement_resource.id },
          headers: headers,
@@ -93,7 +111,14 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
     expect(response_body['code']).to eq('CLIENT_LAST_NAME_REQUIRED')
   end
 
-  it 'requires an IIN when creating a contact' do
+  it 'requires an IIN when creating a contact if require_patient_iin is enabled' do
+    create(
+      :integrations_hook,
+      :medelement,
+      account: account,
+      settings: { 'organization_id' => 'company-1', 'timezone' => 'Asia/Almaty', 'require_patient_iin' => true }
+    )
+
     post path,
          params: { first_name: 'Ivan', last_name: 'Ivanov', resource_id: medelement_resource.id },
          headers: headers,
@@ -101,6 +126,36 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
 
     expect(response).to have_http_status(:unprocessable_content)
     expect(response_body['code']).to eq('IIN_REQUIRED')
+  end
+
+  it 'requires middle name and birth date when configured in Medelement settings' do
+    create(
+      :integrations_hook,
+      :medelement,
+      account: account,
+      settings: {
+        'organization_id' => 'company-1',
+        'timezone' => 'Asia/Almaty',
+        'require_patient_middle_name' => true,
+        'require_patient_birth_date' => true
+      }
+    )
+
+    post path,
+         params: { first_name: 'Ivan', phone: valid_phone, resource_id: medelement_resource.id },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('CLIENT_MIDDLE_NAME_REQUIRED')
+
+    post path,
+         params: { first_name: 'Ivan', middle_name: 'Ivanovich', phone: valid_phone, resource_id: medelement_resource.id },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('CLIENT_BIRTH_DATE_REQUIRED')
   end
 
   it 'keeps ordinary scheduling contacts compatible without Medelement identity fields' do
@@ -141,7 +196,13 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
     expect(response_body['code']).to eq('INVALID_IIN')
   end
 
-  it 'requires a last name on contact identity update' do
+  it 'requires a last name on contact identity update when require_patient_last_name is enabled' do
+    create(
+      :integrations_hook,
+      :medelement,
+      account: account,
+      settings: { 'organization_id' => 'company-1', 'timezone' => 'Asia/Almaty', 'require_patient_last_name' => true }
+    )
     contact = create(:contact, account: account, name: 'Patient', identifier: '940720300129')
 
     patch "#{path}/#{contact.id}",
@@ -153,7 +214,13 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
     expect(response_body['code']).to eq('CLIENT_LAST_NAME_REQUIRED')
   end
 
-  it 'requires an IIN on contact identity update' do
+  it 'requires an IIN on contact identity update when require_patient_iin is enabled' do
+    create(
+      :integrations_hook,
+      :medelement,
+      account: account,
+      settings: { 'organization_id' => 'company-1', 'timezone' => 'Asia/Almaty', 'require_patient_iin' => true }
+    )
     contact = create(:contact, account: account, name: 'Patient', last_name: 'Surname')
 
     patch "#{path}/#{contact.id}",
@@ -165,7 +232,13 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
     expect(response_body['code']).to eq('IIN_REQUIRED')
   end
 
-  it 'requires complete identity when updating an already provider-managed contact without a resource param' do
+  it 'requires complete identity when updating an already provider-managed contact without a resource param if configured' do
+    create(
+      :integrations_hook,
+      :medelement,
+      account: account,
+      settings: { 'organization_id' => 'company-1', 'timezone' => 'Asia/Almaty', 'require_patient_iin' => true }
+    )
     contact = create(
       :contact,
       account: account,

@@ -2,7 +2,12 @@ class Api::V1::Accounts::Scheduling::CalendarController < Api::V1::Accounts::Sch
   ALLOWED_VIEWS = %w[day week month list].freeze
 
   def show
-    render_payload(Scheduling::PayloadBuilder.calendar(calendar_result).merge(medelement_patient_search_enabled: medelement_patient_search_enabled?))
+    render_payload(
+      Scheduling::PayloadBuilder.calendar(calendar_result).merge(
+        medelement_patient_search_enabled: medelement_patient_search_enabled?,
+        medelement_required_patient_fields: Integrations::Medelement::Configuration.required_patient_fields_for(Current.account)
+      )
+    )
   end
 
   private

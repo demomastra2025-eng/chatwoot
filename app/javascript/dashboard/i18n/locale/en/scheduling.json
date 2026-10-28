@@ -581,7 +581,9 @@
         "FEMALE": "Female",
         "OTHER": "Other",
         "UNKNOWN": "Unknown"
-      }
+      },
+      "MIDDLE_NAME_REQUIRED": "Enter patient middle name",
+      "BIRTH_DATE_REQUIRED": "Enter patient birth date"
     },
     "RESOURCES": {
       "PROVIDER_SCHEDULE_TITLE": "График из MedElement",

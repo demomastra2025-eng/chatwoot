@@ -1412,10 +1412,51 @@ const appointmentFormEndsAfterStart = form => {
   }
 };
 
+const medelementRequiredPatientFields = computed(() => {
+  const integration =
+    store.getters?.['integrations/getIntegration']?.('medelement');
+  const hook = Array.isArray(integration?.hooks) ? integration.hooks[0] : null;
+  const settings = hook?.settings || {};
+  const fromStore =
+    schedulingReferencesStore.medelementRequiredPatientFields || {};
+  const hasSetting = key => Object.prototype.hasOwnProperty.call(settings, key);
+  return {
+    firstName: true,
+    phone: true,
+    lastName: hasSetting('require_patient_last_name')
+      ? Boolean(settings.require_patient_last_name)
+      : Boolean(fromStore.lastName ?? fromStore.last_name),
+    iin: hasSetting('require_patient_iin')
+      ? Boolean(settings.require_patient_iin)
+      : Boolean(fromStore.iin),
+    middleName: hasSetting('require_patient_middle_name')
+      ? Boolean(settings.require_patient_middle_name)
+      : Boolean(fromStore.middleName ?? fromStore.middle_name),
+    birthDate: hasSetting('require_patient_birth_date')
+      ? Boolean(settings.require_patient_birth_date)
+      : Boolean(fromStore.birthDate ?? fromStore.birth_date),
+  };
+});
+
 const medelementLastNameError = form =>
   isMedelementResource(selectedResourceForForm(form)) &&
+  medelementRequiredPatientFields.value.lastName &&
   !form?.clientLastName?.trim()
     ? t('SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_LAST_NAME_REQUIRED')
+    : '';
+
+const medelementMiddleNameError = form =>
+  isMedelementResource(selectedResourceForForm(form)) &&
+  medelementRequiredPatientFields.value.middleName &&
+  !form?.clientMiddleName?.trim()
+    ? t('SCHEDULING.CONTACT.MIDDLE_NAME_REQUIRED')
+    : '';
+
+const medelementBirthDateError = form =>
+  isMedelementResource(selectedResourceForForm(form)) &&
+  medelementRequiredPatientFields.value.birthDate &&
+  !form?.clientBirthDate?.trim()
+    ? t('SCHEDULING.CONTACT.BIRTH_DATE_REQUIRED')
     : '';
 
 const medelementPhoneError = form =>
@@ -1425,11 +1466,13 @@ const medelementPhoneError = form =>
     : '';
 
 const medelementIinError = form => {
-  if (
-    !isMedelementResource(selectedResourceForForm(form)) ||
-    !form?.clientIdentifier?.trim()
-  ) {
+  if (!isMedelementResource(selectedResourceForForm(form))) {
     return '';
+  }
+  if (!form?.clientIdentifier?.trim()) {
+    return medelementRequiredPatientFields.value.iin
+      ? t('SCHEDULING.CONTACT.IIN_REQUIRED')
+      : '';
   }
   const iin = normalizePatientIin(form.clientIdentifier);
   if (!/^\d{12}$/.test(iin)) {
@@ -1460,6 +1503,8 @@ const isAppointmentFormInvalid = form =>
   !contactId.value ||
   !form?.clientFirstName?.trim() ||
   Boolean(medelementLastNameError(form)) ||
+  Boolean(medelementMiddleNameError(form)) ||
+  Boolean(medelementBirthDateError(form)) ||
   Boolean(medelementPhoneError(form)) ||
   Boolean(medelementIinError(form)) ||
   Boolean(medelementServiceError(form)) ||
@@ -3057,6 +3102,8 @@ const isClientFieldsOpen = (form, key) =>
     expandedClientForms[key] ||
       !form?.clientFirstName?.trim() ||
       medelementLastNameError(form) ||
+      medelementMiddleNameError(form) ||
+      medelementBirthDateError(form) ||
       medelementPhoneError(form) ||
       medelementIinError(form)
   );
@@ -3318,6 +3365,12 @@ const isClientFieldsOpen = (form, key) =>
                           $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')
                         "
                         :model-value="createForm.clientMiddleName"
+                        :message="medelementMiddleNameError(createForm)"
+                        :message-type="
+                          medelementMiddleNameError(createForm)
+                            ? 'error'
+                            : 'info'
+                        "
                         size="sm"
                         @update:model-value="
                           updatePatientNamePart(
@@ -4250,6 +4303,18 @@ const isClientFieldsOpen = (form, key) =>
                         :model-value="
                           appointmentForms[appointmentKey(appointment)]
                             .clientMiddleName
+                        "
+                        :message="
+                          medelementMiddleNameError(
+                            appointmentForms[appointmentKey(appointment)]
+                          )
+                        "
+                        :message-type="
+                          medelementMiddleNameError(
+                            appointmentForms[appointmentKey(appointment)]
+                          )
+                            ? 'error'
+                            : 'info'
                         "
                         size="sm"
                         @update:model-value="
