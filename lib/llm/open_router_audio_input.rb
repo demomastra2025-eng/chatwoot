@@ -62,11 +62,14 @@ class Llm::OpenRouterAudioInput
       ffmpeg = ffmpeg_path
       raise NormalizationError, 'Audio transcription converter ffmpeg is not available for OpenRouter audio input' if ffmpeg.blank?
 
+      channels = Telephony::CallTranscript.probe(source_file_path)['channels']
+      channel_options = channels == 2 ? ['-ac', '2'] : []
+
       stdout, stderr, status = Open3.capture3(
         ffmpeg,
         '-y', '-nostdin', '-hide_banner', '-loglevel', 'error',
         '-i', source_file_path,
-        '-vn', '-ar', '16000', '-c:a', 'pcm_s16le',
+        '-vn', '-ar', '16000', *channel_options, '-c:a', 'pcm_s16le',
         destination_file_path
       )
 

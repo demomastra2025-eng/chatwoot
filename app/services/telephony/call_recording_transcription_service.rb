@@ -9,24 +9,26 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
 
   attr_reader :call_session, :account
 
-  def initialize(call_session)
+  def initialize(call_session, force: false)
     @call_session = call_session
     @account = call_session.account
+    @force = force
     super()
   end
 
   def perform
     return { error: 'Transcription not available' } unless can_transcribe?
 
-    if cached_transcript.present?
+    if cached_transcript.present? && !@force
       persist_cached_transcript!
       return { success: true, transcript: cached_transcript }
     end
 
-    transcript = transcribe_recording.to_s.strip
+    result = Telephony::CallTranscript.parse(transcribe_recording)
+    transcript = result['text']
     return { error: 'Empty transcript' } if transcript.blank?
 
-    update_call_and_message!(transcript, source: 'audio_transcription')
+    update_call_and_message!(result, source: 'audio_transcription')
     account.increment_response_usage
 
     { success: true, transcript: transcript }
@@ -53,7 +55,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   def persist_cached_transcript!
     return if recording_metadata.dig('transcription', 'status') == 'completed'
 
-    update_call_and_message!(cached_transcript, source: cached_transcript_source)
+    update_call_and_message!(Telephony::CallTranscript.parse(cached_transcript), source: cached_transcript_source)
   end
 
   def cached_transcript_source
@@ -86,11 +88,12 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   end
 
   def transcript_speaker_label(speaker)
-    speaker.to_s.in?(%w[caller customer contact user]) ? 'Клиент' : 'Оператор'
+    speaker.to_s.in?(%w[caller customer contact user]) ? 'Клиент' : 'Сотрудник'
   end
 
   def transcribe_recording
     file_path, staged_remote_file = resolve_recording_file!
+    probe_audio!(file_path)
     provider_file_path = audio_file_path_for_provider(file_path)
     response = if openrouter_chat_transcription?
                  transcribe_with_openrouter_chat(provider_file_path)
@@ -102,6 +105,13 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   ensure
     FileUtils.rm_f(provider_file_path) if provider_file_path.present? && provider_file_path != file_path
     FileUtils.rm_f(file_path) if staged_remote_file && file_path.present?
+  end
+
+  def probe_audio!(file_path)
+    @audio_probe = Telephony::CallTranscript.probe(file_path)
+    return unless @audio_probe['channels'] == 2
+
+    @channel_activity = Telephony::CallTranscript.channel_activity(file_path, duration_seconds: @audio_probe['duration_seconds'])
   end
 
   def transcribe_with_transcription_endpoint(file_path)
@@ -233,28 +243,33 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
     recording.is_a?(Hash) ? recording.deep_stringify_keys : {}
   end
 
-  def update_call_and_message!(transcript, source:)
+  def update_call_and_message!(result, source:)
     transcript_ref = "call_recording_transcript:#{call_session.external_call_ref}"
-    call_session.with_lock do
-      metadata = (call_session.reload.metadata || {}).deep_dup
-      recording = metadata['recording'] ||= {}
-      recording['transcription'] = {
-        'status' => 'completed',
-        'source' => source,
-        'text' => transcript,
-        'completed_at' => Time.current.iso8601
-      }
-      call_session.update!(metadata: metadata, transcript_ref: transcript_ref)
-    end
+    persist_call_transcript!(result, source, transcript_ref)
 
     # Message callbacks and competing voice-event writes can be slow. Do not keep the
     # call-session row locked while waiting for the message row or its callbacks.
-    message = update_voice_message!(transcript, transcript_ref)
-
+    message = update_voice_message!(result, transcript_ref)
     message&.reload&.send_update_event
   end
 
-  def update_voice_message!(transcript, transcript_ref)
+  def persist_call_transcript!(result, source, transcript_ref)
+    call_session.with_lock do
+      metadata = (call_session.reload.metadata || {}).deep_dup
+      recording = metadata['recording'] ||= {}
+      recording['audio_probe'] = @audio_probe if @audio_probe.present?
+      recording['transcription'] = transcription_metadata(result, source, recording)
+      call_session.update!(metadata: metadata, transcript_ref: transcript_ref)
+    end
+  end
+
+  def transcription_metadata(result, source, recording)
+    result.merge('status' => 'completed', 'source' => source,
+                 'channels' => @audio_probe&.dig('channels') || recording['channels'],
+                 'completed_at' => Time.current.iso8601)
+  end
+
+  def update_voice_message!(result, transcript_ref)
     message = voice_message
     return unless message
 
@@ -262,13 +277,18 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
       message.reload
       attributes = normalized_content_attributes(message)
       attributes['data'] ||= {}
-      attributes['data']['transcript_ref'] = transcript_ref
-      attributes['data']['transcript'] = transcript
+      attributes['data'].merge!(voice_transcript_data(result, transcript_ref))
       latest_recording = recording_metadata
       attributes['data']['recording'] = latest_recording if latest_recording.present?
       message.update!(content_attributes: attributes)
     end
     message
+  end
+
+  def voice_transcript_data(result, transcript_ref)
+    { 'transcript_ref' => transcript_ref, 'transcript' => result['text'],
+      'transcript_items' => result['transcript_items'], 'transcript_summary' => result['summary'],
+      'transcript_outcome' => result['outcome'], 'transcript_topics' => result['topics'] }
   end
 
   def voice_message
@@ -306,25 +326,32 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   def transcription_prompt
     [
       'Transcribe the attached call recording accurately in the languages spoken. ' \
-      'Preserve code switching; do not translate. Return only the transcript text.',
+      'Preserve code switching; do not translate. Return JSON with transcript_items ' \
+      '(speaker operator/client, timestamp MM:SS, start_sec, text), summary in Russian (1-2 factual sentences), ' \
+      'outcome (booked/rescheduled/cancelled/consultation/callback_requested/no_answer/other), and 1-5 topics.',
       speaker_channel_prompt,
       account.captain_audio_transcription_prompt.presence
     ].compact.join("\n")
   end
 
   def speaker_channel_prompt
-    return 'If speaker roles are clear, label them as Client and Operator.' unless dual_channel_recording?
+    unless dual_channel_recording?
+      return 'For mono audio, infer Сотрудник (clinic representative who greets, answers questions or books visits) ' \
+             'versus Клиент (patient/caller) from dialogue and acoustic cues. Include turn timestamps.'
+    end
 
     channel_1_role = channel_role_label('channel_1', default: 'Operator')
     channel_2_role = channel_role_label('channel_2', default: 'Client')
     [
       'This is a 2-channel stereo call recording where each speaker is recorded on a separate channel:',
       "Channel 1 (Left channel) is #{channel_1_role}, and Channel 2 (Right channel) is #{channel_2_role}.",
-      'Use this stereo channel separation to attribute every turn accurately and label speakers as Operator and Client.'
-    ].join(' ')
+      'Use the left/right channel activity to attribute every turn; never infer the role from dialogue content when channels disagree.'
+    ].join(' ') + " Activity windows in seconds, left=#{@channel_activity&.dig('0')}, right=#{@channel_activity&.dig('1')}."
   end
 
   def dual_channel_recording?
+    return @audio_probe['channels'] == 2 if @audio_probe&.dig('channels').present?
+
     recording_metadata['layout'].to_s == 'dual_channel' ||
       recording_metadata['channel_layout'].to_s == 'stereo' ||
       recording_metadata['channels'].to_i == 2 ||
@@ -332,7 +359,9 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   end
 
   def channel_role_label(channel_key, default:)
-    role = recording_metadata.dig('channel_map', channel_key).to_s
+    map = recording_metadata['channel_map'].to_h
+    aliases = channel_key == 'channel_1' ? %w[channel_1 left FL c0 1] : %w[channel_2 right FR c1 2]
+    role = aliases.filter_map { |key| map[key] }.first.to_s
     case role
     when 'user_audio', 'operator', 'agent'
       'Operator'

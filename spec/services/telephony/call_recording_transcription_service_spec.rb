@@ -84,6 +84,29 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
     expect(data['recording']).to include('storage_key' => 'voice-recordings/1/operator-call-1/recording.wav')
   end
 
+  it 'persists structured dialogue, summary and probed channel data on the call and message' do
+    allow(Telephony::CallTranscript).to receive(:probe).and_return(
+      'channels' => 2, 'channel_layout' => 'stereo', 'duration_seconds' => 12.5
+    )
+    allow(Llm::Runtime).to receive(:transcribe).and_return(
+      described_class::TranscriptionResult.new(text: {
+        transcript_items: [{ speaker: 'operator', start_sec: 2, text: 'Добрый день' },
+                           { speaker: 'client', start_sec: 7, text: 'Нужна запись' }],
+        summary: 'Пациент попросил запись.', outcome: 'booked', topics: ['запись']
+      }.to_json)
+    )
+
+    described_class.new(call_session).perform
+
+    recording = call_session.reload.metadata['recording']
+    expect(recording['audio_probe']).to include('channels' => 2, 'channel_layout' => 'stereo')
+    expect(recording['transcription']).to include('summary' => 'Пациент попросил запись.', 'outcome' => 'booked', 'channels' => 2)
+    expect(recording.dig('transcription', 'text')).to eq("[00:02] Сотрудник: Добрый день\n[00:07] Клиент: Нужна запись")
+    expect(voice_message.reload.content_attributes['data']).to include(
+      'transcript_summary' => 'Пациент попросил запись.', 'transcript_outcome' => 'booked', 'transcript_topics' => ['запись']
+    )
+  end
+
   it 'does not transcribe when workspace call transcription is disabled' do
     account.update!(call_transcriptions: false)
 
@@ -108,7 +131,7 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
 
     result = described_class.new(call_session).perform
 
-    expect(result).to include(success: true, transcript: "Клиент: Подскажите статус заказа\nОператор: Сейчас проверю")
+    expect(result).to include(success: true, transcript: "Клиент: Подскажите статус заказа\nСотрудник: Сейчас проверю")
     expect(Llm::Runtime).not_to have_received(:transcribe)
     expect(call_session.reload.metadata.dig('recording', 'transcription')).to include(
       'status' => 'completed',
@@ -183,6 +206,18 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
     expect(Llm::Runtime).to receive(:transcribe).with(hash_including(options: { temperature: 0.2 })).and_return(response)
 
     expect(described_class.new(call_session).perform).to include(success: true, transcript: transcript)
+  end
+
+  it 'uses inspected stereo channels and an explicit channel map for attribution' do
+    call_session.update!(metadata: call_session.metadata.deep_merge(
+      'recording' => { 'channel_map' => { 'FL' => 'client', 'FR' => 'operator' } }
+    ))
+    service = described_class.new(call_session)
+    service.instance_variable_set(:@audio_probe, { 'channels' => 2 })
+
+    expect(service.send(:speaker_channel_prompt)).to include(
+      'Channel 1 (Left channel) is Client', 'Channel 2 (Right channel) is Operator'
+    )
   end
 
   it 'stages and transcribes a recording from remote S3 storage when not cached on local disk' do
