@@ -9,10 +9,7 @@ import ContactDetailsItem from './ContactDetailsItem.vue';
 import ConversationAction from './ConversationAction.vue';
 import ConversationLabels from './labels/LabelBox.vue';
 import ContactInfo from './contact/ContactInfo.vue';
-import ContactNotes from './contact/ContactNotes.vue';
-import CustomAttributes from './customAttributes/CustomAttributes.vue';
 import SharedFiles from './SharedFiles.vue';
-import MacrosList from './Macros/List.vue';
 import Draggable from 'vuedraggable';
 import SidebarActionsHeader from 'dashboard/components-next/SidebarActionsHeader.vue';
 import SchedulingPatientDetails from 'dashboard/components-next/Scheduling/SchedulingPatientDetails.vue';
@@ -97,7 +94,13 @@ watch(
 
 const syncSidebarItems = () => {
   conversationSidebarItems.value = conversationSidebarItemsOrder.value.filter(
-    item => item.name !== 'conversation_actions'
+    item =>
+      ![
+        'conversation_actions',
+        'contact_notes',
+        'contact_attributes',
+        'macros',
+      ].includes(item.name)
   );
 };
 
@@ -198,26 +201,11 @@ onMounted(() => {
           @end="onDragEnd"
         >
           <template #item="{ element }">
-            <div v-if="element.name === 'contact_notes'">
-              <AccordionItem
-                :title="$t('CONVERSATION_SIDEBAR.ACCORDION.CONTACT_NOTES')"
-                :is-open="isContactSidebarItemOpen('is_contact_notes_open')"
-                compact
-                @toggle="
-                  value => toggleSidebarUIState('is_contact_notes_open', value)
-                "
-              >
-                <ContactNotes
-                  v-if="detailsContactId"
-                  :key="detailsContactId"
-                  :contact-id="detailsContactId"
-                />
-              </AccordionItem>
-            </div>
-            <div v-else-if="element.name === 'shared_files' && !isDraft">
+            <div v-if="element.name === 'shared_files' && !isDraft">
               <AccordionItem
                 :title="$t('CONVERSATION_SIDEBAR.ACCORDION.SHARED_FILES')"
                 :is-open="isContactSidebarItemOpen('is_shared_files_open')"
+                icon="attach"
                 compact
                 @toggle="
                   value => toggleSidebarUIState('is_shared_files_open', value)
@@ -228,45 +216,6 @@ onMounted(() => {
                 />
               </AccordionItem>
             </div>
-            <div v-else-if="element.name === 'contact_attributes'">
-              <AccordionItem
-                :title="$t('CONVERSATION_SIDEBAR.ACCORDION.CONTACT_ATTRIBUTES')"
-                :is-open="
-                  isContactSidebarItemOpen('is_contact_attributes_open')
-                "
-                compact
-                secondary
-                @toggle="
-                  value =>
-                    toggleSidebarUIState('is_contact_attributes_open', value)
-                "
-              >
-                <CustomAttributes
-                  v-if="detailsContactId"
-                  :key="detailsContactId"
-                  attribute-type="contact_attribute"
-                  attribute-from="conversation_contact_panel"
-                  :contact-id="detailsContactId"
-                  :empty-state-message="
-                    $t('CONVERSATION_CUSTOM_ATTRIBUTES.NO_RECORDS_FOUND')
-                  "
-                />
-              </AccordionItem>
-            </div>
-            <woot-feature-toggle
-              v-else-if="element.name === 'macros' && !isDraft"
-              feature-key="macros"
-            >
-              <AccordionItem
-                :title="$t('CONVERSATION_SIDEBAR.ACCORDION.MACROS')"
-                :is-open="isContactSidebarItemOpen('is_macro_open')"
-                compact
-                secondary
-                @toggle="value => toggleSidebarUIState('is_macro_open', value)"
-              >
-                <MacrosList :conversation-id="conversationId" />
-              </AccordionItem>
-            </woot-feature-toggle>
           </template>
         </Draggable>
       </div>

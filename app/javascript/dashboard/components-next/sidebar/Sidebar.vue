@@ -877,13 +877,6 @@ const buildSettingsMenuItems = () =>
       activeOn: ['outbound_templates_index'],
       to: accountScopedRoute('outbound_templates_index'),
     },
-    {
-      name: 'Settings Macros',
-      visibilityKey: 'Settings:Macros',
-      label: t('SIDEBAR.MACROS'),
-      icon: 'i-lucide-toy-brick',
-      to: accountScopedRoute('macros_wrapper'),
-    },
     settingsSection('Channels', t('SIDEBAR.SETTINGS_SECTIONS.CHANNELS')),
     onlyIf(hasInboxManagement.value, {
       name: 'Channels',

@@ -12,8 +12,10 @@ import EditContact from './EditContact.vue';
 import ContactMergeModal from 'dashboard/modules/contact/ContactMergeModal.vue';
 import InlineInput from 'dashboard/components-next/inline-input/InlineInput.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import { copyTextToClipboard } from 'shared/helpers/clipboard';
 import {
   maskedPatientIin,
+  normalizePatientBirthDate,
   patientAgeLabel,
 } from 'dashboard/stores/scheduling/patientContext';
 import {
@@ -27,6 +29,20 @@ import {
   isAInboxViewRoute,
   getConversationDashboardRoute,
 } from '../../../../helper/routeHelpers';
+
+const DOSSIER_EXCLUDED_CUSTOM_ATTRIBUTE_KEYS = new Set([
+  'medelement_patient_code',
+  'medelement_last_synced_at',
+  'medelement_first_name',
+  'medelement_last_name',
+  'medelement_middle_name',
+  'phone_conflict_comment',
+  'birth_date',
+  'iin',
+  'gender',
+  'secondary_phones',
+  'address',
+]);
 
 export default {
   components: {
@@ -119,6 +135,115 @@ export default {
     },
     additionalAttributes() {
       return this.contact.additional_attributes || {};
+    },
+    customAttributes() {
+      return (
+        this.contact.custom_attributes || this.contact.customAttributes || {}
+      );
+    },
+    preferredLanguageValue() {
+      return this.contactClientLanguage;
+    },
+    dossierBirthDateDisplay() {
+      const raw =
+        this.additionalAttributes?.birth_date ||
+        this.customAttributes?.birth_date ||
+        this.customAttributes?.medelement_birth_date ||
+        '';
+      const trimmed = String(raw || '').trim();
+      if (!trimmed) return '';
+      const normalized = normalizePatientBirthDate(trimmed);
+      if (!normalized) return trimmed;
+      const [yearStr, monthStr, dayStr] = normalized.split('-');
+      const formattedDate = `${dayStr}.${monthStr}.${yearStr}`;
+      const year = Number(yearStr);
+      const month = Number(monthStr);
+      const day = Number(dayStr);
+      const today = new Date();
+      let age = today.getFullYear() - year;
+      if (
+        today.getMonth() + 1 < month ||
+        (today.getMonth() + 1 === month && today.getDate() < day)
+      ) {
+        age -= 1;
+      }
+      if (age >= 0 && age <= 130) {
+        return `${formattedDate} (${age} ${this.formatAgeWordRu(age)})`;
+      }
+      return formattedDate;
+    },
+    dossierIin() {
+      const candidates = [
+        this.customAttributes?.iin,
+        this.customAttributes?.medelement_iin,
+        this.contact?.identifier,
+      ]
+        .map(val => String(val || '').trim())
+        .filter(Boolean);
+      const twelveDigit = candidates.find(val => /^\d{12}$/.test(val));
+      if (twelveDigit) return twelveDigit;
+      return String(
+        this.customAttributes?.iin ||
+          this.customAttributes?.medelement_iin ||
+          ''
+      ).trim();
+    },
+    dossierGender() {
+      const raw =
+        this.customAttributes?.gender ??
+        this.customAttributes?.medelement_gender ??
+        this.additionalAttributes?.gender;
+      if (raw === undefined || raw === null) return '';
+      const trimmed = String(raw).trim();
+      if (!trimmed) return '';
+      const normalized = trimmed.toLowerCase();
+      if (['male', 'm', 'м', 'мужской', 'муж', '2'].includes(normalized)) {
+        return 'Мужской';
+      }
+      if (['female', 'f', 'ж', 'женский', 'жен', '1'].includes(normalized)) {
+        return 'Женский';
+      }
+      return trimmed;
+    },
+    dossierSecondaryPhones() {
+      const raw = this.customAttributes?.secondary_phones;
+      if (raw === undefined || raw === null) return '';
+      if (Array.isArray(raw)) {
+        return raw
+          .map(item => String(item || '').trim())
+          .filter(Boolean)
+          .join(', ');
+      }
+      return String(raw).trim();
+    },
+    dossierAddress() {
+      const raw =
+        this.customAttributes?.address ??
+        this.customAttributes?.medelement_address ??
+        this.additionalAttributes?.address;
+      if (raw === undefined || raw === null) return '';
+      return String(raw).trim();
+    },
+    extraCustomAttributes() {
+      const attrs = this.customAttributes || {};
+      return Object.entries(attrs)
+        .filter(([key, value]) => {
+          if (
+            DOSSIER_EXCLUDED_CUSTOM_ATTRIBUTE_KEYS.has(key) ||
+            key.startsWith('medelement_')
+          ) {
+            return false;
+          }
+          if (value === undefined || value === null) return false;
+          if (Array.isArray(value)) return value.length > 0;
+          if (typeof value === 'object') return false;
+          return String(value).trim() !== '';
+        })
+        .map(([key, value]) => ({
+          key,
+          label: key,
+          value: Array.isArray(value) ? value.join(', ') : String(value).trim(),
+        }));
     },
     socialProfiles() {
       const {
@@ -292,6 +417,22 @@ export default {
     onFieldUpdate(field, value) {
       this.updateContactField({ [field]: value });
     },
+    formatAgeWordRu(age) {
+      const mod100 = age % 100;
+      const mod10 = age % 10;
+      if (mod100 >= 11 && mod100 <= 14) return 'лет';
+      if (mod10 === 1) return 'год';
+      if (mod10 >= 2 && mod10 <= 4) return 'года';
+      return 'лет';
+    },
+    async copyIin() {
+      if (!this.dossierIin) return;
+      await copyTextToClipboard(this.dossierIin);
+      useAlert(this.$t('CONTACT_PANEL.COPY_SUCCESSFUL'));
+    },
+    savePreferredLanguage(event) {
+      return this.onClientLanguageChange(event);
+    },
     onClientLanguageChange(event) {
       const nextLang = normalizeClientLanguageCode(event.target.value);
       const nextAttrs = {
@@ -441,36 +582,6 @@ export default {
                   })
               "
             />
-            <div
-              class="flex w-full items-center justify-between gap-2 text-xs text-n-slate-11"
-              data-test="contact-client-language-row"
-            >
-              <span class="inline-flex items-center gap-1.5">
-                <span class="i-lucide-languages size-3.5 text-n-slate-10" />
-                <span>{{ 'Язык клиента:' }}</span>
-                <strong
-                  class="font-medium text-n-slate-12"
-                  data-test="contact-client-language-badge"
-                >
-                  {{ contactClientLanguageDisplay }}
-                </strong>
-              </span>
-              <select
-                data-test="contact-client-language-select"
-                :value="contactClientLanguage"
-                class="rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-xs text-n-slate-12"
-                @change="onClientLanguageChange"
-              >
-                <option value="">{{ 'Авто' }}</option>
-                <option
-                  v-for="lang in supportedClientLanguages"
-                  :key="lang.code"
-                  :value="lang.code"
-                >
-                  {{ lang.name }} ({{ lang.code }})
-                </option>
-              </select>
-            </div>
             <SocialIcons :social-profiles="socialProfiles" />
             <slot name="after-channels" />
           </div>
@@ -506,6 +617,121 @@ export default {
             :aria-label="$t('CONTACT_PANEL.OPEN_PROFILE')"
             @click="openContactProfile"
           />
+        </div>
+        <div
+          data-testid="contact-dossier"
+          data-test="contact-dossier"
+          class="mt-1 flex w-full flex-col gap-1 rounded-xl border border-n-weak bg-n-alpha-1 p-3"
+        >
+          <div
+            class="mb-1 text-[11px] font-medium uppercase tracking-wide text-n-slate-11"
+          >
+            {{ 'Досье контакта' }}
+          </div>
+          <div
+            v-if="dossierBirthDateDisplay"
+            data-testid="contact-dossier-birth-date"
+            class="flex items-center justify-between gap-2 py-1 text-xs"
+          >
+            <span class="text-n-slate-11">{{ 'Дата рождения' }}</span>
+            <span class="font-medium text-n-slate-12">{{
+              dossierBirthDateDisplay
+            }}</span>
+          </div>
+          <div
+            v-if="dossierIin"
+            data-testid="contact-dossier-iin"
+            class="flex items-center justify-between gap-2 py-1 text-xs"
+          >
+            <span class="text-n-slate-11">{{ 'ИИН' }}</span>
+            <span
+              class="inline-flex items-center gap-1.5 font-medium text-n-slate-12"
+            >
+              <span>{{ dossierIin }}</span>
+              <button
+                type="button"
+                data-testid="contact-dossier-iin-copy"
+                data-test="contact-dossier-iin-copy"
+                class="inline-flex items-center text-n-slate-10 hover:text-n-slate-12"
+                :title="$t('CONTACT_PANEL.COPY_SUCCESSFUL')"
+                @click="copyIin"
+              >
+                <span class="i-lucide-copy size-3" />
+              </button>
+            </span>
+          </div>
+          <div
+            v-if="dossierGender"
+            data-testid="contact-dossier-gender"
+            class="flex items-center justify-between gap-2 py-1 text-xs"
+          >
+            <span class="text-n-slate-11">{{ 'Пол' }}</span>
+            <span class="font-medium text-n-slate-12">{{ dossierGender }}</span>
+          </div>
+          <div
+            v-if="dossierSecondaryPhones"
+            data-testid="contact-dossier-secondary-phones"
+            class="flex items-center justify-between gap-2 py-1 text-xs"
+          >
+            <span class="text-n-slate-11">{{ 'Доп. телефон' }}</span>
+            <span class="font-medium text-n-slate-12">{{
+              dossierSecondaryPhones
+            }}</span>
+          </div>
+          <div
+            v-if="dossierAddress"
+            data-testid="contact-dossier-address"
+            class="flex items-center justify-between gap-2 py-1 text-xs"
+          >
+            <span class="text-n-slate-11">{{ 'Адрес' }}</span>
+            <span class="text-right font-medium text-n-slate-12">{{
+              dossierAddress
+            }}</span>
+          </div>
+          <div
+            v-for="attr in extraCustomAttributes"
+            :key="attr.key"
+            :data-testid="`contact-dossier-attr-${attr.key}`"
+            class="flex items-center justify-between gap-2 py-1 text-xs"
+          >
+            <span class="text-n-slate-11">{{ attr.label }}</span>
+            <span class="text-right font-medium text-n-slate-12">{{
+              attr.value
+            }}</span>
+          </div>
+          <div
+            class="flex w-full items-center justify-between gap-2 py-1 text-xs text-n-slate-11"
+            data-test="contact-client-language-row"
+            data-testid="contact-client-language-row"
+          >
+            <span class="inline-flex items-center gap-1.5">
+              <span class="i-lucide-languages size-3.5 text-n-slate-10" />
+              <span>{{ 'Язык клиента:' }}</span>
+              <strong
+                class="font-medium text-n-slate-12"
+                data-test="contact-client-language-badge"
+                data-testid="contact-client-language-badge"
+              >
+                {{ contactClientLanguageDisplay }}
+              </strong>
+            </span>
+            <select
+              data-test="contact-client-language-select"
+              data-testid="contact-preferred-language-select"
+              :value="preferredLanguageValue"
+              class="rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-xs text-n-slate-12"
+              @change="savePreferredLanguage"
+            >
+              <option value="">{{ 'Авто' }}</option>
+              <option
+                v-for="lang in supportedClientLanguages"
+                :key="lang.code"
+                :value="lang.code"
+              >
+                {{ lang.name }} ({{ lang.code }})
+              </option>
+            </select>
+          </div>
         </div>
         <slot />
       </div>

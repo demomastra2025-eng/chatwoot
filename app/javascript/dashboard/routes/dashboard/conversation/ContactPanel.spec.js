@@ -60,7 +60,7 @@ const stubs = {
   },
   AccordionItem: {
     name: 'AccordionItem',
-    props: { title: String, isOpen: Boolean, secondary: Boolean },
+    props: { title: String, isOpen: Boolean, secondary: Boolean, icon: String },
     emits: ['toggle'],
     template: '<div><slot /></div>',
   },
@@ -122,21 +122,23 @@ beforeEach(() => {
 });
 
 describe('ContactPanel modules', () => {
-  it('orders Notes and Attachments first and marks Attributes and Macros as compact secondary accordions', async () => {
+  it('renders only Attachments accordion with attach icon and omits Notes, Attributes, and Macros', async () => {
     const wrapper = await mountPanel();
     const accordions = wrapper.findAllComponents({ name: 'AccordionItem' });
     expect(accordions.map(item => item.props('title'))).toEqual([
-      'CONVERSATION_SIDEBAR.ACCORDION.CONTACT_NOTES',
       'CONVERSATION_SIDEBAR.ACCORDION.SHARED_FILES',
-      'CONVERSATION_SIDEBAR.ACCORDION.CONTACT_ATTRIBUTES',
-      'CONVERSATION_SIDEBAR.ACCORDION.MACROS',
     ]);
+    expect(accordions[0].props('icon')).toBe('attach');
     expect(accordions.map(item => Boolean(item.props('secondary')))).toEqual([
       false,
-      false,
-      true,
-      true,
     ]);
+    expect(wrapper.findComponent({ name: 'ContactNotes' }).exists()).toBe(
+      false
+    );
+    expect(wrapper.findComponent({ name: 'CustomAttributes' }).exists()).toBe(
+      false
+    );
+    expect(wrapper.findComponent({ name: 'MacrosList' }).exists()).toBe(false);
     expect(wrapper.text()).not.toContain('CONTACT_PANEL.THIS_DIALOG');
     expect(
       wrapper
@@ -153,32 +155,29 @@ describe('ContactPanel modules', () => {
       true
     );
     accordions[0].vm.$emit('toggle', false);
-    expect(mocks.toggle).toHaveBeenCalledWith('is_contact_notes_open', false);
+    expect(mocks.toggle).toHaveBeenCalledWith('is_shared_files_open', false);
   });
 
-  it('keeps person modules but hides conversation modules and tags for a draft', async () => {
+  it('hides conversation modules and tags for a draft', async () => {
     chat.is_draft = true;
     const wrapper = await mountPanel({ conversationId: '' });
     expect(
       wrapper
         .findAllComponents({ name: 'AccordionItem' })
         .map(item => item.props('title'))
-    ).toEqual([
-      'CONVERSATION_SIDEBAR.ACCORDION.CONTACT_NOTES',
-      'CONVERSATION_SIDEBAR.ACCORDION.CONTACT_ATTRIBUTES',
-    ]);
+    ).toEqual([]);
     expect(wrapper.findComponent({ name: 'ConversationAction' }).exists()).toBe(
       false
     );
     expect(wrapper.find('[data-test="contact-panel-tags"]').exists()).toBe(
       false
     );
-    expect(
-      wrapper.findComponent({ name: 'CustomAttributes' }).props('contactId')
-    ).toBe(42);
-    expect(
-      wrapper.findComponent({ name: 'ContactNotes' }).props('contactId')
-    ).toBe(42);
+    expect(wrapper.findComponent({ name: 'CustomAttributes' }).exists()).toBe(
+      false
+    );
+    expect(wrapper.findComponent({ name: 'ContactNotes' }).exists()).toBe(
+      false
+    );
     expect(wrapper.findComponent({ name: 'SharedFiles' }).exists()).toBe(false);
     expect(wrapper.findComponent({ name: 'MacrosList' }).exists()).toBe(false);
   });
@@ -186,8 +185,9 @@ describe('ContactPanel modules', () => {
   it('loads attachments only when the saved section is open', async () => {
     mocks.openSections.is_shared_files_open = false;
     const wrapper = await mountPanel();
-    const attachments = wrapper.findAllComponents({ name: 'AccordionItem' })[1];
+    const attachments = wrapper.findAllComponents({ name: 'AccordionItem' })[0];
     expect(attachments.props('isOpen')).toBe(false);
+    expect(attachments.props('icon')).toBe('attach');
     expect(wrapper.findComponent({ name: 'SharedFiles' }).exists()).toBe(false);
     attachments.vm.$emit('toggle', true);
     expect(mocks.toggle).toHaveBeenCalledWith('is_shared_files_open', true);
@@ -227,10 +227,7 @@ describe('ContactPanel patient context', () => {
       wrapper.findComponent({ name: 'SchedulingPatientDetails' }).exists()
     ).toBe(false);
     expect(
-      wrapper.findComponent({ name: 'CustomAttributes' }).props('contactId')
-    ).toBe(42);
-    expect(
-      wrapper.findComponent({ name: 'ContactNotes' }).props('contactId')
+      wrapper.findComponent({ name: 'ContactInfo' }).props('contact').id
     ).toBe(42);
   });
 
@@ -252,7 +249,7 @@ describe('ContactPanel patient context', () => {
     ).toEqual(patient);
   });
 
-  it('shows tabs for two people and uses selected patient for notes and attributes', async () => {
+  it('shows tabs for two people and fetches contact details for selected patient', async () => {
     const wrapper = await mountPanel({
       ...common,
       patientEntry: { loaded: true, patients: [patient, { id: 85 }] },
@@ -267,16 +264,8 @@ describe('ContactPanel patient context', () => {
         .findComponent({ name: 'SchedulingConversationPatientSelector' })
         .props('showAddButton')
     ).toBe(false);
-    expect(
-      wrapper.findComponent({ name: 'CustomAttributes' }).props('contactId')
-    ).toBe(84);
-    expect(
-      wrapper.findComponent({ name: 'ContactNotes' }).props('contactId')
-    ).toBe(84);
     expect(mocks.dispatch).toHaveBeenCalledWith('contacts/show', { id: 84 });
     await wrapper.setProps({ selectedPatient: { id: 85 } });
-    expect(
-      wrapper.findComponent({ name: 'ContactNotes' }).props('contactId')
-    ).toBe(85);
+    expect(mocks.dispatch).toHaveBeenCalledWith('contacts/show', { id: 85 });
   });
 });

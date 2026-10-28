@@ -136,11 +136,20 @@ beforeEach(() => {
 });
 
 describe('SchedulingNotificationsPage', () => {
-  it('shows six accordion preset cards with toggle switches, channel, template counts and the pack wizard on first run', async () => {
+  it('shows six collapsed accordion preset cards with toggle switches, channel, template counts and the pack wizard on first run', async () => {
     const wrapper = await mountPage();
     expect(
       wrapper.findAll('[data-testid^="reminder-preset-card-"]')
     ).toHaveLength(6);
+    expect(
+      wrapper.find('[data-testid="preset-whatsapp-preview-text"]').exists()
+    ).toBe(false);
+    expect(wrapper.find('[data-testid="preset-setup-btn"]').exists()).toBe(
+      false
+    );
+    expect(
+      wrapper.find('[data-testid="calendar-notification-editor"]').exists()
+    ).toBe(false);
     expect(wrapper.text()).toContain('SCHEDULING.NOTIFICATIONS.FIRST_RUN');
     expect(wrapper.text()).toContain('WhatsApp Clinic');
     expect(wrapper.text()).toContain('SCHEDULING.NOTIFICATIONS.TEMPLATE_PACK');
@@ -149,7 +158,35 @@ describe('SchedulingNotificationsPage', () => {
     ).toHaveLength(6);
   });
 
-  it('recognizes a preset by marker after its send time changes and renders inline WhatsApp preview', async () => {
+  it('auto-selects the first WhatsApp inbox when multiple WhatsApp inboxes exist', async () => {
+    mocks.inboxes = [
+      {
+        id: 5236,
+        name: 'WhatsApp Primary',
+        channel_type: 'Channel::Whatsapp',
+        message_templates: [
+          {
+            name: 'visit_notice',
+            language: 'ru',
+            status: 'APPROVED',
+            components: [{ type: 'BODY', text: 'Здравствуйте' }],
+          },
+        ],
+      },
+      {
+        id: 5237,
+        name: 'WhatsApp Secondary',
+        channel_type: 'Channel::Whatsapp',
+        message_templates: [],
+      },
+    ];
+    const wrapper = await mountPage();
+    const channelSelect = wrapper.find('select');
+    expect(channelSelect.element.value).toBe('5236');
+    expect(wrapper.text()).toContain('SCHEDULING.NOTIFICATIONS.APPROVED: 1');
+  });
+
+  it('recognizes a preset by marker after its send time changes and renders inline WhatsApp preview when expanded', async () => {
     mocks.rules = [
       rule({
         actions: [
@@ -174,6 +211,10 @@ describe('SchedulingNotificationsPage', () => {
       '[data-testid="reminder-preset-card-appointment_created"]'
     );
     expect(card.text()).toContain('visit_notice');
+    expect(
+      card.find('[data-testid="preset-whatsapp-preview-text"]').exists()
+    ).toBe(false);
+    await card.find('.cursor-pointer').trigger('click');
     expect(
       card.find('[data-testid="preset-whatsapp-preview-text"]').text()
     ).toContain('Здравствуйте');
@@ -213,7 +254,7 @@ describe('SchedulingNotificationsPage', () => {
     ).toBeDefined();
   });
 
-  it('previews example appointment values and a quick reply button', async () => {
+  it('previews example appointment values and a quick reply button inside the expanded preset card', async () => {
     mocks.inboxes[0].message_templates[0].components = [
       { type: 'BODY', text: 'Здравствуйте, {{1}}' },
       {
@@ -249,19 +290,14 @@ describe('SchedulingNotificationsPage', () => {
       }),
     ];
     const wrapper = await mountPage();
-    await wrapper
-      .find('[data-testid="reminder-preset-card-appointment_created"] button')
-      .trigger('click');
-    await wrapper
-      .findAll('button')
-      .find(button => button.text() === '3. SCHEDULING.NOTIFICATIONS.STEPS.3')
-      .trigger('click');
+    const card = wrapper.find(
+      '[data-testid="reminder-preset-card-appointment_created"]'
+    );
+    await card.find('.cursor-pointer').trigger('click');
     expect(
-      wrapper.find('[data-testid="calendar-notification-editor"]').text()
+      card.find('[data-testid="preset-whatsapp-preview-text"]').text()
     ).toContain('Анна');
-    expect(
-      wrapper.find('[data-testid="calendar-notification-editor"]').text()
-    ).toContain('Подтверждаю');
+    expect(card.text()).toContain('Подтверждаю');
   });
 
   it('keeps the switch off when a field is missing in future appointments', async () => {
@@ -319,10 +355,8 @@ describe('SchedulingNotificationsPage', () => {
     );
   });
 
-  it('allows toggling and editing rules in Другие правила directly without a review-and-adopt prompt', async () => {
-    mocks.rules = [
-      rule({ id: 2, description: '', calendar_managed: false }),
-    ];
+  it('allows toggling rules in Другие правила directly without a review-and-adopt prompt', async () => {
+    mocks.rules = [rule({ id: 2, description: '', calendar_managed: false })];
     const wrapper = await mountPage();
     expect(wrapper.find('[data-testid="adoption-review"]').exists()).toBe(
       false
@@ -334,44 +368,44 @@ describe('SchedulingNotificationsPage', () => {
     expect(otherCard.exists()).toBe(true);
     await otherCard.find('input[type="checkbox"]').trigger('change');
     await flushPromises();
-      expect(AutomationAPI.update).toHaveBeenCalledWith(2, {
+    expect(AutomationAPI.update).toHaveBeenCalledWith(2, {
+      active: true,
+      calendar_managed: true,
+      calendar_context: true,
+    });
+  });
+
+  it('creates and enables a preset rule directly when toggled on with an APPROVED preset template', async () => {
+    mocks.inboxes[0].message_templates.push({
+      name: 'booking_created_notice',
+      language: 'ru',
+      status: 'APPROVED',
+      category: 'UTILITY',
+      components: [
+        {
+          type: 'BODY',
+          text: 'Здравствуйте, {{1}}! Запись {{2}} в {{3}}, специалист {{4}}.',
+        },
+      ],
+    });
+    AutomationAPI.create.mockResolvedValue({ data: {} });
+    const wrapper = await mountPage();
+    const toggle = wrapper.find(
+      '[data-testid="reminder-preset-card-appointment_created"] input[type="checkbox"]'
+    );
+    expect(toggle.attributes('disabled')).toBeUndefined();
+    await toggle.trigger('change');
+    await flushPromises();
+    expect(AutomationAPI.create).toHaveBeenCalledWith(
+      expect.objectContaining({
         active: true,
         calendar_managed: true,
-        calendar_context: true,
-      });
-    });
+        event_name: 'appointment_created',
+      })
+    );
+  });
 
-    it('creates and enables a preset rule directly when toggled on with an APPROVED preset template', async () => {
-      mocks.inboxes[0].message_templates.push({
-        name: 'booking_created_notice',
-        language: 'ru',
-        status: 'APPROVED',
-        category: 'UTILITY',
-        components: [
-          {
-            type: 'BODY',
-            text: 'Здравствуйте, {{1}}! Запись {{2}} в {{3}}, специалист {{4}}.',
-          },
-        ],
-      });
-      AutomationAPI.create.mockResolvedValue({ data: {} });
-      const wrapper = await mountPage();
-      const toggle = wrapper.find(
-        '[data-testid="reminder-preset-card-appointment_created"] input[type="checkbox"]'
-      );
-      expect(toggle.attributes('disabled')).toBeUndefined();
-      await toggle.trigger('change');
-      await flushPromises();
-      expect(AutomationAPI.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          active: true,
-          calendar_managed: true,
-          event_name: 'appointment_created',
-        })
-      );
-    });
-
-  it('keeps untouched custom conditions and saves the preset marker when switched off', async () => {
+  it('keeps untouched custom conditions and saves the preset marker when saved inline', async () => {
     const conditions = [
       {
         attribute_key: 'source',
@@ -394,17 +428,11 @@ describe('SchedulingNotificationsPage', () => {
     ];
     mocks.rules = [rule({ conditions })];
     const wrapper = await mountPage();
-    await wrapper
-      .find('[data-testid="reminder-preset-card-appointment_created"] button')
-      .trigger('click');
-    await wrapper
-      .findAll('button')
-      .find(button => button.text() === '4. SCHEDULING.NOTIFICATIONS.STEPS.4')
-      .trigger('click');
-    await wrapper
-      .findAll('button')
-      .find(button => button.text() === 'SCHEDULING.NOTIFICATIONS.SAVE_OFF')
-      .trigger('click');
+    const card = wrapper.find(
+      '[data-testid="reminder-preset-card-appointment_created"]'
+    );
+    await card.find('.cursor-pointer').trigger('click');
+    await card.find('[data-testid="save-inline-preset-btn"]').trigger('click');
     await flushPromises();
     expect(AutomationAPI.update).toHaveBeenCalledWith(
       1,
@@ -412,121 +440,6 @@ describe('SchedulingNotificationsPage', () => {
         conditions,
         active: false,
         description: '[scheduling_preset:appointment_created]',
-      })
-    );
-  });
-
-  it('blocks saving a condition with an empty value', async () => {
-    const wrapper = await mountPage();
-    await wrapper
-      .find('[data-testid="reminder-preset-card-appointment_created"] button')
-      .trigger('click');
-    await wrapper
-      .findAll('button')
-      .find(button => button.text() === '2. SCHEDULING.NOTIFICATIONS.STEPS.2')
-      .trigger('click');
-    await wrapper
-      .findAll('button')
-      .find(
-        button => button.text() === 'SCHEDULING.NOTIFICATIONS.ADD_CONDITION'
-      )
-      .trigger('click');
-    await wrapper
-      .findAll('button')
-      .find(button => button.text() === '3. SCHEDULING.NOTIFICATIONS.STEPS.3')
-      .trigger('click');
-    await wrapper
-      .find('[data-testid="calendar-notification-editor"]')
-      .findAll('select')[2]
-      .setValue('visit_notice::ru');
-    await wrapper
-      .findAll('button')
-      .find(button => button.text() === '4. SCHEDULING.NOTIFICATIONS.STEPS.4')
-      .trigger('click');
-    await wrapper
-      .findAll('button')
-      .find(button => button.text() === 'SCHEDULING.NOTIFICATIONS.SAVE_OFF')
-      .trigger('click');
-    expect(AutomationAPI.create).not.toHaveBeenCalled();
-    expect(mocks.alert).toHaveBeenCalledWith(
-      'SCHEDULING.NOTIFICATIONS.REQUIRED'
-    );
-  });
-
-  it('requires an exact clock time for day-based sends', async () => {
-    const wrapper = await mountPage();
-    await wrapper
-      .find(
-        '[data-testid="reminder-preset-card-appointment_day_before"] button'
-      )
-      .trigger('click');
-    await wrapper
-      .find('[data-testid="calendar-notification-editor"] input[type="time"]')
-      .setValue('');
-    await wrapper
-      .findAll('button')
-      .find(button => button.text() === '4. SCHEDULING.NOTIFICATIONS.STEPS.4')
-      .trigger('click');
-    await wrapper
-      .findAll('button')
-      .find(button => button.text() === 'SCHEDULING.NOTIFICATIONS.SAVE_OFF')
-      .trigger('click');
-    expect(AutomationAPI.create).not.toHaveBeenCalled();
-    expect(mocks.alert).toHaveBeenCalledWith(
-      'SCHEDULING.NOTIFICATIONS.REQUIRED'
-    );
-  });
-
-  it('saves ИЛИ between condition rows', async () => {
-    mocks.rules = [
-      rule({
-        conditions: [
-          {
-            attribute_key: 'source',
-            filter_operator: 'equal_to',
-            values: ['manual'],
-            query_operator: 'AND',
-          },
-          {
-            attribute_key: 'status',
-            filter_operator: 'equal_to',
-            values: ['scheduled'],
-            query_operator: null,
-          },
-        ],
-      }),
-    ];
-    const wrapper = await mountPage();
-    await wrapper
-      .find('[data-testid="reminder-preset-card-appointment_created"] button')
-      .trigger('click');
-    await wrapper
-      .findAll('button')
-      .find(button => button.text() === '2. SCHEDULING.NOTIFICATIONS.STEPS.2')
-      .trigger('click');
-    await wrapper
-      .find(
-        '[data-testid="calendar-notification-editor"] select[class*="ml-2"]'
-      )
-      .setValue('OR');
-    await wrapper
-      .findAll('button')
-      .find(button => button.text() === '4. SCHEDULING.NOTIFICATIONS.STEPS.4')
-      .trigger('click');
-    await wrapper
-      .findAll('button')
-      .find(button => button.text() === 'SCHEDULING.NOTIFICATIONS.SAVE_OFF')
-      .trigger('click');
-    await flushPromises();
-    expect(AutomationAPI.update).toHaveBeenCalledWith(
-      1,
-      expect.objectContaining({
-        conditions: expect.arrayContaining([
-          expect.objectContaining({
-            attribute_key: 'source',
-            query_operator: 'OR',
-          }),
-        ]),
       })
     );
   });

@@ -590,7 +590,6 @@ describe('Sidebar', () => {
         'Conversation Navigation',
         'Conversation Closure',
         'Settings Quick Replies',
-        'Settings Macros',
         'Channels',
         'Settings WhatsApp Templates',
         'Settings Integrations',

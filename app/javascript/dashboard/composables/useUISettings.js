@@ -3,10 +3,7 @@ import { useStore, useStoreGetters } from 'dashboard/composables/store';
 
 export const DEFAULT_CONVERSATION_SIDEBAR_ITEMS_ORDER = Object.freeze([
   { name: 'conversation_actions' },
-  { name: 'contact_notes' },
   { name: 'shared_files' },
-  { name: 'contact_attributes' },
-  { name: 'macros' },
 ]);
 
 const LEGACY_CONVERSATION_SIDEBAR_ITEMS_ORDERS = new Set([
@@ -20,6 +17,9 @@ const REMOVED_CONVERSATION_SIDEBAR_ITEMS = new Set([
   'conversation_participants',
   'linear_issues',
   'shopify_orders',
+  'contact_notes',
+  'contact_attributes',
+  'macros',
 ]);
 
 export const DEFAULT_CONTACT_SIDEBAR_ITEMS_ORDER = Object.freeze([

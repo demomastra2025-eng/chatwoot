@@ -304,7 +304,9 @@ describe('ContactInfo', () => {
     const row = wrapper.get('[data-test="contact-client-language-row"]');
     expect(row.text()).toContain('96%');
 
-    const select = wrapper.get('[data-test="contact-client-language-select"]');
+    const select = wrapper.get(
+      '[data-testid="contact-preferred-language-select"]'
+    );
     expect(select.element.value).toBe('kk');
 
     await select.setValue('ru');
@@ -320,5 +322,64 @@ describe('ContactInfo', () => {
         }),
       })
     );
+  });
+
+  it('renders always-open Contact Dossier with formatted birth date, IIN, gender, secondary phones, address, extra custom attributes, and filters out MedElement sync keys', async () => {
+    const wrapper = buildWrapper({
+      contact: {
+        identifier: 'captain-playground-d446541d-98b6-43b9-bc63-dd6b8398caf6',
+        custom_attributes: {
+          iin: '900515300123',
+          birth_date: '1990-05-15',
+          gender: 'female',
+          secondary_phones: '+77019998877',
+          address: 'г. Алматы, пр. Абая 10',
+          allergies: 'Пенициллин',
+          medelement_patient_code: 'ME-991',
+          medelement_last_synced_at: '2026-10-28T10:00:00Z',
+          medelement_first_name: 'Алия',
+          medelement_last_name: 'Смагулова',
+          medelement_middle_name: 'Сериковна',
+          medelement_patient_lookup_at: '2026-10-28T10:00:00Z',
+          medelement_patient_context_creation_requests: { req: 1 },
+          phone_conflict_comment: 'conflict',
+        },
+      },
+    });
+
+    const dossier = wrapper.get('[data-testid="contact-dossier"]');
+    expect(dossier.text()).toContain('Досье контакта');
+    expect(
+      dossier.get('[data-testid="contact-dossier-birth-date"]').text()
+    ).toMatch(/15\.05\.1990 \(\d+ (лет|год|года)\)/);
+    expect(dossier.get('[data-testid="contact-dossier-iin"]').text()).toContain(
+      '900515300123'
+    );
+    expect(dossier.text()).not.toContain('captain-playground');
+    expect(
+      dossier.find('[data-testid="contact-dossier-iin-copy"]').exists()
+    ).toBe(true);
+    expect(
+      dossier.get('[data-testid="contact-dossier-gender"]').text()
+    ).toContain('Женский');
+    expect(
+      dossier.get('[data-testid="contact-dossier-secondary-phones"]').text()
+    ).toContain('+77019998877');
+    expect(
+      dossier.get('[data-testid="contact-dossier-address"]').text()
+    ).toContain('г. Алматы, пр. Абая 10');
+    expect(
+      dossier.get('[data-testid="contact-dossier-attr-allergies"]').text()
+    ).toContain('Пенициллин');
+
+    expect(dossier.text()).not.toContain('ME-991');
+    expect(dossier.text()).not.toContain('medelement_patient_code');
+    expect(dossier.text()).not.toContain('medelement_last_synced_at');
+    expect(dossier.text()).not.toContain('medelement_patient_lookup_at');
+    expect(dossier.text()).not.toContain('[object Object]');
+    expect(dossier.text()).not.toContain('phone_conflict_comment');
+    expect(
+      dossier.find('[data-testid="contact-preferred-language-select"]').exists()
+    ).toBe(true);
   });
 });
