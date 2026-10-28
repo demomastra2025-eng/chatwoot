@@ -1,3 +1,4 @@
+import { mergeLocaleParts, withReportAliases } from '../mergeLocaleParts';
 import advancedFilters from './advancedFilters.json';
 import agentMgmt from './agentMgmt.json';
 import attributesMgmt from './attributesMgmt.json';
@@ -21,6 +22,7 @@ import designSystem from './designSystem.json';
 import emoji from './emoji.json';
 import general from './general.json';
 import generalSettings from './generalSettings.json';
+import helpCenter from './helpCenter.json';
 import inbox from './inbox.json';
 import inboxMgmt from './inboxMgmt.json';
 import integrationApps from './integrationApps.json';
@@ -40,48 +42,53 @@ import sla from './sla.json';
 import teamsSettings from './teamsSettings.json';
 import whatsappTemplates from './whatsappTemplates.json';
 import whatsappUsage from './whatsappUsage.json';
+import yearInReview from './yearInReview.json';
 
-export default {
-  ...advancedFilters,
-  ...agentMgmt,
-  ...attributesMgmt,
-  ...auditLogs,
-  ...automation,
-  ...bulkActions,
-  ...campaign,
-  ...cannedMgmt,
-  ...chatlist,
-  ...companies,
-  ...components,
-  ...contact,
-  ...contactFilters,
-  ...contentTemplates,
-  ...conversation,
-  ...crm,
-  ...csatMgmt,
-  ...customRole,
-  ...datePicker,
-  ...designSystem,
-  ...emoji,
-  ...general,
-  ...generalSettings,
-  ...inbox,
-  ...inboxMgmt,
-  ...integrationApps,
-  ...integrations,
-  ...labelsMgmt,
-  ...login,
-  ...macros,
-  ...mfa,
-  ...report,
-  ...resetPassword,
-  ...search,
-  ...scheduling,
-  ...setNewPassword,
-  ...settings,
-  ...signup,
-  ...sla,
-  ...teamsSettings,
-  ...whatsappTemplates,
-  ...whatsappUsage,
-};
+export default withReportAliases(
+  mergeLocaleParts(
+    advancedFilters,
+    agentMgmt,
+    attributesMgmt,
+    auditLogs,
+    automation,
+    bulkActions,
+    campaign,
+    cannedMgmt,
+    chatlist,
+    companies,
+    components,
+    contact,
+    contactFilters,
+    contentTemplates,
+    conversation,
+    crm,
+    csatMgmt,
+    customRole,
+    datePicker,
+    designSystem,
+    emoji,
+    general,
+    generalSettings,
+    helpCenter,
+    inbox,
+    inboxMgmt,
+    integrationApps,
+    integrations,
+    labelsMgmt,
+    login,
+    macros,
+    mfa,
+    report,
+    resetPassword,
+    search,
+    scheduling,
+    setNewPassword,
+    settings,
+    signup,
+    sla,
+    teamsSettings,
+    whatsappTemplates,
+    whatsappUsage,
+    yearInReview
+  )
+);

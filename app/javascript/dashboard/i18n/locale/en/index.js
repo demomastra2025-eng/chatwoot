@@ -1,3 +1,4 @@
+import { mergeLocaleParts, withReportAliases } from '../mergeLocaleParts';
 import advancedFilters from './advancedFilters.json';
 import agentMgmt from './agentMgmt.json';
 import attributesMgmt from './attributesMgmt.json';
@@ -20,6 +21,7 @@ import designSystem from './designSystem.json';
 import emoji from './emoji.json';
 import general from './general.json';
 import generalSettings from './generalSettings.json';
+import helpCenter from './helpCenter.json';
 import inbox from './inbox.json';
 import inboxMgmt from './inboxMgmt.json';
 import integrationApps from './integrationApps.json';
@@ -39,53 +41,58 @@ import snooze from './snooze.json';
 import teamsSettings from './teamsSettings.json';
 import whatsappTemplates from './whatsappTemplates.json';
 import whatsappUsage from './whatsappUsage.json';
+import yearInReview from './yearInReview.json';
 import whatsappCall from './whatsappCall.json';
 import contentTemplates from './contentTemplates.json';
 import mfa from './mfa.json';
 
-export default {
-  ...advancedFilters,
-  ...agentMgmt,
-  ...attributesMgmt,
-  ...auditLogs,
-  ...automation,
-  ...bulkActions,
-  ...campaign,
-  ...cannedMgmt,
-  ...chatlist,
-  ...companies,
-  ...components,
-  ...contact,
-  ...contactFilters,
-  ...conversation,
-  ...crm,
-  ...csatMgmt,
-  ...customRole,
-  ...datePicker,
-  ...designSystem,
-  ...emoji,
-  ...general,
-  ...generalSettings,
-  ...inbox,
-  ...inboxMgmt,
-  ...integrationApps,
-  ...integrations,
-  ...labelsMgmt,
-  ...login,
-  ...macros,
-  ...report,
-  ...resetPassword,
-  ...search,
-  ...scheduling,
-  ...setNewPassword,
-  ...settings,
-  ...signup,
-  ...sla,
-  ...snooze,
-  ...teamsSettings,
-  ...whatsappTemplates,
-  ...whatsappUsage,
-  ...whatsappCall,
-  ...contentTemplates,
-  ...mfa,
-};
+const messages = mergeLocaleParts(
+  advancedFilters,
+  agentMgmt,
+  attributesMgmt,
+  auditLogs,
+  automation,
+  bulkActions,
+  campaign,
+  cannedMgmt,
+  chatlist,
+  companies,
+  components,
+  contact,
+  contactFilters,
+  conversation,
+  crm,
+  csatMgmt,
+  customRole,
+  datePicker,
+  designSystem,
+  emoji,
+  general,
+  generalSettings,
+  helpCenter,
+  inbox,
+  inboxMgmt,
+  integrationApps,
+  integrations,
+  labelsMgmt,
+  login,
+  macros,
+  report,
+  resetPassword,
+  search,
+  scheduling,
+  setNewPassword,
+  settings,
+  signup,
+  sla,
+  snooze,
+  teamsSettings,
+  whatsappTemplates,
+  whatsappUsage,
+  yearInReview,
+  whatsappCall,
+  contentTemplates,
+  mfa
+);
+
+export default withReportAliases(messages);
