@@ -3,9 +3,8 @@
 require 'digest'
 
 # Scores one customer turn. A Scorer instance belongs to one dialogue: it remembers the successful tool calls, the rows
-# written, the handoffs and the language of the earlier turns, so a follow-up that restates a confirmed operation with
-# the time, the date and the doctor of the rows written is not a false claim (a claim of a new operation still is), and a
-# mutation repeated in a later turn with the same arguments is a duplicate.
+# written, the handoffs and the language of earlier turns. A mutation repeated in a later turn with the same arguments
+# is a duplicate. Completed-action claims use the same decision question as the reply suggestion guard.
 #
 # Every check carries a severity (CHECKS, the one table; README.md documents it):
 #   critical   a release blocker. The owner's gate items a-f: a booking, move or cancellation with the wrong doctor, time,
@@ -80,31 +79,6 @@ class Captain::Evals::RoutingBenchmark::Scorer
   KAZAKH_LETTERS = 'әғқңөұүһі'
   RUSSIAN_LETTERS = 'агкноуухи'
   FOLDED_GREETING_WORDS = GREETING_WORDS.to_set { |word| word.tr(KAZAKH_LETTERS, RUSSIAN_LETTERS) }.freeze
-  # The claim kinds whose time, date and doctor are compared with the booked row.
-  RECORD_CLAIM_KINDS = %i[book reschedule cancel create reschedule_state cancel_state create_state done done_state].freeze
-  STATE_CLAIMS = %i[book_state reschedule_state cancel_state create_state done_state].freeze
-  # The claim kinds that are about an appointment, whose time, date and doctor can be compared with the rows.
-  APPOINTMENT_CLAIMS = %i[book book_state reschedule reschedule_state cancel cancel_state done done_state].freeze
-  # The claim kinds that may report a complaint or a request for a certificate recorded for staff, and the words that say so: a complaint
-  # or an appeal is recorded itself; a certificate or a document only as a request for it ("Заявка на справку оформлена"), because the
-  # document itself is something only staff can produce ("Справка оформлена" is a false claim).
-  REQUEST_RECORD_KINDS = %i[create create_state book_state done done_state].freeze
-  COMPLAINT_WORD = /(?<!\p{L})(?:жалоб\p{L}*|обращени\p{L}*|шағым\p{L}*|өтініш\p{L}*)/i
-  DOCUMENT_WORD = /(?<!\p{L})(?:справк\p{L}*|документ\p{L}*|анықтама\p{L}*)/i
-  REQUEST_WORD = /(?<!\p{L})(?:заявк\p{L}*|запрос\p{L}*|просьб\p{L}*|сұрау\p{L}*)/i
-  APPOINTMENT_WORD = /(?<!\p{L})(?:запис\p{L}*|при[её]м\p{L}*|визит\p{L}*|жазыл\p{L}*|жазба\p{L}*|қабылдау\p{L}*)/i
-  # The change of an appointment row that each claim kind reports, and the fixture operation kind that would expect it. A completion
-  # word that names no action (done) is true after any change.
-  CLAIM_CHANGE = { book: :created, book_state: :created, create: :created, create_state: :created, reschedule: :updated,
-                   reschedule_state: :updated, cancel: :cancelled, cancel_state: :cancelled, done: nil, done_state: nil }.freeze
-  CLAIM_OPERATION = { book: 'create', book_state: 'create', create: 'create', create_state: 'create', reschedule: 'update',
-                      reschedule_state: 'update', cancel: 'cancel', cancel_state: 'cancel', done: nil, done_state: nil }.freeze
-  # The claim kinds that report a done operation of the fixture kind: what the reply of a turn must say after the operation succeeded.
-  DONE_CLAIMS = {
-    'create' => %i[book book_state create create_state done done_state],
-    'update' => %i[reschedule reschedule_state done done_state],
-    'cancel' => %i[cancel cancel_state done done_state]
-  }.freeze
   # A line of a reply that gives one detail of the booking ("Дата: 16 октября", "- Врач: Омаров").
   DETAIL_LINE = /\A\s*(?:[-•*–—]\s*)?\p{L}[\p{L} ]{0,24}:\s*\S/
   # Opening hours, offers and questions in the lines after a claim are not statements about the booking.
@@ -770,155 +744,31 @@ class Captain::Evals::RoutingBenchmark::Scorer
       'internal_text_leak' => leaked, 'wrong_language' => wrong_language, 'false_handoff_claim' => handoff_claim_check(context, outcome) }
   end
 
-  # Unsupported claims of a done action, by the claim kinds found in the reply. The stock sentences of the runtime are cut out first:
-  # "Запрос отменён." is a leak (reply_leak:stock_text), not the agent's claim of a cancellation.
+  # The benchmark asks the same completion question as the suggestion guard.
   def claim_check(context, outcome)
-    claims = Captain::Evals::RoutingBenchmark::SuccessClaims.claims(context.claim_text)
-    @claimed = claims.map(&:first).uniq
-    notes = []
-    @unsupported = @claimed.reject do |kind|
-      claim_supported?(kind, claims.filter_map { |found, sentence| sentence if found == kind }.uniq, context, notes)
-    end
-    return 0 if @unsupported.empty?
+    @claimed = []
+    @unsupported = []
+    return 0 if context.claim_text.blank?
+    return 0 if context.successful_tools.any? { |name| Captain::ReplySuggestion::DraftClaims.mutating?(name) }
 
-    tools = context.successful_tools.join(', ').presence || 'none'
-    outcome.hint!('false_success_claim', "claims #{@unsupported.join(', ')}; successful tools: #{tools}#{notes.map { |note| "; #{note}" }.join}")
+    decision = claim_decision(context)
+    return 0 unless decision == :done
+
+    @claimed = [:done]
+    @unsupported = [:done]
+    outcome.hint!('false_success_claim', "reply claims an action completed now; successful tools: #{context.successful_tools.join(', ').presence || 'none'}")
     1
   end
 
-  # A claim is supported by a successful matching tool call in this turn, or by a row the turn wrote: the database, not
-  # the tool name, decides what is true. A lookup in this turn supports a state claim ("вы записаны") only when the
-  # sentence agrees with the appointments of the caller. A claim that restates an earlier turn is supported by #restated?
-  # unless the same turn tried the operation and failed.
-  def claim_supported?(kind, sentences, context, notes)
-    supporting = Captain::Evals::RoutingBenchmark::SuccessClaims::KIND_TOOLS.fetch(kind)
-    done = supporting & context.successful_tools
-    if done.any?
-      return true unless (done - Captain::Evals::RoutingBenchmark::SuccessClaims::LOOKUP_TOOLS).empty?
+  def claim_decision(context)
+    return @claim_decision if @claim_decision_context.equal?(context)
 
-      return agrees?(kind, sentences, candidate_rows(kind, context), notes, 'the appointments of the caller')
-    end
-    return true if request_recorded?(kind, sentences, context)
-    return false unless (supporting & context.failed_tools).empty?
-    return true if row_written?(kind, context.changes)
-
-    restated?(kind, supporting, sentences, context, notes)
+    @claim_decision_context = context
+    @claim_decision = Captain::ReplySuggestion::DraftClaims.completed_now?(draft: context.claim_text, account: @account) ? :done : :not_done
+  rescue Llm::DecisionChain::ExhaustedError
+    @claim_decision = nil
   end
 
-  # "Ваша жалоба зарегистрирована", "Заявка на справку оформлена", KK "шағымыңыз тіркелді": a request that the handoff (or a private note)
-  # recorded for staff. It is no appointment, and no workspace tool creates it; what makes the sentence true is the staff handoff of the
-  # turn (or an earlier one), or the private note of the turn. A sentence that names an appointment word, or no request object, still
-  # needs a tool result.
-  def request_recorded?(kind, sentences, context)
-    return false unless REQUEST_RECORD_KINDS.include?(kind)
-    return false unless context.handoff[:observed] || @earlier_handoff || context.successful_tools.include?('add_private_note')
-
-    sentences.all? { |sentence| recorded_request?(sentence) && !sentence.match?(APPOINTMENT_WORD) }
-  end
-
-  def recorded_request?(sentence)
-    sentence.match?(COMPLAINT_WORD) || (sentence.match?(DOCUMENT_WORD) && sentence.match?(REQUEST_WORD))
-  end
-
-  def row_written?(kind, changes)
-    return changes.created.any? || changes.updated.any? if kind == :book_state
-
-    change = CLAIM_CHANGE.fetch(kind)
-    changes.rows.any? { |row| change.nil? || row.change == change }
-  end
-
-  # The follow-up restates what an earlier turn did ("Вы записаны на среду в 10:00. Жду вас!"). It holds only when
-  #   - this turn's fixture does not expect a new operation of that kind (a claim of a second booking with no tool call is
-  #     false even though the first booking succeeded), or an earlier turn already made exactly the state the fixture expects
-  #     (an earlier wrong action: it was reported on its own turn, and this turn's true restatement of it is not a second
-  #     finding, see #expected_state_exists?),
-  #   - an earlier turn succeeded with a matching tool, or (a state claim) the database holds an appointment of that
-  #     state, and
-  #   - the time, the date and the doctor the sentence names are those of the rows in question. A success that left no
-  #     row to compare with cannot be disproved.
-  def restated?(kind, supporting, sentences, context, notes)
-    return false if operation_expected?(kind, context) && !expected_state_exists?(kind, context)
-
-    rows = candidate_rows(kind, context)
-    earlier_tool = (supporting & @earlier_successes).any?
-    return false unless earlier_tool || (STATE_CLAIMS.include?(kind) && rows.any?)
-    return true if rows.empty?
-
-    agrees?(kind, sentences, rows, notes, %i[book_state cancel_state].include?(kind) ? 'the appointments of the caller' : 'the rows written earlier')
-  end
-
-  # The claim sentences name no time, date or doctor that the rows do not have. A claim of "создана / оформлена" may be about
-  # a deal, a task or a company: the appointment rows say nothing about it.
-  def agrees?(kind, sentences, rows, notes, label)
-    return true if rows.empty? || APPOINTMENT_CLAIMS.exclude?(kind)
-
-    mismatches = sentences.flat_map { |sentence| sentence_mismatches(sentence, rows) }
-    return true if mismatches.empty?
-
-    notes << "#{label} do not agree: #{mismatches.first(3).join('; ')}"
-    false
-  end
-
-  # The rows a claim of the kind may be about: what the caller's appointments are now (state claims about a booking or a
-  # cancellation), else the rows of that change written in this dialogue.
-  def candidate_rows(kind, context)
-    case kind
-    when :book_state then existing_rows(caller_appointments.where.not(status: 'cancelled'))
-    when :cancel_state then existing_rows(caller_appointments.where(status: 'cancelled'))
-    else
-      change = CLAIM_CHANGE.fetch(kind)
-      (@written + context.changes.rows).select { |row| change.nil? || row.change == change }.uniq(&:id)
-    end
-  end
-
-  def existing_rows(scope)
-    scope.includes(:resource).map { |record| Captain::Evals::RoutingBenchmark::BookingChanges::Row.new(record: record, change: :existing) }
-  end
-
-  # The fixture expects a new operation of the kind a claim reports in this turn.
-  def operation_expected?(kind, context)
-    wanted = CLAIM_OPERATION.fetch(kind)
-    Array(context.expected['operations']).any? do |operation|
-      next false if operation.key?('count') && operation['count'].to_i.zero?
-      next false unless operation['model'] == 'appointment' || %i[create create_state done done_state].include?(kind)
-
-      wanted.nil? || Captain::Evals::RoutingBenchmark::OperationCheck.kind_of(operation) == wanted
-    end
-  end
-
-  # Every operation of the kind that the fixture expects in this turn is already in the database from an earlier turn of the
-  # dialogue: the caller holds an appointment (a cancelled one for a cancellation) that starts at the start the operation pins. The
-  # agent did that earlier, wrongly (a move the fixture meant for this turn), and the earlier turn reported it; a reply that now says
-  # "уже перенесена на четверг в 10:00" tells the truth, so the claim is judged like any restatement. An expected operation that no
-  # row of the caller matches (a second booking, another start) is still not excused by the earlier row.
-  def expected_state_exists?(kind, context)
-    wanted = CLAIM_OPERATION.fetch(kind)
-    operations = Array(context.expected['operations']).select do |operation|
-      operation['model'] == 'appointment' && !(operation.key?('count') && operation['count'].to_i.zero?) &&
-        (wanted.nil? || Captain::Evals::RoutingBenchmark::OperationCheck.kind_of(operation) == wanted)
-    end
-    return false if operations.empty?
-
-    operations.all? do |operation|
-      start = operation['starts_at'] || operation.dig('params', 'starts_at')
-      cancelled = Captain::Evals::RoutingBenchmark::OperationCheck.kind_of(operation) == 'cancel'
-      rows = cancelled ? caller_appointments.where(status: 'cancelled') : caller_appointments.where.not(status: 'cancelled')
-      start.present? && rows.exists?(starts_at: Time.iso8601(start))
-    end
-  end
-
-  def caller_appointments
-    Scheduling::Appointment.where(account_id: @account.id)
-                           .where('contact_id = :id OR patient_contact_id = :id', id: @conversation.contact_id)
-  end
-
-  # A claim that staff took the request, will call or answer, or that a result or a document is ready or sent. Three rules:
-  #   - a result or a document said to be ready or sent is false whatever handoff the turn made: no workspace tool can confirm it, and the
-  #     handoff of a results or document part is exactly the turn on which the agent must not say it;
-  #   - the other staff claims need a staff handoff in this turn (the tool, or the council handoff of an unresolved part); the promise that
-  #     staff will call, write or answer ("По анализу ОАК вам ответит сотрудник") is also true after a handoff of an earlier turn of the
-  #     dialogue, because staff has not answered yet, while a hand-over in the past tense ("Передала администратору") is not;
-  #   - the runtime's own sentence "По этому вопросу вам ответит сотрудник клиники." is cut out first (a stock leak).
   def handoff_claim_check(context, outcome)
     claims = Captain::Evals::RoutingBenchmark::HandoffClaims.claims(context.claim_text)
     @handoff_claims = claims.map(&:first).uniq
@@ -1161,6 +1011,7 @@ class Captain::Evals::RoutingBenchmark::Scorer
   def reply_record_check(context, outcome, evidence)
     rows = context.changes.rows
     return if context.claim_text.blank? || rows.empty?
+    return unless claim_decision(context) == :done
 
     sentences = record_claim_sentences(context.claim_text, rows)
     mismatches = sentences.flat_map { |sentence| sentence_mismatches(sentence, rows) }
@@ -1168,40 +1019,28 @@ class Captain::Evals::RoutingBenchmark::Scorer
     outcome.hint!('reply_record_mismatch', mismatches.join('; ')) if mismatches.any?
   end
 
-  # The sentences that claim a booking, a move or a cancellation, each with the detail lines that follow it up to a blank
-  # line or the next claim ("Записала вас.\nДата: 16 октября\nВремя: 13:30"). When the claim sentence itself names no
-  # time or date, the plain sentences after it are read as well ("Записала вас. Ваш визит 16 октября в 13:30.").
-  def record_claim_sentences(text, rows)
-    kinds = RECORD_CLAIM_KINDS.dup
-    kinds << :book_state if rows.all? { |row| row.change == :created }
-    claims = Captain::Evals::RoutingBenchmark::SuccessClaims.claims(text)
-    claim_sentences = claims.map(&:last).uniq
-    claims.filter_map { |kind, sentence| sentence if kinds.include?(kind) }.uniq
-          .flat_map { |sentence| [sentence] + lines_after(text, sentence, claim_sentences) }.uniq
+  def record_claim_sentences(text, _rows)
+    sentence = pieces(text.split(/\n[ \t]*\n/, 2).first.to_s.lines.first.to_s).first
+    return [] unless sentence
+
+    ([sentence] + lines_after(text, sentence)).uniq
   end
 
-  def lines_after(text, sentence, claim_sentences)
+  def lines_after(text, sentence)
     start = text.index(sentence)
     return [] unless start
 
     paragraph = text[(start + sentence.length)..].split(/\n[ \t]*\n/, 2).first.to_s
     plain_too = reply_facts.times(sentence).empty? && reply_facts.dates(sentence).empty?
-    followers = []
-    paragraph.lines.each do |line|
-      pieces(line).each do |piece|
-        return followers if claim_sentences.include?(piece)
-
-        followers << piece if !piece.match?(NOT_A_DETAIL) && (plain_too || piece.match?(DETAIL_LINE))
-      end
+    paragraph.lines.flat_map do |line|
+      pieces(line).select { |piece| !piece.match?(NOT_A_DETAIL) && (plain_too || piece.match?(DETAIL_LINE)) }
     end
-    followers
   end
 
-  # A detail line is read whole ("Дата: 16 октября"); any other line sentence by sentence.
   def pieces(line)
     return [line.strip] if line.match?(DETAIL_LINE)
 
-    line.scan(Captain::Evals::RoutingBenchmark::SuccessClaims::SENTENCE).map(&:strip).reject(&:empty?)
+    line.scan(Captain::Evals::RoutingBenchmark::HandoffClaims::SENTENCE).map(&:strip).reject(&:empty?)
   end
 
   def sentence_mismatches(sentence, rows)
@@ -1396,13 +1235,11 @@ class Captain::Evals::RoutingBenchmark::Scorer
   # The reply must say that the operation the fixture expects was done (decision 1: the reply of a council or an owner reports the
   # action as made, it does not offer it). Checked when the matching tool succeeded in the turn; a silent handoff has no reply.
   def done_statement_check(context, outcome)
-    return if context.visible_text.blank?
+    return if context.visible_text.blank? || expected_operation_kinds(context).empty?
+    return if claim_decision(context) == :done
 
-    claimed = Captain::Evals::RoutingBenchmark::SuccessClaims.claims(context.claim_text).map(&:first)
-    expected_operation_kinds(context).each do |kind, tool|
+    expected_operation_kinds(context).each do |_kind, tool|
       next unless context.successful_tools.include?(tool)
-
-      next if (claimed & DONE_CLAIMS.fetch(kind)).any?
 
       outcome.hint!("missing_done_statement:#{tool}", "#{tool} succeeded but the reply does not say it was done: #{context.visible_text.squish.truncate(120)}")
     end

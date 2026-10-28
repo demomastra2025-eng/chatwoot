@@ -3,7 +3,7 @@
 # Finds claims in a customer-facing reply that the request was handed over to a person ("передала администратору",
 # "маманға жолдадым", "с вами свяжутся", "ваш вопрос передан, ожидайте ответа"). Such a claim is true only when the
 # conversation really was handed to staff: the handoff tool ran, or the council reply is followed by the response
-# builder's handoff for an unresolved part. It reads sentences the same way as SuccessClaims, so questions, offers,
+# builder's handoff for an unresolved part. Its own sentence parser leaves questions, offers,
 # infinitives, futures ("передам"), negations and hypotheticals are not claims.
 #
 #   - handoff_staff:     the sentence names staff (администратор, сотрудник, менеджер, оператор, руководство, бухгалтер,
@@ -26,7 +26,64 @@
 # the patient to a doctor and is no claim either: a doctor counts as the addressee only for a verb of passing a message on.
 #
 # Only the benchmark scorer uses this detector, after the reply is written. The runtime never reads it.
-class Captain::Evals::RoutingBenchmark::HandoffClaims < Captain::Evals::RoutingBenchmark::SuccessClaims
+class Captain::Evals::RoutingBenchmark::HandoffClaims
+  def self.words(*stems) = /(?<!\p{L})(?:#{stems.join('|')})(?!\p{L})/i
+
+  SENTENCE = /(?:[^.!?…\n]|(?<=\d)\.(?=\d))+[.!?…]*/
+  QUESTION = /\?[^\p{L}\p{N}]*\z/
+  CLAUSE_BREAK = /[,;—–()]|(?<!\d):|:(?!\d)|\s-\s|(?<!\p{L})(?:но|а|однако|зато)(?!\p{L})/i
+  NEGATION = words('не', 'ни', 'нет')
+  IRREALIS = words('чтобы', 'если')
+  FUTURE = words('буд(?:у|ешь|ет|ем|ете|ут)')
+  HYPOTHETICAL = /\A\s*(?:бы|(?:(?:ещё|еще|пока|уже)\s+)?(?:не|нет))(?!\p{L})/i
+  INDIRECT_QUESTION = /\A\s*(?:ли|(?:\p{L}+\s+)?или\s+нет|ба|бе|па|пе|ма|ме)(?!\p{L})/i
+
+  def self.claims(text) = new(text).claims
+  def self.kinds(text) = new(text).kinds
+
+  def initialize(text)
+    @text = text.to_s
+  end
+
+  def claims
+    @text.scan(SENTENCE).map(&:strip).reject(&:empty?).flat_map do |sentence|
+      sentence_kinds(sentence).map { |kind| [kind, sentence] }
+    end
+  end
+
+  def kinds
+    claims.map(&:first).uniq
+  end
+
+  def patterns = self.class::PATTERNS
+
+  def matches(sentence, pattern)
+    found = []
+    position = 0
+    while (match = pattern.match(sentence, position))
+      found << match
+      position = match.end(0)
+    end
+    found
+  end
+
+  def claim?(sentence, pattern, kind)
+    matches(sentence, pattern).any? { |match| genuine?(sentence, match, kind) }
+  end
+
+  def genuine?(sentence, match, _kind)
+    before = clause(sentence[0...match.begin(0)], :last)
+    after = clause(sentence[match.end(0)..], :first)
+    return false if before.match?(IRREALIS) || before.split.last(4).join(' ').match?(NEGATION)
+    return false if before.split.last(3).any? { |word| word.match?(FUTURE) }
+
+    !after.match?(HYPOTHETICAL) && !after.match?(INDIRECT_QUESTION)
+  end
+
+  def clause(text, edge)
+    parts = text.to_s.split(CLAUSE_BREAK, -1)
+    (edge == :last ? parts.last : parts.first).to_s
+  end
   PATTERNS = {
     handoff: words(
       'передал(?:а|и)?', 'передан(?:а|о|ы)?', 'передаю', 'направил(?:а|и)?', 'направлен(?:а|о|ы)?', 'направляю',

@@ -3,6 +3,16 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
+  let(:account) { create(:account) }
+  let(:assistant) { create(:captain_assistant, account: account, name: 'Регистратор') }
+  let(:contact) { create(:contact, account: account, name: 'Гульнар Тлеуова') }
+  let(:conversation) { create(:conversation, account: account, contact: contact) }
+  let(:scorer) { described_class.new(account: account, conversation: conversation) }
+  let(:event_class) { Struct.new(:event_name, :tool_name, :payload) }
+  let(:no_operations) { described_class::OPERATION_MODELS.keys.index_with { {} } }
+
+  before { allow(Captain::ReplySuggestion::DraftClaims).to receive(:completed_now?).and_return(false) }
+
   it 'reports a rejected plan as a warning rather than a forbidden tool' do
     result = score('Уточните, пожалуйста.',
                    events: [tool_event('plan_request', success: false)], expect: { must_not_call: ['plan_request'] })
@@ -11,13 +21,6 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
     expect(result[:reasons]).not_to include('forbidden_tool:plan_request')
   end
 
-  let(:account) { create(:account) }
-  let(:assistant) { create(:captain_assistant, account: account, name: 'Регистратор') }
-  let(:contact) { create(:contact, account: account, name: 'Гульнар Тлеуова') }
-  let(:conversation) { create(:conversation, account: account, contact: contact) }
-  let(:scorer) { described_class.new(account: account, conversation: conversation) }
-  let(:event_class) { Struct.new(:event_name, :tool_name, :payload) }
-  let(:no_operations) { described_class::OPERATION_MODELS.keys.index_with { {} } }
 
   def turn_for(customer: 'Здравствуйте', council: false, expect: {})
     { 'customer' => customer, 'expect' => { 'agent' => 'Регистратор', 'council' => council }.merge(expect.stringify_keys) }
@@ -129,6 +132,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
     end
 
     it 'never fails a turn for a reply that only a text detector dislikes' do
+      allow(Captain::ReplySuggestion::DraftClaims).to receive(:completed_now?).and_return(true)
       result = score('Готово, записала вас. Ваш booking принят, запись #4821.')
 
       expect(result).to include(status: 'pass', reasons: [], failures: [])
@@ -136,287 +140,25 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
     end
   end
 
-  describe 'false_success_claim' do
-    it 'flags a past-tense claim without a matching successful operation, in Russian and Kazakh' do
-      ['Готово, записала вас.', 'Вы записаны на среду.', 'Сізді жазып қойдым.', 'Сіз жазылдыңыз.'].each do |text|
-        result = score(text, scorer: described_class.new(account: account, conversation: conversation))
+  describe 'decision based false_success_claim' do
+    it 'uses the shared completion question for a reply without a successful mutation' do
+      expect(Captain::ReplySuggestion::DraftClaims).to receive(:completed_now?)
+        .with(draft: 'Synthetic completed reply', account: account).and_return(true)
 
-        expect(result[:hard_zero]['false_success_claim']).to eq(1), text
-        expect(hint_ids(result)).to include('false_success_claim')
-      end
+      result = score('Synthetic completed reply')
+
+      expect(result[:hard_zero]['false_success_claim']).to eq(1)
+      expect(result[:evidence]).to include(claimed_operations: [:done], unsupported_claims: [:done])
     end
 
-    it 'ignores offers, questions, futures and negations' do
-      ['Могу перенести запись?', 'Давайте перенесём на пятницу.', 'Запишу вас после подтверждения.', 'Я не записала вас.',
-       'Запись не перенесена.', 'Сізді жазайын ба?', 'Сізді жаза аламын.', 'Уточню, записаны ли вы сегодня на 8:30.'].each do |text|
-        result = score(text, scorer: described_class.new(account: account, conversation: conversation))
-
-        expect(result[:hard_zero]['false_success_claim']).to eq(0), text
-      end
+    it 'does not flag a reply that the decision says has no completed action' do
+      expect(score('Synthetic offer')[:hard_zero]['false_success_claim']).to eq(0)
     end
 
-    it 'accepts a claim backed by a successful matching operation in the turn' do
-      booked = score('Готово, записала вас.', events: [tool_event('create_appointment')])
-      moved = score('Я перенесла вашу запись.', events: [tool_event('update_appointment')],
-                                                 scorer: described_class.new(account: account, conversation: conversation))
-      cancelled = score('Запись отменена.', events: [tool_event('cancel_appointment')],
-                                            scorer: described_class.new(account: account, conversation: conversation))
+    it 'does not ask the decision chain when a mutating tool succeeded' do
+      expect(Captain::ReplySuggestion::DraftClaims).not_to receive(:completed_now?)
 
-      expect([booked, moved, cancelled].map { |result| result[:hard_zero]['false_success_claim'] }).to eq([0, 0, 0])
-    end
-
-    it 'does not accept a claim of another kind or a failed call' do
-      moved_by_booking = score('Я перенесла вашу запись.', events: [tool_event('create_appointment')])
-      failed = score('Готово, записала вас.', events: [tool_event('create_appointment', success: false)],
-                                              scorer: described_class.new(account: account, conversation: conversation))
-
-      expect(moved_by_booking[:hard_zero]['false_success_claim']).to eq(1)
-      expect(failed[:hard_zero]['false_success_claim']).to eq(1)
-    end
-
-    it 'accepts a state claim that follows a successful lookup of the appointment' do
-      result = score('Вы записаны к терапевту на среду.', events: [tool_event('list_my_appointments')])
-
-      expect(result[:hard_zero]['false_success_claim']).to eq(0)
-    end
-
-    it 'accepts a follow-up that restates an operation confirmed in an earlier turn of the dialogue' do
-      score('Записала вас на среду.', events: [tool_event('create_appointment')])
-      follow_up = score('Вы записаны на среду в 10:00. Жду вас!')
-      other_kind = score('Я перенесла вашу запись.')
-
-      expect(follow_up[:hard_zero]['false_success_claim']).to eq(0)
-      expect(other_kind[:hard_zero]['false_success_claim']).to eq(1)
-    end
-
-    it 'does not excuse a claim when the same turn retried the operation and failed' do
-      score('Записала вас на среду.', events: [tool_event('create_appointment')])
-      retried = score('Записала вас на четверг.', events: [tool_event('create_appointment', success: false)])
-
-      expect(retried[:hard_zero]['false_success_claim']).to eq(1)
-    end
-
-    it 'does not count a claim in a different dialogue' do
-      score('Записала вас на среду.', events: [tool_event('create_appointment')])
-      other = score('Вы записаны на среду.', scorer: described_class.new(account: account, conversation: conversation))
-
-      expect(other[:hard_zero]['false_success_claim']).to eq(1)
-    end
-
-    it 'lists the claims in the evidence' do
-      result = score('Запись перенесена, и я записала вас.')
-
-      expect(result[:evidence]).to include(claimed_operations: contain_exactly(:book, :reschedule_state),
-                                           unsupported_claims: contain_exactly(:book, :reschedule_state))
-    end
-
-    it 'accepts a state claim about an appointment the caller already has, without a lookup in the turn' do
-      create(:scheduling_appointment, account: account, contact: contact, client_name: contact.name)
-
-      result = score('Вы записаны к терапевту на среду.', before: snapshot)
-
-      expect(result[:hard_zero]['false_success_claim']).to eq(0)
-    end
-
-    it 'accepts an action claim when the turn wrote the row, whatever request carried the tool event' do
-      before = snapshot
-      create(:scheduling_appointment, account: account, contact: contact, client_name: contact.name)
-
-      result = score('Записала вас на 10:00.', before: before)
-
-      expect(result[:hard_zero]['false_success_claim']).to eq(0)
-    end
-
-    it 'is a critical failure' do
-      result = score('Готово, записала вас.')
-
-      expect(hint_severity(result, 'false_success_claim')).to eq('critical')
-    end
-  end
-
-  describe 'false_success_claim against the rows of the dialogue' do
-    let(:doctor_a) { create(:scheduling_resource, account: account, name: 'Терапевт Абдрахманова Сауле') }
-    let(:doctor_b) { create(:scheduling_resource, account: account, name: 'Кардиолог Омаров Тимур') }
-    let(:directory) { Captain::Evals::RoutingBenchmark::Directory.new(resources: { 'a' => doctor_a, 'b' => doctor_b }, contacts: { 'caller' => contact }) }
-    let(:scorer) { described_class.new(account: account, conversation: conversation, directory: directory) }
-    let(:noon) { Time.iso8601('2026-10-15T12:00:00+05:00') }
-
-    def fresh_scorer = described_class.new(account: account, conversation: conversation, directory: directory)
-
-    def appointment_at(starts_at, resource: doctor_a, **attributes)
-      create(:scheduling_appointment, account: account, resource: resource, contact: contact, client_name: contact.name,
-                                      starts_at: starts_at, ends_at: starts_at + 30.minutes, **attributes)
-    end
-
-    # Turn 1 of a dialogue: the agent really books Абдрахманова on 15 October at 12:00, as the fixture expects.
-    def first_booking
-      before = snapshot
-      appointment_at(noon)
-      booking = { 'model' => 'appointment', 'kind' => 'create', 'params' => { 'status' => 'scheduled', 'starts_at' => noon.iso8601 } }
-      score('Записала вас к терапевту Абдрахмановой 15 октября в 12:00.', before: before, events: [tool_event('create_appointment')],
-                                                                      expect: { must_call: ['create_appointment'], operations: [booking] })
-    end
-
-    describe 'a claim in a later turn' do
-      it 'is not supported by the booking of an earlier turn when it reports another booking: no tool ran, no row was written' do
-        expect(hint_ids(first_booking)).to be_empty
-
-        second = score('Записала вас ещё и на УЗИ 16 октября в 15:00.', before: snapshot, customer: 'и на узи запишите на 16-е в 15:00')
-
-        expect(second[:hard_zero]['false_success_claim']).to eq(1)
-        expect(hint_severity(second, 'false_success_claim')).to eq('critical')
-        expect(second[:hints].first[:detail]).to include('the rows written earlier do not agree', 'time 15:00', 'date 16.10')
-      end
-
-      it 'is supported when it only restates the booking of the earlier turn, with its time, date and doctor' do
-        first_booking
-
-        again = score('Напоминаю: вы записаны к терапевту Абдрахмановой 15 октября в 12:00.', before: snapshot)
-        action = score('Я записала вас на 12:00, ждём вас.', before: snapshot)
-
-        expect(hint_ids(again)).to be_empty
-        expect(action[:hard_zero]['false_success_claim']).to eq(0)
-      end
-
-      it 'is refused when the restatement names another time, another date or another doctor' do
-        first_booking
-
-        wrong_time = score('Вы записаны к терапевту Абдрахмановой 15 октября в 16:00.', before: snapshot)
-        wrong_doctor = score('Вы записаны к кардиологу Омарову 15 октября в 12:00.', before: snapshot)
-        wrong_date = score('Я записала вас на 17 октября.', before: snapshot)
-
-        expect([wrong_time, wrong_doctor, wrong_date].map { |result| result[:hard_zero]['false_success_claim'] }).to eq([1, 1, 1])
-      end
-
-      it 'is refused when the fixture of the turn expects a new booking, however well the earlier one fits the sentence' do
-        first_booking
-        operation = { 'model' => 'appointment', 'kind' => 'create', 'resource' => 'b', 'starts_at' => '2026-10-16T09:00:00+05:00' }
-
-        result = score('Вы записаны к терапевту Абдрахмановой 15 октября в 12:00.', before: snapshot, expect: { operations: [operation] })
-
-        expect(result[:hard_zero]['false_success_claim']).to eq(1)
-        expect(failure_ids(result)).to include('missing_operation:appointment')
-      end
-
-      it 'is refused when the same turn tried the operation and failed' do
-        first_booking
-
-        result = score('Записала вас на 12:00.', before: snapshot, events: [tool_event('create_appointment', success: false)])
-
-        expect(result[:hard_zero]['false_success_claim']).to eq(1)
-      end
-
-      describe 'when an earlier turn already made the move that the fixture expects in this turn' do
-        let(:old_start) { Time.iso8601('2026-10-14T10:00:00+05:00') }
-        let(:new_start) { Time.iso8601('2026-10-15T10:00:00+05:00') }
-        let(:move) do
-          { 'model' => 'appointment', 'kind' => 'update', 'previous_starts_at' => old_start.iso8601,
-            'params' => { 'status' => 'scheduled', 'starts_at' => new_start.iso8601 } }
-        end
-
-        # Turn 1: the customer named no time, the agent moved the appointment at once (the move the fixture expects of turn 2).
-        def move_too_early
-          appointment = appointment_at(old_start)
-          before = snapshot
-          before_state = state
-          appointment.update!(starts_at: new_start, ends_at: new_start + 30.minutes)
-          score('Перенесла вашу запись на 15 октября в 10:00.', before: before, events: [tool_event('update_appointment')],
-                                                              call: { before_state: before_state })
-        end
-
-        it 'counts the wrong move once: the true restatement of it in turn 2 is no false claim' do
-          move_too_early
-
-          result = score('Да, запись уже перенесена на 15 октября в 10:00.', before: snapshot, expect: { operations: [move] },
-                                                                           call: { before_state: state })
-
-          expect(result[:hard_zero]['false_success_claim']).to eq(0)
-          expect(hint_ids(result)).not_to include('false_success_claim')
-        end
-
-        it 'still refuses a restatement that names another time than the move that exists' do
-          move_too_early
-
-          result = score('Да, запись уже перенесена на 15 октября в 16:00.', before: snapshot, expect: { operations: [move] },
-                                                                           call: { before_state: state })
-
-          expect(result[:hard_zero]['false_success_claim']).to eq(1)
-        end
-
-        it 'still refuses the restatement when the fixture expects another start than the move that exists' do
-          move_too_early
-          other = move.merge('params' => { 'status' => 'scheduled', 'starts_at' => '2026-10-16T09:00:00+05:00' })
-
-          result = score('Да, запись уже перенесена на 15 октября в 10:00.', before: snapshot, expect: { operations: [other] },
-                                                                           call: { before_state: state })
-
-          expect(result[:hard_zero]['false_success_claim']).to eq(1)
-        end
-      end
-    end
-
-    describe 'a state claim about an appointment the caller already has' do
-      it 'is supported only when the sentence agrees with an active appointment: the time and the date, the doctor' do
-        appointment_at(Time.iso8601('2026-10-20T12:00:00+05:00'))
-        before = snapshot
-
-        wrong_time = score('Вы записаны к терапевту на 15 октября в 16:00.', before: before)
-        wrong_doctor = score('Вы записаны к кардиологу Омарову на 20 октября в 12:00.', before: before, scorer: fresh_scorer)
-        right = score('Вы записаны к терапевту Абдрахмановой на 20 октября в 12:00.', before: before, scorer: fresh_scorer)
-        unspecific = score('Вы записаны к терапевту.', before: before, scorer: fresh_scorer)
-
-        expect([wrong_time, wrong_doctor, right, unspecific].map { |result| result[:hard_zero]['false_success_claim'] }).to eq([1, 1, 0, 0])
-        expect(wrong_time[:hints].first[:detail]).to include('the appointments of the caller do not agree', 'time 16:00', 'date 15.10')
-      end
-
-      it 'is supported by a cancelled appointment only when the sentence agrees with it' do
-        appointment_at(Time.iso8601('2026-10-20T12:00:00+05:00'), status: 'cancelled')
-        before = snapshot
-
-        wrong = score('Запись на 15 октября в 16:00 отменена.', before: before)
-        right = score('Запись на 20 октября в 12:00 отменена.', before: before, scorer: fresh_scorer)
-
-        expect([wrong, right].map { |result| result[:hard_zero]['false_success_claim'] }).to eq([1, 0])
-      end
-
-      it 'is checked against the appointments of the caller even after a successful lookup in the turn' do
-        appointment_at(Time.iso8601('2026-10-20T12:00:00+05:00'))
-        before = snapshot
-
-        lied = score('Вы записаны к терапевту на 15 октября в 16:00.', before: before, events: [tool_event('list_my_appointments')])
-        told = score('Вы записаны на 20 октября в 12:00.', before: before, events: [tool_event('list_my_appointments')], scorer: fresh_scorer)
-
-        expect([lied, told].map { |result| result[:hard_zero]['false_success_claim'] }).to eq([1, 0])
-      end
-
-      it 'has no appointment of the caller to agree with when the caller has none, and a lookup then supports it as before' do
-        result = score('Вы записаны к терапевту на среду.', events: [tool_event('list_my_appointments')])
-
-        expect(result[:hard_zero]['false_success_claim']).to eq(0)
-      end
-    end
-
-    describe 'wordings that the detector used to miss' do
-      it 'flags a booking claim that ends in a question to the patient' do
-        result = score('Записала вас к терапевту на 15 октября в 12:00, удобно?')
-
-        expect(result[:hard_zero]['false_success_claim']).to eq(1)
-      end
-
-      it 'flags "запись подтверждена" when nothing booked or looked it up' do
-        result = score('Ваша запись подтверждена: 15 октября в 12:00')
-
-        expect(result[:hard_zero]['false_success_claim']).to eq(1)
-      end
-
-      it 'flags a hand-over that is promised in the wordings of the agent instructions' do
-        ['Ваш вопрос передан, ожидайте ответа.', 'Администратор перезвонит вам в течение часа.', 'Ожидайте звонка администратора.',
-         'Передала ваш вопрос врачу.'].each do |text|
-          result = score(text, scorer: fresh_scorer)
-
-          expect(result[:hints]).to include(a_hash_including(id: 'false_handoff_claim', severity: 'critical')), text
-        end
-      end
+      expect(score('Synthetic completed reply', events: [tool_event('create_appointment')])[:hard_zero]['false_success_claim']).to eq(0)
     end
   end
 
@@ -1160,6 +902,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
     end
 
     it 'does not back the claim that the appointment was moved' do
+      allow(Captain::ReplySuggestion::DraftClaims).to receive(:completed_now?).and_return(true)
       unchanged = score('Ваша запись перенесена на 15 октября.', events: [tool_event('update_appointment', no_change: true)])
       moved = score('Ваша запись перенесена на 15 октября.', events: [tool_event('update_appointment')])
 
@@ -1518,6 +1261,8 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
   end
 
   describe 'reply_record_mismatch' do
+    before { allow(Captain::ReplySuggestion::DraftClaims).to receive(:completed_now?).and_return(true) }
+
     let(:doctor_a) { create(:scheduling_resource, account: account, name: 'Терапевт Абдрахманова Сауле') }
     let(:doctor_b) { create(:scheduling_resource, account: account, name: 'Кардиолог Омаров Тимур') }
     let(:directory) { Captain::Evals::RoutingBenchmark::Directory.new(resources: { 'a' => doctor_a, 'b' => doctor_b }, contacts: { 'caller' => contact }) }
@@ -1661,6 +1406,7 @@ RSpec.describe Captain::Evals::RoutingBenchmark::Scorer do
 
   describe 'the scored turn' do
     it 'carries the patient text, the handoff state and the failures with their severities' do
+      allow(Captain::ReplySuggestion::DraftClaims).to receive(:completed_now?).and_return(true)
       result = score('Готово, записала вас.', handoff_tool_called: true)
 
       expect(result).to include(patient_text: 'Готово, записала вас.', handoff: include(flag: true, truth: true))

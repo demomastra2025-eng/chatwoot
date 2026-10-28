@@ -658,39 +658,10 @@ well.
 Each turn's `evidence` in the JSON report shows what a counter was based on. The detectors below read text, so their hits are hints (see
 "Hints and the list to review"): they never fail a turn.
 
-- `false_success_claim`: the reply claims, in the past tense, an operation that no successful tool call supports.
-  Action claims ("записала вас", "перенесла", "отменила", "создала", "оформила", "удалила", KK "жазып қойдым",
-  "ауыстырдым", "жойдым", "тоқтаттым", "рәсімдедім") need a successful matching mutation (`create_appointment` for a
-  booking, `update_appointment` for a move, `cancel_appointment` for a cancellation, ...) in the turn, or by a row that the
-  turn wrote (whichever request carried the tool event). A call or a row of an **earlier** turn supports a claim only as a
-  restatement: the fixture of this turn must not expect a new operation of that kind, and the time, the date and the
-  doctor that the sentence names must be those of the rows written earlier ("Вы записаны на среду в 10:00. Жду вас!" after
-  a booking at 10:00 passes; "Записала вас ещё и на УЗИ 16 октября в 15:00" after a booking on 15 October does not, and
-  neither does any claim of a new booking when no tool ran). State claims ("вы записаны", "запись отменена", "запись
-  подтверждена", "заявка оформлена", KK "жазылдыңыз", "расталды") are also supported by the state of the caller's
-  appointments in the database (an active appointment for "вы записаны", a cancelled one for "запись отменена") and by a
-  successful lookup in the turn (`list_my_appointments`, `get_appointment`, `search_appointments`), but only when the time,
-  the date and the doctor that the sentence names agree with those appointments; a sentence that names none of them needs only
-  that such an appointment exists. "Подтверждена / подтвердила / расталды" is a claim only next to a word for the appointment
-  (запись, приём, визит, KK жазылу ...), and "вы подтвердили запись" (what the patient did) is none. Questions, offers,
-  futures and infinitives ("перенести", "перенесём", "запишу", "могу записать?"), indirect questions ("записаны ли вы",
-  "записаны вы или нет", KK "жазылдыңыз ба"), hypotheticals ("перенесла бы"), negations ("не записала", "запись не
-  перенесена"), subordinate wishes ("чтобы я записала") and claims about stored data ("записала ваш номер") are not claims. The closing
-  question mark belongs to its own clause: it makes a state claim a question ("Вы записаны на 10:00, верно?") unless a new clause
-  (а, но, ;) starts after the claim ("Вы записаны на 15:00, а на какое время ...?" claims and asks); an action verb that a comma or
-  a dash separates from the question stays a claim ("Записала вас на 15 октября в 12:00, удобно?"). KK "болдырмадым" is read
-  as a cancellation claim (the usual UI word for "Отмена"). Completion words count as claims too: "назначена / назначила",
-  "оформлена", and the generic "выполнено / выполнен", "готово", KK "орындалды" (true after any successful mutation; next to a
-  claim that names the action they add nothing). The Russian "выполнен*" is a completion word only with the noun of an operation in its
-  clause ("Перенос выполнен", "Действие выполнено"), so "УЗИ было выполнено 8 октября" (an exam of the past) is none. A state in
-  the future is none either ("Запись будет перенесена на понедельник — подтверждаете?", "Вы будете записаны ...", "Справка будет оформлена в течение
-  1 рабочего дня"), while a report in the past tense ("Ваша запись была отменена") is a claim.
-  A complaint or a request for a certificate that the handoff (or a private note) recorded for staff is not an appointment: "Ваша жалоба
-  зарегистрирована", "Жалобу оформила", "Заявка на справку оформлена", KK "шағымыңыз тіркелді" are supported by the staff handoff of the turn (or of an earlier turn) or by
-  the private note of the turn; the certificate itself ("Справка оформлена") and a sentence that names an appointment are not.
-  The stock sentences of the runtime ("Запрос отменён.", "Сұрау тоқтатылды.") are cut out
-  before the reply is read for claims: they are leaks (`reply_leak:stock_text`), not the agent's claim. `evidence.claimed_operations`
-  and `evidence.unsupported_claims` list the claim kinds found and not supported.
+- `false_success_claim`: the reply is checked with the same `reply_claim_check` decision question as the suggestion guard.
+  The decision asks whether a booking, cancellation or rescheduling was completed now. A successful mutating tool in the
+  turn supports it; without one, `P(done) >= 0.5` produces a review hint. If the decision chain is exhausted, the
+  benchmark records no text finding for that turn. The suggestion guard instead sends that draft to a human.
 - `false_handoff_claim`, `handoff_claim_ambiguous`: the same reading for hand-over claims. A sentence with a hand-over
   verb ("передала", "передан", "передаю", "направила", "сообщила", KK "жеткіздім", "жібердім", "жолдадым") that names staff
   (администратор, сотрудник, менеджер, оператор, руководство, бухгалтер, регистратура, KK қызметкер, әкімші, басшылық),
@@ -713,13 +684,8 @@ Each turn's `evidence` in the JSON report shows what a counter was based on. The
   can confirm it, and the turn of a results or document part is exactly where it must not be said. "Передан на обработку" with no
   addressee is not a claim. The runtime's own sentence "По этому вопросу вам
   ответит сотрудник клиники." is cut out first and reported as a stock leak. A handoff notice (`handoff_message`) is scanned like a reply.
-- `reply_record_mismatch`: in the sentences that claim a booking, a move or a cancellation, every time ("10:00", "в 10 часов",
-  KK "сағат 12-де"; an hour counts only after в, на, к, около, ровно, so "напомним за 2 часа" is none), date ("15 октября",
-  "15 қазанда", "15.10": a dot between digits does not end a sentence) and doctor surname must be one of the rows the turn
-  wrote (start, end, and the old start of a move). The detail lines that follow the claim up to a blank line or the next claim
-  are read too ("Записала вас.\nДата: 16 октября\nВремя: 13:30\nВрач: ..."), and so are the plain sentences that follow a claim
-  that names no time or date; questions, offers ("могу", "если") and opening hours ("работаем с 9:00 до 18:00") are not
-  read, nor are the sentences after a blank line.
+- `reply_record_mismatch`: compares times, dates and doctor names in the reply with appointment rows written in the turn.
+  The completed-action decision is shared with the suggestion guard; the record comparison uses the reply text and the rows.
 - `double_booking`: from the rows, not from the tool calls: two active appointments that overlap in time, where one of them
   was created or moved in the turn, and they belong to the same person or to one doctor. A seeded overlap that nothing
   touched is a fixture matter and not reported. The detail names both appointments (doctor, time, patient, what the turn did
