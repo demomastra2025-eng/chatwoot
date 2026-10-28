@@ -181,12 +181,14 @@ describe('ContactInfo', () => {
     openSpy.mockRestore();
   });
 
-  it('renders monochrome social profile chips with @handle text and without double @', () => {
+  it('renders monochrome social profile chips with @handle text, without double @, and ignores whitespace/@-only values', () => {
     const wrapper = shallowMount(SocialIcons, {
       props: {
         socialProfiles: {
           telegram: 'asselya_k',
           instagram: '@clinic_kz',
+          twitter: '   ',
+          tiktok: '@@@',
         },
       },
       global: {
@@ -206,6 +208,27 @@ describe('ContactInfo', () => {
     expect(ig.get('a').attributes('href')).toBe(
       'https://instagram.com/clinic_kz'
     );
+    expect(wrapper.find('[data-test="social-profile-twitter"]').exists()).toBe(
+      false
+    );
+    expect(wrapper.find('[data-test="social-profile-tiktok"]').exists()).toBe(
+      false
+    );
+
+    const contactWrapper = buildWrapper({
+      contact: {
+        additional_attributes: {
+          social_instagram_user_name: 'dent_almaty',
+        },
+        channel_profiles: [
+          { provider: 'telegram_personal', username: 'onelink_manager' },
+        ],
+      },
+    });
+    expect(contactWrapper.vm.socialProfiles).toMatchObject({
+      telegram: 'onelink_manager',
+      instagram: 'dent_almaty',
+    });
   });
 
   it('has no button that opens a message to the person whose dialog is already open', () => {

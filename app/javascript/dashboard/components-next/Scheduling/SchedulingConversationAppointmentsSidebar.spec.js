@@ -3833,4 +3833,87 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     ).toBe(true);
     wrapper.unmount();
   });
+
+  it('keeps New Appointment open when switching family patient chips and restores the current patient after + Another', async () => {
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
+    const props = patientContextProps(84);
+    const wrapper = mountComponent(defaultCurrentChat(), props);
+    const store = wrapper.vm.patientContextStore;
+    const key = props.patientContextKey;
+    store.contexts[key] = {
+      contactId: 42,
+      loaded: true,
+      loading: false,
+      saving: false,
+      error: null,
+      selectedId: 84,
+      patients: [
+        {
+          id: 84,
+          account_id: 1,
+          communication_contact_id: 42,
+          patient_contact_id: 84,
+          selectable_patient: true,
+          first_name: 'Жандаулет',
+          last_name: 'Гусман',
+          full_name: 'Гусман Жандаулет',
+          phone: '+77001234567',
+          birth_date: '1995-01-01',
+          gender: 'male',
+        },
+        {
+          id: 85,
+          account_id: 1,
+          communication_contact_id: 42,
+          patient_contact_id: 85,
+          selectable_patient: true,
+          first_name: 'Алия',
+          last_name: 'Гусман',
+          full_name: 'Гусман Алия',
+          phone: '+77001234567',
+          birth_date: '2020-05-10',
+          gender: 'female',
+        },
+      ],
+    };
+    await flushPromises();
+    await wrapper.vm.startCreateAppointment({ scroll: false });
+    expect(wrapper.vm.isCreating).toBe(true);
+
+    const chips = wrapper
+      .get('[data-testid="appointment-patient-chips"]')
+      .findAll('button');
+    expect(chips).toHaveLength(2);
+    expect(chips[0].attributes('aria-pressed')).toBe('true');
+    expect(chips[1].attributes('aria-pressed')).toBe('false');
+
+    // Click second family patient chip: New Appointment stays open and switches to patient 85
+    await chips[1].trigger('click');
+    await flushPromises();
+    expect(wrapper.vm.isCreating).toBe(true);
+    expect(wrapper.vm.createForm.clientFirstName).toBe('Алия');
+    expect(wrapper.vm.createForm.patientContactId).toBe(85);
+
+    // Click + Another: clears form and unselects family chips
+    await wrapper
+      .get('[data-testid="create-another-patient-button"]')
+      .trigger('click');
+    expect(wrapper.vm.createForm.clientFirstName).toBe('');
+    expect(wrapper.vm.createForm.patientContactId).toBe(null);
+    const updatedChips = wrapper
+      .get('[data-testid="appointment-patient-chips"]')
+      .findAll('button');
+    expect(updatedChips[0].attributes('aria-pressed')).toBe('false');
+    expect(updatedChips[1].attributes('aria-pressed')).toBe('false');
+
+    // Click the already-selected family chip (85): restores Алия into createForm and collapses fields
+    await updatedChips[1].trigger('click');
+    await flushPromises();
+    expect(wrapper.vm.createForm.clientFirstName).toBe('Алия');
+    expect(wrapper.vm.createForm.patientContactId).toBe(85);
+    expect(
+      wrapper.vm.isClientFieldsOpen(wrapper.vm.createForm, 'new-appointment')
+    ).toBe(false);
+    wrapper.unmount();
+  });
 });

@@ -125,15 +125,51 @@ export default {
         social_profiles: socialProfiles,
         screen_name: twitterScreenName,
         social_telegram_user_name: telegramUsername,
+        social_instagram_user_name: instagramUsername,
+        social_tiktok_user_name: tiktokUsername,
       } = this.additionalAttributes;
 
-      const telegram = socialProfiles?.telegram || telegramUsername || '';
-      const twitter = socialProfiles?.twitter || twitterScreenName || '';
+      const rawChannelProfiles =
+        this.contact.channel_profiles || this.contact.channelProfiles;
+      const channelProfiles = Array.isArray(rawChannelProfiles)
+        ? rawChannelProfiles
+        : [];
+      const fromChannelProfile = providers => {
+        const match = channelProfiles.find(
+          item =>
+            providers.includes(item?.provider) &&
+            String(item?.username || '').trim()
+        );
+        return match ? String(match.username).trim() : '';
+      };
+
+      const telegram =
+        socialProfiles?.telegram ||
+        telegramUsername ||
+        fromChannelProfile(['telegram', 'telegram_personal']) ||
+        '';
+      const twitter =
+        socialProfiles?.twitter ||
+        twitterScreenName ||
+        fromChannelProfile(['twitter', 'twitter_profile']) ||
+        '';
+      const instagram =
+        socialProfiles?.instagram ||
+        instagramUsername ||
+        fromChannelProfile(['instagram']) ||
+        '';
+      const tiktok =
+        socialProfiles?.tiktok ||
+        tiktokUsername ||
+        fromChannelProfile(['tiktok']) ||
+        '';
 
       return {
         ...(socialProfiles || {}),
         twitter,
         telegram,
+        instagram,
+        tiktok,
       };
     },
     // Delete Modal
@@ -411,7 +447,7 @@ export default {
             >
               <span class="inline-flex items-center gap-1.5">
                 <span class="i-lucide-languages size-3.5 text-n-slate-10" />
-                <span>Язык клиента:</span>
+                <span>{{ 'Язык клиента:' }}</span>
                 <strong
                   class="font-medium text-n-slate-12"
                   data-test="contact-client-language-badge"
@@ -425,7 +461,7 @@ export default {
                 class="rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-xs text-n-slate-12"
                 @change="onClientLanguageChange"
               >
-                <option value="">Авто</option>
+                <option value="">{{ 'Авто' }}</option>
                 <option
                   v-for="lang in supportedClientLanguages"
                   :key="lang.code"

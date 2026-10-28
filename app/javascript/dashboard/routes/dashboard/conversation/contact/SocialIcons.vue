@@ -24,8 +24,8 @@ export default {
   },
   computed: {
     availableProfiles() {
-      return this.socialMediaLinks.filter(
-        mediaLink => !!this.socialProfiles[mediaLink.key]
+      return this.socialMediaLinks.filter(mediaLink =>
+        Boolean(this.cleanValue(mediaLink.key))
       );
     },
   },

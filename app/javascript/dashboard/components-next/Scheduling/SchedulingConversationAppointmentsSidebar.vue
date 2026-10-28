@@ -131,6 +131,8 @@ const availabilityRequests = new Map();
 let availabilityRequestId = 0;
 const openAppointmentKeys = ref([]);
 const expandedClientForms = reactive({});
+const anotherPatientForms = reactive({});
+let preserveCreatingOnPatientSwitch = false;
 const pickerKeyForForm = form => form?.pickerKey || NEW_APPOINTMENT_KEY;
 const editingAppointmentKeys = ref([]);
 const scrollContainer = ref(null);
@@ -250,10 +252,25 @@ const hasServiceOptionsForForm = form => serviceOptionsForForm(form).length > 0;
 
 const contact = computed(() => resolveChatContact(props.currentChat));
 const contactId = computed(() => resolveChatContactId(props.currentChat));
-// The chat owner remains the recipient. Only clinical context changes here.
-const patient = computed(() =>
-  props.patientContextEnabled ? props.selectedPatient : contact.value
+const patientContextEntry = computed(() =>
+  props.patientContextEnabled && props.patientContextKey
+    ? patientContextStore.contexts?.[props.patientContextKey] || null
+    : null
 );
+// The chat owner remains the recipient. Only clinical context changes here.
+const patient = computed(() => {
+  if (!props.patientContextEnabled) return contact.value;
+  if (
+    props.patientContextKey &&
+    (patientContextEntry.value?.patients?.length || 0) > 0
+  ) {
+    return (
+      patientContextStore.selectedPatient(props.patientContextKey) ||
+      props.selectedPatient
+    );
+  }
+  return props.selectedPatient;
+});
 const selectedPatientContextId = computed(() =>
   patientContactId(
     props.patientContextEnabled ? patient.value?.id : contactId.value
@@ -435,6 +452,7 @@ const resetCreateForm = () => {
   });
 
   delete expandedClientForms[NEW_APPOINTMENT_KEY];
+  delete anotherPatientForms[NEW_APPOINTMENT_KEY];
   Object.assign(createForm, {
     clientBirthDate: patientBirthDate(patient.value),
     clientGender: patientGender(patient.value),
@@ -1209,6 +1227,9 @@ const setAppointmentForms = () => {
   Object.keys(expandedClientForms).forEach(
     key => delete expandedClientForms[key]
   );
+  Object.keys(anotherPatientForms).forEach(
+    key => delete anotherPatientForms[key]
+  );
   Object.keys(appointmentForms).forEach(key => delete appointmentForms[key]);
   Object.keys(availabilityByForm).forEach(
     key => delete availabilityByForm[key]
@@ -1563,6 +1584,8 @@ const upsertAppointment = appointment => {
   appointments.value = mergeUniqueAppointments(appointments.value, [
     appointment,
   ]);
+  delete expandedClientForms[key];
+  delete anotherPatientForms[key];
   appointmentForms[appointmentKey(appointment)] =
     formFromAppointment(appointment);
 };
@@ -1939,6 +1962,8 @@ const startEditAppointment = appointment => {
 const cancelEditAppointment = appointment => {
   const key = appointmentKey(appointment);
   cancelFormWindows(key);
+  delete expandedClientForms[key];
+  delete anotherPatientForms[key];
   appointmentForms[key] = formFromAppointment(appointment);
   editingAppointmentKeys.value = editingAppointmentKeys.value.filter(
     item => item !== key
@@ -2822,6 +2847,28 @@ const initializeSidebar = async () => {
   }
 };
 
+const applyPatientToCreateForm = () => {
+  if (!patient.value) return;
+  const contactNameParts = schedulingContactNameParts({
+    firstName: patient.value?.first_name || patient.value?.firstName,
+    fullName: contactName.value,
+    lastName: patient.value?.last_name || patient.value?.lastName,
+    middleName: patient.value?.middle_name || patient.value?.middleName,
+  });
+  createForm.clientBirthDate = patientBirthDate(patient.value);
+  createForm.clientGender = patientGender(patient.value);
+  createForm.clientIdentifier = contactIin.value;
+  createForm.clientIdentifierInferred = Boolean(contactIin.value);
+  createForm.clientFirstName = contactNameParts.firstName;
+  createForm.clientLastName = contactNameParts.lastName;
+  createForm.clientMiddleName = contactNameParts.middleName;
+  createForm.clientName = contactName.value;
+  createForm.clientNameStructured = true;
+  createForm.clientPhone = contactPhone.value;
+  createForm.patientContactId = selectedPatientCardId.value;
+  createForm.patientContextContactId = selectedPatientContextId.value;
+};
+
 watch(
   () => [
     patient.value?.id,
@@ -2849,25 +2896,7 @@ watch(
     patient.value?.phoneNumber,
   ],
   () => {
-    if (!patient.value) return;
-    const contactNameParts = schedulingContactNameParts({
-      firstName: patient.value?.first_name || patient.value?.firstName,
-      fullName: contactName.value,
-      lastName: patient.value?.last_name || patient.value?.lastName,
-      middleName: patient.value?.middle_name || patient.value?.middleName,
-    });
-    createForm.clientBirthDate = patientBirthDate(patient.value);
-    createForm.clientGender = patientGender(patient.value);
-    createForm.clientIdentifier = contactIin.value;
-    createForm.clientIdentifierInferred = Boolean(contactIin.value);
-    createForm.clientFirstName = contactNameParts.firstName;
-    createForm.clientLastName = contactNameParts.lastName;
-    createForm.clientMiddleName = contactNameParts.middleName;
-    createForm.clientName = contactName.value;
-    createForm.clientNameStructured = true;
-    createForm.clientPhone = contactPhone.value;
-    createForm.patientContactId = selectedPatientCardId.value;
-    createForm.patientContextContactId = selectedPatientContextId.value;
+    applyPatientToCreateForm();
   }
 );
 
@@ -2906,6 +2935,8 @@ const sidebarContextSignature = computed(() =>
 watch(
   sidebarContextSignature,
   async () => {
+    const keepCreating = preserveCreatingOnPatientSwitch && isCreating.value;
+    preserveCreatingOnPatientSwitch = false;
     rememberPatientDraft();
     cancelAllFormWindows();
     activeDraftKey = currentDraftKey.value;
@@ -2930,10 +2961,10 @@ watch(
     providerCommandsStore.ui.operationId += 1;
     providerCommandsStore.ui.isExecuting = false;
     providerCommandsStore.ui.error = null;
-    isCreating.value = false;
+    isCreating.value = keepCreating;
     appointments.value = [];
     setAppointmentForms();
-    openAppointmentKeys.value = [];
+    openAppointmentKeys.value = keepCreating ? [NEW_APPOINTMENT_KEY] : [];
     editingAppointmentKeys.value = [];
     resetCreateForm();
     const context = captureSidebarContext();
@@ -2942,6 +2973,16 @@ watch(
     const loaded = await loadAppointments();
     if (loaded && !restorePatientDraft()) {
       resetCreateForm();
+      if (keepCreating) {
+        isCreating.value = true;
+        if (!openAppointmentKeys.value.includes(NEW_APPOINTMENT_KEY)) {
+          openAppointmentKeys.value = [
+            NEW_APPOINTMENT_KEY,
+            ...openAppointmentKeys.value,
+          ];
+        }
+        loadFormWindows(createForm);
+      }
     }
   },
   { flush: 'sync' }
@@ -2961,13 +3002,9 @@ const startAnotherPatient = (form, key) => {
   form.clientBirthDate = '';
   form.clientGender = '';
   form.patientContactId = null;
+  anotherPatientForms[key] = true;
   expandedClientForms[key] = true;
 };
-const patientContextEntry = computed(() =>
-  props.patientContextEnabled && props.patientContextKey
-    ? patientContextStore.contexts?.[props.patientContextKey] || null
-    : null
-);
 const familyPatientChips = computed(() => {
   const list = patientContextEntry.value?.patients || [];
   if (list.length <= 1) return [];
@@ -2982,14 +3019,25 @@ const familyPatientChips = computed(() => {
   }));
 });
 const isFamilyPatientSelected = option =>
+  !anotherPatientForms[NEW_APPOINTMENT_KEY] &&
   Number(option?.value) ===
-  Number(
-    patientContextEntry.value?.selectedId ?? selectedPatientContextId.value
-  );
+    Number(
+      patientContextEntry.value?.selectedId ?? selectedPatientContextId.value
+    );
 const selectFamilyPatientChip = id => {
   if (!props.patientContextEnabled || !props.patientContextKey) return;
   delete expandedClientForms[NEW_APPOINTMENT_KEY];
+  delete anotherPatientForms[NEW_APPOINTMENT_KEY];
+  const wasSameSelection =
+    Number(id) ===
+    Number(
+      patientContextEntry.value?.selectedId ?? selectedPatientContextId.value
+    );
+  preserveCreatingOnPatientSwitch = !wasSameSelection && isCreating.value;
   patientContextStore.select(props.patientContextKey, id);
+  if (wasSameSelection) {
+    applyPatientToCreateForm();
+  }
 };
 const patientSummaryText = form => {
   const name =
