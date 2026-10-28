@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import ContactsAPI from 'dashboard/api/contacts';
 import SchedulingProviderCommandsAPI from 'dashboard/api/scheduling/providerCommands';
+import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
 import SchedulingResourcesAPI from 'dashboard/api/scheduling/resources';
 import { useSchedulingAppointmentFormStore } from 'dashboard/stores/scheduling/appointmentForm';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
@@ -281,7 +282,7 @@ const stubs = {
   Spinner: true,
 };
 let wrapper;
-const mountPage = async (createSlot = slot) => {
+const mountPage = async (createSlot = slot, selectContact = true) => {
   const pinia = createPinia();
   const vuex = createStore({ getters: { getCurrentUser: () => ({ id: 9 }) } });
   setActivePinia(pinia);
@@ -307,12 +308,69 @@ const mountPage = async (createSlot = slot) => {
       field =>
         field.attributes('aria-label') === 'SCHEDULING.CONTACT.SELECT_ACTION'
     );
-  contact.vm.$emit('update:modelValue', owner.id);
-  await flushPromises();
+  if (selectContact) {
+    contact.vm.$emit('update:modelValue', owner.id);
+    await flushPromises();
+  }
   return { store, contact, vuex };
 };
 
 describe('SchedulingCalendarPage pending local booking', () => {
+  it('shows one search field before a new appointment has a patient', async () => {
+    await mountPage(slot, false);
+    expect(
+      wrapper.find('[data-test="appointment-patient-name"]').exists()
+    ).toBe(false);
+    expect(
+      wrapper.find('[data-test="calendar-selected-patient-card"]').exists()
+    ).toBe(false);
+    expect(wrapper.find('[data-test="calendar-patient-search"]').exists()).toBe(
+      true
+    );
+    expect(
+      wrapper
+        .findAllComponents(SelectStub)
+        .filter(
+          field =>
+            field.attributes('aria-label') ===
+            'SCHEDULING.CONTACT.SELECT_ACTION'
+        )
+    ).toHaveLength(1);
+  });
+
+  it('keeps one patient header and opens the same search from its change action', async () => {
+    await mountPage();
+    SchedulingContactsAPI.get.mockResolvedValue({ data: { payload: [] } });
+    const header = wrapper.get('[data-test="appointment-header-patient"]');
+    expect(
+      header.get('[data-test="appointment-patient-name"]').text()
+    ).toContain('Patient');
+    expect(
+      wrapper.find('[data-test="calendar-selected-patient-card"]').exists()
+    ).toBe(false);
+    expect(wrapper.find('[data-test="calendar-patient-search"]').exists()).toBe(
+      false
+    );
+    await header
+      .get('[data-test="appointment-header-change-patient"]')
+      .trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-test="calendar-patient-search"]').exists()).toBe(
+      true
+    );
+    expect(
+      wrapper.find('[data-test="calendar-selected-patient-card"]').exists()
+    ).toBe(false);
+    const searchField = wrapper
+      .findAllComponents(SelectStub)
+      .find(
+        field =>
+          field.attributes('aria-label') === 'SCHEDULING.CONTACT.SELECT_ACTION'
+      );
+    searchField.vm.$emit('search', 'Другой');
+    await flushPromises();
+    expect(searchField.props('options')).toEqual([]);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     ContactsAPI.show.mockResolvedValue({ data: { payload: {} } });
