@@ -982,7 +982,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
     expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledOnce();
   });
 
-  it.each([390, 1280])(
+  it.each([360, 486, 620, 1280])(
     'shows the selected patient card and change search at %s px',
     async width => {
       window.innerWidth = width;
@@ -1042,6 +1042,23 @@ describe('SchedulingCalendarPage pending local booking', () => {
       expect(
         wrapper.get('[data-test="appointment-patient-summary"]').text()
       ).not.toContain('840209500123');
+      const actions = wrapper.get('[data-test="appointment-header-actions"]');
+      const patient = wrapper.get('[data-test="appointment-header-patient"]');
+      expect(actions.element.nextElementSibling).toBe(patient.element);
+      expect(
+        actions.find('[data-test="appointment-more-actions"]').exists()
+      ).toBe(true);
+      expect(
+        wrapper.get('[data-test="appointment-patient-name"]').classes()
+      ).toContain('line-clamp-2');
+      expect(
+        wrapper
+          .findComponent(SchedulingContactPhoneEditor)
+          .props('inlineSummary')
+      ).toBe(true);
+      expect(
+        wrapper.get('[data-test="appointment-patient-summary"]').text()
+      ).not.toContain('SCHEDULING.CONTACT.PHONE');
       expect(
         wrapper
           .find(

@@ -556,6 +556,7 @@
       "PHONE": "Телефон",
       "ADD_PHONE": "Нет телефона — добавить",
       "CHANGE_PHONE": "Изменить",
+      "CHANGE_PHONE_INLINE": "изменить",
       "CANCEL_ACTION": "Отмена",
       "PHONE_SAVED": "Телефон сохранён",
       "QUICK_CREATE_TITLE": "Создание контакта",

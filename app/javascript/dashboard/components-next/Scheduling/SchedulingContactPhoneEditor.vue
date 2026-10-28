@@ -10,6 +10,7 @@ const props = defineProps({
   phone: { type: String, default: '' },
   saving: { type: Boolean, default: false },
   error: { type: String, default: '' },
+  inlineSummary: { type: Boolean, default: false },
 });
 const emit = defineEmits(['save']);
 const { t } = useI18n();
@@ -48,7 +49,32 @@ const save = () => {
 </script>
 
 <template>
-  <div class="appointment-drawer-row min-w-0" data-test="contact-phone-editor">
+  <span
+    v-if="inlineSummary && !editing"
+    data-test="contact-phone-editor"
+    class="inline"
+  >
+    <span v-if="phone" class="tabular-nums"> · {{ phone }}</span>
+    <span v-if="phone"> · </span>
+    <Button
+      size="sm"
+      variant="link"
+      color="blue"
+      class="!inline !h-auto !p-0 !text-xs"
+      :label="
+        phone
+          ? $t('SCHEDULING.CONTACT.CHANGE_PHONE_INLINE')
+          : $t('SCHEDULING.CONTACT.ADD_PHONE')
+      "
+      :disabled="saving"
+      @click="open"
+    />
+  </span>
+  <div
+    v-else
+    class="appointment-drawer-row min-w-0"
+    data-test="contact-phone-editor"
+  >
     <span class="appointment-drawer-label">{{
       $t('SCHEDULING.CONTACT.PHONE')
     }}</span>

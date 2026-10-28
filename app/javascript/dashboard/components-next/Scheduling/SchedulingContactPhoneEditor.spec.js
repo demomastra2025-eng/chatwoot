@@ -27,6 +27,20 @@ const render = props =>
   });
 
 describe('SchedulingContactPhoneEditor', () => {
+  it('keeps the phone inline and opens the existing editor from change', async () => {
+    const wrapper = render({ phone: '+77010000001', inlineSummary: true });
+    expect(
+      wrapper.get('[data-test="contact-phone-editor"]').element.tagName
+    ).toBe('SPAN');
+    expect(wrapper.text()).toContain(
+      '· +77010000001 · SCHEDULING.CONTACT.CHANGE_PHONE_INLINE'
+    );
+    expect(wrapper.text()).not.toContain('SCHEDULING.CONTACT.PHONE');
+
+    await wrapper.get('button').trigger('click');
+    expect(wrapper.get('input').element.value).toBe('+77010000001');
+  });
+
   it('shows add for an empty phone and validates before emitting a save', async () => {
     const wrapper = render({ phone: '' });
     await wrapper.get('button').trigger('click');

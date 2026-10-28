@@ -2947,18 +2947,120 @@ onMounted(async () => {
             }"
           >
             <header
-              class="flex items-center gap-2 border-b border-n-weak bg-n-surface-1 px-4 py-2"
+              class="grid min-w-0 gap-2 border-b border-n-weak bg-n-surface-1 px-4 py-2"
             >
-              <Button
-                v-if="isAppointmentPage"
-                size="sm"
-                color="slate"
-                variant="ghost"
-                icon="i-lucide-arrow-left"
-                :label="$t('SCHEDULING.GENERAL.BACK')"
-                @click="closeAppointmentEditor"
-              />
-              <div class="flex min-w-0 flex-1 items-center gap-2">
+              <div
+                class="flex min-w-0 items-center justify-between gap-2"
+                data-test="appointment-header-actions"
+              >
+                <Button
+                  v-if="isAppointmentPage"
+                  size="sm"
+                  color="slate"
+                  variant="ghost"
+                  icon="i-lucide-arrow-left"
+                  class="!h-7 !gap-1 !px-1.5 !text-xs"
+                  :label="$t('SCHEDULING.GENERAL.BACK')"
+                  @click="closeAppointmentEditor"
+                />
+                <div class="flex min-w-0 items-center justify-end gap-1">
+                  <Button
+                    v-if="formStore.mode === 'edit'"
+                    size="sm"
+                    variant="faded"
+                    class="!h-7 !px-1.5 !text-xs"
+                    :label="$t('SCHEDULING.RESCHEDULE.TITLE')"
+                    @click="rescheduleDialogRef?.open()"
+                  />
+                  <Button
+                    size="sm"
+                    class="!h-7 !px-1.5 !text-xs"
+                    :is-loading="formStore.ui.isSaving"
+                    :disabled="
+                      formStore.isFormInvalid ||
+                      formStore.ui.isSaving ||
+                      formStore.ui.isCreatingContact ||
+                      (formStore.mode === 'edit' && !isAppointmentDirty) ||
+                      (!isSelectedAppointmentProviderOwned &&
+                        (isMedelementCabinetMissing ||
+                          isMedelementContactMissing))
+                    "
+                    :label="drawerConfirmLabel"
+                    @click="handleAppointmentSubmit"
+                  />
+                  <div v-if="formStore.mode === 'edit'" class="relative">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="i-lucide-ellipsis"
+                      class="!h-7 !gap-1 !px-1.5 !text-xs"
+                      data-test="appointment-more-actions"
+                      :aria-label="$t('SCHEDULING.GENERAL.ACTIONS')"
+                      :label="$t('SCHEDULING.GENERAL.ACTIONS')"
+                      @click="appointmentMenuOpen = !appointmentMenuOpen"
+                    />
+                    <div
+                      v-if="appointmentMenuOpen"
+                      class="absolute right-0 z-30 mt-1 min-w-48 rounded-lg border border-n-weak bg-n-solid-2 p-1 shadow-lg"
+                    >
+                      <button
+                        type="button"
+                        data-test="appointment-change-patient"
+                        class="block w-full rounded px-3 py-2 text-left text-sm text-n-slate-12 hover:bg-n-alpha-2"
+                        @click="changeAppointmentPatient"
+                      >
+                        {{ $t('SCHEDULING.RESCHEDULE.CHANGE_PATIENT') }}
+                      </button>
+                      <button
+                        type="button"
+                        class="block w-full rounded px-3 py-2 text-left text-sm text-n-slate-12 hover:bg-n-alpha-2"
+                        @click="
+                          appointmentMenuOpen = false;
+                          handleAppointmentCancel();
+                        "
+                      >
+                        {{
+                          $t('SCHEDULING.APPOINTMENT_FORM.CANCEL_APPOINTMENT')
+                        }}
+                      </button>
+                      <button
+                        type="button"
+                        :disabled="
+                          isSelectedAppointmentProviderOwned ||
+                          formStore.form.status !== 'cancelled'
+                        "
+                        class="block w-full rounded px-3 py-2 text-left text-sm text-n-ruby-11 hover:bg-n-alpha-2 disabled:opacity-50"
+                        @click="
+                          appointmentMenuOpen = false;
+                          openAppointmentDeleteDialog();
+                        "
+                      >
+                        {{
+                          $t('SCHEDULING.APPOINTMENT_FORM.DELETE_APPOINTMENT')
+                        }}
+                      </button>
+                    </div>
+                  </div>
+                  <span
+                    v-if="justSaved"
+                    role="status"
+                    class="text-xs text-n-teal-11"
+                    >{{ $t('SCHEDULING.APPOINTMENT_FORM.SAVED_SHORT') }}</span
+                  >
+                  <Button
+                    v-if="!isAppointmentPage"
+                    size="sm"
+                    color="slate"
+                    variant="ghost"
+                    icon="i-lucide-x"
+                    @click="closeAppointmentEditor"
+                  />
+                </div>
+              </div>
+              <div
+                class="flex min-w-0 items-start gap-2"
+                data-test="appointment-header-patient"
+              >
                 <Avatar
                   v-if="appointmentPatientContactId"
                   :name="appointmentPatient.fullName || appointmentClientName()"
@@ -2968,6 +3070,7 @@ onMounted(async () => {
                     ''
                   "
                   :size="40"
+                  class="shrink-0"
                   rounded-full
                 />
                 <div class="min-w-0 flex-1">
@@ -2975,7 +3078,7 @@ onMounted(async () => {
                     v-if="appointmentPatientContactId"
                     data-test="appointment-patient-name"
                     type="button"
-                    class="block max-w-full truncate text-left text-base font-semibold text-n-slate-12"
+                    class="line-clamp-2 max-w-full text-left text-base font-semibold text-n-slate-12"
                     @click="openAppointmentContactPanel"
                   >
                     {{ appointmentPatient.fullName || appointmentClientName() }}
@@ -2989,16 +3092,17 @@ onMounted(async () => {
                   <div
                     v-if="appointmentPatientContactId"
                     data-test="appointment-patient-summary"
-                    class="flex min-w-0 flex-wrap items-center gap-1 text-xs text-n-slate-11"
+                    class="min-w-0 text-xs leading-5 text-n-slate-11"
                   >
                     <span v-if="appointmentPatientAge">{{
                       appointmentPatientAge
                     }}</span>
-                    <span v-if="appointmentPatientIin"
-                      >· {{ $t('SCHEDULING.CONTACT.IIN') }}
+                    <span v-if="appointmentPatientIin">
+                      · {{ $t('SCHEDULING.CONTACT.IIN') }}
                       {{ appointmentPatientIin }}</span
                     >
                     <SchedulingContactPhoneEditor
+                      inline-summary
                       :contact-id="appointmentPatientContactId"
                       :phone="
                         formStore.selectedContact?.phone ||
@@ -3011,88 +3115,6 @@ onMounted(async () => {
                   </div>
                 </div>
               </div>
-              <Button
-                v-if="formStore.mode === 'edit'"
-                size="sm"
-                variant="faded"
-                :label="$t('SCHEDULING.RESCHEDULE.TITLE')"
-                @click="rescheduleDialogRef?.open()"
-              />
-              <Button
-                size="sm"
-                :is-loading="formStore.ui.isSaving"
-                :disabled="
-                  formStore.isFormInvalid ||
-                  formStore.ui.isSaving ||
-                  formStore.ui.isCreatingContact ||
-                  (formStore.mode === 'edit' && !isAppointmentDirty) ||
-                  (!isSelectedAppointmentProviderOwned &&
-                    (isMedelementCabinetMissing || isMedelementContactMissing))
-                "
-                :label="drawerConfirmLabel"
-                @click="handleAppointmentSubmit"
-              />
-              <span
-                v-if="justSaved"
-                role="status"
-                class="text-xs text-n-teal-11"
-                >{{ $t('SCHEDULING.APPOINTMENT_FORM.SAVED_SHORT') }}</span
-              >
-              <div v-if="formStore.mode === 'edit'" class="relative">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon="i-lucide-ellipsis"
-                  data-test="appointment-more-actions"
-                  :aria-label="$t('SCHEDULING.GENERAL.ACTIONS')"
-                  @click="appointmentMenuOpen = !appointmentMenuOpen"
-                />
-                <div
-                  v-if="appointmentMenuOpen"
-                  class="absolute right-0 z-30 mt-1 min-w-48 rounded-lg border border-n-weak bg-n-solid-2 p-1 shadow-lg"
-                >
-                  <button
-                    type="button"
-                    data-test="appointment-change-patient"
-                    class="block w-full rounded px-3 py-2 text-left text-sm text-n-slate-12 hover:bg-n-alpha-2"
-                    @click="changeAppointmentPatient"
-                  >
-                    {{ $t('SCHEDULING.RESCHEDULE.CHANGE_PATIENT') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="block w-full rounded px-3 py-2 text-left text-sm text-n-slate-12 hover:bg-n-alpha-2"
-                    @click="
-                      appointmentMenuOpen = false;
-                      handleAppointmentCancel();
-                    "
-                  >
-                    {{ $t('SCHEDULING.APPOINTMENT_FORM.CANCEL_APPOINTMENT') }}
-                  </button>
-                  <button
-                    type="button"
-                    :disabled="
-                      isSelectedAppointmentProviderOwned ||
-                      formStore.form.status !== 'cancelled'
-                    "
-                    class="block w-full rounded px-3 py-2 text-left text-sm text-n-ruby-11 hover:bg-n-alpha-2 disabled:opacity-50"
-                    @click="
-                      appointmentMenuOpen = false;
-                      openAppointmentDeleteDialog();
-                    "
-                  >
-                    {{ $t('SCHEDULING.APPOINTMENT_FORM.DELETE_APPOINTMENT') }}
-                  </button>
-                </div>
-              </div>
-              <Button
-                v-if="!isAppointmentPage"
-                size="sm"
-                color="slate"
-                variant="ghost"
-                icon="i-lucide-x"
-                @click="closeAppointmentEditor"
-              />
             </header>
 
             <div

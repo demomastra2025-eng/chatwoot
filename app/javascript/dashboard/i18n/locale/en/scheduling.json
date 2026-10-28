@@ -556,6 +556,7 @@
       "PHONE": "Phone",
       "ADD_PHONE": "Add phone",
       "CHANGE_PHONE": "Change",
+      "CHANGE_PHONE_INLINE": "change",
       "CANCEL_ACTION": "Cancel",
       "PHONE_SAVED": "Phone saved",
       "QUICK_CREATE_TITLE": "Quick create contact",
