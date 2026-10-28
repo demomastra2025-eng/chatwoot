@@ -9,7 +9,12 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
   let(:date) { now.in_time_zone(configuration.time_zone).to_date }
   let(:resource) { specialist(account, 'doctor-1', now) }
 
-  before { account.enable_features!('scheduling') }
+  before do
+    account.enable_features!('scheduling')
+    allow(Integrations::Medelement::ScheduleChangeTracker).to receive(:new).and_return(instance_double(
+      Integrations::Medelement::ScheduleChangeTracker, changes_for: {}
+    ))
+  end
 
   def specialist(owner, code, seen_at, active: true)
     create(:scheduling_resource, account: owner, active: active, custom_attributes: {
@@ -106,14 +111,32 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
 
     resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_last_seen_at' => (now + 13.hours).iso8601))
     requested_dates.clear
-    expect(sync(at: now + 13.hours)).to include(request_count: 2, updated_count: 14)
-    expect(requested_dates).to eq([[date, date + 6], [date + 7, date + 13]])
+    expect(sync(at: now + 13.hours)).to include(request_count: 3, updated_count: 15)
+    expect(requested_dates).to eq([[date, date + 6], [date + 7, date + 13], [date + 14, date + 14]])
 
     resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_last_seen_at' => (now + 25.hours).iso8601))
     requested_dates.clear
     expect(Integrations::Medelement::ScheduleDay.find_by(resource: resource, date: date + 90)).to be_nil
-    expect(sync(at: now + 25.hours)).to include(request_count: 14, updated_count: 89, created_count: 1)
-    expect(requested_dates.flat_map { |start_date, end_date| (start_date..end_date).to_a }.sort).to eq((date + 1..date + 90).to_a)
+    expect(sync(at: now + 25.hours)).to include(request_count: 4, updated_count: 15, created_count: 1)
+    expect(requested_dates.flat_map { |start_date, end_date| (start_date..end_date).to_a }.sort).to eq((date + 1..date + 15).to_a + [date + 90])
+  end
+
+  it 'refreshes a long-range day early when the reception delta changed that specialist and date' do
+    resource
+    requested = []
+    stub_timetable do |starts_on:, ends_on:, **|
+      requested << [starts_on, ends_on]
+      answer(starts_on, ends_on) { |day| working_day(day) }
+    end
+    sync
+    resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_last_seen_at' => (now + 1.hour).iso8601))
+    tracker = instance_double(Integrations::Medelement::ScheduleChangeTracker,
+                              changes_for: { (date + 30).iso8601 => (now + 30.minutes).iso8601 })
+    allow(Integrations::Medelement::ScheduleChangeTracker).to receive(:new).and_return(tracker)
+    requested.clear
+
+    expect(sync(at: now + 1.hour)).to include(request_count: 2, updated_count: 3)
+    expect(requested).to eq([[date, date + 1], [date + 30, date + 30]])
   end
 
   it 'caps HTTP windows and leaves unrefreshed days due for later runs' do
@@ -179,6 +202,18 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
     expect(requests.last).to eq([date + 7, date + 13])
   end
 
+  it 'stops the hook when the local budget refuses a window' do
+    resource
+    requests = []
+    stub_timetable do |starts_on:, ends_on:, **|
+      requests << [starts_on, ends_on]
+      raise Integrations::Medelement::Client::RateLimitedError.new(operation: 'timetable', retry_after_ms: 30_000)
+    end
+
+    expect(sync).to include(request_count: 1, skipped_count: 83)
+    expect(requests).to eq([[date, date + 6]])
+  end
+
   it 'serves near windows before the oldest checked far window when capped' do
     other = specialist(account, 'doctor-2', now)
     resource
@@ -196,7 +231,7 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
     stub_const('Integrations::Medelement::SchedulesSyncService::REQUEST_CAP', 3)
     requested.clear
 
-    expect(sync(at: now + 13.hours)).to include(request_count: 3, skipped_count: 14)
+    expect(sync(at: now + 13.hours)).to include(request_count: 3, skipped_count: 16)
     expect(requested.first(2).map { |_code, starts_on, _ends_on| starts_on }).to eq([date, date])
     expect(requested.last).to eq(['doctor-2', date + 21, date + 27])
   end

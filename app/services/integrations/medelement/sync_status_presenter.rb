@@ -15,6 +15,7 @@ class Integrations::Medelement::SyncStatusPresenter
       phase_statuses: phase_statuses,
       schedules: Integrations::Medelement::CronScheduleService.new(hook: hook).schedule_payload,
       delta: delta_status,
+      request_rate: request_rate_status,
       conflicts: presented_conflicts(listed_scope),
       conflict_counts: conflict_counts,
       conflict_pagination: conflict_pagination(listed_scope.count)
@@ -24,6 +25,16 @@ class Integrations::Medelement::SyncStatusPresenter
   private
 
   attr_reader :hook, :conflict_page, :filters
+
+  def request_rate_status
+    configuration = Integrations::Medelement::Configuration.new(hook: hook)
+    telemetry = Integrations::Medelement::RequestTelemetry.new(configuration: configuration).current_hour
+    { requests_this_hour: telemetry.fetch('total', 0).to_i,
+      rate_limited_this_hour: telemetry.fetch('rate_limited', 0).to_i,
+      alert_threshold: configuration.rate_alert_threshold_per_hour,
+      alerting: telemetry.fetch('rate_limited', 0).to_i >= configuration.rate_alert_threshold_per_hour,
+      first_429_at_count: telemetry['first_429_at_count']&.to_i }
+  end
 
   def conflict_scope
     Integrations::Medelement::SyncConflict.where(account_id: hook.account_id, hook_id: hook.id)

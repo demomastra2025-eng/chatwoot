@@ -192,5 +192,44 @@ RSpec.describe Integrations::Medelement::RequestRateLimiter do
 
       limiter.wait!(operation: 'reception create')
     end
+
+    it 'shares one minute budget across operations and keeps a live reserve' do
+      limited = described_class.new(
+        integrator_key: 'provider-secret', account_login: 'clinic-1', interval_ms: 200,
+        budget_per_minute: 3, live_reserve_per_minute: 1, connection_pool: pool, clock: clock,
+        sleeper: ->(seconds) { sleeps << seconds }
+      )
+      limited.wait!(operation: 'timetable', lane: :sync_far)
+      limited.wait!(operation: 'receptions', lane: :sync_near)
+
+      expect { limited.wait!(operation: 'patient', lane: :other_jobs) }.to raise_error(described_class::BusyError)
+      expect { limited.wait!(operation: 'patient', lane: :live) }.not_to raise_error
+      expect { limited.wait!(operation: 'reception create', lane: :live) }.to raise_error(described_class::BusyError)
+    end
+
+    it 'pauses background lanes after a provider 429 while live continues' do
+      limited = described_class.new(
+        integrator_key: 'provider-secret', account_login: 'clinic-1', interval_ms: 200,
+        budget_per_minute: 3, live_reserve_per_minute: 1, connection_pool: pool, clock: clock
+      )
+      limited.record_429!(retry_after_seconds: 30)
+
+      expect { limited.wait!(operation: 'timetable', lane: :sync_far) }.to raise_error(described_class::BusyError) do |error|
+        expect(error.retry_after_ms).to be_between(1, 30_000)
+      end
+      expect { limited.wait!(operation: 'patient', lane: :live) }.not_to raise_error
+    end
+
+    it 'keeps a near-sync share available when far sync and other jobs fill their share' do
+      limited = described_class.new(
+        integrator_key: 'provider-secret', account_login: 'clinic-1', interval_ms: 200,
+        budget_per_minute: 6, live_reserve_per_minute: 1, connection_pool: pool, clock: clock
+      )
+      4.times { limited.wait!(operation: 'timetable', lane: :sync_far) }
+
+      expect { limited.wait!(operation: 'receptions', lane: :other_jobs) }.to raise_error(described_class::BusyError)
+      expect { limited.wait!(operation: 'timetable', lane: :sync_near) }.not_to raise_error
+      expect { limited.wait!(operation: 'patient', lane: :live) }.not_to raise_error
+    end
   end
 end

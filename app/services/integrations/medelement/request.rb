@@ -18,16 +18,20 @@ class Integrations::Medelement::Request
     rate_limiter: nil,
     clock: nil,
     retry_profile: nil,
-    deadline: nil
+    deadline: nil,
+    lane: nil
   )
     @configuration = configuration
     @retry_profile = retry_profile
     @deadline = deadline
+    @lane = lane || (%w[command lookup].include?(retry_profile.to_s) ? :live : :other_jobs)
     limiter = rate_limiter || Integrations::Medelement::RequestRateLimiter.new(
       integrator_key: configuration.integrator_key,
       account_login: configuration.company_login,
       interval_ms: configuration.throttle_ms,
-      sleeper: sleeper
+      sleeper: sleeper,
+      budget_per_minute: configuration.request_budget_per_minute,
+      live_reserve_per_minute: configuration.live_reserve_per_minute
     )
     @retry_policy = Integrations::Medelement::RequestRetryPolicy.new(
       rate_limiter: limiter,
@@ -37,16 +41,17 @@ class Integrations::Medelement::Request
       clock: clock,
       deadline: deadline,
       slot_wait_ms: (1000 if retry_profile.to_s == 'lookup'),
+      observer: Integrations::Medelement::RequestTelemetry.new(configuration: configuration),
       **retry_options_for(retry_profile)
     )
   end
 
   # Public transport boundary mirrors the provider request options.
   # rubocop:disable Metrics/CyclomaticComplexity, Metrics/ParameterLists
-  def call(method, path, operation:, query: nil, body: nil, write: false, empty_not_found: false, retry_429: true)
+  def call(method, path, operation:, query: nil, body: nil, write: false, empty_not_found: false, retry_429: true, lane: nil)
     url = "#{Integrations::Medelement::Client::BASE_URL}#{path}"
     url = "#{url}?#{query}" if query.is_a?(String)
-    retry_options = { operation: operation, write: write }
+    retry_options = { operation: operation, write: write, lane: lane || @lane }
     retry_options[:retry_429] = false unless retry_429
     response = retry_policy.call(**retry_options) do
       HTTParty.public_send(method, url, request_options(query.is_a?(String) ? nil : query, body))
@@ -74,7 +79,7 @@ class Integrations::Medelement::Request
     request = Net::HTTP::Get.new(uri)
     request.basic_auth(configuration.company_login, configuration.password)
     headers(false).each { |key, value| request[key] = value }
-    response = retry_policy.call(operation: operation) do
+    response = retry_policy.call(operation: operation, lane: @lane) do
       perform_indexed_get(uri, request)
     end
     parsed_response = parse_body(response.body)
@@ -91,7 +96,7 @@ class Integrations::Medelement::Request
   # rubocop:enable Metrics/AbcSize
 
   def receptions(company_cabinet_code:, specialist_code:, begin_datetime:, end_datetime:, skip: 0)
-    response = retry_policy.call(operation: 'receptions') do
+    response = retry_policy.call(operation: 'receptions', lane: @lane) do
       HTTParty.post(
         "#{Integrations::Medelement::Client::BASE_URL}/v1/timetable/get_receptions",
         request_options(nil, receptions_body(company_cabinet_code, specialist_code, begin_datetime, end_datetime, skip))

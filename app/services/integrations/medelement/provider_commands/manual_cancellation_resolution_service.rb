@@ -81,7 +81,7 @@ class Integrations::Medelement::ProviderCommands::ManualCancellationResolutionSe
   end
 
   def verify_removed_reception!
-    client = @client || Integrations::Medelement::Client.new(configuration: configuration)
+    client = @client || Integrations::Medelement::Client.new(configuration: configuration, lane: :live)
     reception = client.get_reception(reception_code: reception_code, version: :v2)
     Integrations::Medelement::ProviderScope.validate_write!(reception, organization_id: configuration.organization_id)
     verifier = Integrations::Medelement::ProviderCommands::ReceptionVerifier.new(

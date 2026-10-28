@@ -189,7 +189,7 @@ class Integrations::Medelement::ResourceAvailabilityService
   end
 
   def client
-    @client ||= Integrations::Medelement::Client.new(configuration: @configuration)
+    @client ||= Integrations::Medelement::Client.new(configuration: @configuration, lane: :live)
   end
 
   def unavailable(checked_at, reason)

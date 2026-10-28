@@ -4,6 +4,9 @@ class Integrations::Medelement::Configuration # rubocop:disable Metrics/ClassLen
   DEFAULT_DAYS_FORWARD = 89
   # MedElement allows five requests per second for each request type of an account.
   DEFAULT_THROTTLE_MS = Integrations::Medelement::RequestRateLimiter::DEFAULT_INTERVAL_MS
+  DEFAULT_REQUEST_BUDGET_PER_MINUTE = 30
+  DEFAULT_LIVE_RESERVE_PER_MINUTE = 10
+  DEFAULT_RATE_ALERT_THRESHOLD_PER_HOUR = 3
   DEFAULT_SYNC_INTERVAL_HOURS = 0.25
   CATALOG_SYNC_INTERVAL_HOURS = 6
   RECEPTIONS_SYNC_INTERVAL_MINUTES = 2
@@ -137,6 +140,21 @@ class Integrations::Medelement::Configuration # rubocop:disable Metrics/ClassLen
   def throttle_ms
     [integer_setting('throttle_ms', DEFAULT_THROTTLE_MS), DEFAULT_THROTTLE_MS].max
   end
+
+  def request_budget_per_minute
+    integer_setting('request_budget_per_minute', DEFAULT_REQUEST_BUDGET_PER_MINUTE).clamp(2, 300)
+  end
+
+  def live_reserve_per_minute
+    integer_setting('live_reserve_per_minute', DEFAULT_LIVE_RESERVE_PER_MINUTE).clamp(1, request_budget_per_minute - 1)
+  end
+
+  def rate_alert_threshold_per_hour
+    integer_setting('rate_alert_threshold_per_hour', DEFAULT_RATE_ALERT_THRESHOLD_PER_HOUR).clamp(1, 1000)
+  end
+
+  def account_id = hook.account_id
+  def hook_id = hook.id
 
   def time_zone
     zone = ActiveSupport::TimeZone[setting('timezone', Scheduling::Constants::DEFAULT_TIMEZONE)]

@@ -48,8 +48,8 @@ class Integrations::Medelement::Client
   MAX_TIMETABLE_DAYS = 7
 
   # retry_profile: :command for a caller that has someone waiting for the answer (see Request).
-  def initialize(configuration:, retry_profile: nil, deadline: nil)
-    @request = Integrations::Medelement::Request.new(configuration: configuration, retry_profile: retry_profile, deadline: deadline)
+  def initialize(configuration:, retry_profile: nil, deadline: nil, lane: nil)
+    @request = Integrations::Medelement::Request.new(configuration: configuration, retry_profile: retry_profile, deadline: deadline, lane: lane)
   end
 
   def get_patient(patient_code:)
@@ -100,7 +100,7 @@ class Integrations::Medelement::Client
     raise CatalogUnavailableError.new('Medelement nomenclatures are unavailable', status: e.status)
   end
 
-  def timetable(specialist_code:, starts_on:, ends_on:, allow_partial: false, retry_429: true)
+  def timetable(specialist_code:, starts_on:, ends_on:, allow_partial: false, retry_429: true, lane: nil)
     starts_on = starts_on.to_date
     ends_on = ends_on.to_date
     validate_timetable_range!(starts_on, ends_on)
@@ -109,6 +109,7 @@ class Integrations::Medelement::Client
       :get,
       '/v1/timetable/get_timetable',
       operation: 'timetable',
+      lane: lane,
       retry_429: retry_429,
       query: URI.encode_www_form([
                                    ['date[0]', provider_date(starts_on)],

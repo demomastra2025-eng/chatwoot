@@ -17,7 +17,11 @@ RSpec.describe Integrations::Medelement::Request do
       password: 'secret',
       integrator_key: 'integrator-key',
       organization_id: 'company-1',
-      throttle_ms: 200
+      throttle_ms: 200,
+      request_budget_per_minute: 30,
+      live_reserve_per_minute: 10,
+      account_id: 1,
+      hook_id: 2
     )
   end
   let(:rate_limiter) { instance_double(Integrations::Medelement::RequestRateLimiter, wait!: nil) }
@@ -39,7 +43,7 @@ RSpec.describe Integrations::Medelement::Request do
       end.to raise_error(Integrations::Medelement::Client::ApiError) { |error| expect(error.status).to eq(429) }
 
       expect(provider_request).to have_been_requested.twice
-      expect(rate_limiter).to have_received(:wait!).with(operation: 'patient search', write: false, max_wait_ms: 1000).twice
+      expect(rate_limiter).to have_received(:wait!).with(operation: 'patient search', write: false, max_wait_ms: 1000, lane: :live).twice
       expect(sleeps).to eq([0.25])
     end
 
@@ -54,6 +58,16 @@ RSpec.describe Integrations::Medelement::Request do
       expect(provider_request).to have_been_requested.once
       expect(rate_limiter).to have_received(:wait!).once
       expect(sleeps).to be_empty
+    end
+
+    it 'passes Retry-After to the shared background pause after a provider 429' do
+      allow(rate_limiter).to receive(:record_429!).and_return(30_000)
+      stub_request(:get, "#{base_url}/v1/timetable/get_timetable")
+        .to_return(status: 429, body: '{}', headers: { 'Retry-After' => '30', 'Content-Type' => 'application/json' })
+
+      expect { request.call(:get, '/v1/timetable/get_timetable', operation: 'timetable', retry_429: false) }
+        .to raise_error(Integrations::Medelement::Client::ApiError)
+      expect(rate_limiter).to have_received(:record_429!).with(retry_after_seconds: 30.0)
     end
 
     it 'retries safe reads with exponential backoff and stops after the retry limit' do
@@ -150,8 +164,8 @@ RSpec.describe Integrations::Medelement::Request do
       request.call(:get, '/doctor/v1/patient/patient-1', operation: 'patient')
       request.call(:post, '/v1/doctor/reception', operation: 'reception create', body: 'a=b', write: true)
 
-      expect(rate_limiter).to have_received(:wait!).with(operation: 'patient', write: false).twice
-      expect(rate_limiter).to have_received(:wait!).with(operation: 'reception create', write: true).once
+      expect(rate_limiter).to have_received(:wait!).with(operation: 'patient', write: false, lane: :other_jobs).twice
+      expect(rate_limiter).to have_received(:wait!).with(operation: 'reception create', write: true, lane: :other_jobs).once
     end
 
     it 'does not send the request and raises a retryable error when the slot of its type is busy for too long' do

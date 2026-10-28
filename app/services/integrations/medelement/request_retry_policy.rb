@@ -11,7 +11,7 @@ class Integrations::Medelement::RequestRetryPolicy
   # rubocop:disable Metrics/ParameterLists
   def initialize(rate_limiter:, transport_errors:, sleeper:, randomizer:, clock: nil, read_retry_limit: READ_RETRY_LIMIT,
                  base_delay_seconds: BASE_RETRY_DELAY_SECONDS, max_delay_seconds: MAX_RETRY_DELAY_SECONDS,
-                 deadline: nil, slot_wait_ms: nil)
+                 deadline: nil, slot_wait_ms: nil, observer: nil)
     @rate_limiter = rate_limiter
     @transport_errors = transport_errors
     @sleeper = sleeper
@@ -22,15 +22,16 @@ class Integrations::Medelement::RequestRetryPolicy
     @max_delay_seconds = max_delay_seconds
     @deadline = deadline
     @slot_wait_ms = slot_wait_ms
+    @observer = observer
   end
   # rubocop:enable Metrics/ParameterLists
 
-  def call(operation:, write: false, retry_429: true, &request)
+  def call(operation:, write: false, retry_429: true, lane: nil, &request)
     retry_index = 0
 
     loop do
       @deadline&.check!
-      attempt = perform_attempt(operation, write, &request)
+      attempt = perform_attempt(operation, write, lane, &request)
       if attempt.error
         raise attempt.error if write || retry_index >= read_retry_limit
 
@@ -51,14 +52,32 @@ class Integrations::Medelement::RequestRetryPolicy
   attr_reader :base_delay_seconds, :clock, :max_delay_seconds, :randomizer, :rate_limiter, :read_retry_limit, :sleeper, :transport_errors
 
   # Every attempt, including a retry, takes its own slot for this request type before it goes out.
-  def perform_attempt(operation, write, &)
+  def perform_attempt(operation, write, lane, &)
     perform_transport do
       wait_options = { operation: operation, write: write }
       wait_options[:max_wait_ms] = @slot_wait_ms if @slot_wait_ms
+      wait_options[:lane] = lane if lane
       rate_limiter.wait!(**wait_options)
       @deadline&.check!
-      yield
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      begin
+        response = yield
+        @observer&.record(operation: operation, lane: lane || :other_jobs, response: response,
+                          duration_ms: elapsed_ms(started))
+        if response.code.to_i == 429 && rate_limiter.respond_to?(:record_429!)
+          pause_ms = rate_limiter.record_429!(retry_after_seconds: retry_after_seconds(response, maximum: 3600))
+          @observer&.record_pause(pause_ms)
+        end
+        response
+      rescue *transport_errors => e
+        @observer&.record(operation: operation, lane: lane || :other_jobs, error: e, duration_ms: elapsed_ms(started))
+        raise
+      end
     end
+  end
+
+  def elapsed_ms(started)
+    ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
   end
 
   def perform_transport
@@ -94,7 +113,7 @@ class Integrations::Medelement::RequestRetryPolicy
     randomizer.call(maximum / 2, maximum)
   end
 
-  def retry_after_seconds(response)
+  def retry_after_seconds(response, maximum: max_delay_seconds)
     return unless response
 
     raw_value = retry_after_header(response)
@@ -102,7 +121,7 @@ class Integrations::Medelement::RequestRetryPolicy
 
     numeric_value = Float(raw_value, exception: false)
     delay = numeric_value || (Time.httpdate(raw_value.to_s) - clock.call)
-    delay.clamp(0, max_delay_seconds).to_f
+    delay.clamp(0, maximum).to_f
   rescue ArgumentError
     nil
   end
