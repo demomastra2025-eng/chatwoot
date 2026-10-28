@@ -66,6 +66,7 @@ RSpec.describe Whatsapp::TemplateLanguageResolver do
     expect(resolved['language']).to eq('kk')
     expect(contact.reload.client_language).to eq('kk')
     expect(contact.client_language_confidence).to eq(100)
+    expect(reminder.renderable_body).to eq('Сәлеметсіз бе, Алия! Жазылу 12 мая сағат 14:30, дәрігер Айгуль. Растаңыз.')
   end
 
   it 'falls back to the clinic primary language when contact has no client_language' do

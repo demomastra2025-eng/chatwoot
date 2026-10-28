@@ -230,9 +230,19 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
           merged_attributes.delete(Contact::CLIENT_LANGUAGE_CONFIDENCE_KEY)
         end
       else
-        merged_attributes.delete(Contact::CLIENT_LANGUAGE_KEY)
-        merged_attributes.delete(Contact::CLIENT_LANGUAGE_SOURCE_KEY)
-        merged_attributes.delete(Contact::CLIENT_LANGUAGE_CONFIDENCE_KEY)
+        counts = merged_attributes[Contact::CLIENT_LANGUAGE_COUNTS_KEY]
+        if counts.is_a?(Hash) && counts.any?
+          dominant_lang, dominant_count = counts.max_by { |_code, count| count.to_i }
+          total_count = counts.values.sum(&:to_i)
+          confidence = total_count.positive? ? ((dominant_count.to_f / total_count) * 100).round.clamp(1, 100) : 100
+          merged_attributes[Contact::CLIENT_LANGUAGE_KEY] = dominant_lang
+          merged_attributes[Contact::CLIENT_LANGUAGE_SOURCE_KEY] = Contact::CLIENT_LANGUAGE_SOURCE_AI
+          merged_attributes[Contact::CLIENT_LANGUAGE_CONFIDENCE_KEY] = confidence
+        else
+          merged_attributes.delete(Contact::CLIENT_LANGUAGE_KEY)
+          merged_attributes.delete(Contact::CLIENT_LANGUAGE_SOURCE_KEY)
+          merged_attributes.delete(Contact::CLIENT_LANGUAGE_CONFIDENCE_KEY)
+        end
       end
     end
 

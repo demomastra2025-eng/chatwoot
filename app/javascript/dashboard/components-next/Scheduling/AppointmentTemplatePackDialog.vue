@@ -33,6 +33,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  existingTemplates: {
+    type: Array,
+    default: () => [],
+  },
   defaultCompanyName: {
     type: String,
     default: '',
@@ -77,20 +81,45 @@ const options = reactive({
 const customOverrides = reactive({});
 const aiGeneratedOverrides = reactive({});
 
-const languageModeOptions = computed(() => [
-  {
-    id: 'both',
-    label: t('SCHEDULING.REMINDERS.PACK_MODAL.LANG_BOTH'),
-  },
-  {
-    id: 'ru',
-    label: t('SCHEDULING.REMINDERS.PACK_MODAL.LANG_RU'),
-  },
-  {
-    id: 'kk',
-    label: t('SCHEDULING.REMINDERS.PACK_MODAL.LANG_KK'),
-  },
-]);
+const languageModeOptions = computed(() => {
+  const codes = Array.from(
+    new Set([
+      ...(props.accountClientLanguages?.length
+        ? props.accountClientLanguages
+        : ['ru', 'kk']),
+      'ru',
+      'kk',
+      ...(options.selectedLanguage ? [options.selectedLanguage] : []),
+    ])
+  );
+  return [
+    {
+      id: 'both',
+      label: t('SCHEDULING.REMINDERS.PACK_MODAL.LANG_BOTH'),
+    },
+    ...codes.map(code => {
+      if (code === 'ru') {
+        return {
+          id: 'ru',
+          label: t('SCHEDULING.REMINDERS.PACK_MODAL.LANG_RU'),
+        };
+      }
+      if (code === 'kk') {
+        return {
+          id: 'kk',
+          label: t('SCHEDULING.REMINDERS.PACK_MODAL.LANG_KK'),
+        };
+      }
+      const found = WHATSAPP_SUPPORTED_CLIENT_LANGUAGES.find(
+        item => item.code === code
+      );
+      return {
+        id: code,
+        label: found ? `${found.name} (${found.code})` : code.toUpperCase(),
+      };
+    }),
+  ];
+});
 
 const isBilingualMode = computed({
   get: () => options.languageMode === 'both',
@@ -128,6 +157,35 @@ const existingNameSet = computed(
       )
     )
 );
+
+const existingTemplatePairSet = computed(() => {
+  if (
+    !Array.isArray(props.existingTemplates) ||
+    !props.existingTemplates.length
+  ) {
+    return null;
+  }
+  return new Set(
+    props.existingTemplates.map(tpl => {
+      const name = String(tpl?.name || '')
+        .trim()
+        .toLowerCase();
+      const lang = normalizeClientLanguageCode(tpl?.language || 'ru') || 'ru';
+      return `${name}::${lang}`;
+    })
+  );
+});
+
+const isDraftAlreadyExisting = draft => {
+  const name = String(draft?.name || '')
+    .trim()
+    .toLowerCase();
+  const lang = normalizeClientLanguageCode(draft?.language || 'ru') || 'ru';
+  if (existingTemplatePairSet.value) {
+    return existingTemplatePairSet.value.has(`${name}::${lang}`);
+  }
+  return existingNameSet.value.has(name);
+};
 
 const validateDraftFields = ({ name, bodyText, serialized, buttons, language }) => {
   const trimmedName = String(name || '').trim();
@@ -234,9 +292,7 @@ const drafts = computed(() =>
 );
 
 const newDraftsToCreate = computed(() =>
-  drafts.value.filter(
-    draft => !existingNameSet.value.has(draft.name.toLowerCase())
-  )
+  drafts.value.filter(draft => !isDraftAlreadyExisting(draft))
 );
 
 const activePreviewDraft = computed(
@@ -314,18 +370,56 @@ const handleGenerateWithAi = async () => {
         location_url: options.locationUrl,
       },
     });
-    const payload = response?.data || {};
+    const payload = response?.data?.payload || response?.data || {};
     if (payload.model) {
       aiModelLabel.value = payload.model;
     }
-    (payload.drafts || []).forEach(aiDraft => {
-      const key = aiDraft.preset_key || aiDraft.presetKey;
+    const scenarioToPresetKey = {
+      created_confirmation: 'appointment_created',
+      rescheduled_notice: 'appointment_rescheduled',
+      cancelled_notice: 'appointment_cancelled',
+      reminder_24h: 'appointment_day_before',
+      reminder_2h: 'appointment_two_hours_before',
+      post_visit_feedback: 'appointment_review_request',
+    };
+    const templateNameToPresetKey = Object.fromEntries(
+      APPOINTMENT_REMINDER_PRESETS.map(p => [p.templateName, p.key])
+    );
+    const rawDrafts = payload.drafts || payload.templates || [];
+    rawDrafts.forEach(aiDraft => {
+      const key =
+        aiDraft.preset_key ||
+        aiDraft.presetKey ||
+        scenarioToPresetKey[aiDraft.scenario_key] ||
+        templateNameToPresetKey[aiDraft.template_name || aiDraft.name];
       if (!key) return;
       delete customOverrides[key];
+      const rawButtons = aiDraft.button_objects || aiDraft.buttons || [];
+      const normalizedButtons = Array.isArray(rawButtons)
+        ? rawButtons
+            .map(btn =>
+              typeof btn === 'string'
+                ? {
+                    type: 'QUICK_REPLY',
+                    text: btn.trim(),
+                    url: '',
+                    example: '',
+                    phoneNumber: '',
+                  }
+                : {
+                    type: btn?.type || 'QUICK_REPLY',
+                    text: String(btn?.text || '').trim(),
+                    url: btn?.url || '',
+                    example: btn?.example || '',
+                    phoneNumber: btn?.phoneNumber || '',
+                  }
+            )
+            .filter(btn => Boolean(btn.text))
+        : [];
       aiGeneratedOverrides[key] = {
-        name: aiDraft.name,
-        bodyText: aiDraft.body_text || aiDraft.bodyText,
-        buttons: aiDraft.buttons || [],
+        name: aiDraft.name || aiDraft.template_name,
+        bodyText: aiDraft.body_text || aiDraft.bodyText || aiDraft.body,
+        buttons: normalizedButtons,
       };
     });
   } catch (error) {
@@ -689,7 +783,7 @@ defineExpose({
               {{ t('SCHEDULING.REMINDERS.PACK_MODAL.CUSTOMIZED_BADGE') }}
             </span>
             <span
-              v-if="existingNameSet.has(draft.name.toLowerCase())"
+              v-if="isDraftAlreadyExisting(draft)"
               class="rounded bg-n-teal-9/15 px-1.5 py-0.5 text-[10px] text-n-teal-11"
             >
               {{ t('SCHEDULING.REMINDERS.PACK_MODAL.EXISTS_BADGE') }}
@@ -734,7 +828,7 @@ defineExpose({
             />
 
             <div
-              v-if="existingNameSet.has(activePreviewDraft.name.toLowerCase())"
+              v-if="isDraftAlreadyExisting(activePreviewDraft)"
               class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-n-amber-9/30 bg-n-amber-9/10 px-3 py-2 text-xs text-n-amber-11"
             >
               <span>{{

@@ -334,12 +334,42 @@ describe('SchedulingNotificationsPage', () => {
     expect(otherCard.exists()).toBe(true);
     await otherCard.find('input[type="checkbox"]').trigger('change');
     await flushPromises();
-    expect(AutomationAPI.update).toHaveBeenCalledWith(2, {
-      active: true,
-      calendar_managed: true,
-      calendar_context: true,
+      expect(AutomationAPI.update).toHaveBeenCalledWith(2, {
+        active: true,
+        calendar_managed: true,
+        calendar_context: true,
+      });
     });
-  });
+
+    it('creates and enables a preset rule directly when toggled on with an APPROVED preset template', async () => {
+      mocks.inboxes[0].message_templates.push({
+        name: 'booking_created_notice',
+        language: 'ru',
+        status: 'APPROVED',
+        category: 'UTILITY',
+        components: [
+          {
+            type: 'BODY',
+            text: 'Здравствуйте, {{1}}! Запись {{2}} в {{3}}, специалист {{4}}.',
+          },
+        ],
+      });
+      AutomationAPI.create.mockResolvedValue({ data: {} });
+      const wrapper = await mountPage();
+      const toggle = wrapper.find(
+        '[data-testid="reminder-preset-card-appointment_created"] input[type="checkbox"]'
+      );
+      expect(toggle.attributes('disabled')).toBeUndefined();
+      await toggle.trigger('change');
+      await flushPromises();
+      expect(AutomationAPI.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          active: true,
+          calendar_managed: true,
+          event_name: 'appointment_created',
+        })
+      );
+    });
 
   it('keeps untouched custom conditions and saves the preset marker when switched off', async () => {
     const conditions = [

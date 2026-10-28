@@ -52,7 +52,7 @@ class Whatsapp::TemplateUtilityValidator
   PROMOTIONAL_STOP_WORDS_REGEX = /(?:\b(?:скидк[аиуеой]|акци[яиюей]|распродаж[аиуе]|промокод\w*|бонус\w*|кэшбэк\w*|кешбэк\w*|подарок\w*|бесплатн\w*|выгодн\w*|спецпредложени\w*|купон\w*|sale|discount|promo|cashback|free\s+gift)\b|жеңілдік\w*|науқан\w*|сыйлық\w*|тегін)/iu
 
   HYPHEN_SUFFIX_AFTER_VARIABLE_REGEX = /\{\{[^{}]+\}\}\s*[-–—]\s*[[:alpha:]]+/u
-  ADJACENT_VARIABLES_REGEX = /\{\{[^{}]+\}\}\s*\{\{[^{}]+\}\}/u
+  ADJACENT_VARIABLES_REGEX = %r{\{\{[^{}]+\}\}\s*[,;:\-–—/\\|]*\s*\{\{[^{}]+\}\}}u
   LEADING_VARIABLE_REGEX = /\A\s*\{\{[^{}]+\}\}/u
   TRAILING_VARIABLE_REGEX = /\{\{[^{}]+\}\}[\s.!?…,:;»"')\]}]*\z/u
   KAZAKH_SPECIFIC_CHARS_REGEX = /[әғқңөұүһіӘҒҚҢӨҰҮҺІ]/u
@@ -221,8 +221,9 @@ class Whatsapp::TemplateUtilityValidator
 
     positional_matches = serialized_body.scan(/\{\{(\d+)\}\}/).flatten.map(&:to_i)
     unique_numbers = positional_matches.uniq
+    is_bilingual_body = @bilingual || @raw_body.include?('———')
 
-    if positional_matches.size != unique_numbers.size
+    if !is_bilingual_body && positional_matches.size != unique_numbers.size
       add_error(errors, error_codes, 'duplicate_variables', 'Переменные в шаблоне не должны дублироваться.')
     end
 

@@ -256,9 +256,10 @@ class Account < ApplicationRecord
     value.nil? || ActiveModel::Type::Boolean.new.cast(value)
   end
 
-  def resolved_client_languages
+  def client_languages
     Whatsapp::SupportedLanguages.normalize_list(settings.to_h['client_languages'])
   end
+  alias resolved_client_languages client_languages
 
   def primary_client_language
     resolved_client_languages.first || 'ru'

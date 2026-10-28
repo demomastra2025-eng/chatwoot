@@ -6,6 +6,7 @@ class Scheduling::AiTemplateMasterService
   SCENARIO_DEFINITIONS = [
     {
       key: 'created_confirmation',
+      preset_key: 'appointment_created',
       template_name: 'booking_created_notice',
       title: 'Запись создана — запрос подтверждения',
       purpose: 'Клиент только что записался на приём. Сообщить дату, время и специалиста, попросить подтвердить или перенести запись.',
@@ -13,6 +14,7 @@ class Scheduling::AiTemplateMasterService
     },
     {
       key: 'rescheduled_notice',
+      preset_key: 'appointment_rescheduled',
       template_name: 'booking_rescheduled_notice',
       title: 'Запись перенесена',
       purpose: 'Запись клиента перенесена на новую дату и время. Сообщить новые дату, время и специалиста, попросить подтвердить.',
@@ -20,6 +22,7 @@ class Scheduling::AiTemplateMasterService
     },
     {
       key: 'cancelled_notice',
+      preset_key: 'appointment_cancelled',
       template_name: 'booking_cancelled_notice',
       title: 'Запись отменена',
       purpose: 'Запись клиента на указанную дату и время была отменена. Предложить выбрать новое время или связаться с клиникой.',
@@ -27,6 +30,7 @@ class Scheduling::AiTemplateMasterService
     },
     {
       key: 'reminder_24h',
+      preset_key: 'appointment_day_before',
       template_name: 'booking_reminder_1d',
       title: 'Напоминание за 1 день',
       purpose: 'Напомнить клиенту за 1 день о предстоящем приёме (дата, время, специалист) и попросить подтвердить визит.',
@@ -34,6 +38,7 @@ class Scheduling::AiTemplateMasterService
     },
     {
       key: 'reminder_2h',
+      preset_key: 'appointment_two_hours_before',
       template_name: 'booking_reminder_2h',
       title: 'Напоминание за 2 часа',
       purpose: 'Кратко напомнить клиенту за 2 часа о сегодняшнем визите (время и специалист).',
@@ -41,6 +46,7 @@ class Scheduling::AiTemplateMasterService
     },
     {
       key: 'post_visit_feedback',
+      preset_key: 'appointment_review_request',
       template_name: 'booking_feedback_request',
       title: 'Запрос отзыва после визита',
       purpose: 'Поблагодарить клиента за визит к специалисту и вежливо попросить оценить приём.',
@@ -113,6 +119,7 @@ class Scheduling::AiTemplateMasterService
       languages: @languages,
       bilingual: @bilingual,
       clinic_context: clinic_context,
+      drafts: templates,
       templates: templates,
       packs: packs
     }
@@ -137,7 +144,7 @@ class Scheduling::AiTemplateMasterService
     return SCENARIO_DEFINITIONS if keys.empty?
 
     filtered = SCENARIO_DEFINITIONS.select do |sc|
-      keys.include?(sc[:key]) || keys.include?(sc[:template_name])
+      keys.include?(sc[:key]) || keys.include?(sc[:preset_key]) || keys.include?(sc[:template_name])
     end
     filtered.presence || SCENARIO_DEFINITIONS
   end
@@ -148,19 +155,20 @@ class Scheduling::AiTemplateMasterService
                else
                  []
                end
-    specialists = if @account.respond_to?(:scheduling_specialists)
-                    @account.scheduling_specialists.where(active: true).limit(6).pluck(:name)
+    specialists = if @account.respond_to?(:scheduling_resources)
+                    @account.scheduling_resources.where(active: true).limit(6).pluck(:name)
                   else
                     []
                   end
-    cabinets = if @account.respond_to?(:scheduling_cabinets)
-                 @account.scheduling_cabinets.where(active: true).limit(4).pluck(:name)
+    cabinets = if @account.respond_to?(:scheduling_resources)
+                 @account.scheduling_resources.where(active: true).where.not(specialty: [nil, '']).distinct.limit(4).pluck(:specialty)
                else
                  []
                end
+    custom_name = (@options[:company_name_ru].presence || @options[:company_name_kk].presence).to_s.strip.presence
 
     {
-      clinic_name: @account.name.to_s.strip.presence || ' нашей клинике',
+      clinic_name: custom_name || @account.name.to_s.strip.presence || 'нашей клинике',
       services: services,
       specialists: specialists,
       cabinets: cabinets
@@ -178,7 +186,7 @@ class Scheduling::AiTemplateMasterService
       account: @account,
       model: MODEL_NAME,
       messages: messages,
-      options: { temperature: 0.2, max_tokens: 2200 },
+      options: { max_tokens: 2200 },
       observability: { operation: 'scheduling.ai_template_master' }
     )
 
@@ -250,12 +258,12 @@ class Scheduling::AiTemplateMasterService
       item_lang = Whatsapp::SupportedLanguages.normalize_code(item['language'] || item[:language])
       next if item_lang.present? && !bilingual && item_lang != language
 
-      k = (item['template_name'] || item[:template_name] || item['scenario_key'] || item[:scenario_key]).to_s.strip
+      k = (item['template_name'] || item[:template_name] || item['scenario_key'] || item[:scenario_key] || item['preset_key'] || item[:preset_key]).to_s.strip
       acc[k] = item if k.present?
     end
 
     @scenario_definitions.map do |scenario|
-      ai_candidate = by_key[scenario[:template_name]] || by_key[scenario[:key]]
+      ai_candidate = by_key[scenario[:template_name]] || by_key[scenario[:key]] || by_key[scenario[:preset_key]]
       fallback = fallback_template_for(
         scenario[:template_name],
         clinic_context: clinic_context,
@@ -298,6 +306,7 @@ class Scheduling::AiTemplateMasterService
       button_objects = buttons_to_use.map { |text| { type: 'QUICK_REPLY', text: text } }
 
       {
+        preset_key: scenario[:preset_key],
         scenario_key: scenario[:key],
         template_name: scenario[:template_name],
         name: scenario[:template_name],
@@ -455,12 +464,12 @@ class Scheduling::AiTemplateMasterService
     case template_name
     when 'booking_created_notice'
       {
-        body: "Здравствуйте, {{имя клиента}}! Вы записаны в «#{clinic}»: {{дата записи}}, {{время записи}}, врач {{специалист}}. Подтвердите визит.\nСәлеметсіз бе! Жазылуыңызды растаңызшы.",
+        body: "Здравствуйте, {{имя клиента}}! Вы записаны в «#{clinic}» на {{дата записи}} в {{время записи}}, врач {{специалист}}. Подтвердите визит.\nСәлеметсіз бе! Жазылуыңызды растаңызшы.",
         buttons: ['Подтверждаю / Иә', 'Перенести']
       }
     when 'booking_rescheduled_notice'
       {
-        body: "Здравствуйте, {{имя клиента}}! Запись в «#{clinic}» перенесена на {{дата записи}}, {{время записи}}, специалист {{специалист}}.\nЖазылу уақыты ауыстырылды, растаңызшы.",
+        body: "Здравствуйте, {{имя клиента}}! Запись в «#{clinic}» перенесена на {{дата записи}} в {{время записи}}, специалист {{специалист}}.\nЖазылу уақыты ауыстырылды, растаңызшы.",
         buttons: ['Подтверждаю / Иә', 'Связаться']
       }
     when 'booking_cancelled_notice'

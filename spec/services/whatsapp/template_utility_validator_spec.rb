@@ -116,5 +116,25 @@ RSpec.describe Whatsapp::TemplateUtilityValidator do
       expect(result.valid?).to be(true)
       expect(result.serialized_body_text).to include('{{1}}', '{{2}}', '{{3}}', '{{4}}')
     end
+
+    it 'rejects comma-separated adjacent variables and allows repeated variables in bilingual templates' do
+      adjacent = described_class.new(
+        body_text: 'Здравствуйте, {{1}}! Запись: {{2}}, {{3}} к врачу {{4}}.',
+        buttons: [],
+        language: 'ru',
+        category: 'UTILITY'
+      ).call
+      expect(adjacent.valid?).to be(false)
+      expect(adjacent.error_codes).to include('adjacent_variables')
+
+      bilingual = described_class.new(
+        body_text: "Сәлеметсіз бе, {{имя клиента}}! Күні: {{дата записи}}, уақыты: {{время записи}}. Сізді күтеміз.\n\n———\n\nЗдравствуйте, {{имя клиента}}! Дата: {{дата записи}}, время: {{время записи}}. Ждём вас.",
+        buttons: [],
+        language: 'ru',
+        category: 'UTILITY',
+        bilingual: true
+      ).call
+      expect(bilingual.valid?).to be(true)
+    end
   end
 end

@@ -456,20 +456,22 @@ export const validateUtilityTemplateDraft = ({
     });
   }
 
+  const serialized = serializeSemanticTemplateText(trimmedBody);
+  const effectiveBodyLength = (serialized.serializedText || trimmedBody).length;
+
   if (!trimmedBody) {
     errors.push({
       code: 'empty_body',
       message:
         messages.bodyRequired || 'Текст шаблона не может быть пустым',
     });
-  } else if (trimmedBody.length > maxBodyLength) {
+  } else if (effectiveBodyLength > maxBodyLength) {
     errors.push({
       code: 'body_too_long',
-      message: `Текст шаблона превышает лимит (${trimmedBody.length}/${maxBodyLength} символов)`,
+      message: `Текст шаблона превышает лимит (${effectiveBodyLength}/${maxBodyLength} символов)`,
     });
   }
 
-  const serialized = serializeSemanticTemplateText(trimmedBody);
   if (serialized.error) {
     errors.push({
       code: 'invalid_variables',
@@ -507,9 +509,13 @@ export const validateUtilityTemplateDraft = ({
   }
 
   const lowerBody = trimmedBody.toLowerCase();
-  const matchedStopWord = PROMOTIONAL_STOP_WORDS.find(word =>
-    lowerBody.includes(word)
-  );
+  const matchedStopWord = PROMOTIONAL_STOP_WORDS.find(word => {
+    const pattern = new RegExp(
+      `(?:^|[^a-zа-яёәғқңөұүһі0-9_])(${word})`,
+      'i'
+    );
+    return pattern.test(lowerBody);
+  });
   if (matchedStopWord) {
     errors.push({
       code: 'promotional_content',
@@ -528,7 +534,14 @@ export const validateUtilityTemplateDraft = ({
     }
   }
 
-  (Array.isArray(buttons) ? buttons : []).forEach(btn => {
+  const buttonList = Array.isArray(buttons) ? buttons : [];
+  if (buttonList.length > 3) {
+    errors.push({
+      code: 'too_many_buttons',
+      message: 'Максимум 3 кнопки в шаблоне UTILITY',
+    });
+  }
+  buttonList.forEach(btn => {
     const btnText = String(btn?.text || '').trim();
     if (!btnText) {
       errors.push({
@@ -763,16 +776,14 @@ const buildLanguageSection = (presetKey, lang, options) => {
     }
 
     if (presetKey === 'appointment_cancelled') {
-      lines.push('Жаңа уақыт таңдау үшін осы хабарламаға жауап беріңіз.');
+      lines.push('Жаңа уақыт таңдау үшін жауап беріңіз.');
     } else if (presetKey === 'appointment_review_request') {
-      lines.push('Сапаны жақсарту үшін өз пікіріңізді қалдыруды сұраймыз.');
+      lines.push('Өз пікіріңізді қалдыруды сұраймыз.');
     } else if (
       presetKey === 'appointment_day_before' &&
       options.confirmationDayBefore !== false
     ) {
-      lines.push(
-        'Келетініңізді төмендегі батырма арқылы растауыңызды сұраймыз.'
-      );
+      lines.push('Келетініңізді батырма арқылы растаңыз.');
     } else {
       lines.push('Белгіленген уақытта күтеміз.');
     }
@@ -887,18 +898,14 @@ const buildLanguageSection = (presetKey, lang, options) => {
     }
 
     if (presetKey === 'appointment_cancelled') {
-      lines.push(
-        'Если хотите выбрать другое время — ответьте на это сообщение.'
-      );
+      lines.push('Для выбора другого времени ответьте на сообщение.');
     } else if (presetKey === 'appointment_review_request') {
-      lines.push(
-        'Будем благодарны за ваш отзыв — это помогает нам становиться лучше.'
-      );
+      lines.push('Будем благодарны за ваш отзыв о приёме.');
     } else if (
       presetKey === 'appointment_day_before' &&
       options.confirmationDayBefore !== false
     ) {
-      lines.push('Пожалуйста, подтвердите визит кнопкой ниже.');
+      lines.push('Подтвердите визит кнопкой ниже.');
     } else {
       lines.push('Ждём вас в назначенное время.');
     }

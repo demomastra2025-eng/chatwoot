@@ -234,5 +234,26 @@ describe('appointmentTemplatePresets', () => {
         })
       ).toBe('appointment_day_before');
     });
+
+    it('ensures all 6 default bilingual drafts pass validateUtilityTemplateDraft', () => {
+      const drafts = buildAppointmentTemplatePackDrafts({
+        languageMode: 'both',
+        includeCompany: true,
+        companyNameRu: 'Клиника Улыбка',
+        companyNameKk: 'Улыбка клиникасы',
+      });
+      expect(drafts).toHaveLength(6);
+      drafts.forEach(draft => {
+        const validation = validateUtilityTemplateDraft({
+          name: draft.name,
+          bodyText: draft.bodyText,
+          language: draft.language,
+          category: 'UTILITY',
+          buttons: draft.buttons,
+          bilingual: true,
+        });
+        expect(validation.valid).toBe(true);
+      });
+    });
   });
 });

@@ -108,6 +108,23 @@ RSpec.describe Scheduling::AiTemplateMasterService do
 
     expect(result[:bilingual]).to be(true)
     expect(result[:templates].size).to eq(6)
-    expect(result[:templates]).to all(satisfy { |t| t[:validation][:valid] == true && t[:bilingual] == true })
+    expect(result[:drafts].size).to eq(6)
+    expect(result[:templates]).to all(satisfy { |t| t[:validation][:valid] == true && t[:bilingual] == true && t[:preset_key].present? })
+  end
+
+  it 'succeeds in bilingual mode when account settings has no client_languages key yet' do
+    blank_account = create(:account, name: 'Almaty Med', settings: {})
+    blank_account.enable_features!('scheduling')
+    allow(Llm::Runtime).to receive(:chat).and_return(double(content: '{}'))
+
+    result = described_class.new(
+      account: blank_account,
+      language: 'ru',
+      bilingual: true
+    ).call
+
+    expect(result[:bilingual]).to be(true)
+    expect(result[:templates].size).to eq(6)
+    expect(result[:templates]).to all(satisfy { |t| t[:validation][:valid] == true })
   end
 end

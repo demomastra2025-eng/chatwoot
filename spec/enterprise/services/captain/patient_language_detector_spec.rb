@@ -330,5 +330,25 @@ RSpec.describe Captain::PatientLanguageDetector do
       expect(contact.reload.client_language).to eq('ru')
       expect(contact.client_language_source).to eq('manual')
     end
+
+    it 'detects patient language from call transcript items on incoming call messages' do
+      conversation.messages.create!(
+        account: account,
+        inbox: conversation.inbox,
+        sender: conversation.contact,
+        message_type: :incoming,
+        content: nil,
+        content_attributes: {
+          'data' => {
+            'transcript_items' => [
+              { 'speaker' => 'caller', 'text' => 'Сәлеметсіз бе, ертеңге дәрігерге жазылғым келеді' }
+            ]
+          }
+        }
+      )
+
+      expect(described_class.new(conversation: conversation).call).to eq('kk')
+      expect(conversation.contact.reload.client_language).to eq('kk')
+    end
   end
 end

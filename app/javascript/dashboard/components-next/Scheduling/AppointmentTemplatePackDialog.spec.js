@@ -29,16 +29,18 @@ describe('AppointmentTemplatePackDialog', () => {
   it('keeps six editable previews, WhatsApp language choices, AI generation on gpt-6.1-terra, and pre-Meta validation', async () => {
     TemplateMasterAPI.generate.mockResolvedValue({
       data: {
-        model: 'openai/gpt-6.1-terra',
-        drafts: [
-          {
-            preset_key: 'appointment_created',
-            name: 'booking_created_notice',
-            body_text:
-              'Здравствуйте, {{имя клиента}}! Вы записаны в «Клиника» на {{дата записи}} в {{время записи}}.',
-            buttons: [],
-          },
-        ],
+        payload: {
+          model: 'openai/gpt-6.1-terra',
+          templates: [
+            {
+              scenario_key: 'created_confirmation',
+              template_name: 'booking_created_notice',
+              body:
+                'Здравствуйте, {{имя клиента}}! Вы записаны в «Клиника» на {{дата записи}} в {{время записи}}.',
+              buttons: ['Подтверждаю', 'Перенести'],
+            },
+          ],
+        },
       },
     });
 

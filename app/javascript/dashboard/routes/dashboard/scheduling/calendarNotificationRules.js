@@ -67,7 +67,22 @@ export const eventKeyForRule = rule => {
 export const presetRows = rules =>
   APPOINTMENT_REMINDER_PRESETS.filter(
     preset =>
-      !(rules || []).some(rule => extractPresetKeyFromRule(rule) === preset.key)
+      !(rules || []).some(
+        rule =>
+          extractPresetKeyFromRule(rule) === preset.key ||
+          rule.actions?.some(action => {
+            const params = Array.isArray(action.action_params)
+              ? action.action_params[0]
+              : action.action_params;
+            return (
+              action.action_name === 'create_touch' &&
+              rule.event_name === preset.eventName &&
+              params?.relative_anchor === preset.relativeAnchor &&
+              Number(params?.relative_offset_seconds) ===
+                preset.relativeOffsetSeconds
+            );
+          })
+      )
   );
 
 export const scheduleFor = (eventKey, timing, amount, unit) => {

@@ -351,6 +351,24 @@ const canEnable = rule =>
         String(ruleTemplate(rule)?.status).toUpperCase() === 'APPROVED')
   );
 
+const canTogglePreset = preset => {
+  const existingRule = presetRule(preset);
+  if (existingRule) {
+    return existingRule.active || canEnable(existingRule);
+  }
+  const template = getSelectedTemplateForPreset(preset.key);
+  if (
+    !selectedInboxId.value ||
+    !template ||
+    String(template.status || '').toUpperCase() !== 'APPROVED'
+  ) {
+    return false;
+  }
+  const vars = getTemplateBodyVars(template);
+  const state = presetStates[preset.key];
+  return vars.every(k => Boolean(state.variableBindings?.[k]));
+};
+
 const selectedInbox = computed(() =>
   (inboxes.value || []).find(item => String(item.id) === String(draft.inboxId))
 );
@@ -641,7 +659,7 @@ const newDraft = (rule = null, preset = null) => {
   step.value = 1;
 };
 
-const saveInlinePreset = async preset => {
+const saveInlinePreset = async (preset, { forceActive = null } = {}) => {
   const state = presetStates[preset.key];
   const template = getSelectedTemplateForPreset(preset.key);
   if (!selectedInboxId.value || !template) {
@@ -656,7 +674,10 @@ const saveInlinePreset = async preset => {
 
   const existingRule = presetRule(preset);
   const isApproved = String(template.status || '').toUpperCase() === 'APPROVED';
-  const nextActive = Boolean(existingRule?.active && isApproved);
+  const nextActive =
+    forceActive !== null
+      ? Boolean(forceActive && isApproved)
+      : Boolean(existingRule?.active && isApproved);
   const bodyProcessed = Object.fromEntries(
     vars.map(k => [
       k,
@@ -960,6 +981,19 @@ const toggle = async (rule, event = null) => {
   }
 };
 
+const handlePresetToggle = async (preset, event = null) => {
+  const existingRule = presetRule(preset);
+  if (existingRule) {
+    await toggle(existingRule, event);
+    return;
+  }
+  if (!canTogglePreset(preset)) {
+    if (event?.target) event.target.checked = false;
+    return;
+  }
+  await saveInlinePreset(preset, { forceActive: true });
+};
+
 const syncTemplates = async () => {
   if (!selectedInboxId.value) return;
   syncing.value = true;
@@ -1217,12 +1251,8 @@ onMounted(async () => {
                         t(`SCHEDULING.REMINDERS.PRESETS.${preset.key}.TITLE`)
                       "
                       :checked="Boolean(presetRule(preset)?.active)"
-                      :disabled="
-                        !presetRule(preset) ||
-                        (!presetRule(preset)?.active &&
-                          !canEnable(presetRule(preset)))
-                      "
-                      @change="toggle(presetRule(preset), $event)"
+                      :disabled="!canTogglePreset(preset)"
+                      @change="handlePresetToggle(preset, $event)"
                     />
                     <span
                       class="h-5 w-9 rounded-full bg-n-slate-6 transition-colors after:absolute after:left-[2px] after:top-[2px] after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:bg-n-brand peer-checked:after:translate-x-4 peer-disabled:cursor-not-allowed peer-disabled:opacity-50"
@@ -1278,6 +1308,87 @@ onMounted(async () => {
                           }})
                         </option>
                       </select>
+                    </div>
+
+                    <div
+                      v-if="preset.supportsDayBeforeTime"
+                      class="grid grid-cols-1 gap-4 sm:grid-cols-2"
+                    >
+                      <label class="block text-xs font-medium text-n-slate-12">
+                        {{ t('SCHEDULING.REMINDERS.FIELDS.DAY_BEFORE_TIME') }}
+                        <input
+                          v-model="presetStates[preset.key].dayBeforeTime"
+                          type="time"
+                          data-testid="preset-day-before-time-input"
+                          class="mt-1 w-full rounded-lg border border-n-weak bg-n-surface-1 p-2 text-sm text-n-slate-12"
+                        />
+                      </label>
+
+                      <div
+                        v-if="preset.supportsConfirmation"
+                        class="flex flex-col justify-center rounded-xl border border-n-weak bg-n-alpha-black2 px-3.5 py-2.5"
+                      >
+                        <label
+                          class="flex cursor-pointer items-center justify-between gap-2"
+                        >
+                          <span class="text-xs font-medium text-n-slate-12">
+                            {{
+                              t(
+                                'SCHEDULING.REMINDERS.FIELDS.CONFIRM_VIA_BUTTON'
+                              )
+                            }}
+                          </span>
+                          <input
+                            v-model="presetStates[preset.key].confirmationEnabled"
+                            type="checkbox"
+                            data-testid="preset-confirmation-checkbox"
+                            class="rounded border-n-weak text-n-brand"
+                          />
+                        </label>
+                        <p class="mb-0 mt-1 text-[11px] text-n-slate-11">
+                          {{
+                            t(
+                              'SCHEDULING.REMINDERS.FIELDS.CONFIRM_VIA_BUTTON_HINT'
+                            )
+                          }}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div v-if="preset.supportsReviewDelay" class="space-y-1.5">
+                      <label class="block text-xs font-medium text-n-slate-12">
+                        {{ t('SCHEDULING.REMINDERS.FIELDS.REVIEW_DELAY') }}
+                        <select
+                          v-model.number="
+                            presetStates[preset.key].reviewDelayHours
+                          "
+                          data-testid="preset-review-delay-select"
+                          class="mt-1 w-full rounded-lg border border-n-weak bg-n-surface-1 p-2 text-sm text-n-slate-12"
+                        >
+                          <option :value="0">
+                            {{
+                              t(
+                                'SCHEDULING.REMINDERS.REVIEW_DELAY.IMMEDIATE'
+                              )
+                            }}
+                          </option>
+                          <option :value="1">
+                            {{
+                              t('SCHEDULING.REMINDERS.REVIEW_DELAY.HOURS_1')
+                            }}
+                          </option>
+                          <option :value="2">
+                            {{
+                              t('SCHEDULING.REMINDERS.REVIEW_DELAY.HOURS_2')
+                            }}
+                          </option>
+                          <option :value="3">
+                            {{
+                              t('SCHEDULING.REMINDERS.REVIEW_DELAY.HOURS_3')
+                            }}
+                          </option>
+                        </select>
+                      </label>
                     </div>
 
                     <div
@@ -1800,6 +1911,7 @@ onMounted(async () => {
       ref="templatePackDialogRef"
       :inbox-id="Number(selectedInboxId) || null"
       :existing-template-names="pageTemplates.map(item => item.name)"
+      :existing-templates="pageTemplates"
       :default-company-name="currentAccount?.name || ''"
       :account-client-languages="
         currentAccount?.settings?.client_languages || ['ru', 'kk']

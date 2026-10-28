@@ -31,6 +31,33 @@ class Whatsapp::TemplateLanguageResolver
     @template_params
   end
 
+  def render_switched_body(resolved_params)
+    return nil if resolved_params.blank?
+
+    resolved = resolved_params.deep_stringify_keys
+    orig_name = @template_params['name'].to_s
+    orig_lang = Whatsapp::SupportedLanguages.normalize_code(@template_params['language'])
+    new_name = resolved['name'].to_s
+    new_lang = Whatsapp::SupportedLanguages.normalize_code(resolved['language'])
+    return nil if new_name.blank? || (new_name.casecmp?(orig_name) && new_lang == orig_lang)
+
+    matched = available_approved_templates.find do |tpl|
+      tpl['name'].to_s.casecmp?(new_name) &&
+        Whatsapp::SupportedLanguages.normalize_code(tpl['language']) == new_lang
+    end
+    return nil unless matched
+
+    body_comp = Array(matched['components']).find { |comp| comp.to_h['type'].to_s.upcase == 'BODY' }
+    raw_text = body_comp.to_h['text'].to_s
+    return nil if raw_text.blank?
+
+    body_values = resolved.dig('processed_params', 'body').to_h.stringify_keys
+    raw_text.gsub(/\{\{\s*(\d+)\s*\}\}/) do
+      idx = Regexp.last_match(1)
+      body_values[idx].presence || "{{#{idx}}}"
+    end
+  end
+
   private
 
   def account

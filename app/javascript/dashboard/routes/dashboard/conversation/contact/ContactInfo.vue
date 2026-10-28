@@ -70,10 +70,20 @@ export default {
       return WHATSAPP_SUPPORTED_CLIENT_LANGUAGES;
     },
     contactClientLanguage() {
-      return normalizeClientLanguageCode(
+      const direct = normalizeClientLanguageCode(
         this.additionalAttributes.client_language ||
           this.additionalAttributes.patient_language
       );
+      if (direct) return direct;
+
+      const convLang = (this.contactConversations || [])
+        .map(conv =>
+          normalizeClientLanguageCode(
+            conv?.additional_attributes?.captain_patient_language
+          )
+        )
+        .find(Boolean);
+      return convLang || '';
     },
     contactClientLanguageConfidence() {
       const raw = this.additionalAttributes.client_language_confidence;

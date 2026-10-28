@@ -145,7 +145,23 @@ class Captain::PatientLanguageDetector
   def message_text(message)
     transcription = message.attachments.select { |attachment| attachment.file_type == 'audio' }
                            .filter_map { |attachment| attachment.meta.to_h['transcribed_text'].presence }.join(' ')
-    [message.content, transcription].compact_blank.join(' ').squish.presence
+    call_transcript = extract_call_patient_transcript(message)
+    [message.content, transcription, call_transcript].compact_blank.join(' ').squish.presence
+  end
+
+  def extract_call_patient_transcript(message)
+    data = message.content_attributes.to_h['data'].to_h
+    recording_transcription = data.dig('recording', 'transcription').to_h
+    entries = Array(data['transcript_items'].presence || recording_transcription['transcript_items'])
+    if entries.any?
+      caller_lines = entries.filter_map do |item|
+        entry = item.to_h.with_indifferent_access
+        entry[:text].to_s.strip.presence if entry[:speaker].to_s.blank? || entry[:speaker].to_s.in?(%w[caller customer contact user client])
+      end
+      return caller_lines.join(' ').presence if caller_lines.any?
+    end
+
+    (data['transcript'].presence || recording_transcription['text']).to_s.strip.presence
   end
 
   def saved_attributes
