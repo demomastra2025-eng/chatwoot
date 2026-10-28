@@ -206,21 +206,9 @@ const closeAppointmentsSidebar = () => closePanel();
         :selected-patient="selectedPatient"
         :patient-context-enabled="patientContextEnabled"
         :patient-context-key="patientContextKey"
-      >
-        <template #after-profile>
-          <SchedulingConversationPatientSelector
-            v-if="
-              patientContextEnabled &&
-              patientContextKey &&
-              patientEntry?.patients?.length
-            "
-            chips
-            :context-key="patientContextKey"
-            :entry="patientEntry"
-            :conversation-display-id="patientConversationDisplayId"
-          />
-        </template>
-      </ContactPanel>
+        :patient-entry="patientEntry"
+        :patient-conversation-display-id="patientConversationDisplayId"
+      />
       <div v-if="activeTab === 'deals' && !isDraft" class="min-w-0 flex-1">
         <CrmConversationDealsSidebar
           :current-chat="currentChat"

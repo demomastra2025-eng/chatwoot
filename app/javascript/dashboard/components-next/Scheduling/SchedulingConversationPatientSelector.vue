@@ -35,6 +35,8 @@ const props = defineProps({
   conversationDisplayId: { type: [Number, String], default: null },
   compact: { type: Boolean, default: false },
   chips: { type: Boolean, default: false },
+  showChips: { type: Boolean, default: true },
+  showAddButton: { type: Boolean, default: true },
 });
 const { t, locale } = useI18n();
 const patientStore = useConversationPatientContextStore();
@@ -72,18 +74,14 @@ const canEditSelected = computed(() =>
 const options = computed(() =>
   (props.entry?.patients || []).map(patient => ({
     value: patient.id,
-    label:
-      [
-        patientDisplayName(patient),
-        props.compact || props.chips
-          ? patientAgeLabel(patient, t, locale?.value || 'ru')
-          : formatPatientBirthDate(patient),
-      ]
-        .filter(Boolean)
-        .join(props.compact || props.chips ? ', ' : ' · ') +
-      (props.chips && Number(patient.id) === Number(props.entry?.contactId)
-        ? ` · ${t('CONTACT_PANEL.SELF_PATIENT')}`
-        : ''),
+    label: [
+      patientDisplayName(patient),
+      props.compact || props.chips
+        ? patientAgeLabel(patient, t, locale?.value || 'ru')
+        : formatPatientBirthDate(patient),
+    ]
+      .filter(Boolean)
+      .join(props.compact || props.chips ? ', ' : ' · '),
   }))
 );
 const selectedOption = computed(
@@ -183,6 +181,7 @@ const startCreate = () => {
   idempotencyKey.value = newIdempotencyKey();
   isCreating.value = true;
 };
+defineExpose({ startCreate });
 const startEdit = () => {
   if (!canEditSelected.value || props.entry?.saving) return;
   resetForm();
@@ -286,8 +285,8 @@ const savePatient = async () => {
     data-test="patient-selector"
   >
     <div
-      v-if="chips && !isCreating && !isEditing"
-      class="flex flex-wrap gap-1.5"
+      v-if="chips && showChips && !isCreating && !isEditing"
+      class="flex flex-nowrap gap-1.5 overflow-x-auto"
       data-test="patient-chips"
     >
       <button
@@ -296,7 +295,8 @@ const savePatient = async () => {
         type="button"
         :disabled="!entry?.loaded || entry?.loading || entry?.saving"
         :aria-pressed="isOptionSelected(option)"
-        class="rounded-full border px-2.5 py-1 text-xs text-n-slate-12"
+        :title="t('CONTACT_PANEL.PATIENT_HINT')"
+        class="shrink-0 rounded-full border px-2.5 py-1 text-xs text-n-slate-12"
         :class="
           isOptionSelected(option)
             ? 'border-n-teal-7 bg-n-teal-3 text-n-teal-11'
@@ -307,6 +307,7 @@ const savePatient = async () => {
         {{ option.label }}
       </button>
       <Button
+        v-if="showAddButton"
         size="xs"
         variant="faded"
         icon="i-lucide-plus"

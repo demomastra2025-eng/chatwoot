@@ -144,6 +144,19 @@ describe('SchedulingPatientDetails', () => {
     return { wrapper, store };
   };
 
+  it('renders age, masked IIN and MedElement in one grey summary line', async () => {
+    const wrapper = mount(SchedulingPatientDetails, {
+      props: { patient, contextKey: key, showName: false, summary: true },
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+    const summary = wrapper.get('[data-test="patient-summary"]');
+    expect(summary.text()).toContain('•••• 0000');
+    expect(summary.text()).toContain('MedElement');
+    expect(summary.text()).toContain(' · ');
+    expect(wrapper.find('[data-test="patient-details"]').exists()).toBe(false);
+  });
+
   it.each([42, 84])(
     'allows editing provider patient %s on demand without showing a read-only MedElement notice',
     async id => {

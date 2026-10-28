@@ -15,6 +15,7 @@ import {
   normalizePatientGender,
   patientBirthDate,
   patientDisplayName,
+  patientAgeLabel,
   useConversationPatientContextStore,
 } from 'dashboard/stores/scheduling/patientContext';
 
@@ -22,8 +23,9 @@ const props = defineProps({
   patient: { type: Object, required: true },
   contextKey: { type: String, default: '' },
   showName: { type: Boolean, default: true },
+  summary: { type: Boolean, default: false },
 });
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const patientStore = useConversationPatientContextStore();
 const isEditing = ref(false);
 const error = ref('');
@@ -154,10 +156,32 @@ const rows = computed(() => [
   ],
   [t('CONTACT_PANEL.NEAREST_APPOINTMENT'), nearestAppointmentLabel.value],
 ]);
+const summaryParts = computed(() => {
+  const parts = [patientAgeLabel(props.patient, t, locale.value || 'ru')];
+  const iin = maskedPatientIin(props.patient);
+  if (iin) parts.push(`${t('SCHEDULING.CONTACT.IIN')} ${iin}`);
+  if (
+    hasProviderPatientIdentity(props.patient) ||
+    attributes.value.medelement_patient_card
+  )
+    parts.push(`${t('SCHEDULING.PATIENT_CONTEXT.MEDELEMENT_CARD')} ✓`);
+  if (nearestAppointmentLabel.value)
+    parts.push(
+      `${t('CONTACT_PANEL.NEAREST_APPOINTMENT')} ${nearestAppointmentLabel.value}`
+    );
+  return parts.filter(Boolean);
+});
 </script>
 
 <template>
-  <section class="px-4 pb-3" data-test="patient-details">
+  <p
+    v-if="summary && summaryParts.length"
+    class="m-0 min-w-0 break-words text-xs text-n-slate-11"
+    data-test="patient-summary"
+  >
+    {{ summaryParts.join(' · ') }}
+  </p>
+  <section v-else-if="!summary" class="px-4 pb-3" data-test="patient-details">
     <h3 v-if="showName" class="m-0 mb-2 text-sm font-semibold text-n-slate-12">
       {{ patientDisplayName(patient) }}
     </h3>

@@ -1,11 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia } from 'pinia';
 import { flushPromises, shallowMount } from '@vue/test-utils';
 import ContactPanel from './ContactPanel.vue';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
-  sidebarItems: [{ name: 'contact_attributes' }, { name: 'contact_notes' }],
+  toggle: vi.fn(),
+  update: vi.fn(),
+  sidebarItems: [
+    { name: 'conversation_actions' },
+    { name: 'macros' },
+    { name: 'contact_attributes' },
+    { name: 'contact_notes' },
+    { name: 'shared_files' },
+  ],
 }));
 const chat = {
   id: 123,
@@ -21,264 +29,191 @@ vi.mock('dashboard/composables/store', async () => {
         () =>
           ({
             getSelectedChat: chat,
-            'contacts/getContact': id => ({
-              id,
-              name: 'Chat owner',
-              additional_attributes: {},
-            }),
-            'conversationMetadata/getConversationMetadata': () => ({
-              additional_attributes: {},
-            }),
+            'contacts/getContact': id => ({ id, name: 'Patient' }),
+            'attributes/getAttributes': [],
+            'attributes/getUIFlags': { isFetching: false },
           })[name]
       ),
-    useFunctionGetter: () => computed(() => ({ enabled: false })),
   };
 });
-vi.mock('dashboard/composables/useAccount', () => ({
-  useAccount: () => ({ isCloudFeatureEnabled: () => false }),
-}));
 vi.mock('dashboard/composables/useUISettings', async () => {
-  const { ref: createRef } = await import('vue');
+  const { ref } = await import('vue');
   return {
     useUISettings: () => ({
-      updateUISettings: vi.fn(),
-      toggleSidebarUIState: vi.fn(),
+      updateUISettings: mocks.update,
+      toggleSidebarUIState: mocks.toggle,
       isContactSidebarItemOpen: () => true,
-      conversationSidebarItemsOrder: createRef(mocks.sidebarItems),
+      conversationSidebarItemsOrder: ref(mocks.sidebarItems),
     }),
   };
 });
+vi.mock('dashboard/composables/useConversationSidepanelAvailability', () => ({
+  useConversationSidepanelAvailability: () => ({ closePanel: vi.fn() }),
+}));
 
-describe('ContactPanel selected patient details', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+const stubs = {
+  Draggable: {
+    props: ['list'],
+    template:
+      '<div><slot v-for="element in list" name="item" :element="element" /></div>',
+  },
+  AccordionItem: {
+    name: 'AccordionItem',
+    props: ['title', 'isOpen'],
+    emits: ['toggle'],
+    template: '<div><slot /></div>',
+  },
+  ContactInfo: {
+    name: 'ContactInfo',
+    props: ['contact'],
+    template:
+      '<div><slot name="patient-summary" /><slot name="after-channels" /></div>',
+  },
+  ConversationAction: { name: 'ConversationAction', template: '<div />' },
+  SchedulingPatientDetails: {
+    name: 'SchedulingPatientDetails',
+    props: { patient: Object, summary: Boolean },
+    template: '<div />',
+  },
+  SchedulingConversationPatientSelector: {
+    name: 'SchedulingConversationPatientSelector',
+    props: ['showChips', 'showAddButton'],
+    template: '<div />',
+  },
+  CustomAttributes: {
+    name: 'CustomAttributes',
+    props: ['contactId'],
+    template: '<div />',
+  },
+  ContactNotes: {
+    name: 'ContactNotes',
+    props: ['contactId'],
+    template: '<div />',
+  },
+  MacrosList: { name: 'MacrosList', template: '<div />' },
+  SharedFiles: { name: 'SharedFiles', template: '<div />' },
+  'woot-feature-toggle': { template: '<div><slot /></div>' },
+};
+const mountPanel = async props => {
+  const wrapper = shallowMount(ContactPanel, {
+    props: { conversationId: 123, ...props },
+    global: { plugins: [createPinia()], mocks: { $t: key => key }, stubs },
+  });
+  await flushPromises();
+  return wrapper;
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  delete chat.is_draft;
+});
+
+describe('ContactPanel modules from PROD base 8f576715f', () => {
+  it('keeps Macros, Attributes, Notes, Attachments separate and in the saved order', async () => {
+    const wrapper = await mountPanel();
+    expect(
+      wrapper
+        .findAllComponents({ name: 'AccordionItem' })
+        .map(item => item.props('title'))
+    ).toEqual([
+      'CONVERSATION_SIDEBAR.ACCORDION.MACROS',
+      'CONVERSATION_SIDEBAR.ACCORDION.CONTACT_ATTRIBUTES',
+      'CONVERSATION_SIDEBAR.ACCORDION.CONTACT_NOTES',
+      'CONVERSATION_SIDEBAR.ACCORDION.SHARED_FILES',
+    ]);
+    expect(wrapper.findComponent({ name: 'ConversationAction' }).exists()).toBe(
+      true
+    );
+    wrapper
+      .findAllComponents({ name: 'AccordionItem' })[0]
+      .vm.$emit('toggle', false);
+    expect(mocks.toggle).toHaveBeenCalledWith('is_macro_open', false);
   });
 
-  it('uses the patient for clinical attributes and notes while preserving shared chat history', async () => {
-    const wrapper = shallowMount(ContactPanel, {
-      props: {
-        conversationId: 123,
-        patientContextEnabled: true,
-        selectedPatient: { id: 84, full_name: 'Patient' },
-        patientContextKey: '1:9:conversation:123',
-      },
-      global: {
-        plugins: [createPinia()],
-        mocks: { $t: key => key },
-        stubs: {
-          Draggable: {
-            props: ['list'],
-            template:
-              '<div><slot v-for="element in list" name="item" :element="element" /></div>',
-          },
-          AccordionItem: {
-            name: 'AccordionItem',
-            props: ['title', 'isOpen'],
-            emits: ['toggle'],
-            template: '<div><slot /></div>',
-          },
-          ContactInfo: {
-            name: 'ContactInfo',
-            props: ['contact'],
-            template: '<div><slot /></div>',
-          },
-          SchedulingPatientDetails: {
-            name: 'SchedulingPatientDetails',
-            props: ['patient'],
-            template: '<div />',
-          },
-          CustomAttributes: {
-            name: 'CustomAttributes',
-            props: ['contactId'],
-            template: '<div />',
-          },
-          ContactNotes: {
-            name: 'ContactNotes',
-            props: ['contactId'],
-            template: '<div />',
-          },
-          ContactConversations: {
-            name: 'ContactConversations',
-            props: ['contactId', 'conversationId'],
-            template: '<div />',
-          },
-        },
-      },
-    });
-    await flushPromises();
+  it('keeps person modules but hides conversation modules for a draft', async () => {
+    chat.is_draft = true;
+    const wrapper = await mountPanel({ conversationId: '' });
     expect(
-      wrapper.findComponent({ name: 'ContactInfo' }).props('contact').id
+      wrapper
+        .findAllComponents({ name: 'AccordionItem' })
+        .map(item => item.props('title'))
+    ).toEqual([
+      'CONVERSATION_SIDEBAR.ACCORDION.CONTACT_ATTRIBUTES',
+      'CONVERSATION_SIDEBAR.ACCORDION.CONTACT_NOTES',
+    ]);
+    expect(wrapper.findComponent({ name: 'ConversationAction' }).exists()).toBe(
+      false
+    );
+  });
+});
+
+describe('ContactPanel patient context', () => {
+  const patient = { id: 84, full_name: 'Patient' };
+  const common = {
+    patientContextEnabled: true,
+    patientContextKey: '1:9:conversation:123',
+    selectedPatient: patient,
+  };
+
+  it('uses contact details when no patient is available', async () => {
+    const wrapper = await mountPanel({
+      patientContextEnabled: true,
+      patientContextKey: common.patientContextKey,
+      patientEntry: { loaded: true, patients: [] },
+    });
+    expect(
+      wrapper.findComponent({ name: 'SchedulingPatientDetails' }).exists()
+    ).toBe(false);
+    expect(
+      wrapper.findComponent({ name: 'CustomAttributes' }).props('contactId')
     ).toBe(42);
+    expect(
+      wrapper.findComponent({ name: 'ContactNotes' }).props('contactId')
+    ).toBe(42);
+  });
+
+  it('shows one patient summary below the name without tabs', async () => {
+    const wrapper = await mountPanel({
+      ...common,
+      patientEntry: { loaded: true, patients: [patient] },
+    });
     expect(
       wrapper
         .findComponent({ name: 'SchedulingPatientDetails' })
-        .props('patient').id
-    ).toBe(84);
-    wrapper
-      .findAllComponents({ name: 'AccordionItem' })
-      .find(
-        item =>
-          item.props('title') === 'CONTACT_PANEL.SECTION_ATTRIBUTES_MACROS'
-      )
-      .vm.$emit('toggle', true);
-    wrapper
-      .findAllComponents({ name: 'AccordionItem' })
-      .find(item => item.props('title') === 'CONTACT_PANEL.SECTION_NOTES')
-      .vm.$emit('toggle', true);
-    await flushPromises();
+        .props('summary')
+    ).toBe(true);
+    expect(
+      wrapper
+        .findComponent({ name: 'SchedulingConversationPatientSelector' })
+        .props('showChips')
+    ).toBe(false);
+  });
+
+  it('shows tabs for two people and uses selected patient for notes and attributes', async () => {
+    const wrapper = await mountPanel({
+      ...common,
+      patientEntry: { loaded: true, patients: [patient, { id: 85 }] },
+    });
+    expect(
+      wrapper
+        .findComponent({ name: 'SchedulingConversationPatientSelector' })
+        .props('showChips')
+    ).toBe(true);
+    expect(
+      wrapper
+        .findComponent({ name: 'SchedulingConversationPatientSelector' })
+        .props('showAddButton')
+    ).toBe(false);
     expect(
       wrapper.findComponent({ name: 'CustomAttributes' }).props('contactId')
     ).toBe(84);
     expect(
       wrapper.findComponent({ name: 'ContactNotes' }).props('contactId')
     ).toBe(84);
-    expect(mocks.dispatch).toHaveBeenCalledWith('contacts/show', { id: 42 });
     expect(mocks.dispatch).toHaveBeenCalledWith('contacts/show', { id: 84 });
-    await wrapper.setProps({
-      selectedPatient: { id: 85, full_name: 'Other Patient' },
-    });
+    await wrapper.setProps({ selectedPatient: { id: 85 } });
     expect(
       wrapper.findComponent({ name: 'ContactNotes' }).props('contactId')
     ).toBe(85);
-    expect(mocks.dispatch).toHaveBeenCalledWith('contacts/show', { id: 85 });
-    expect(chat.meta.sender.id).toBe(42);
-    expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      'integrations/get',
-      'linear'
-    );
-  });
-
-  it('keeps the contact profile visible without patient context', async () => {
-    const wrapper = shallowMount(ContactPanel, {
-      props: { conversationId: 123 },
-      global: { mocks: { $t: key => key } },
-    });
-    expect(wrapper.findComponent({ name: 'ContactInfo' }).exists()).toBe(true);
-    expect(
-      wrapper.findComponent({ name: 'SchedulingPatientDetails' }).exists()
-    ).toBe(false);
-  });
-});
-
-describe('ContactPanel for a person who has no dialog yet', () => {
-  const ALL_ITEMS = [
-    { name: 'conversation_actions' },
-    { name: 'contact_attributes' },
-    { name: 'macros' },
-    { name: 'contact_notes' },
-    { name: 'shared_files' },
-  ];
-  const itemStubs = {
-    Draggable: {
-      props: ['list'],
-      template:
-        '<div><slot v-for="element in list" name="item" :element="element" /></div>',
-    },
-    AccordionItem: {
-      name: 'AccordionItem',
-      props: ['title', 'isOpen'],
-      emits: ['toggle'],
-      template: '<div><slot /></div>',
-    },
-    ConversationAction: { name: 'ConversationAction', template: '<div />' },
-    MacrosList: { name: 'MacrosList', template: '<div />' },
-    SharedFiles: { name: 'SharedFiles', template: '<div />' },
-    CustomAttributes: { name: 'CustomAttributes', template: '<div />' },
-    ContactNotes: { name: 'ContactNotes', template: '<div />' },
-    'woot-feature-toggle': { template: '<div><slot /></div>' },
-  };
-  const mountPanel = async draft => {
-    mocks.sidebarItems.splice(0, mocks.sidebarItems.length, ...ALL_ITEMS);
-    if (draft) {
-      Object.assign(chat, { id: 'draft-42', is_draft: true });
-    } else {
-      delete chat.is_draft;
-      chat.id = 123;
-    }
-    const wrapper = shallowMount(ContactPanel, {
-      props: { conversationId: draft ? '' : 123 },
-      global: {
-        plugins: [createPinia()],
-        mocks: { $t: key => key },
-        stubs: itemStubs,
-      },
-    });
-    await flushPromises();
-    return wrapper;
-  };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    mocks.sidebarItems.splice(
-      0,
-      mocks.sidebarItems.length,
-      { name: 'contact_attributes' },
-      { name: 'contact_notes' }
-    );
-    delete chat.is_draft;
-    chat.id = 123;
-  });
-
-  it('keeps what belongs to the person: attributes and notes', async () => {
-    const wrapper = await mountPanel(true);
-    expect(wrapper.findComponent({ name: 'CustomAttributes' }).exists()).toBe(
-      false
-    );
-    expect(wrapper.findComponent({ name: 'ContactNotes' }).exists()).toBe(
-      false
-    );
-    wrapper
-      .findAllComponents({ name: 'AccordionItem' })
-      .find(
-        item =>
-          item.props('title') === 'CONTACT_PANEL.SECTION_ATTRIBUTES_MACROS'
-      )
-      .vm.$emit('toggle', true);
-    wrapper
-      .findAllComponents({ name: 'AccordionItem' })
-      .find(item => item.props('title') === 'CONTACT_PANEL.SECTION_NOTES')
-      .vm.$emit('toggle', true);
-    await flushPromises();
-    expect(wrapper.findComponent({ name: 'CustomAttributes' }).exists()).toBe(
-      true
-    );
-    expect(wrapper.findComponent({ name: 'ContactNotes' }).exists()).toBe(true);
-  });
-
-  it('drops what belongs to a conversation: its actions, macros and shared files', async () => {
-    const wrapper = await mountPanel(true);
-
-    expect(wrapper.findComponent({ name: 'ConversationAction' }).exists()).toBe(
-      false
-    );
-    expect(wrapper.findComponent({ name: 'MacrosList' }).exists()).toBe(false);
-    expect(wrapper.findComponent({ name: 'SharedFiles' }).exists()).toBe(false);
-  });
-
-  it('shows dialog controls while keeping attachments collapsed initially', async () => {
-    const wrapper = await mountPanel(false);
-
-    expect(wrapper.findComponent({ name: 'ConversationAction' }).exists()).toBe(
-      true
-    );
-    expect(wrapper.findComponent({ name: 'MacrosList' }).exists()).toBe(false);
-    expect(wrapper.findComponent({ name: 'SharedFiles' }).exists()).toBe(false);
-    wrapper
-      .findAllComponents({ name: 'AccordionItem' })
-      .find(
-        item =>
-          item.props('title') === 'CONTACT_PANEL.SECTION_ATTRIBUTES_MACROS'
-      )
-      .vm.$emit('toggle', true);
-    wrapper
-      .findAllComponents({ name: 'AccordionItem' })
-      .find(item => item.props('title') === 'CONTACT_PANEL.SECTION_FILES')
-      .vm.$emit('toggle', true);
-    await flushPromises();
-    expect(wrapper.findComponent({ name: 'MacrosList' }).exists()).toBe(true);
-    expect(wrapper.findComponent({ name: 'SharedFiles' }).exists()).toBe(true);
   });
 });
