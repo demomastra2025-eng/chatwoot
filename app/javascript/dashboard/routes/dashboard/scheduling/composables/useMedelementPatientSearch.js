@@ -28,14 +28,6 @@ export const patientSearchKind = raw => {
     : '';
 };
 
-export const visibleRemotePatients = (patients, localOptions) => {
-  const localIds = new Set(localOptions.map(option => Number(option.value)));
-  return patients.filter(
-    patient =>
-      !patient.linkedContactId || !localIds.has(Number(patient.linkedContactId))
-  );
-};
-
 export const useMedelementPatientSearch = ({
   enabled,
   search,

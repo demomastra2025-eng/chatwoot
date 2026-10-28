@@ -66,7 +66,7 @@ const stubs = {
   },
   ContactInfo: {
     name: 'ContactInfo',
-    props: ['contact'],
+    props: ['contact', 'canAddFamilyMember'],
     template:
       '<div><slot name="patient-summary" /><slot name="after-channels" /></div>',
   },
@@ -224,6 +224,9 @@ describe('ContactPanel patient context', () => {
         .findComponent({ name: 'SchedulingConversationPatientSelector' })
         .props('showChips')
     ).toBe(false);
+    expect(
+      wrapper.findComponent({ name: 'ContactInfo' }).props('canAddFamilyMember')
+    ).toBe(true);
   });
 
   it('shows tabs for two people and uses selected patient for notes and attributes', async () => {

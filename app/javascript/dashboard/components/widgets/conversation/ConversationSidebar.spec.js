@@ -91,6 +91,7 @@ const mountComponent = (
             'inboxId',
             'selectedPatient',
             'patientContextEnabled',
+            'patientEntry',
           ],
           template: '<div><slot name="after-profile" /></div>',
         },
@@ -179,7 +180,7 @@ describe('ConversationSidebar', () => {
     });
   });
 
-  it('keeps the patient chip and add action when the contact is the only patient', async () => {
+  it('passes the sole patient to the contact panel', async () => {
     mocks.uiSettings = ref({ is_contact_sidebar_open: true });
     SchedulingContactsAPI.patients.mockResolvedValueOnce({
       data: {
@@ -195,12 +196,9 @@ describe('ConversationSidebar', () => {
       meta: { sender: { id: 42 } },
     });
     await flushPromises();
-    expect(wrapper.findComponent({ name: 'ContactPanel' }).exists()).toBe(true);
-    expect(
-      wrapper
-        .findComponent({ name: 'SchedulingConversationPatientSelector' })
-        .props('chips')
-    ).toBe(true);
+    const panel = wrapper.findComponent({ name: 'ContactPanel' });
+    expect(panel.props('patientEntry').patients).toHaveLength(1);
+    expect(panel.props('selectedPatient').id).toBe(42);
   });
 
   it('passes selected clinical context while keeping the chat recipient intact', async () => {

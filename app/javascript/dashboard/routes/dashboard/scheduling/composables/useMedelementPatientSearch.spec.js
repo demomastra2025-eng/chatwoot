@@ -6,7 +6,6 @@ import { useSchedulingAppointmentFormStore } from 'dashboard/stores/scheduling/a
 import {
   patientSearchKind,
   useMedelementPatientSearch,
-  visibleRemotePatients,
 } from './useMedelementPatientSearch';
 
 const validIin = () => {
@@ -137,15 +136,6 @@ describe('MedElement patient picker search', () => {
     resolveOld({ patients: [{ token: 'old' }] });
     await flushPromises();
     expect(state.patients.value).toEqual([{ token: 'new' }]);
-    expect(
-      visibleRemotePatients(
-        [
-          { token: 'a', linkedContactId: 1 },
-          { token: 'b', linkedContactId: 2 },
-        ],
-        [{ value: 1 }]
-      )
-    ).toEqual([{ token: 'b', linkedContactId: 2 }]);
     wrapper.unmount();
   });
 
