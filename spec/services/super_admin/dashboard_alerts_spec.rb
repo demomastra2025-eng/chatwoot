@@ -412,7 +412,7 @@ RSpec.describe SuperAdmin::DashboardAlerts do
       found = described_class.build
 
       expect(found.pluck(:key)).to eq(['incomplete'])
-      expect(found.first).to include(severity: :warning, count: 5, title: 'Часть проверок не выполнена')
+      expect(found.first).to include(severity: :warning, count: 6, title: 'Часть проверок не выполнена')
       expect(found.first[:text]).to start_with('Не удалось выполнить ни одну проверку (')
       expect(found.first[:text]).to include('пробные периоды, место на диске, ключ OpenRouter, очереди задач, каналы')
     end

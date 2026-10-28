@@ -77,6 +77,9 @@
         }
       },
       "NEXT_SYNC": "Next scheduled sync",
+      "REQUESTS_THIS_HOUR": "Запросов за час",
+      "RATE_LIMITED_THIS_HOUR": "Ошибок 429 за час",
+      "RATE_ALERT": "Превышен порог ошибок 429",
       "LAST_SYNC": "Last scheduled sync",
       "SCHEDULE": {
         "REALTIME_NEXT": "Next appointments refresh",

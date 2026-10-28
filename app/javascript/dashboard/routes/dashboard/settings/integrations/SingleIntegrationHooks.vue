@@ -421,6 +421,32 @@ const medelementScheduleDetails = computed(() => {
   ];
 });
 
+const medelementRateDetails = computed(() => {
+  const rate = hookSyncStatus.value?.request_rate;
+  if (!isMedelement.value || !rate) return [];
+
+  const details = [
+    {
+      key: 'requests_this_hour',
+      label: t('INTEGRATION_APPS.MEDELEMENT.REQUESTS_THIS_HOUR'),
+      value: rate.requests_this_hour,
+    },
+    {
+      key: 'rate_limited_this_hour',
+      label: t('INTEGRATION_APPS.MEDELEMENT.RATE_LIMITED_THIS_HOUR'),
+      value: `${rate.rate_limited_this_hour} / ${rate.alert_threshold}`,
+    },
+  ];
+  if (rate.alerting) {
+    details.push({
+      key: 'rate_alert',
+      label: t('INTEGRATION_APPS.MEDELEMENT.RATE_ALERT'),
+      value: `${rate.rate_limited_this_hour} / ${rate.alert_threshold}`,
+    });
+  }
+  return details;
+});
+
 function clearHookSyncPoll() {
   window.clearTimeout(hookSyncPollTimer);
   hookSyncPollTimer = undefined;
@@ -1071,7 +1097,9 @@ onBeforeUnmount(() => {
         v-if="
           (!isMedelement || showDiagnostics) &&
           !isEditingInline &&
-          (hookDetails.length || medelementScheduleDetails.length)
+          (hookDetails.length ||
+            medelementScheduleDetails.length ||
+            medelementRateDetails.length)
         "
         class="mt-4 grid grid-cols-1 gap-3 border-t border-n-weak pt-4 md:grid-cols-2 xl:grid-cols-4"
       >
@@ -1088,7 +1116,10 @@ onBeforeUnmount(() => {
           </p>
         </div>
         <div
-          v-for="detail in medelementScheduleDetails"
+          v-for="detail in [
+            ...medelementScheduleDetails,
+            ...medelementRateDetails,
+          ]"
           :key="detail.key"
           class="rounded-lg border border-n-weak bg-n-solid-1 px-3.5 py-2.5"
         >

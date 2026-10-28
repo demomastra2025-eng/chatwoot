@@ -32,7 +32,8 @@ class SuperAdmin::DashboardAlerts
     {
       'trials' => SuperAdmin::DashboardAlerts::Trials, 'storage' => SuperAdmin::DashboardAlerts::Storage,
       'openrouter' => SuperAdmin::DashboardAlerts::OpenRouter, 'sidekiq' => SuperAdmin::DashboardAlerts::Queues,
-      'channels' => SuperAdmin::DashboardAlerts::Channels
+      'channels' => SuperAdmin::DashboardAlerts::Channels,
+      'medelement' => SuperAdmin::DashboardAlerts::Medelement
     }
   end
 
