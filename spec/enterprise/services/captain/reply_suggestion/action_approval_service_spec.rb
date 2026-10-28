@@ -724,6 +724,19 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
     end
   end
 
+  it 'prepares cancellation of an imported reception whose patient card is unset' do
+    account.enable_features!('scheduling')
+    appointment = create(:scheduling_appointment, account: account, resource: resource, contact: contact,
+                                                  conversation: conversation, patient_contact: nil, source: 'medelement',
+                                                  external_ref: 'medelement:reception:test-1',
+                                                  custom_attributes: { 'medelement_reception_code' => 'test-1' })
+    tool = Captain::Tools::CancelAppointmentTool.new(assistant)
+
+    raw = described_class.intercept(tool: tool, tool_context: tool_context, arguments: { appointment_id: appointment.id })
+
+    expect(JSON.parse(raw)).to include('status' => 'pending_operator_approval')
+  end
+
   describe '#approve!' do
     subject(:approval_service) do
       described_class.new(account: account, user: user, conversation_display_id: conversation.display_id)
