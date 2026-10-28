@@ -32,6 +32,10 @@ import SLACardLabel from './components/SLACardLabel.vue';
 import ContextMenu from 'dashboard/components/ui/ContextMenu.vue';
 import VoiceCallStatus from './VoiceCallStatus.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
+import CrmContactTaskDrawer from 'dashboard/components-next/CRM/CrmContactTaskDrawer.vue';
+import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import { CRM_TASK_MANAGE_PERMISSIONS } from 'dashboard/constants/permissions';
+import { hasPermissions } from 'dashboard/helper/permissionsHelper';
 import {
   APPOINTMENT_STATUS_ICON_CLASSES,
   APPOINTMENT_STATUS_ICONS,
@@ -82,6 +86,7 @@ const currentLocale = computed(() => locale?.value || 'en');
 
 const hovered = ref(false);
 const showContextMenu = ref(false);
+const taskDrawerOpen = ref(false);
 const contextMenu = ref({ x: null, y: null });
 const isUpdatingPin = ref(false);
 const isTouchContextMenu = ref(false);
@@ -127,6 +132,7 @@ const resetState = () => {
   }
   hovered.value = false;
   showContextMenu.value = false;
+  taskDrawerOpen.value = false;
   isTouchContextMenu.value = false;
   suppressNextClick.value = false;
   touchStartPoint.value = null;
@@ -140,6 +146,18 @@ onUnmounted(resetState);
 const currentChat = useMapGetter('getSelectedChat');
 const activeInbox = useMapGetter('getSelectedInbox');
 const accountId = useMapGetter('getCurrentAccountId');
+const currentUser = useMapGetter('getCurrentUser');
+const isFeatureEnabled = useMapGetter('accounts/isFeatureEnabledonAccount');
+const canAddTask = computed(() => {
+  const permissions =
+    currentUser.value?.accounts?.find(
+      account => Number(account.id) === Number(accountId.value)
+    )?.permissions || [];
+  return (
+    isFeatureEnabled.value?.(accountId.value, FEATURE_FLAGS.CRM_TASKS) &&
+    hasPermissions(CRM_TASK_MANAGE_PERMISSIONS, permissions)
+  );
+});
 
 const chatMetadata = computed(() => props.chat.meta || {});
 const isCommunicationThreadChat = computed(() =>
@@ -155,6 +173,11 @@ const currentContact = computed(() => {
     ? store.getters['contacts/getContact'](senderId.value) || {}
     : {};
 });
+const taskContact = computed(() =>
+  currentContact.value?.id
+    ? currentContact.value
+    : chatMetadata.value.sender || {}
+);
 
 const truncateInlineMetaText = value => {
   const text = String(value || '').trim();
@@ -936,6 +959,7 @@ const togglePinnedConversation = async nextPinnedState => {
         :allowed-options="allowedContextMenuOptions"
         :is-pinned="isPinned"
         :mobile="isTouchContextMenu"
+        :can-add-task="Boolean(canAddTask && taskContact.id)"
         :conversation-type="
           isCommunicationThreadChat ? 'communication_thread' : 'conversation'
         "
@@ -949,8 +973,18 @@ const togglePinnedConversation = async nextPinnedState => {
         @assign-priority="assignPriority"
         @delete-conversation="deleteConversation"
         @toggle-pin="togglePinnedConversation"
+        @add-task="
+          closeContextMenu();
+          taskDrawerOpen = true;
+        "
         @close="closeContextMenu"
       />
     </ContextMenu>
+    <CrmContactTaskDrawer
+      v-if="taskDrawerOpen"
+      v-model="taskDrawerOpen"
+      :contact="taskContact"
+      :current-chat="chat"
+    />
   </div>
 </template>

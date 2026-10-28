@@ -484,6 +484,10 @@
       "BULK_ACTIONS": "Bulk actions"
     },
     "TASKS": {
+      "PANEL_TITLE": "Задачи",
+      "PANEL_ADD": "+ Задача",
+      "PANEL_EMPTY": "Задач пока нет",
+      "PANEL_MORE": "Загрузить ещё",
       "CREATE_TITLE": "Create task",
       "DESCRIPTION": "Run standalone work and deal-linked follow-ups from one surface.",
       "DRAWER_DESCRIPTION": "Status changes and task context stay in the same native drawer.",

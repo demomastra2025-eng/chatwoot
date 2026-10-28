@@ -4,6 +4,12 @@ import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { getInboxIconByType } from 'dashboard/helper/inbox';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
+import {
+  PopoverRoot,
+  PopoverTrigger,
+  PopoverPortal,
+  PopoverContent,
+} from 'reka-ui';
 
 const props = defineProps({
   contactInboxes: {
@@ -30,7 +36,7 @@ const emit = defineEmits(['select']);
 const { t } = useI18n();
 const openGroup = ref('');
 let longPressTimer;
-let ignoreNextClick = false;
+let closeTimer;
 
 const channelName = (channelType, medium) => {
   if (medium === 'whatsapp' || /whatsapp/i.test(channelType)) return 'WhatsApp';
@@ -118,23 +124,27 @@ const channelGroups = computed(() => {
   return [...groups.values()];
 });
 
-const toggleGroup = brand => {
-  if (ignoreNextClick) {
-    ignoreNextClick = false;
-    return;
-  }
-  openGroup.value = openGroup.value === brand ? '' : brand;
+const showGroup = brand => {
+  clearTimeout(closeTimer);
+  openGroup.value = brand;
+};
+const scheduleClose = () => {
+  clearTimeout(closeTimer);
+  closeTimer = setTimeout(() => {
+    openGroup.value = '';
+  }, 150);
 };
 const startLongPress = brand => {
   clearTimeout(longPressTimer);
-  ignoreNextClick = false;
   longPressTimer = setTimeout(() => {
-    openGroup.value = brand;
-    ignoreNextClick = true;
+    showGroup(brand);
   }, 450);
 };
 const stopLongPress = () => clearTimeout(longPressTimer);
-onBeforeUnmount(stopLongPress);
+onBeforeUnmount(() => {
+  stopLongPress();
+  clearTimeout(closeTimer);
+});
 
 const handleChannelIdentityClick = async channelLabel => {
   emit('select', channelLabel);
@@ -155,45 +165,48 @@ const handleChannelIdentityClick = async channelLabel => {
       class="flex w-full flex-nowrap gap-1"
       data-test="channel-icons"
     >
-      <div
+      <PopoverRoot
         v-for="group in channelGroups"
         :key="group.brand"
-        class="group relative shrink-0"
+        :open="openGroup === group.brand"
         data-test="channel-group"
+        @update:open="value => (openGroup = value ? group.brand : '')"
       >
-        <button
+        <PopoverTrigger
+          as="button"
           type="button"
-          class="relative flex size-8 items-center justify-center rounded-full border border-n-weak bg-n-alpha-1 text-n-slate-12 hover:bg-n-alpha-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-brand"
+          class="flex size-8 shrink-0 items-center justify-center rounded-full border border-n-weak bg-n-alpha-1 text-n-slate-12 hover:bg-n-alpha-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-brand"
           :aria-label="group.brand"
           :aria-expanded="openGroup === group.brand"
-          @click="toggleGroup(group.brand)"
+          @mouseenter="showGroup(group.brand)"
+          @mouseleave="scheduleClose"
           @touchstart="startLongPress(group.brand)"
           @touchend="stopLongPress"
           @touchcancel="stopLongPress"
         >
           <span class="size-4" :class="group.icon" aria-hidden="true" />
-          <span
-            v-if="group.channels.length > 1"
-            class="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-n-brand text-[10px] text-white"
-            data-test="channel-count"
-            >{{ group.channels.length }}</span
+        </PopoverTrigger>
+        <PopoverPortal>
+          <PopoverContent
+            side="bottom"
+            align="start"
+            :side-offset="4"
+            :collision-padding="8"
+            class="z-[150] w-max max-w-[min(18rem,calc(100vw-1rem))] rounded-lg border border-n-weak bg-n-solid-2 p-2 text-xs text-n-slate-12 shadow-lg"
+            data-test="channel-tooltip"
+            @mouseenter="showGroup(group.brand)"
+            @mouseleave="scheduleClose"
           >
-        </button>
-        <div
-          class="absolute right-0 top-full z-40 mt-1 hidden w-max max-w-[min(18rem,calc(100vw-2rem))] rounded-lg border border-n-weak bg-n-solid-2 p-2 text-xs text-n-slate-12 shadow-lg group-hover:block group-focus-within:block"
-          :class="{ '!block': openGroup === group.brand }"
-          role="tooltip"
-          data-test="channel-tooltip"
-        >
-          <p
-            v-for="channel in group.channels"
-            :key="channel.id"
-            class="m-0 break-words py-0.5"
-          >
-            {{ channel.label }}
-          </p>
-        </div>
-      </div>
+            <p
+              v-for="channel in group.channels"
+              :key="channel.id"
+              class="m-0 break-words py-0.5"
+            >
+              {{ channel.label }}
+            </p>
+          </PopoverContent>
+        </PopoverPortal>
+      </PopoverRoot>
     </div>
     <div v-else class="flex flex-wrap gap-2">
       <button

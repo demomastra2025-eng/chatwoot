@@ -28,16 +28,38 @@ const contactInboxes = [
 const mount = props =>
   shallowMount(ContactChannelLabels, {
     props: { contactInboxes, copyOnClick: false, ...props },
-    global: { mocks: { $t: key => key } },
+    global: {
+      mocks: { $t: key => key },
+      stubs: {
+        PopoverRoot: { name: 'PopoverRoot', template: '<div><slot /></div>' },
+        PopoverTrigger: {
+          name: 'PopoverTrigger',
+          template: '<button><slot /></button>',
+        },
+        PopoverPortal: {
+          name: 'PopoverPortal',
+          template: '<div><slot /></div>',
+        },
+        PopoverContent: {
+          name: 'PopoverContent',
+          template: '<div><slot /></div>',
+        },
+      },
+    },
   });
 
 describe('ContactChannelLabels', () => {
-  it('groups same-brand inboxes into one logo with a count and full tooltip', async () => {
+  it('shows every inbox in a portaled popover below its badge-free icon', async () => {
     const wrapper = mount({ iconOnly: true });
     expect(wrapper.findAll('[data-test="channel-group"]')).toHaveLength(3);
-    expect(wrapper.findAll('[data-test="channel-count"]')).toHaveLength(1);
-    expect(wrapper.find('[data-test="channel-count"]').text()).toBe('2');
-    expect(wrapper.find('[data-test="channel-group"] button').text()).toBe('2');
+    expect(wrapper.find('[data-test="channel-count"]').exists()).toBe(false);
+    expect(wrapper.findAllComponents({ name: 'PopoverPortal' })).toHaveLength(
+      3
+    );
+    const content = wrapper.findAllComponents({ name: 'PopoverContent' })[0];
+    expect(content.attributes('side')).toBe('bottom');
+    expect(content.attributes('align')).toBe('start');
+    expect(content.attributes('collision-padding')).toBe('8');
     const tooltip = wrapper.findAll('[data-test="channel-tooltip"]')[0];
     expect(tooltip.text()).toContain(
       'WhatsApp · One Link WhatsApp · +77001234567'
@@ -48,7 +70,7 @@ describe('ContactChannelLabels', () => {
     await wrapper
       .findAll('[data-test="channel-group"]')[0]
       .find('button')
-      .trigger('click');
+      .trigger('mouseenter');
     expect(
       wrapper
         .findAll('[data-test="channel-group"]')[0]

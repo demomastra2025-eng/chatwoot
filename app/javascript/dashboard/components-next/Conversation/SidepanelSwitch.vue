@@ -8,6 +8,7 @@ const {
   activePanel,
   closePanel,
   dealsAvailable: showDealAction,
+  tasksAvailable: showTaskAction,
   appointmentsAvailable: showAppointmentAction,
   openPanel,
 } = useConversationSidepanelAvailability();
@@ -18,6 +19,7 @@ const toggleConversationSidebarToggle = () => {
 };
 
 const openDealsSidebar = () => openPanel('deals');
+const openTasksSidebar = () => openPanel('tasks');
 const openAppointmentsSidebar = () => openPanel('appointments');
 
 const keyboardEvents = {
@@ -56,6 +58,17 @@ useKeyboardEvents(keyboardEvents);
       }"
       icon="i-lucide-briefcase-business"
       @click="openDealsSidebar"
+    />
+    <Button
+      v-if="showTaskAction"
+      v-tooltip.bottom="$t('CRM.TASKS.PANEL_TITLE')"
+      ghost
+      slate
+      sm
+      class="!rounded-full transition-all duration-[250ms] ease-out active:!scale-95 active:duration-75"
+      :class="{ 'bg-n-alpha-2 active:shadow-sm': activePanel === 'tasks' }"
+      icon="i-lucide-list-checks"
+      @click="openTasksSidebar"
     />
     <Button
       v-if="showAppointmentAction"

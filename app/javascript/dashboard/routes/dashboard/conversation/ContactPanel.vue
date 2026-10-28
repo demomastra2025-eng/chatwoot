@@ -42,14 +42,12 @@ const {
 } = useUISettings();
 const dragging = ref(false);
 const conversationSidebarItems = ref([]);
-const patientSelector = ref(null);
 const showPatientSummary = computed(
   () => props.patientContextEnabled && Boolean(props.selectedPatient)
 );
 const hasFamilyTabs = computed(
   () => (props.patientEntry?.patients?.length || 0) > 1
 );
-const addFamilyMember = () => patientSelector.value?.startCreate?.();
 
 const store = useStore();
 const currentChat = useMapGetter('getSelectedChat');
@@ -132,29 +130,13 @@ onMounted(() => {
         :contact="contact"
         :channel-type="channelType"
         :selected-patient="selectedPatient"
-        :patient-context-key="patientContextKey"
         :patient-context-enabled="patientContextEnabled"
-        :can-add-family-member="
-          patientContextEnabled && Boolean(patientEntry?.loaded)
-        "
-        @add-family-member="addFamilyMember"
       >
-        <template #patient-summary>
-          <SchedulingPatientDetails
-            v-if="showPatientSummary && !hasFamilyTabs"
-            :key="`${patientContextKey}:${selectedPatient.id}:single`"
-            :patient="selectedPatient"
-            :context-key="patientContextKey"
-            :show-name="false"
-            summary
-          />
-        </template>
         <template #after-channels>
           <SchedulingConversationPatientSelector
             v-if="
               patientContextEnabled && patientContextKey && patientEntry?.loaded
             "
-            ref="patientSelector"
             chips
             :show-add-button="false"
             :show-chips="hasFamilyTabs"

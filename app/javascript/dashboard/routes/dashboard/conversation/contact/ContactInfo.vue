@@ -1,12 +1,5 @@
 <script>
-import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
-import { FEATURE_FLAGS } from 'dashboard/featureFlags';
-import {
-  CRM_DEAL_MANAGE_PERMISSIONS,
-  CRM_TASK_MANAGE_PERMISSIONS,
-} from 'dashboard/constants/permissions';
-import { hasPermissions } from 'dashboard/helper/permissionsHelper';
 import {
   DuplicateContactException,
   ExceptionWithMessage,
@@ -18,11 +11,12 @@ import SocialIcons from './SocialIcons.vue';
 import EditContact from './EditContact.vue';
 import ContactChannelLabels from 'dashboard/components-next/Contacts/ContactChannelLabels.vue';
 import ContactMergeModal from 'dashboard/modules/contact/ContactMergeModal.vue';
-import CrmContactTaskDrawer from 'dashboard/components-next/CRM/CrmContactTaskDrawer.vue';
-import NextButton from 'dashboard/components-next/button/Button.vue';
 import InlineInput from 'dashboard/components-next/inline-input/InlineInput.vue';
-import SchedulingConversationAppointmentsSidebar from 'dashboard/components-next/Scheduling/SchedulingConversationAppointmentsSidebar.vue';
-import CrmConversationDealsSidebar from 'dashboard/components-next/CRM/CrmConversationDealsSidebar.vue';
+import {
+  hasProviderPatientIdentity,
+  maskedPatientIin,
+  patientAgeLabel,
+} from 'dashboard/stores/scheduling/patientContext';
 
 import {
   isAConversationRoute,
@@ -32,17 +26,13 @@ import {
 
 export default {
   components: {
-    NextButton,
     ContactInfoRow,
     EditContact,
     Avatar,
     SocialIcons,
     ContactChannelLabels,
     ContactMergeModal,
-    CrmContactTaskDrawer,
     InlineInput,
-    SchedulingConversationAppointmentsSidebar,
-    CrmConversationDealsSidebar,
   },
   props: {
     contact: {
@@ -54,11 +44,9 @@ export default {
       default: true,
     },
     selectedPatient: { type: Object, default: null },
-    patientContextKey: { type: String, default: '' },
     patientContextEnabled: { type: Boolean, default: false },
-    canAddFamilyMember: { type: Boolean, default: false },
   },
-  emits: ['panelClose', 'addFamilyMember'],
+  emits: ['panelClose'],
   setup() {
     const { isAdmin } = useAdmin();
     return {
@@ -71,72 +59,38 @@ export default {
       showDeleteModal: false,
       isEditingName: false,
       editName: '',
-      moreOpen: false,
-      appointmentOpen: false,
-      dealOpen: false,
-      taskOpen: false,
     };
   },
   computed: {
-    ...mapGetters({
-      currentAccountId: 'getCurrentAccountId',
-      currentUser: 'getCurrentUser',
-      isFeatureEnabledonAccount: 'accounts/isFeatureEnabledonAccount',
-    }),
     contactProfileLink() {
       return `/app/accounts/${this.$route.params.accountId}/contacts/${this.contact.id}`;
     },
-    currentAccountPermissions() {
-      const currentAccount = this.currentUser.accounts.find(
-        account => Number(account.id) === Number(this.currentAccountId)
-      );
-      return currentAccount?.permissions || [];
-    },
-    canCreateCrmDeal() {
-      return (
-        this.isFeatureEnabledonAccount(
-          this.currentAccountId,
-          FEATURE_FLAGS.CRM_DEALS
-        ) &&
-        hasPermissions(
-          CRM_DEAL_MANAGE_PERMISSIONS,
-          this.currentAccountPermissions
+    headerMeta() {
+      const patient = this.patientContextEnabled ? this.selectedPatient : null;
+      const attributes =
+        patient?.custom_attributes || patient?.customAttributes || {};
+      const parts = [];
+      if (patient) {
+        parts.push(
+          patientAgeLabel(patient, this.$t, this.$i18n?.locale || 'ru')
+        );
+        const iin = maskedPatientIin(patient);
+        if (iin) parts.push(`${this.$t('SCHEDULING.CONTACT.IIN')} ${iin}`);
+        if (
+          hasProviderPatientIdentity(patient) ||
+          attributes.medelement_patient_card
         )
+          parts.push(
+            `${this.$t('SCHEDULING.PATIENT_CONTEXT.MEDELEMENT_CARD')} ✓`
+          );
+      }
+      parts.push(
+        this.additionalAttributes.country || this.additionalAttributes.location
       );
-    },
-    canCreateCrmTask() {
-      return (
-        this.isFeatureEnabledonAccount(
-          this.currentAccountId,
-          FEATURE_FLAGS.CRM_TASKS
-        ) &&
-        hasPermissions(
-          CRM_TASK_MANAGE_PERMISSIONS,
-          this.currentAccountPermissions
-        )
-      );
-    },
-    canCreateSchedulingAppointment() {
-      return this.isFeatureEnabledonAccount(
-        this.currentAccountId,
-        FEATURE_FLAGS.SCHEDULING
-      );
+      return parts.filter(Boolean).join(' · ');
     },
     additionalAttributes() {
       return this.contact.additional_attributes || {};
-    },
-    location() {
-      const {
-        country = '',
-        city = '',
-        country_code: countryCode,
-      } = this.additionalAttributes;
-      const cityAndCountry = [city, country].filter(item => !!item).join(', ');
-
-      if (!cityAndCountry) {
-        return '';
-      }
-      return this.findCountryFlag(countryCode, cityAndCountry);
     },
     socialProfiles() {
       const {
@@ -153,9 +107,6 @@ export default {
         twitter,
         telegram,
       };
-    },
-    currentChat() {
-      return this.$store.getters.getSelectedChat || {};
     },
     // Delete Modal
     confirmDeleteMessage() {
@@ -223,18 +174,6 @@ export default {
       this.showDeleteModal = false;
       this.showEditModal = false;
     },
-    findCountryFlag(countryCode, cityAndCountry) {
-      try {
-        if (!countryCode) {
-          return `${cityAndCountry} 🌎`;
-        }
-
-        const code = countryCode?.toLowerCase();
-        return `${cityAndCountry} <span class="fi fi-${code} size-3.5"></span>`;
-      } catch (error) {
-        return '';
-      }
-    },
     async deleteContact({ id }) {
       try {
         await this.$store.dispatch('contacts/delete', id);
@@ -264,41 +203,6 @@ export default {
     },
     openMergeModal() {
       this.$refs.mergeModal?.open();
-    },
-    openCrmRoute(name, query) {
-      this.$router.push({
-        name,
-        params: { accountId: this.currentAccountId },
-        query,
-      });
-    },
-    onCreateDeal() {
-      if (
-        isAConversationRoute(this.$route.name) ||
-        isAInboxViewRoute(this.$route.name)
-      ) {
-        this.dealOpen = true;
-        this.$nextTick(() => {
-          this.$refs.dealSidebar?.startCreateDeal?.();
-        });
-        return;
-      }
-
-      this.openCrmRoute('crm_deals_index', {
-        action: 'new',
-        contactId: this.contact.id,
-        contactName: this.contact.name || undefined,
-        source: 'contact',
-      });
-    },
-    onCreateTask() {
-      this.taskOpen = true;
-    },
-    onCreateAppointment() {
-      this.appointmentOpen = true;
-      this.$nextTick(() => {
-        this.$refs.appointmentSidebar?.startCreateAppointment?.();
-      });
     },
     startEditingName() {
       this.editName = this.contact.name || '';
@@ -359,8 +263,11 @@ export default {
 <template>
   <div class="relative items-center w-full p-4">
     <div class="flex flex-col w-full gap-4 text-left rtl:text-right">
-      <div class="flex flex-col flex-1 min-w-0 gap-2">
-        <div class="flex flex-row items-start justify-between w-full">
+      <div class="flex flex-col flex-1 min-w-0 gap-1">
+        <div
+          class="flex w-full min-w-0 items-start gap-3"
+          data-test="contact-header"
+        >
           <Avatar
             v-if="showAvatar"
             :src="contact.thumbnail"
@@ -369,11 +276,9 @@ export default {
             :size="48"
             hide-offline-status
             rounded-full
+            class="shrink-0"
           />
-        </div>
-
-        <div class="flex flex-col items-start gap-1.5 min-w-0 w-full">
-          <div v-if="showAvatar" class="flex items-center w-full min-w-0 gap-3">
+          <div class="flex min-w-0 flex-1 flex-col gap-0.5">
             <InlineInput
               v-if="isEditingName"
               ref="nameInput"
@@ -386,18 +291,45 @@ export default {
             />
             <h3
               v-else
-              class="group/name line-clamp-2 min-w-0 my-0 text-base font-semibold text-n-slate-12 cursor-pointer hover:text-n-slate-11"
+              class="group/name m-0 line-clamp-2 min-w-0 cursor-pointer text-base font-semibold text-n-slate-12 hover:text-n-slate-11"
               :title="$t('CONTACT_PANEL.CLICK_TO_EDIT')"
               @click="startEditingName"
             >
               {{ contact.name }}
               <span
-                class="i-lucide-pencil text-xs text-n-slate-10 opacity-0 group-hover/name:opacity-100 transition-opacity ml-1 align-middle"
+                class="i-lucide-pencil ml-1 align-middle text-xs text-n-slate-10 opacity-0 group-hover/name:opacity-100"
               />
             </h3>
+            <ContactInfoRow
+              v-if="contact.phone_number"
+              :href="`tel:${contact.phone_number}`"
+              :value="contact.phone_number"
+              icon="call"
+              emoji="📞"
+              :title="$t('CONTACT_PANEL.PHONE_NUMBER')"
+              show-copy
+              editable
+              @update="value => onFieldUpdate('phone_number', value)"
+            />
+            <button
+              v-else
+              type="button"
+              class="self-start text-sm text-n-blue-11"
+              @click="openEditModal"
+            >
+              {{ $t('CONTACT_PANEL.ADD_PHONE') }}
+            </button>
+            <p
+              v-if="headerMeta"
+              class="m-0 truncate text-xs text-n-slate-11"
+              :title="headerMeta"
+              data-test="contact-header-meta"
+            >
+              {{ headerMeta }}
+            </p>
           </div>
-          <slot name="patient-summary" />
-
+        </div>
+        <div class="flex min-w-0 flex-col items-start gap-1.5">
           <p v-if="additionalAttributes.description" class="break-words mb-0.5">
             {{ additionalAttributes.description }}
           </p>
@@ -413,25 +345,6 @@ export default {
               editable
               @update="value => onFieldUpdate('email', value)"
             />
-            <ContactInfoRow
-              v-if="contact.phone_number"
-              :href="`tel:${contact.phone_number}`"
-              :value="contact.phone_number"
-              icon="call"
-              emoji="📞"
-              :title="$t('CONTACT_PANEL.PHONE_NUMBER')"
-              show-copy
-              editable
-              @update="value => onFieldUpdate('phone_number', value)"
-            />
-            <button
-              v-else
-              type="button"
-              class="text-sm text-n-blue-11"
-              @click="openEditModal"
-            >
-              {{ $t('CONTACT_PANEL.ADD_PHONE') }}
-            </button>
             <ContactInfoRow
               v-if="additionalAttributes.company_name"
               :value="additionalAttributes.company_name"
@@ -449,13 +362,6 @@ export default {
                   })
               "
             />
-            <ContactInfoRow
-              v-if="location || additionalAttributes.location"
-              :value="location || additionalAttributes.location"
-              icon="map"
-              emoji="🌍"
-              :title="$t('CONTACT_PANEL.LOCATION')"
-            />
             <SocialIcons :social-profiles="socialProfiles" />
             <ContactChannelLabels
               :contact-inboxes="
@@ -470,104 +376,47 @@ export default {
           </div>
         </div>
         <div
-          class="grid w-full grid-cols-4 gap-1 pt-2"
+          class="flex w-full items-center gap-1"
           data-test="contact-panel-actions"
         >
-          <NextButton
-            v-if="canCreateCrmDeal"
-            icon="i-lucide-briefcase-business"
-            :label="$t('CONTACT_PANEL.ACTION_DEAL')"
-            slate
-            faded
-            sm
-            class="contact-panel-action"
-            @click="onCreateDeal"
-          />
-          <NextButton
-            v-if="canCreateCrmTask"
-            icon="i-lucide-list-checks"
-            :label="$t('CONTACT_PANEL.ACTION_TASK')"
-            slate
-            faded
-            sm
-            class="contact-panel-action"
-            @click="onCreateTask"
-          />
-          <NextButton
-            v-if="canCreateSchedulingAppointment"
-            icon="i-lucide-calendar-clock"
-            :label="$t('CONTACT_PANEL.ACTION_APPOINTMENT')"
-            slate
-            faded
-            sm
-            class="contact-panel-action"
-            @click="onCreateAppointment"
-          />
-          <div class="relative min-w-0">
-            <NextButton
-              icon="i-lucide-ellipsis"
-              :label="$t('CONTACT_PANEL.ACTION_MORE')"
-              slate
-              faded
-              sm
-              class="contact-panel-action"
-              @click="moreOpen = !moreOpen"
-            />
-            <div
-              v-if="moreOpen"
-              class="absolute right-0 z-30 mt-1 min-w-52 rounded-lg border border-n-weak bg-n-solid-2 p-1 shadow-lg"
-            >
-              <button
-                type="button"
-                class="block w-full rounded px-3 py-2 text-left text-sm text-n-slate-12 hover:bg-n-alpha-2"
-                @click="
-                  moreOpen = false;
-                  openEditModal();
-                "
-              >
-                {{ $t('EDIT_CONTACT.BUTTON_LABEL') }}
-              </button>
-              <button
-                type="button"
-                class="block w-full rounded px-3 py-2 text-left text-sm text-n-slate-12 hover:bg-n-alpha-2"
-                @click="
-                  moreOpen = false;
-                  openMergeModal();
-                "
-              >
-                {{ $t('CONTACT_PANEL.MERGE_CONTACT') }}
-              </button>
-              <a
-                :href="contactProfileLink"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="block rounded px-3 py-2 text-sm text-n-slate-12 hover:bg-n-alpha-2"
-                >{{ $t('CONTACT_PANEL.OPEN_PROFILE') }}</a
-              >
-              <button
-                v-if="canAddFamilyMember"
-                type="button"
-                class="block w-full rounded px-3 py-2 text-left text-sm text-n-slate-12 hover:bg-n-alpha-2"
-                @click="
-                  moreOpen = false;
-                  $emit('addFamilyMember');
-                "
-              >
-                {{ $t('SCHEDULING.PATIENT_CONTEXT.ADD_FAMILY_MEMBER') }}
-              </button>
-              <button
-                v-if="isAdmin"
-                type="button"
-                class="block w-full rounded px-3 py-2 text-left text-sm text-n-ruby-11 hover:bg-n-alpha-2"
-                @click="
-                  moreOpen = false;
-                  toggleDeleteModal();
-                "
-              >
-                {{ $t('DELETE_CONTACT.BUTTON_LABEL') }}
-              </button>
-            </div>
-          </div>
+          <button
+            v-tooltip.bottom="$t('EDIT_CONTACT.BUTTON_LABEL')"
+            type="button"
+            class="contact-panel-icon"
+            :aria-label="$t('EDIT_CONTACT.BUTTON_LABEL')"
+            @click="openEditModal"
+          >
+            <span class="i-lucide-pencil size-4" aria-hidden="true" />
+          </button>
+          <button
+            v-tooltip.bottom="$t('CONTACT_PANEL.MERGE_CONTACT')"
+            type="button"
+            class="contact-panel-icon"
+            :aria-label="$t('CONTACT_PANEL.MERGE_CONTACT')"
+            @click="openMergeModal"
+          >
+            <span class="i-lucide-git-merge size-4" aria-hidden="true" />
+          </button>
+          <a
+            v-tooltip.bottom="$t('CONTACT_PANEL.OPEN_PROFILE')"
+            :href="contactProfileLink"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="contact-panel-icon"
+            :aria-label="$t('CONTACT_PANEL.OPEN_PROFILE')"
+          >
+            <span class="i-lucide-external-link size-4" aria-hidden="true" />
+          </a>
+          <button
+            v-if="isAdmin"
+            v-tooltip.bottom="$t('DELETE_CONTACT.BUTTON_LABEL')"
+            type="button"
+            class="contact-panel-icon text-n-ruby-11"
+            :aria-label="$t('DELETE_CONTACT.BUTTON_LABEL')"
+            @click="toggleDeleteModal"
+          >
+            <span class="i-lucide-trash-2 size-4" aria-hidden="true" />
+          </button>
         </div>
         <slot />
       </div>
@@ -579,12 +428,6 @@ export default {
         @cancel="closeEditModal"
       />
       <ContactMergeModal ref="mergeModal" :primary-contact="contact" />
-      <CrmContactTaskDrawer
-        v-if="taskOpen"
-        v-model="taskOpen"
-        :contact="contact"
-        :current-chat="currentChat"
-      />
     </div>
     <woot-delete-modal
       v-if="showDeleteModal"
@@ -597,55 +440,15 @@ export default {
       :confirm-text="$t('DELETE_CONTACT.CONFIRM.YES')"
       :reject-text="$t('DELETE_CONTACT.CONFIRM.NO')"
     />
-    <div
-      v-if="appointmentOpen"
-      class="fixed inset-0 z-[140] flex justify-end bg-black/35"
-      role="dialog"
-      :aria-label="$t('CONTACT_PANEL.ACTION_APPOINTMENT')"
-    >
-      <div class="h-full w-full max-w-[32rem] bg-n-solid-2 shadow-xl">
-        <SchedulingConversationAppointmentsSidebar
-          ref="appointmentSidebar"
-          :current-chat="currentChat"
-          :selected-patient="selectedPatient"
-          :patient-context-key="patientContextKey"
-          :patient-context-enabled="patientContextEnabled"
-          @close="appointmentOpen = false"
-        />
-      </div>
-    </div>
-    <div
-      v-if="dealOpen"
-      class="fixed inset-0 z-[140] flex items-center justify-center bg-black/35 p-3"
-      role="dialog"
-      :aria-label="$t('CONTACT_PANEL.ACTION_DEAL')"
-    >
-      <div
-        class="h-[min(90vh,48rem)] w-full max-w-[36rem] overflow-hidden rounded-xl bg-n-solid-2 shadow-xl"
-      >
-        <CrmConversationDealsSidebar
-          ref="dealSidebar"
-          :current-chat="currentChat"
-          @close="dealOpen = false"
-        />
-      </div>
-    </div>
   </div>
 </template>
 
 <style scoped>
-.contact-panel-action {
-  width: 100%;
-  height: 3.25rem;
-  flex-direction: column;
-  gap: 0.125rem;
-  padding: 0.375rem 0;
-  font-size: 0.6875rem;
-  line-height: 1rem;
+.contact-panel-icon {
+  @apply inline-flex size-8 flex-none items-center justify-center rounded-lg text-n-slate-11;
 }
-
-.contact-panel-action :deep(> span:last-child) {
-  overflow: visible;
-  text-overflow: clip;
+.contact-panel-icon:hover,
+.contact-panel-icon:focus-visible {
+  @apply bg-n-alpha-2;
 }
 </style>

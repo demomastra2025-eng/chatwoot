@@ -82,6 +82,19 @@ const mountComponent = props =>
   });
 
 describe('ConversationContextMenu', () => {
+  it('offers add task for an allowed dialog and emits the action', async () => {
+    const wrapper = mountComponent({
+      allowedOptions: ['add-task'],
+      canAddTask: true,
+    });
+    const action = wrapper
+      .findAllComponents({ name: 'MenuItem' })
+      .find(item => item.props('option')?.key === 'add-task');
+    expect(action.exists()).toBe(true);
+    await action.trigger('click');
+    expect(wrapper.emitted('addTask')).toEqual([[]]);
+  });
+
   it('does not request agents for an inbox that no longer exists', () => {
     const dispatch = vi.fn();
     ConversationContextMenu.mounted.call({

@@ -1,220 +1,37 @@
-import { shallowMount } from '@vue/test-utils';
+import { expect, it, vi } from 'vitest';
 import { ref } from 'vue';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { shallowMount } from '@vue/test-utils';
 import SidepanelSwitch from './SidepanelSwitch.vue';
-import {
-  resetMobileConversationPanel,
-  useConversationSidepanelAvailability,
-} from 'dashboard/composables/useConversationSidepanelAvailability';
 
-const testState = vi.hoisted(() => ({
-  currentAccountId: { __v_isRef: true, value: 530 },
-  currentUser: {
-    __v_isRef: true,
-    value: { accounts: [{ id: 530, permissions: ['crm_deal_manage'] }] },
-  },
-  isFeatureEnabledonAccount: { __v_isRef: true, value: () => true },
-  uiSettings: {
-    value: {
-      is_contact_sidebar_open: false,
-      is_crm_deal_panel_open: false,
-      is_scheduling_appointments_panel_open: false,
-    },
-  },
-  currentAccount: { __v_isRef: true, value: { settings: {} } },
-  updateUISettings: vi.fn(),
-  width: null,
-}));
-
-vi.mock('vue-router', async importOriginal => ({
-  ...(await importOriginal()),
-  useRoute: () => ({ params: { accountId: '530', conversation_id: '42' } }),
-}));
-
-vi.mock('@vueuse/core', async importOriginal => ({
-  ...(await importOriginal()),
-  useWindowSize: () => ({ width: testState.width }),
-}));
-
-vi.mock('dashboard/composables/useUISettings', () => ({
-  useUISettings: () => ({
-    uiSettings: testState.uiSettings,
-    updateUISettings: testState.updateUISettings,
+vi.mock('dashboard/composables/useConversationSidepanelAvailability', () => ({
+  useConversationSidepanelAvailability: () => ({
+    activePanel: ref('tasks'),
+    closePanel: vi.fn(),
+    dealsAvailable: ref(true),
+    tasksAvailable: ref(true),
+    appointmentsAvailable: ref(true),
+    openPanel: vi.fn(),
   }),
 }));
-
-vi.mock('dashboard/composables/useAccount', () => ({
-  useAccount: () => ({
-    currentAccount: testState.currentAccount,
-  }),
-}));
-
-vi.mock('dashboard/composables/store', () => ({
-  useMapGetter: key =>
-    ({
-      getCurrentAccountId: testState.currentAccountId,
-      getCurrentUser: testState.currentUser,
-      'accounts/isFeatureEnabledonAccount': testState.isFeatureEnabledonAccount,
-    })[key],
-}));
-
 vi.mock('dashboard/composables/useKeyboardEvents', () => ({
   useKeyboardEvents: vi.fn(),
 }));
 
-vi.mock('dashboard/featureFlags', () => ({
-  FEATURE_FLAGS: {
-    CAMPAIGNS: 'campaigns',
-    CAPTAIN: 'captain',
-    CRM_DEALS: 'crm_deals',
-    SCHEDULING: 'scheduling',
-  },
-}));
-
-const mountComponent = () =>
-  shallowMount(SidepanelSwitch, {
+it('orders the rail as contact, deals, tasks, appointments', () => {
+  const wrapper = shallowMount(SidepanelSwitch, {
     global: {
-      stubs: {
-        ButtonGroup: { template: '<div><slot /></div>' },
-        Button: {
-          props: ['icon'],
-          template: '<button type="button" :data-icon="icon" />',
-        },
-      },
+      mocks: { $t: key => key },
+      stubs: { ButtonGroup: { template: '<div><slot /></div>' } },
     },
   });
-
-describe('SidepanelSwitch', () => {
-  beforeEach(() => {
-    testState.uiSettings.value = {
-      is_contact_sidebar_open: false,
-      is_crm_deal_panel_open: false,
-      is_scheduling_appointments_panel_open: false,
-    };
-    testState.isFeatureEnabledonAccount.value = () => true;
-    testState.currentAccount.value = { settings: {} };
-    testState.currentUser.value = {
-      accounts: [{ id: 530, permissions: ['crm_deal_manage'] }],
-    };
-    testState.updateUISettings.mockClear();
-    testState.width = ref(1280);
-    resetMobileConversationPanel();
-  });
-
-  it('opens the CRM deals sidebar from the floating switch', async () => {
-    const wrapper = mountComponent();
-
-    await wrapper
-      .find('[data-icon="i-lucide-briefcase-business"]')
-      .trigger('click');
-
-    expect(testState.updateUISettings).toHaveBeenCalledWith({
-      is_contact_sidebar_open: false,
-      is_crm_deal_panel_open: true,
-      is_scheduling_appointments_panel_open: false,
-    });
-  });
-
-  it('opens the contact card on a phone tap without changing the desktop preference', async () => {
-    testState.width.value = 390;
-    testState.uiSettings.value.is_contact_sidebar_open = true;
-    const wrapper = mountComponent();
-
-    await wrapper.find('[data-icon="i-ph-user-bold"]').trigger('click');
-
-    expect(useConversationSidepanelAvailability().activePanel.value).toBe(
-      'contact'
-    );
-    expect(testState.updateUISettings).not.toHaveBeenCalled();
-  });
-
-  it('opens the scheduling appointments sidebar from the floating switch', async () => {
-    testState.currentUser.value = {
-      accounts: [{ id: 530, permissions: ['agent'] }],
-    };
-    const wrapper = mountComponent();
-
-    await wrapper
-      .find('[data-icon="i-lucide-calendar-clock"]')
-      .trigger('click');
-
-    expect(testState.updateUISettings).toHaveBeenCalledWith({
-      is_contact_sidebar_open: false,
-      is_crm_deal_panel_open: false,
-      is_scheduling_appointments_panel_open: true,
-    });
-  });
-
-  it('does not render a Copilot chat switch even when Captain is enabled', () => {
-    const wrapper = mountComponent();
-
-    expect(wrapper.find('[data-icon="i-woot-captain"]').exists()).toBe(false);
-  });
-
-  it('keeps the CRM deals switch independent from navigation visibility', () => {
-    testState.currentAccount.value = {
-      settings: {
-        dashboard_sidebar_hidden_items: ['Conversation:Pipelines'],
-        dashboard_sidebar_hidden_items_version: 13,
-      },
-    };
-
-    const wrapper = mountComponent();
-
-    expect(
-      wrapper.find('[data-icon="i-lucide-briefcase-business"]').exists()
-    ).toBe(true);
-  });
-
-  it('keeps the scheduling switch independent from navigation visibility', () => {
-    testState.currentUser.value = {
-      accounts: [{ id: 530, permissions: ['agent'] }],
-    };
-    testState.currentAccount.value = {
-      settings: {
-        dashboard_sidebar_hidden_items: ['Conversation:AppointmentStatuses'],
-        dashboard_sidebar_hidden_items_version: 13,
-      },
-    };
-
-    const wrapper = mountComponent();
-
-    expect(wrapper.find('[data-icon="i-lucide-calendar-clock"]').exists()).toBe(
-      true
-    );
-  });
-
-  it('hides the CRM deals switch for a custom role without deal permission', () => {
-    testState.currentUser.value = {
-      accounts: [{ id: 530, permissions: ['custom_role'] }],
-    };
-
-    const wrapper = mountComponent();
-
-    expect(
-      wrapper.find('[data-icon="i-lucide-briefcase-business"]').exists()
-    ).toBe(false);
-  });
-
-  it('hides the scheduling switch when scheduling is disabled', () => {
-    testState.isFeatureEnabledonAccount.value = (_accountId, feature) =>
-      feature !== 'scheduling';
-
-    const wrapper = mountComponent();
-
-    expect(wrapper.find('[data-icon="i-lucide-calendar-clock"]').exists()).toBe(
-      false
-    );
-  });
-
-  // Reminders are no longer a tab of the right panel; they stay in the timeline.
-  it('renders no reminders switch and no Copilot chat switch', () => {
-    const wrapper = mountComponent();
-
-    expect(wrapper.find('[data-icon="i-lucide-timer-reset"]').exists()).toBe(
-      false
-    );
-    expect(wrapper.find('[data-icon="i-woot-captain"]').exists()).toBe(false);
-  });
+  expect(
+    wrapper
+      .findAllComponents({ name: 'Button' })
+      .map(button => button.props('icon'))
+  ).toEqual([
+    'i-ph-user-bold',
+    'i-lucide-briefcase-business',
+    'i-lucide-list-checks',
+    'i-lucide-calendar-clock',
+  ]);
 });

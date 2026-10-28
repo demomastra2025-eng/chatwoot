@@ -124,20 +124,37 @@ describe('ContactInfo', () => {
     window.history.replaceState({}, '', '/');
   });
 
-  it('stacks icons over all four action labels in equal columns', () => {
-    const wrapper = buildWrapper({ showActions: true });
-    const actions = wrapper.get('[data-test="contact-panel-actions"]');
-    expect(actions.classes()).toContain('grid-cols-4');
-    const buttons = actions.findAll('next-button-stub');
-    expect(buttons.map(button => button.attributes('label'))).toEqual([
-      'CONTACT_PANEL.ACTION_DEAL',
-      'CONTACT_PANEL.ACTION_TASK',
-      'CONTACT_PANEL.ACTION_APPOINTMENT',
-      'CONTACT_PANEL.ACTION_MORE',
-    ]);
-    buttons.forEach(button =>
-      expect(button.classes()).toContain('contact-panel-action')
+  it('keeps name, phone and one metadata line beside the avatar', () => {
+    const wrapper = buildWrapper({
+      contact: {
+        phone_number: '+77000000001',
+        additional_attributes: { country: 'Казахстан' },
+      },
+    });
+    const header = wrapper.get('[data-test="contact-header"]');
+    expect(header.find('h3').classes()).toContain('line-clamp-2');
+    expect(header.findComponent({ name: 'ContactInfoRow' }).exists()).toBe(
+      true
     );
+    expect(header.get('[data-test="contact-header-meta"]').text()).toBe(
+      'Казахстан'
+    );
+  });
+
+  it('shows compact profile actions without creation buttons or family action', () => {
+    const wrapper = buildWrapper({
+      showActions: true,
+      canAddFamilyMember: true,
+    });
+    const actions = wrapper.get('[data-test="contact-panel-actions"]');
+    expect(actions.findAll('button')).toHaveLength(2);
+    expect(actions.findAll('a')).toHaveLength(1);
+    expect(actions.text()).not.toContain(
+      'SCHEDULING.PATIENT_CONTEXT.ADD_FAMILY_MEMBER'
+    );
+    expect(
+      wrapper.findComponent({ name: 'CrmContactTaskDrawer' }).exists()
+    ).toBe(false);
   });
 
   it('has no button that opens a message to the person whose dialog is already open', () => {
@@ -169,53 +186,6 @@ describe('ContactInfo', () => {
       .vm.$emit('update:show', false);
 
     expect(wrapper.vm.showEditModal).toBe(false);
-  });
-
-  it('opens the appointment panel without leaving the dialog', () => {
-    const wrapper = buildWrapper({
-      contact: {
-        name: 'Айжан',
-        last_name: 'Касымова',
-        middle_name: 'Ерлановна',
-        phone_number: ['+7', '700', '000', '0001'].join(''),
-      },
-    });
-
-    wrapper.vm.onCreateAppointment();
-
-    expect(wrapper.vm.appointmentOpen).toBe(true);
-    expect(routerPushMock).not.toHaveBeenCalled();
-  });
-
-  it('opens the existing deal form over the dialog', async () => {
-    const wrapper = buildWrapper();
-    wrapper.vm.onCreateDeal();
-    await wrapper.vm.$nextTick();
-    expect(wrapper.vm.dealOpen).toBe(true);
-    expect(routerPushMock).not.toHaveBeenCalled();
-  });
-
-  it('opens the shared full task form over the contact panel', async () => {
-    const wrapper = buildWrapper();
-    wrapper.vm.onCreateTask();
-    await wrapper.vm.$nextTick();
-    expect(
-      wrapper.findComponent({ name: 'CrmContactTaskDrawer' }).exists()
-    ).toBe(true);
-    expect(routerPushMock).not.toHaveBeenCalled();
-  });
-
-  it('places family-member creation in the More menu', async () => {
-    const wrapper = buildWrapper({ canAddFamilyMember: true });
-    await wrapper.setData({ moreOpen: true });
-    const action = wrapper
-      .findAll('button')
-      .find(button =>
-        button.text().includes('SCHEDULING.PATIENT_CONTEXT.ADD_FAMILY_MEMBER')
-      );
-    expect(action).toBeDefined();
-    await action.trigger('click');
-    expect(wrapper.emitted('addFamilyMember')).toHaveLength(1);
   });
 
   it('keeps the contact owner in the edit modal instead of the panel', async () => {

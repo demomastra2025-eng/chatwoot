@@ -25,6 +25,9 @@ const ContactPanel = defineAsyncComponent(
 const CrmConversationDealsSidebar = defineAsyncComponent(
   () => import('dashboard/components-next/CRM/CrmConversationDealsSidebar.vue')
 );
+const CrmContactTasksSidebar = defineAsyncComponent(
+  () => import('dashboard/components-next/CRM/CrmContactTasksSidebar.vue')
+);
 const SchedulingConversationAppointmentsSidebar = defineAsyncComponent(
   () =>
     import(
@@ -38,6 +41,7 @@ const route = useRoute();
 const router = useRouter();
 const currentAccountId = useMapGetter('getCurrentAccountId');
 const currentUser = useMapGetter('getCurrentUser');
+const getContact = useMapGetter('contacts/getContact');
 const patientStore = useConversationPatientContextStore();
 const patientContextKey = computed(() =>
   conversationPatientContextKey({
@@ -47,6 +51,12 @@ const patientContextKey = computed(() =>
   })
 );
 const chatContactId = computed(() => resolveChatContactId(props.currentChat));
+const taskContact = computed(
+  () =>
+    getContact.value?.(chatContactId.value) ||
+    props.currentChat?.meta?.sender ||
+    {}
+);
 // A person without a dialog: only what belongs to the person is shown, nothing that belongs to a conversation.
 const isDraft = computed(() => Boolean(props.currentChat?.is_draft));
 const patientContextEnabled = computed(
@@ -180,6 +190,7 @@ const closeSidebar = () => {
 };
 
 const closeDealsSidebar = () => closePanel();
+const closeTasksSidebar = () => closePanel();
 const closeAppointmentsSidebar = () => closePanel();
 </script>
 
@@ -213,6 +224,13 @@ const closeAppointmentsSidebar = () => closePanel();
         <CrmConversationDealsSidebar
           :current-chat="currentChat"
           @close="closeDealsSidebar"
+        />
+      </div>
+      <div v-if="activeTab === 'tasks'" class="min-w-0 flex-1">
+        <CrmContactTasksSidebar
+          :current-chat="currentChat"
+          :contact="taskContact"
+          @close="closeTasksSidebar"
         />
       </div>
       <div v-if="activeTab === 'appointments'" class="min-w-0 flex-1">

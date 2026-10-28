@@ -26,6 +26,7 @@ const MENU = {
   PIN: 'pin',
   OPEN_NEW_TAB: 'open-new-tab',
   COPY_LINK: 'copy-link',
+  ADD_TASK: 'add-task',
 };
 
 export default {
@@ -79,6 +80,7 @@ export default {
       type: Boolean,
       default: false,
     },
+    canAddTask: { type: Boolean, default: false },
   },
   emits: [
     'updateConversation',
@@ -91,6 +93,7 @@ export default {
     'deleteConversation',
     'togglePin',
     'close',
+    'addTask',
   ],
   setup() {
     const { isAdmin } = useAdmin();
@@ -198,6 +201,11 @@ export default {
         key: MENU.COPY_LINK,
         icon: 'copy',
         label: this.$t('CONVERSATION.CARD_CONTEXT_MENU.COPY_LINK'),
+      },
+      addTaskOption: {
+        key: MENU.ADD_TASK,
+        icon: 'list-checks',
+        label: this.$t('CONVERSATION.CARD_CONTEXT_MENU.ADD_TASK'),
       },
     };
   },
@@ -427,6 +435,12 @@ export default {
         @click.stop="copyConversationLink"
       />
     </template>
+    <MenuItem
+      v-if="canAddTask && isAllowed([MENU.ADD_TASK])"
+      :option="addTaskOption"
+      variant="icon"
+      @click.stop="$emit('addTask')"
+    />
     <template v-if="isAdmin && isAllowed([MENU.DELETE])">
       <hr class="m-1 rounded border-b border-n-weak dark:border-n-weak" />
       <MenuItem

@@ -7,6 +7,7 @@ import { useUISettings } from 'dashboard/composables/useUISettings';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import {
   CRM_DEAL_MANAGE_PERMISSIONS,
+  CRM_TASK_VIEW_PERMISSIONS,
   SCHEDULING_ACCESS_PERMISSIONS,
 } from 'dashboard/constants/permissions';
 import { hasPermissions } from 'dashboard/helper/permissionsHelper';
@@ -81,6 +82,15 @@ export const useConversationSidepanelAvailability = () => {
       )
   );
 
+  const tasksAvailable = computed(
+    () =>
+      isFeatureEnabledonAccount.value(
+        currentAccountId.value,
+        FEATURE_FLAGS.CRM_TASKS
+      ) &&
+      hasPermissions(CRM_TASK_VIEW_PERMISSIONS, currentAccountPermissions.value)
+  );
+
   // Contact, deals and appointments in priority order; null when none of
   // these panels is open and available.
   const persistedPanel = computed(() => {
@@ -90,6 +100,7 @@ export const useConversationSidepanelAvailability = () => {
     if (settings.is_crm_deal_panel_open && dealsAvailable.value) {
       return 'deals';
     }
+    if (settings.is_crm_task_panel_open && tasksAvailable.value) return 'tasks';
     if (
       settings.is_scheduling_appointments_panel_open &&
       appointmentsAvailable.value
@@ -105,6 +116,7 @@ export const useConversationSidepanelAvailability = () => {
       return null;
     const panel = mobilePanelIntent.value?.panel;
     if (panel === 'deals' && !dealsAvailable.value) return null;
+    if (panel === 'tasks' && !tasksAvailable.value) return null;
     if (panel === 'appointments' && !appointmentsAvailable.value) return null;
     return panel || null;
   });
@@ -118,6 +130,7 @@ export const useConversationSidepanelAvailability = () => {
       desktopSettings || {
         is_contact_sidebar_open: panel === 'contact',
         is_crm_deal_panel_open: panel === 'deals',
+        is_crm_task_panel_open: panel === 'tasks',
         is_scheduling_appointments_panel_open: panel === 'appointments',
       }
     );
@@ -132,6 +145,7 @@ export const useConversationSidepanelAvailability = () => {
       desktopSettings || {
         is_contact_sidebar_open: false,
         is_crm_deal_panel_open: false,
+        is_crm_task_panel_open: false,
         is_scheduling_appointments_panel_open: false,
       }
     );
@@ -142,6 +156,7 @@ export const useConversationSidepanelAvailability = () => {
     appointmentsAvailable,
     closePanel,
     dealsAvailable,
+    tasksAvailable,
     isSmallScreen,
     openPanel,
   };

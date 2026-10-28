@@ -89,6 +89,7 @@ export default {
             'delete',
             'open-new-tab',
             'copy-link',
+            'add-task',
           ]
         : []
     "

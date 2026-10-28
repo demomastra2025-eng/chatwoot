@@ -484,6 +484,10 @@
       "BULK_ACTIONS": "Массовые действия"
     },
     "TASKS": {
+      "PANEL_TITLE": "Задачи",
+      "PANEL_ADD": "+ Задача",
+      "PANEL_EMPTY": "Задач пока нет",
+      "PANEL_MORE": "Загрузить ещё",
       "CREATE_TITLE": "Создать задачу",
       "DESCRIPTION": "Ведите задачи и свяжите со сделкам",
       "DRAWER_DESCRIPTION": "Ведите задачи и свяжите со сделкам",
