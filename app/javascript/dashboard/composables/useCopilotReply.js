@@ -1068,7 +1068,10 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
    * Closes the notice card. The server marks the run consumed so the notice
    * does not come back when the manager returns to the conversation.
    */
-  function dismissNotice() {
+  function dismissNotice({
+    messageId = undefined,
+    finalText = undefined,
+  } = {}) {
     const id = suggestionRequestId.value;
     if (id) {
       ignoredRequestIds.add(id);
@@ -1078,6 +1081,8 @@ export function useCopilotReply({ syncSuggestions = false } = {}) {
         suggestionRequestId: id,
         copilotAction: REPLY_SUGGESTION_ACTION,
         outcome: 'notice_dismissed',
+        ...(messageId ? { messageId } : {}),
+        ...(finalText ? { finalText } : {}),
       });
     }
     suggestionNotice.value = null;

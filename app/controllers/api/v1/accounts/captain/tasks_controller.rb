@@ -2,7 +2,7 @@ require 'securerandom'
 require 'timeout'
 
 class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseController
-  VALID_FEEDBACK_OUTCOMES = %w[generated applied dismissed sent notice_dismissed].freeze
+  VALID_FEEDBACK_OUTCOMES = %w[generated applied dismissed sent notice_dismissed cancelled].freeze
   ACTIVE_SUGGESTION_STATUSES = Captain::ReplySuggestion::RequestStore::ACTIVE_STATUSES
 
   before_action :check_authorization
@@ -66,9 +66,10 @@ class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseContr
     record = find_owned_suggestion(params[:suggestion_request_id], conversation)
     return render_suggestion_error(:not_found, 'not_found') unless record
 
+    status = ACTIVE_SUGGESTION_STATUSES.include?(record['status']) ? 'cancelling' : record['status']
     Captain::ReplySuggestion::RequestStore.request_cancel!(record['id'])
     Captain::ReplySuggestion::RequestStore.consume!(record['id'])
-    status = ACTIVE_SUGGESTION_STATUSES.include?(record['status']) ? 'cancelling' : record['status']
+    record_cancelled_feedback(record, conversation)
     render json: { suggestion_request_id: record['id'], status: status }
   end
 
@@ -198,6 +199,13 @@ class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseContr
       final_text: params[:final_text], edited_before_send: params[:edited_before_send], follow_up_count: params[:follow_up_count],
       message_id: params[:message_id]
     )
+  end
+
+  def record_cancelled_feedback(record, conversation)
+    Captain::ReplySuggestion::FeedbackService.new(
+      account: Current.account, user: Current.user, conversation: conversation, outcome: 'cancelled', copilot_action: 'reply_suggestion',
+      requested_display_id: params[:conversation_display_id], request_id: record['id'], suggestion_request_id: record['id']
+    ).perform
   end
 
   def record_suggestion_feedback(outcome, copilot_action, conversation)

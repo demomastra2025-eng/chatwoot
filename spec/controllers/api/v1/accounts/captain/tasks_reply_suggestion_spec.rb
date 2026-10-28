@@ -325,6 +325,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::Tasks reply suggestion', type: :requ
       expect(json_response).to eq(suggestion_request_id: record['id'], status: 'cancelling')
       expect(store.cancel_requested?(record['id'])).to be(true)
       expect(store.consumed?(record['id'])).to be(true)
+      cancelled_event = LlmEvent.where(event_name: 'llm.copilot.feedback', request_id: record['id'], status: 'cancelled').sole
+      expect(cancelled_event.payload).to include('suggestion_request_id' => record['id'], 'user_id' => agent.id)
+      expect(Redis::Alfred.get("#{store::PREFIX}:dismissed:#{account.id}:#{agent.id}:#{conversation.id}")).to include(record['id'])
     end
 
     it 'says cancelling for a running request too' do

@@ -114,6 +114,21 @@ RSpec.describe Captain::ReplySuggestion::DismissalTracker do
     end
   end
 
+  describe 'notice_dismissed and cancelled events' do
+    %w[notice_dismissed cancelled].each do |status|
+      it "records the next message of the manager on a #{status} event too" do
+        record_dismissal(suggestion_id, outcome: status)
+        arm(suggestion_id)
+
+        message = manager_message
+
+        expect(described_class.message_created(message)).to eq(1)
+        recorded = LlmEvent.where(event_name: 'llm.copilot.feedback', request_id: suggestion_id, status: status).sole
+        expect(recorded.payload).to include('next_message_id' => message.id)
+      end
+    end
+  end
+
   it 'costs nothing for a message when nothing was dismissed' do
     expect(described_class.message_created(manager_message)).to eq(0)
   end
