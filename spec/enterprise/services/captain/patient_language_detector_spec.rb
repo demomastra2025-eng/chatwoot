@@ -306,4 +306,29 @@ RSpec.describe Captain::PatientLanguageDetector do
       expect(Llm::Runtime).not_to have_received(:decide)
     end
   end
+
+  describe 'syncing detected language to contact' do
+    it 'saves client_language and confidence on conversation.contact without overwriting a manual choice' do
+      patient_says('Сәлеметсіз бе, ертеңге дәрігерге жазылғым келеді')
+
+      expect(detector.call).to eq('kk')
+      contact = conversation.contact.reload
+      expect(contact.client_language).to eq('kk')
+      expect(contact.client_language_source).to eq('ai')
+      expect(contact.client_language_confidence).to eq(100)
+
+      contact.update!(
+        additional_attributes: contact.additional_attributes.merge(
+          'client_language' => 'ru',
+          'client_language_source' => 'manual',
+          'client_language_confidence' => 100
+        )
+      )
+
+      patient_says('Қай уақыт бос екенін айтыңызшы?')
+      expect(described_class.new(conversation: conversation).call).to eq('kk')
+      expect(contact.reload.client_language).to eq('ru')
+      expect(contact.client_language_source).to eq('manual')
+    end
+  end
 end

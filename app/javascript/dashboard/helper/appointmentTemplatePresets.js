@@ -14,6 +14,129 @@ export const extractPresetKeyFromRule = rule => {
   return '';
 };
 
+export const WHATSAPP_SUPPORTED_CLIENT_LANGUAGES = [
+  { code: 'ru', name: 'Русский', englishName: 'Russian' },
+  { code: 'kk', name: 'Қазақша', englishName: 'Kazakh' },
+  { code: 'en', name: 'English', englishName: 'English' },
+  { code: 'uz', name: 'Oʻzbekcha', englishName: 'Uzbek' },
+  { code: 'ky', name: 'Кыргызча', englishName: 'Kyrgyz' },
+  { code: 'tg', name: 'Тоҷикӣ', englishName: 'Tajik' },
+  { code: 'az', name: 'Azərbaycan', englishName: 'Azerbaijani' },
+  { code: 'tr', name: 'Türkçe', englishName: 'Turkish' },
+  { code: 'uk', name: 'Українська', englishName: 'Ukrainian' },
+  { code: 'be', name: 'Беларуская', englishName: 'Belarusian' },
+  { code: 'hy', name: 'Հայերեն', englishName: 'Armenian' },
+  { code: 'ka', name: 'ქართული', englishName: 'Georgian' },
+  { code: 'zh_CN', name: '中文 (简体)', englishName: 'Chinese (Simplified)' },
+  { code: 'ar', name: 'العربية', englishName: 'Arabic' },
+  { code: 'de', name: 'Deutsch', englishName: 'German' },
+  { code: 'fr', name: 'Français', englishName: 'French' },
+  { code: 'es', name: 'Español', englishName: 'Spanish' },
+  { code: 'it', name: 'Italiano', englishName: 'Italian' },
+  { code: 'pt_BR', name: 'Português (BR)', englishName: 'Portuguese (Brazil)' },
+  { code: 'ko', name: '한국어', englishName: 'Korean' },
+  { code: 'ja', name: '日本語', englishName: 'Japanese' },
+  { code: 'hi', name: 'हिन्दी', englishName: 'Hindi' },
+  { code: 'pl', name: 'Polski', englishName: 'Polish' },
+  { code: 'cs', name: 'Čeština', englishName: 'Czech' },
+  { code: 'ro', name: 'Română', englishName: 'Romanian' },
+  { code: 'nl', name: 'Nederlands', englishName: 'Dutch' },
+  { code: 'sv', name: 'Svenska', englishName: 'Swedish' },
+  { code: 'he', name: 'עברית', englishName: 'Hebrew' },
+  { code: 'id', name: 'Bahasa Indonesia', englishName: 'Indonesian' },
+  { code: 'ms', name: 'Bahasa Melayu', englishName: 'Malay' },
+  { code: 'th', name: 'ไทย', englishName: 'Thai' },
+  { code: 'vi', name: 'Tiếng Việt', englishName: 'Vietnamese' },
+  { code: 'fa', name: 'فارسی', englishName: 'Persian' },
+];
+
+const LANGUAGE_ALIASES = {
+  kz: 'kk',
+  kaz: 'kk',
+  rus: 'ru',
+  eng: 'en',
+  en_us: 'en',
+  en_gb: 'en',
+  zh: 'zh_CN',
+  zh_cn: 'zh_CN',
+  pt: 'pt_BR',
+  pt_br: 'pt_BR',
+};
+
+export const normalizeClientLanguageCode = raw => {
+  const cleaned = String(raw || '').trim();
+  if (!cleaned) return '';
+
+  const exact = WHATSAPP_SUPPORTED_CLIENT_LANGUAGES.find(
+    item => item.code.toLowerCase() === cleaned.toLowerCase()
+  );
+  if (exact) return exact.code;
+
+  const alias = LANGUAGE_ALIASES[cleaned.toLowerCase().replace(/-/g, '_')];
+  if (alias) return alias;
+
+  const base = cleaned.split(/[-_]/)[0].toLowerCase();
+  const baseMatch = WHATSAPP_SUPPORTED_CLIENT_LANGUAGES.find(
+    item => item.code.toLowerCase() === base
+  );
+  return baseMatch ? baseMatch.code : '';
+};
+
+export const normalizeClientLanguagesList = (
+  rawList,
+  fallback = ['ru', 'kk']
+) => {
+  const list = Array.isArray(rawList) ? rawList : [];
+  const normalized = [
+    ...new Set(list.map(normalizeClientLanguageCode).filter(Boolean)),
+  ];
+  return normalized.length ? normalized : [...fallback];
+};
+
+export const getClientLanguageNativeName = code => {
+  const normalized = normalizeClientLanguageCode(code);
+  const found = WHATSAPP_SUPPORTED_CLIENT_LANGUAGES.find(
+    item => item.code === normalized
+  );
+  return found ? found.name : String(code || '').toUpperCase();
+};
+
+export const getClientLanguageLabel = code => {
+  const normalized = normalizeClientLanguageCode(code);
+  const found = WHATSAPP_SUPPORTED_CLIENT_LANGUAGES.find(
+    item => item.code === normalized
+  );
+  return found
+    ? `${found.name} (${found.code})`
+    : String(code || '').toUpperCase();
+};
+
+export const PROMOTIONAL_STOP_WORDS = [
+  'скидк',
+  'акци',
+  'распродаж',
+  'промокод',
+  'бонус',
+  'подарок',
+  'купон',
+  'выгодно',
+  'спецпредложен',
+  'бесплатн',
+  'жеңілдік',
+  'науқан',
+  'сыйлық',
+  'тегін',
+  'бонустар',
+  'discount',
+  'promo',
+  'sale',
+  'cashback',
+  'free',
+  'offer',
+  'deal',
+  'coupon',
+];
+
 export const APPOINTMENT_SEMANTIC_VARIABLES = [
   {
     key: 'client_name',
@@ -28,6 +151,7 @@ export const APPOINTMENT_SEMANTIC_VARIABLES = [
       'имя',
       'клиент',
       'client_name',
+      'contact_name',
       'contact.name',
       'appointment.client_name',
     ],
@@ -292,6 +416,147 @@ export const serializeSemanticTemplateText = (
   };
 };
 
+export const validateUtilityTemplateDraft = ({
+  name = 'booking_template',
+  bodyText = '',
+  language = 'ru',
+  category = 'UTILITY',
+  buttons = [],
+  bilingual = false,
+  maxBodyLength = 400,
+  messages = {},
+} = {}) => {
+  const errors = [];
+  const trimmedName = String(name || '').trim();
+  const trimmedBody = String(bodyText || '').trim();
+  const normalizedCategory = String(category || 'UTILITY')
+    .trim()
+    .toUpperCase();
+
+  if (!trimmedName) {
+    errors.push({
+      code: 'name_required',
+      message:
+        messages.nameRequired || 'Укажите системное имя шаблона',
+    });
+  } else if (!/^[a-z0-9_]+$/.test(trimmedName)) {
+    errors.push({
+      code: 'name_format',
+      message:
+        messages.nameFormat ||
+        'Имя шаблона может содержать только строчные латинские буквы, цифры и _',
+    });
+  }
+
+  if (normalizedCategory !== 'UTILITY') {
+    errors.push({
+      code: 'invalid_category',
+      message:
+        'Категория шаблона для уведомлений о записи должна быть UTILITY',
+    });
+  }
+
+  if (!trimmedBody) {
+    errors.push({
+      code: 'empty_body',
+      message:
+        messages.bodyRequired || 'Текст шаблона не может быть пустым',
+    });
+  } else if (trimmedBody.length > maxBodyLength) {
+    errors.push({
+      code: 'body_too_long',
+      message: `Текст шаблона превышает лимит (${trimmedBody.length}/${maxBodyLength} символов)`,
+    });
+  }
+
+  const serialized = serializeSemanticTemplateText(trimmedBody);
+  if (serialized.error) {
+    errors.push({
+      code: 'invalid_variables',
+      message: serialized.error,
+    });
+  }
+
+  if (
+    trimmedBody &&
+    (/^\s*{{\s*[^}]+\s*}}/.test(trimmedBody) ||
+      /{{\s*[^}]+\s*}}\s*$/.test(trimmedBody))
+  ) {
+    errors.push({
+      code: 'dangling_variable',
+      message:
+        messages.danglingVariable ||
+        'По правилам Meta текст не может начинаться или заканчиваться переменной — добавьте слово или знак препинания',
+    });
+  }
+
+  if (/{{\s*[^}]+\s*}}\s*[,;:\-–—/\\|]*\s*{{\s*[^}]+\s*}}/.test(trimmedBody)) {
+    errors.push({
+      code: 'adjacent_variables',
+      message:
+        'Переменные не могут стоять вплотную друг к другу без слов между ними',
+    });
+  }
+
+  if (/{{\s*[^}]+\s*}}\s*-\s*[а-яёәғқңөұүһіa-z]+/i.test(trimmedBody)) {
+    errors.push({
+      code: 'variable_case_suffix',
+      message:
+        'Нельзя приклеивать падежные окончания через дефис к переменным (например, {{3}}-ке). Перестройте фразу.',
+    });
+  }
+
+  const lowerBody = trimmedBody.toLowerCase();
+  const matchedStopWord = PROMOTIONAL_STOP_WORDS.find(word =>
+    lowerBody.includes(word)
+  );
+  if (matchedStopWord) {
+    errors.push({
+      code: 'promotional_content',
+      message: `Шаблон UTILITY не должен содержать рекламные слова («${matchedStopWord}»)`,
+    });
+  }
+
+  const isBilingual = Boolean(bilingual || trimmedBody.includes('———'));
+  if (!isBilingual && normalizeClientLanguageCode(language) === 'kk' && trimmedBody) {
+    if (!/[әғқңөұүһіӘҒҚҢӨҰҮҺІ]/.test(trimmedBody)) {
+      errors.push({
+        code: 'language_mismatch_kk',
+        message:
+          'Шаблон на казахском языке (kk) должен содержать текст на казахском языке',
+      });
+    }
+  }
+
+  (Array.isArray(buttons) ? buttons : []).forEach(btn => {
+    const btnText = String(btn?.text || '').trim();
+    if (!btnText) {
+      errors.push({
+        code: 'empty_button_text',
+        message:
+          messages.buttonTextRequired || 'Укажите текст кнопки',
+      });
+    } else if (btnText.length > 20) {
+      errors.push({
+        code: 'button_text_too_long',
+        message: `Текст кнопки «${btnText}» превышает 20 символов`,
+      });
+    }
+  });
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    errorMessages: errors.map(item => item.message),
+    firstError: errors[0]?.message || '',
+    serializedText: serialized.serializedText,
+    variables: serialized.variables,
+    examples: serialized.examples,
+    bindings: serialized.bindings,
+    semanticMap: serialized.semanticMap,
+  };
+};
+
 export const APPOINTMENT_REMINDER_PRESETS = [
   {
     key: 'appointment_created',
@@ -411,6 +676,7 @@ export const APPOINTMENT_REMINDER_PRESETS = [
 
 const buildLanguageSection = (presetKey, lang, options) => {
   const isKk = lang === 'kk';
+  const isEn = lang === 'en';
   const companyName = isKk
     ? String(options.companyNameKk || options.companyNameRu || '').trim()
     : String(options.companyNameRu || options.companyNameKk || '').trim();
@@ -510,6 +776,43 @@ const buildLanguageSection = (presetKey, lang, options) => {
     } else {
       lines.push('Белгіленген уақытта күтеміз.');
     }
+  } else if (isEn) {
+    lines.push(greet ? 'Hello, {{имя клиента}}!' : 'Hello!');
+    const targetName = includeCompany ? companyName : 'our clinic';
+    switch (presetKey) {
+      case 'appointment_created':
+        lines.push(`Your appointment at ${targetName} is confirmed.`);
+        break;
+      case 'appointment_rescheduled':
+        lines.push(`Your appointment at ${targetName} has been rescheduled.`);
+        break;
+      case 'appointment_cancelled':
+        lines.push(`Your appointment at ${targetName} has been cancelled.`);
+        break;
+      case 'appointment_day_before':
+        lines.push(`Reminder: you have an appointment at ${targetName} tomorrow.`);
+        break;
+      case 'appointment_two_hours_before':
+        lines.push(`Reminder: your appointment at ${targetName} starts in 2 hours.`);
+        break;
+      case 'appointment_review_request':
+        lines.push(`Thank you for visiting ${targetName}!`);
+        break;
+      default:
+        break;
+    }
+    if (presetKey !== 'appointment_review_request' && includeDateTime) {
+      if (presetKey === 'appointment_two_hours_before') {
+        lines.push('Time: {{время записи}}.');
+      } else {
+        lines.push('Date: {{дата записи}}, time: {{время записи}}.');
+      }
+    }
+    if (includeSpecialist) lines.push('Specialist: {{специалист}}.');
+    if (includeService && presetKey !== 'appointment_cancelled') {
+      lines.push('Service: {{услуга}}.');
+    }
+    lines.push('We look forward to seeing you.');
   } else {
     lines.push(greet ? 'Здравствуйте, {{имя клиента}}!' : 'Здравствуйте!');
 
@@ -606,7 +909,10 @@ const buildLanguageSection = (presetKey, lang, options) => {
 
 export const buildAppointmentTemplatePackDrafts = (options = {}) => {
   const languageMode = options.languageMode || 'both';
-  const metaLanguage = languageMode === 'kk' ? 'kk' : 'ru';
+  const metaLanguage =
+    languageMode === 'both'
+      ? 'ru'
+      : normalizeClientLanguageCode(languageMode) || 'ru';
   const locationUrl = String(options.locationUrl || '').trim();
   const includeLocation = Boolean(options.includeLocationUrl && locationUrl);
 
@@ -614,11 +920,7 @@ export const buildAppointmentTemplatePackDrafts = (options = {}) => {
     const bodyText =
       languageMode === 'both'
         ? `${buildLanguageSection(preset.key, 'kk', options)}\n\n—————————\n\n${buildLanguageSection(preset.key, 'ru', options)}`
-        : buildLanguageSection(
-            preset.key,
-            languageMode === 'kk' ? 'kk' : 'ru',
-            options
-          );
+        : buildLanguageSection(preset.key, metaLanguage, options);
 
     const buttons = [];
 
@@ -629,7 +931,11 @@ export const buildAppointmentTemplatePackDrafts = (options = {}) => {
       buttons.push({
         type: 'QUICK_REPLY',
         text:
-          languageMode === 'kk' ? 'Жазылуды растаймын' : 'Подтверждаю запись',
+          languageMode === 'kk'
+            ? 'Жазылуды растаймын'
+            : languageMode === 'en'
+              ? 'Confirm visit'
+              : 'Подтверждаю запись',
         url: '',
         example: '',
         phoneNumber: '',
@@ -645,7 +951,12 @@ export const buildAppointmentTemplatePackDrafts = (options = {}) => {
     ) {
       buttons.push({
         type: 'URL',
-        text: languageMode === 'kk' ? 'Картадан ашу' : 'Как добраться',
+        text:
+          languageMode === 'kk'
+            ? 'Картадан ашу'
+            : languageMode === 'en'
+              ? 'Directions'
+              : 'Как добраться',
         url: locationUrl,
         example: '',
         phoneNumber: '',

@@ -16,6 +16,11 @@ import {
   maskedPatientIin,
   patientAgeLabel,
 } from 'dashboard/stores/scheduling/patientContext';
+import {
+  WHATSAPP_SUPPORTED_CLIENT_LANGUAGES,
+  getClientLanguageNativeName,
+  normalizeClientLanguageCode,
+} from 'dashboard/helper/appointmentTemplatePresets';
 
 import {
   isAConversationRoute,
@@ -61,6 +66,32 @@ export default {
     };
   },
   computed: {
+    supportedClientLanguages() {
+      return WHATSAPP_SUPPORTED_CLIENT_LANGUAGES;
+    },
+    contactClientLanguage() {
+      return normalizeClientLanguageCode(
+        this.additionalAttributes.client_language ||
+          this.additionalAttributes.patient_language
+      );
+    },
+    contactClientLanguageConfidence() {
+      const raw = this.additionalAttributes.client_language_confidence;
+      if (raw === undefined || raw === null || raw === '') return null;
+      const num = Number(raw);
+      return Number.isFinite(num) && num > 0 ? Math.round(num) : null;
+    },
+    contactClientLanguageDisplay() {
+      if (!this.contactClientLanguage) return 'Не определён';
+      const name = getClientLanguageNativeName(this.contactClientLanguage);
+      if (
+        this.additionalAttributes.client_language_source !== 'manual' &&
+        this.contactClientLanguageConfidence
+      ) {
+        return `${name} (${this.contactClientLanguageConfidence}%)`;
+      }
+      return name;
+    },
     contactProfileLink() {
       return `/app/accounts/${this.$route.params.accountId}/contacts/${this.contact.id}`;
     },
@@ -212,6 +243,21 @@ export default {
     onFieldUpdate(field, value) {
       this.updateContactField({ [field]: value });
     },
+    onClientLanguageChange(event) {
+      const nextLang = normalizeClientLanguageCode(event.target.value);
+      const nextAttrs = {
+        ...this.additionalAttributes,
+        client_language: nextLang || null,
+        client_language_source: nextLang ? 'manual' : null,
+      };
+      if (nextLang) {
+        nextAttrs.client_language_confidence = 100;
+      }
+      this.updateContactField({
+        client_language: nextLang || '',
+        additional_attributes: nextAttrs,
+      });
+    },
     async updateContactField(attrs) {
       const contactId = this.contact.id;
       try {
@@ -349,6 +395,36 @@ export default {
                   })
               "
             />
+            <div
+              class="flex w-full items-center justify-between gap-2 text-xs text-n-slate-11"
+              data-test="contact-client-language-row"
+            >
+              <span class="inline-flex items-center gap-1.5">
+                <span class="i-lucide-languages size-3.5 text-n-slate-10" />
+                <span>Язык клиента:</span>
+                <strong
+                  class="font-medium text-n-slate-12"
+                  data-test="contact-client-language-badge"
+                >
+                  {{ contactClientLanguageDisplay }}
+                </strong>
+              </span>
+              <select
+                data-test="contact-client-language-select"
+                :value="contactClientLanguage"
+                class="rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-xs text-n-slate-12"
+                @change="onClientLanguageChange"
+              >
+                <option value="">Авто</option>
+                <option
+                  v-for="lang in supportedClientLanguages"
+                  :key="lang.code"
+                  :value="lang.code"
+                >
+                  {{ lang.name }} ({{ lang.code }})
+                </option>
+              </select>
+            </div>
             <SocialIcons :social-profiles="socialProfiles" />
             <ContactChannelLabels
               :contact-inboxes="

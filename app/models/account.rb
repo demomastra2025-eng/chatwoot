@@ -81,6 +81,7 @@ class Account < ApplicationRecord
   store_accessor :settings, :conversation_status_reason_config
   store_accessor :settings, :scheduling_contact_required, :scheduling_company_enabled, :scheduling_last_booking_time
   store_accessor :settings, :scheduling_last_booking_time_by_weekday
+  store_accessor :settings, :client_languages, :bilingual_templates_enabled
   store_accessor :settings, :conversation_assignment_policy_id
   store_accessor :settings, :conversation_auto_assignment_enabled, :conversation_assign_on_first_reply_enabled,
                  :conversation_assign_on_note_or_resolve_enabled
@@ -253,6 +254,18 @@ class Account < ApplicationRecord
 
     value = settings['scheduling_company_enabled']
     value.nil? || ActiveModel::Type::Boolean.new.cast(value)
+  end
+
+  def resolved_client_languages
+    Whatsapp::SupportedLanguages.normalize_list(settings.to_h['client_languages'])
+  end
+
+  def primary_client_language
+    resolved_client_languages.first || 'ru'
+  end
+
+  def bilingual_templates_enabled?
+    ActiveModel::Type::Boolean.new.cast(settings.to_h['bilingual_templates_enabled']) == true
   end
 
   def audio_transcriptions_enabled?

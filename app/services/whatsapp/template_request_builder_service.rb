@@ -167,6 +167,13 @@ class Whatsapp::TemplateRequestBuilderService
 
   def build_body_component
     text = required_string_value(:body_text, 'Body text is required')
+    if Whatsapp::TemplateUtilityValidator.hyphen_suffix_after_variable?(text)
+      raise ArgumentError, 'Body text variables cannot have hyphenated case suffixes attached'
+    end
+    if category == 'UTILITY' && Whatsapp::TemplateUtilityValidator.promotional_text?(text)
+      raise ArgumentError, 'UTILITY templates cannot contain promotional or marketing stop-words'
+    end
+
     variables = extract_variables(text, context: 'Body text', allow_dangling: false)
 
     component = {

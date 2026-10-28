@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
@@ -25,6 +25,7 @@ import {
   buildPresetMarker,
   extractPresetKeyFromRule,
   findSemanticVariableByFieldId,
+  findSemanticVariableByToken,
 } from 'dashboard/helper/appointmentTemplatePresets';
 import { extractSingleTemplateFieldReference } from 'dashboard/helper/templateFieldReferences';
 import {
@@ -50,16 +51,35 @@ const services = ref([]);
 const cabinets = ref([]);
 const customFields = ref([]);
 const selectedInboxId = ref('');
+const expandedPresetKey = ref(APPOINTMENT_REMINDER_PRESETS[0].key);
 const templatePackDialogRef = ref(null);
 const createTemplateDialogRef = ref(null);
-const reviewingRule = ref(null);
-const adopting = ref(false);
 const syncing = ref(false);
+const savingPresetKey = ref('');
 const step = ref(1);
 const generatedPackDrafts = ref([]);
 const editing = ref(false);
 const saving = ref(false);
 const draft = reactive({});
+
+const createDefaultPresetDraft = preset => ({
+  enabled: false,
+  templateKey: '',
+  dayBeforeTime: preset.relativeTimeOfDay || '15:00',
+  confirmationEnabled: Boolean(preset.supportsConfirmation),
+  reviewDelayHours: 1,
+  variableBindings: {},
+});
+
+const presetStates = reactive(
+  Object.fromEntries(
+    APPOINTMENT_REMINDER_PRESETS.map(preset => [
+      preset.key,
+      createDefaultPresetDraft(preset),
+    ])
+  )
+);
+
 const L = key => t(`SCHEDULING.NOTIFICATIONS.${key}`);
 const eventLabel = key => L(`EVENTS.${key.toUpperCase()}`);
 const notificationRules = computed(() =>
@@ -85,22 +105,27 @@ const pageTemplates = computed(
     pageInbox.value?.messageTemplates ||
     []
 );
+const makeTemplateKey = template =>
+  `${String(template?.name || '').trim()}::${String(template?.language || 'ru').trim()}`;
+
+const templateByKey = computed(() => {
+  const map = new Map();
+  pageTemplates.value.forEach(template => {
+    if (template?.name) {
+      map.set(makeTemplateKey(template), template);
+    }
+  });
+  return map;
+});
+
 const presetTemplate = preset =>
   pageTemplates.value.find(item => item.name === preset.templateName);
-const presetTemplateStatus = preset => {
-  const template = presetTemplate(preset);
-  return template
-    ? L(`TEMPLATE_STATUS.${String(template.status || 'PENDING').toUpperCase()}`)
-    : L('NO_TEMPLATE');
-};
-const templateCount = status =>
-  pageTemplates.value.filter(
-    item => String(item.status).toUpperCase() === status
-  ).length;
+
 const presetRule = preset =>
   notificationRules.value.find(
     rule => extractPresetKeyFromRule(rule) === preset.key
   );
+
 const otherRules = computed(() => {
   const featuredIds = new Set(
     APPOINTMENT_REMINDER_PRESETS.map(preset => presetRule(preset)?.id).filter(
@@ -109,6 +134,7 @@ const otherRules = computed(() => {
   );
   return notificationRules.value.filter(rule => !featuredIds.has(rule.id));
 });
+
 const templateForParams = params => {
   const inbox = whatsAppInboxes.value.find(
     item => String(item.id) === String(params?.target_inbox_id)
@@ -119,40 +145,212 @@ const templateForParams = params => {
       (item.language || 'ru') === (params?.template_params?.language || 'ru')
   );
 };
+
 const ruleTemplate = rule => templateForParams(touchParams(rule));
-const reviewTouches = computed(() =>
-  (reviewingRule.value?.actions || []).flatMap(action => {
-    const params = Array.isArray(action.action_params)
-      ? action.action_params
-      : [action.action_params];
-    return params.map(item => ({
-      action_name: action.action_name,
-      action_params: item,
-    }));
-  })
-);
-const reviewChannel = params =>
-  (inboxes.value || []).find(
-    item => String(item.id) === String(params?.target_inbox_id)
-  )?.name || L('NO_CHANNEL');
-const reviewTemplateStatus = params => {
-  const template = templateForParams(params);
+
+const getSelectedTemplateForPreset = presetKey => {
+  const key = presetStates[presetKey]?.templateKey;
+  if (key && templateByKey.value.has(key)) {
+    return templateByKey.value.get(key);
+  }
+  const preset = APPOINTMENT_REMINDER_PRESETS.find(p => p.key === presetKey);
+  const rule = preset ? presetRule(preset) : null;
+  if (rule) {
+    return ruleTemplate(rule) || presetTemplate(preset) || null;
+  }
+  return preset ? presetTemplate(preset) || null : null;
+};
+
+const presetTemplateStatus = preset => {
+  const template =
+    getSelectedTemplateForPreset(preset.key) || presetTemplate(preset);
   return template
     ? L(`TEMPLATE_STATUS.${String(template.status || 'PENDING').toUpperCase()}`)
     : L('NO_TEMPLATE');
 };
+
+const templateCount = status =>
+  pageTemplates.value.filter(
+    item => String(item.status).toUpperCase() === status
+  ).length;
+
 const templateStatus = rule => {
   const template = ruleTemplate(rule);
   return template
     ? L(`TEMPLATE_STATUS.${String(template.status || 'PENDING').toUpperCase()}`)
     : L('NO_TEMPLATE');
 };
+
+const getPresetStatusBadge = preset => {
+  const rule = presetRule(preset);
+  const template = rule
+    ? ruleTemplate(rule)
+    : getSelectedTemplateForPreset(preset.key);
+  if (!template && !(rule && touchParams(rule).content_kind === 'free_text')) {
+    return {
+      tone: 'slate',
+      label: L('NO_TEMPLATE'),
+    };
+  }
+  if (template) {
+    const tplStatus = String(template.status || 'PENDING').toUpperCase();
+    if (tplStatus !== 'APPROVED') {
+      return {
+        tone: tplStatus === 'REJECTED' ? 'ruby' : 'amber',
+        label: L(`TEMPLATE_STATUS.${tplStatus}`),
+      };
+    }
+  }
+  if (rule?.active) {
+    return {
+      tone: 'teal',
+      label: L('ENABLED'),
+    };
+  }
+  return {
+    tone: 'slate',
+    label: L('DISABLED'),
+  };
+};
+
+const getTemplateBodyVars = template => {
+  if (!template) return [];
+  return getTemplateParameterDefinitions(template)
+    .filter(def => def.section === 'body')
+    .map(def => def.key.replace(/^body\./, ''));
+};
+
+const ensureDefaultBindingsForPreset = preset => {
+  const state = presetStates[preset.key];
+  const template = getSelectedTemplateForPreset(preset.key);
+  const vars = getTemplateBodyVars(template);
+  if (!vars.length) return;
+
+  const updated = { ...state.variableBindings };
+  vars.forEach((varKey, idx) => {
+    if (!updated[varKey]) {
+      const defaultSemanticKey = preset.defaultVariableOrder[idx];
+      if (defaultSemanticKey) updated[varKey] = defaultSemanticKey;
+    }
+  });
+  state.variableBindings = updated;
+};
+
+const resolveSemanticKeyFromStoredParam = rawVal => {
+  const fieldRef = extractSingleTemplateFieldReference(rawVal);
+  if (fieldRef?.fieldId) {
+    const byField = findSemanticVariableByFieldId(fieldRef.fieldId);
+    if (byField) return byField.key;
+  }
+  const byToken = findSemanticVariableByToken(rawVal);
+  return byToken?.key || '';
+};
+
+const hydratePresetsFromRulesAndTemplates = () => {
+  APPOINTMENT_REMINDER_PRESETS.forEach(preset => {
+    const state = presetStates[preset.key];
+    const existingRule = presetRule(preset);
+    const rawTouch = existingRule ? touchParams(existingRule) : null;
+
+    if (existingRule && rawTouch) {
+      state.enabled = Boolean(existingRule.active);
+      const tplParams = rawTouch.template_params || {};
+      if (tplParams.name) {
+        const candidateKey = `${tplParams.name}::${tplParams.language || 'ru'}`;
+        const matchedTpl =
+          templateByKey.value.get(candidateKey) ||
+          pageTemplates.value.find(item => item.name === tplParams.name);
+        if (matchedTpl) {
+          state.templateKey = makeTemplateKey(matchedTpl);
+        } else {
+          state.templateKey = candidateKey;
+        }
+      }
+
+      if (preset.supportsDayBeforeTime && rawTouch.relative_time_of_day) {
+        state.dayBeforeTime = rawTouch.relative_time_of_day;
+      }
+
+      if (preset.supportsConfirmation) {
+        state.confirmationEnabled =
+          rawTouch.response_action === 'confirm_appointment';
+      }
+
+      if (preset.supportsReviewDelay) {
+        const offsetSec = Number(rawTouch.relative_offset_seconds || 3600);
+        if (offsetSec <= 120) state.reviewDelayHours = 0;
+        else if (offsetSec <= 3600) state.reviewDelayHours = 1;
+        else if (offsetSec <= 7200) state.reviewDelayHours = 2;
+        else state.reviewDelayHours = 3;
+      }
+
+      const bodyParams = tplParams.processed_params?.body || {};
+      const parsedBindings = {};
+      Object.entries(bodyParams).forEach(([varIndex, rawRef]) => {
+        const semKey = resolveSemanticKeyFromStoredParam(rawRef);
+        if (semKey) {
+          parsedBindings[varIndex] = semKey;
+        }
+      });
+      state.variableBindings = parsedBindings;
+    } else if (!state.templateKey) {
+      const defaultMatch = presetTemplate(preset);
+      if (defaultMatch) {
+        state.templateKey = makeTemplateKey(defaultMatch);
+      }
+    }
+
+    ensureDefaultBindingsForPreset(preset);
+  });
+};
+
+watch(
+  [pageTemplates, notificationRules],
+  () => {
+    hydratePresetsFromRulesAndTemplates();
+  },
+  { immediate: true }
+);
+
+const renderLiveTemplatePreview = preset => {
+  const template = getSelectedTemplateForPreset(preset.key);
+  if (!template) return '';
+  let text = getTemplateBodyPreview(template);
+  const state = presetStates[preset.key];
+  const vars = getTemplateBodyVars(template);
+
+  vars.forEach(varKey => {
+    const semKey = state.variableBindings?.[varKey];
+    const semObj = findSemanticVariableByToken(semKey);
+    const exampleValue = semObj?.example || `{{${varKey}}}`;
+    text = text.replaceAll(`{{${varKey}}}`, exampleValue);
+  });
+
+  return text;
+};
+
+const getTemplateButtonsForPreview = preset => {
+  const template = getSelectedTemplateForPreset(preset.key);
+  if (!template?.components) return [];
+  const comp = template.components.find(
+    c => String(c.type || '').toUpperCase() === 'BUTTONS'
+  );
+  return Array.isArray(comp?.buttons) ? comp.buttons : [];
+};
+
+const handleInlineTemplateChange = (preset, nextKey) => {
+  presetStates[preset.key].templateKey = nextKey;
+  ensureDefaultBindingsForPreset(preset);
+};
+
 const canEnable = rule =>
-  rule &&
-  rule.calendar_managed &&
-  (touchParams(rule).content_kind === 'free_text' ||
-    (touchParams(rule).body && !touchParams(rule).content_kind) ||
-    String(ruleTemplate(rule)?.status).toUpperCase() === 'APPROVED');
+  Boolean(
+    rule &&
+      (touchParams(rule).content_kind === 'free_text' ||
+        (touchParams(rule).body && !touchParams(rule).content_kind) ||
+        String(ruleTemplate(rule)?.status).toUpperCase() === 'APPROVED')
+  );
+
 const selectedInbox = computed(() =>
   (inboxes.value || []).find(item => String(item.id) === String(draft.inboxId))
 );
@@ -354,11 +552,8 @@ const conditionText = condition => {
 };
 const conditionsSummaryText = rule =>
   visibleConditions(rule).map(conditionText).join(' · ') || L('NO_CONDITIONS');
+
 const newDraft = (rule = null, preset = null) => {
-  if (rule && !rule.calendar_managed) {
-    reviewingRule.value = rule;
-    return;
-  }
   const params = touchParams(rule);
   let eventKey = 'created';
   if (rule) eventKey = eventKeyForRule(rule);
@@ -401,6 +596,8 @@ const newDraft = (rule = null, preset = null) => {
   let templateKey = '';
   if (params.template_params?.name)
     templateKey = `${params.template_params.name}::${params.template_params.language || 'ru'}`;
+  else if (preset && presetStates[preset.key]?.templateKey)
+    templateKey = presetStates[preset.key].templateKey;
   else if (matchingPresetTemplate)
     templateKey = `${matchingPresetTemplate.name}::${matchingPresetTemplate.language || 'ru'}`;
   Object.assign(draft, {
@@ -443,6 +640,106 @@ const newDraft = (rule = null, preset = null) => {
   editing.value = true;
   step.value = 1;
 };
+
+const saveInlinePreset = async preset => {
+  const state = presetStates[preset.key];
+  const template = getSelectedTemplateForPreset(preset.key);
+  if (!selectedInboxId.value || !template) {
+    useAlert(L('REQUIRED'));
+    return;
+  }
+  const vars = getTemplateBodyVars(template);
+  if (vars.some(k => !state.variableBindings?.[k])) {
+    useAlert(L('BINDINGS_REQUIRED'));
+    return;
+  }
+
+  const existingRule = presetRule(preset);
+  const isApproved = String(template.status || '').toUpperCase() === 'APPROVED';
+  const nextActive = Boolean(existingRule?.active && isApproved);
+  const bodyProcessed = Object.fromEntries(
+    vars.map(k => [
+      k,
+      buildFieldReferenceForSemanticKey(state.variableBindings[k]),
+    ])
+  );
+  const offsetSeconds = preset.supportsReviewDelay
+    ? Number(state.reviewDelayHours || 0) <= 0
+      ? 60
+      : Number(state.reviewDelayHours) * 3600
+    : preset.relativeOffsetSeconds;
+
+  const params = {
+    ...(existingRule ? touchParams(existingRule) : {}),
+    action_type: 'send_message',
+    content_kind: 'channel_template',
+    timing_mode: 'relative',
+    relative_anchor: preset.relativeAnchor,
+    relative_offset_seconds: offsetSeconds,
+    relative_time_mode: preset.supportsDayBeforeTime
+      ? 'fixed_time_of_day'
+      : 'inherit_anchor_time',
+    relative_time_of_day: preset.supportsDayBeforeTime
+      ? state.dayBeforeTime || '15:00'
+      : '',
+    repeat_mode: 'once',
+    target_inbox_id: Number(selectedInboxId.value),
+    timezone:
+      currentAccount.value?.workspace_working_hours_timezone || 'Asia/Almaty',
+    response_action:
+      preset.supportsConfirmation && state.confirmationEnabled
+        ? 'confirm_appointment'
+        : '',
+    response_button_index:
+      preset.supportsConfirmation && state.confirmationEnabled ? 0 : '',
+    template_params: {
+      name: template.name,
+      language: template.language || 'ru',
+      category: template.category || 'UTILITY',
+      processed_params: {
+        body: bodyProcessed,
+      },
+    },
+  };
+
+  const payload = {
+    name:
+      existingRule?.name ||
+      t(`SCHEDULING.REMINDERS.PRESETS.${preset.key}.TITLE`),
+    description: `${(existingRule?.description || '').replace(/\[scheduling_preset:[a-z0-9_]+\]/gi, '').trim()} ${buildPresetMarker(preset.key)}`.trim(),
+    event_name: preset.eventName,
+    active: nextActive,
+    conditions: existingRule?.conditions?.length
+      ? existingRule.conditions
+      : [
+          {
+            attribute_key: 'source',
+            filter_operator: 'is_present',
+            values: [],
+            query_operator: null,
+          },
+        ],
+    actions: [{ action_name: 'create_touch', action_params: [params] }],
+    calendar_managed: true,
+    calendar_context: true,
+  };
+
+  savingPresetKey.value = preset.key;
+  try {
+    if (existingRule?.id) {
+      await AutomationAPI.update(existingRule.id, payload);
+    } else {
+      await AutomationAPI.create(payload);
+    }
+    await store.dispatch('automations/get');
+    useAlert(L('SAVED'));
+  } catch {
+    useAlert(L('SAVE_ERROR'));
+  } finally {
+    savingPresetKey.value = '';
+  }
+};
+
 const save = async active => {
   if (!draft.name.trim() || !draft.inboxId) {
     useAlert(L('REQUIRED'));
@@ -626,8 +923,12 @@ const save = async active => {
     saving.value = false;
   }
 };
-const toggle = async rule => {
-  if (!rule?.calendar_managed || (!rule.active && !canEnable(rule))) return;
+
+const toggle = async (rule, event = null) => {
+  if (!rule || (!rule.active && !canEnable(rule))) {
+    if (event?.target) event.target.checked = Boolean(rule?.active);
+    return;
+  }
   try {
     if (!rule.active) {
       const ids = appointmentFieldIds([
@@ -638,6 +939,7 @@ const toggle = async rule => {
         ids
       );
       if (blocked.length) {
+        if (event?.target) event.target.checked = Boolean(rule.active);
         useAlert(
           t('SCHEDULING.REMINDERS.ERRORS.FIELD_EMPTY_WARNING', {
             share: Math.round(blocked[0].share * 100),
@@ -648,13 +950,16 @@ const toggle = async rule => {
     }
     await AutomationAPI.update(rule.id, {
       active: !rule.active,
+      calendar_managed: true,
       calendar_context: true,
     });
     await store.dispatch('automations/get');
   } catch {
+    if (event?.target) event.target.checked = Boolean(rule.active);
     useAlert(L('SAVE_ERROR'));
   }
 };
+
 const syncTemplates = async () => {
   if (!selectedInboxId.value) return;
   syncing.value = true;
@@ -666,39 +971,12 @@ const syncTemplates = async () => {
     syncing.value = false;
   }
 };
+
 const handlePackGenerated = async ({ drafts }) => {
   generatedPackDrafts.value = drafts || [];
   await syncTemplates();
 };
-const adopt = async () => {
-  if (!reviewingRule.value || adopting.value) return;
-  adopting.value = true;
-  try {
-    await AutomationAPI.adoptCalendarNotification(reviewingRule.value.id);
-    await store.dispatch('automations/get');
-    reviewingRule.value = null;
-    useAlert(L('ADOPTED'));
-  } catch (error) {
-    const code = error?.response?.data?.errors?.[0];
-    useAlert(
-      code &&
-        [
-          'ALREADY_MANAGED',
-          'APPOINTMENT_EVENT_REQUIRED',
-          'MESSAGE_ACTION_REQUIRED',
-          'WHATSAPP_REQUIRED',
-          'SEND_PLAN_REQUIRED',
-          'MESSAGE_TEXT_REQUIRED',
-          'APPROVED_TEMPLATE_REQUIRED',
-          'INVALID_RULE',
-        ].includes(code)
-        ? L(`ADOPTION_ERRORS.${code}`)
-        : L('ADOPTION_FAILED')
-    );
-  } finally {
-    adopting.value = false;
-  }
-};
+
 const preview = computed(() => {
   if (!selectedTemplate.value) return '';
   let body = getTemplateBodyPreview(selectedTemplate.value);
@@ -710,6 +988,7 @@ const preview = computed(() => {
   });
   return body;
 });
+
 onMounted(async () => {
   await Promise.all([
     store.dispatch('automations/get'),
@@ -750,7 +1029,7 @@ onMounted(async () => {
     <div class="flex-1 overflow-y-auto p-3 sm:p-6">
       <div class="mx-auto max-w-5xl space-y-5">
         <section
-          class="flex flex-wrap items-end gap-3 rounded-xl border border-n-weak bg-n-solid-2 p-4"
+          class="flex flex-wrap items-end gap-3 rounded-2xl border border-n-weak bg-n-solid-2 p-4"
         >
           <label class="min-w-48 flex-1 text-sm text-n-slate-12">
             {{ L('CHANNEL') }}
@@ -781,6 +1060,7 @@ onMounted(async () => {
             {{ L('REJECTED') }}: {{ templateCount('REJECTED') }}
           </p>
         </section>
+
         <div
           v-if="!whatsAppInboxes.length"
           class="rounded-xl border border-n-weak bg-n-solid-2 p-4 text-sm"
@@ -796,18 +1076,21 @@ onMounted(async () => {
             {{ L('CONNECT') }}
           </RouterLink>
         </div>
+
         <div class="flex flex-wrap gap-2">
           <button
             type="button"
-            class="rounded-lg bg-n-brand px-3 py-2 text-white"
+            data-testid="open-template-pack-btn"
+            class="inline-flex items-center gap-1.5 rounded-lg bg-n-brand px-3.5 py-2 text-sm font-medium text-white"
             :disabled="!selectedInboxId"
             @click="templatePackDialogRef?.open()"
           >
-            {{ L('TEMPLATE_PACK') }}
+            <span class="i-lucide-sparkles size-4" />
+            <span>{{ L('TEMPLATE_PACK') }}</span>
           </button>
           <button
             type="button"
-            class="rounded-lg border border-n-weak px-3 py-2 text-n-slate-12"
+            class="rounded-lg border border-n-weak px-3 py-2 text-sm text-n-slate-12"
             :disabled="!selectedInboxId"
             @click="createTemplateDialogRef?.open()"
           >
@@ -815,7 +1098,7 @@ onMounted(async () => {
           </button>
           <button
             type="button"
-            class="rounded-lg border border-n-weak px-3 py-2 text-n-slate-12"
+            class="rounded-lg border border-n-weak px-3 py-2 text-sm text-n-slate-12"
             :disabled="!selectedInboxId || syncing"
             @click="syncTemplates"
           >
@@ -823,92 +1106,306 @@ onMounted(async () => {
           </button>
           <button
             type="button"
-            class="rounded-lg border border-n-weak px-3 py-2 text-n-slate-12"
+            class="rounded-lg border border-n-weak px-3 py-2 text-sm text-n-slate-12"
             @click="newDraft()"
           >
             {{ L('ADD') }}
           </button>
         </div>
+
         <p v-if="!notificationRules.length" class="text-sm text-n-slate-11">
           {{ L('FIRST_RUN') }}
         </p>
+
         <section>
           <h2 class="mb-3 text-base font-semibold text-n-slate-12">
             {{ L('PRESETS') }}
           </h2>
-          <div class="grid gap-3 sm:grid-cols-2">
+          <div class="space-y-3">
             <article
               v-for="preset in APPOINTMENT_REMINDER_PRESETS"
               :key="preset.key"
               :data-testid="`reminder-preset-card-${preset.key}`"
-              class="rounded-xl border border-n-weak bg-n-solid-2 p-4"
+              class="rounded-2xl border border-n-weak bg-n-solid-2 transition-colors"
             >
-              <div class="flex items-start justify-between gap-2">
-                <h3 class="m-0 font-semibold text-n-slate-12">
-                  {{ t(`SCHEDULING.REMINDERS.PRESETS.${preset.key}.TITLE`) }}
-                </h3>
-                <input
-                  type="checkbox"
-                  :aria-label="
-                    t(`SCHEDULING.REMINDERS.PRESETS.${preset.key}.TITLE`)
-                  "
-                  :checked="Boolean(presetRule(preset)?.active)"
-                  :disabled="
-                    !presetRule(preset) ||
-                    (!presetRule(preset)?.active &&
-                      !canEnable(presetRule(preset)))
-                  "
-                  @change="toggle(presetRule(preset))"
-                />
-              </div>
-              <p class="mb-2 mt-1 text-sm text-n-slate-11">
-                {{
-                  presetRule(preset)
-                    ? summary(presetRule(preset))
-                    : t(
-                        `SCHEDULING.REMINDERS.PRESETS.${preset.key}.DESCRIPTION`
-                      )
-                }}
-              </p>
-              <p class="mb-2 text-sm text-n-slate-11">
-                {{
-                  presetRule(preset)
-                    ? touchParams(presetRule(preset)).template_params?.name ||
-                      L('NO_TEMPLATE')
-                    : presetTemplate(preset)?.name || L('NO_TEMPLATE')
-                }}
-                ·
-                {{
-                  presetRule(preset)
-                    ? templateStatus(presetRule(preset))
-                    : presetTemplateStatus(preset)
-                }}
-              </p>
-              <p class="mb-3 text-sm text-n-slate-11">
-                {{ L('CONDITIONS') }}:
-                {{ conditionsSummaryText(presetRule(preset)) }}
-              </p>
-              <button
-                type="button"
-                class="text-n-brand"
-                @click="newDraft(presetRule(preset) || null, preset)"
+              <div
+                class="flex cursor-pointer flex-wrap items-center justify-between gap-4 px-5 py-4"
+                @click="
+                  expandedPresetKey =
+                    expandedPresetKey === preset.key ? '' : preset.key
+                "
               >
-                {{
-                  presetRule(preset) && !presetRule(preset).calendar_managed
-                    ? L('REVIEW_ADOPT')
-                    : L('SET_UP')
-                }}
-              </button>
+                <div class="flex min-w-0 flex-1 items-start gap-3.5">
+                  <div
+                    class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-n-brand/10 text-n-brand"
+                  >
+                    <span class="size-5" :class="preset.icon" />
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <h3 class="m-0 text-sm font-semibold text-n-slate-12">
+                        {{
+                          t(`SCHEDULING.REMINDERS.PRESETS.${preset.key}.TITLE`)
+                        }}
+                      </h3>
+                      <span
+                        class="rounded-md px-2 py-0.5 text-[11px] font-medium"
+                        :class="{
+                          'bg-n-teal-9/15 text-n-teal-11':
+                            getPresetStatusBadge(preset).tone === 'teal',
+                          'bg-n-amber-9/15 text-n-amber-11':
+                            getPresetStatusBadge(preset).tone === 'amber',
+                          'bg-n-ruby-9/15 text-n-ruby-11':
+                            getPresetStatusBadge(preset).tone === 'ruby',
+                          'bg-n-alpha-black2 text-n-slate-11':
+                            getPresetStatusBadge(preset).tone === 'slate',
+                        }"
+                      >
+                        {{ getPresetStatusBadge(preset).label }}
+                      </span>
+                    </div>
+
+                    <p class="mb-1 mt-1 text-xs text-n-slate-11">
+                      {{
+                        presetRule(preset)
+                          ? summary(presetRule(preset))
+                          : t(
+                              `SCHEDULING.REMINDERS.PRESETS.${preset.key}.DESCRIPTION`
+                            )
+                      }}
+                    </p>
+
+                    <p class="m-0 text-xs text-n-slate-11">
+                      {{
+                        presetRule(preset)
+                          ? touchParams(presetRule(preset)).template_params
+                              ?.name || L('NO_TEMPLATE')
+                          : getSelectedTemplateForPreset(preset.key)?.name ||
+                            presetTemplate(preset)?.name ||
+                            L('NO_TEMPLATE')
+                      }}
+                      ·
+                      {{
+                        presetRule(preset)
+                          ? templateStatus(presetRule(preset))
+                          : presetTemplateStatus(preset)
+                      }}
+                      · {{ L('CONDITIONS') }}:
+                      {{ conditionsSummaryText(presetRule(preset)) }}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-3" @click.stop>
+                  <button
+                    type="button"
+                    data-testid="preset-setup-btn"
+                    class="rounded-lg border border-n-weak px-2.5 py-1 text-xs font-medium text-n-brand hover:bg-n-brand/10"
+                    @click="newDraft(presetRule(preset) || null, preset)"
+                  >
+                    {{ L('SET_UP') }}
+                  </button>
+
+                  <label
+                    class="relative inline-flex cursor-pointer items-center"
+                  >
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      class="peer sr-only"
+                      :aria-label="
+                        t(`SCHEDULING.REMINDERS.PRESETS.${preset.key}.TITLE`)
+                      "
+                      :checked="Boolean(presetRule(preset)?.active)"
+                      :disabled="
+                        !presetRule(preset) ||
+                        (!presetRule(preset)?.active &&
+                          !canEnable(presetRule(preset)))
+                      "
+                      @change="toggle(presetRule(preset), $event)"
+                    />
+                    <span
+                      class="h-5 w-9 rounded-full bg-n-slate-6 transition-colors after:absolute after:left-[2px] after:top-[2px] after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:bg-n-brand peer-checked:after:translate-x-4 peer-disabled:cursor-not-allowed peer-disabled:opacity-50"
+                    />
+                  </label>
+
+                  <span
+                    class="size-4 block text-n-slate-11 transition-transform"
+                    :class="
+                      expandedPresetKey === preset.key
+                        ? 'i-lucide-chevron-up'
+                        : 'i-lucide-chevron-down'
+                    "
+                    @click="
+                      expandedPresetKey =
+                        expandedPresetKey === preset.key ? '' : preset.key
+                    "
+                  />
+                </div>
+              </div>
+
+              <div
+                v-if="expandedPresetKey === preset.key"
+                class="border-t border-n-weak px-5 py-5"
+              >
+                <div class="grid grid-cols-1 gap-6 lg:grid-cols-12">
+                  <div class="space-y-4 lg:col-span-7">
+                    <div class="space-y-1.5">
+                      <label class="block text-xs font-medium text-n-slate-12">
+                        {{ t('SCHEDULING.REMINDERS.FIELDS.TEMPLATE') }}
+                      </label>
+                      <select
+                        :value="presetStates[preset.key].templateKey"
+                        class="w-full rounded-lg border border-n-weak bg-n-surface-1 p-2 text-sm text-n-slate-12"
+                        @change="
+                          e => handleInlineTemplateChange(preset, e.target.value)
+                        "
+                      >
+                        <option value="">{{ L('CHOOSE') }}</option>
+                        <option
+                          v-for="tpl in pageTemplates"
+                          :key="makeTemplateKey(tpl)"
+                          :value="makeTemplateKey(tpl)"
+                        >
+                          {{ tpl.name }} ({{
+                            (tpl.language || 'ru').toUpperCase()
+                          }}
+                          ·
+                          {{
+                            L(
+                              `TEMPLATE_STATUS.${String(tpl.status || 'PENDING').toUpperCase()}`
+                            )
+                          }})
+                        </option>
+                      </select>
+                    </div>
+
+                    <div
+                      v-if="
+                        getTemplateBodyVars(
+                          getSelectedTemplateForPreset(preset.key)
+                        ).length
+                      "
+                      class="space-y-2.5 rounded-xl border border-n-weak bg-n-alpha-black2 p-3.5"
+                    >
+                      <p class="mb-0 text-xs font-medium text-n-slate-12">
+                        {{
+                          t('SCHEDULING.REMINDERS.FIELDS.VARIABLE_BINDINGS')
+                        }}
+                      </p>
+                      <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                        <div
+                          v-for="varKey in getTemplateBodyVars(
+                            getSelectedTemplateForPreset(preset.key)
+                          )"
+                          :key="`${preset.key}-var-${varKey}`"
+                          class="flex flex-col gap-1"
+                        >
+                          <span class="font-mono text-[11px] text-n-slate-11">
+                            {{ `\{\{${varKey}\}\}` }}
+                          </span>
+                          <select
+                            v-model="
+                              presetStates[preset.key].variableBindings[varKey]
+                            "
+                            class="rounded-lg border border-n-weak bg-n-surface-1 p-1.5 text-xs text-n-slate-12"
+                          >
+                            <option value="">{{ L('CHOOSE') }}</option>
+                            <option
+                              v-for="field in APPOINTMENT_SEMANTIC_VARIABLES"
+                              :key="field.key"
+                              :value="field.key"
+                            >
+                              {{ t(field.labelKey, field.defaultLabel) }} —
+                              {{ field.example }}
+                            </option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="flex items-center justify-end gap-2 pt-1">
+                      <span
+                        role="button"
+                        tabindex="0"
+                        data-testid="save-inline-preset-btn"
+                        class="cursor-pointer rounded-lg bg-n-brand px-3 py-1.5 text-xs font-medium text-white"
+                        @click="saveInlinePreset(preset)"
+                      >
+                        {{ t('SCHEDULING.REMINDERS.ACTIONS.SAVE_PRESET') }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="lg:col-span-5">
+                    <div
+                      class="rounded-2xl border border-n-weak bg-[#efeae2] dark:bg-n-solid-3 p-4"
+                    >
+                      <p
+                        class="mb-2.5 text-xs font-medium uppercase tracking-wide text-n-slate-11"
+                      >
+                        {{ t('SCHEDULING.REMINDERS.PREVIEW.TITLE') }}
+                      </p>
+
+                      <div
+                        v-if="getSelectedTemplateForPreset(preset.key)"
+                        class="rounded-2xl rounded-tl-sm bg-white dark:bg-n-solid-2 p-3.5 shadow-sm"
+                      >
+                        <p
+                          data-testid="preset-whatsapp-preview-text"
+                          class="mb-0 whitespace-pre-line text-sm leading-relaxed text-n-slate-12"
+                        >
+                          {{ renderLiveTemplatePreview(preset) }}
+                        </p>
+
+                        <div
+                          v-if="getTemplateButtonsForPreview(preset).length"
+                          class="mt-3 flex flex-col gap-1.5 border-t border-n-weak pt-2"
+                        >
+                          <div
+                            v-for="(btn, bIdx) in getTemplateButtonsForPreview(
+                              preset
+                            )"
+                            :key="bIdx"
+                            class="flex items-center justify-center gap-1.5 rounded-lg bg-n-alpha-black2 py-1.5 text-xs font-medium text-n-brand"
+                          >
+                            <span
+                              :class="
+                                String(btn.type || '').toUpperCase() === 'URL'
+                                  ? 'i-lucide-external-link size-3.5'
+                                  : 'i-lucide-reply size-3.5'
+                              "
+                            />
+                            <span>{{ btn.text }}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div
+                        v-else
+                        role="button"
+                        tabindex="0"
+                        class="w-full cursor-pointer rounded-xl border border-dashed border-n-weak bg-white/60 dark:bg-n-solid-2/60 p-6 text-center text-xs text-n-slate-11 transition-colors hover:border-n-brand/60 hover:text-n-brand"
+                        @click="templatePackDialogRef?.open()"
+                      >
+                        {{ t('SCHEDULING.REMINDERS.PREVIEW.EMPTY') }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </article>
           </div>
         </section>
-        <section>
+
+        <section v-if="otherRules.length">
           <h2 class="mb-3 text-base font-semibold text-n-slate-12">
             {{ L('OTHER_RULES') }}
           </h2>
           <article
             v-for="rule in otherRules"
             :key="rule.id"
+            :data-testid="`other-rule-card-${rule.id}`"
             class="mb-2 flex flex-wrap items-center gap-3 rounded-xl border border-n-weak bg-n-solid-2 p-4"
           >
             <div class="min-w-48 flex-1">
@@ -923,89 +1420,35 @@ onMounted(async () => {
                 · {{ L('CONDITIONS') }}: {{ conditionsSummaryText(rule) }}
               </p>
             </div>
-            <template v-if="rule.calendar_managed">
-              <input
-                type="checkbox"
-                :aria-label="rule.name"
-                :checked="rule.active"
-                :disabled="!rule.active && !canEnable(rule)"
-                @change="toggle(rule)"
-              />
+            <template v-if="rule.calendar_managed || firstTouch(rule)">
+              <label class="relative inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  class="peer sr-only"
+                  :aria-label="rule.name"
+                  :checked="rule.active"
+                  :disabled="!rule.active && !canEnable(rule)"
+                  @change="toggle(rule, $event)"
+                />
+                <span
+                  class="h-5 w-9 rounded-full bg-n-slate-6 transition-colors after:absolute after:left-[2px] after:top-[2px] after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:bg-n-brand peer-checked:after:translate-x-4 peer-disabled:cursor-not-allowed peer-disabled:opacity-50"
+                />
+              </label>
               <button
                 type="button"
-                class="text-n-brand"
+                class="text-sm font-medium text-n-brand"
                 @click="newDraft(rule)"
               >
                 {{ L('SET_UP') }}
               </button>
             </template>
-            <button
-              v-else-if="firstTouch(rule)"
-              type="button"
-              class="text-n-brand"
-              @click="reviewingRule = rule"
-            >
-              {{ L('REVIEW_ADOPT') }}
-            </button>
             <span v-else class="text-sm text-n-slate-11">{{
               L('MANAGE_IN_AUTOMATIONS')
             }}</span>
           </article>
         </section>
-        <section
-          v-if="reviewingRule"
-          class="rounded-xl border border-n-amber-8 bg-n-solid-2 p-4"
-          data-testid="adoption-review"
-        >
-          <h2 class="mb-2 font-semibold">
-            {{ L('REVIEW_ADOPT') }}: {{ reviewingRule.name }}
-          </h2>
-          <p class="text-sm">
-            {{ L('CONDITIONS') }}:
-            {{
-              (reviewingRule.conditions || []).map(conditionText).join(' · ') ||
-              L('NO_CONDITIONS')
-            }}
-          </p>
-          <div
-            v-for="(action, index) in reviewTouches"
-            :key="index"
-            class="mb-3 rounded-lg border border-n-weak p-3 text-sm"
-          >
-            <p class="m-0">
-              {{ L('ACTION') }} {{ index + 1 }} · {{ L('CHANNEL') }}:
-              {{ reviewChannel(action.action_params) }}
-            </p>
-            <p class="m-0">
-              {{ L('CONTENT') }}:
-              {{
-                action.action_params?.template_params?.name ||
-                action.action_params?.body ||
-                L('NO_CONTENT')
-              }}
-              ·
-              {{
-                action.action_params?.content_kind === 'channel_template'
-                  ? reviewTemplateStatus(action.action_params)
-                  : L('TEXT')
-              }}
-            </p>
-            <p class="m-0">
-              {{ L('TIMING_LABEL') }}: {{ summary({ actions: [action] }) }}
-            </p>
-          </div>
-          <button
-            type="button"
-            class="mr-3 rounded-lg bg-n-brand px-3 py-2 text-white"
-            :disabled="adopting"
-            @click="adopt"
-          >
-            {{ L('ADOPT') }}
-          </button>
-          <button type="button" @click="reviewingRule = null">
-            {{ L('CANCEL') }}
-          </button>
-        </section>
+
         <section
           v-if="editing"
           role="dialog"
@@ -1358,6 +1801,12 @@ onMounted(async () => {
       :inbox-id="Number(selectedInboxId) || null"
       :existing-template-names="pageTemplates.map(item => item.name)"
       :default-company-name="currentAccount?.name || ''"
+      :account-client-languages="
+        currentAccount?.settings?.client_languages || ['ru', 'kk']
+      "
+      :default-bilingual="
+        Boolean(currentAccount?.settings?.bilingual_templates_enabled)
+      "
       @generated="handlePackGenerated"
     />
     <CreateWhatsAppTemplateDialog

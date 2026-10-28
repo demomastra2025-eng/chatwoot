@@ -9,6 +9,7 @@ import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
+import TemplateMasterAPI from 'dashboard/api/scheduling/templateMaster';
 import {
   buildWhatsAppTemplatePayload,
   hasDanglingTemplateVariable,
@@ -16,8 +17,11 @@ import {
 import {
   APPOINTMENT_REMINDER_PRESETS,
   APPOINTMENT_SEMANTIC_VARIABLES,
+  WHATSAPP_SUPPORTED_CLIENT_LANGUAGES,
   buildAppointmentTemplatePackDrafts,
+  normalizeClientLanguageCode,
   serializeSemanticTemplateText,
+  validateUtilityTemplateDraft,
 } from 'dashboard/helper/appointmentTemplatePresets';
 
 const props = defineProps({
@@ -33,6 +37,14 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  accountClientLanguages: {
+    type: Array,
+    default: () => ['ru', 'kk'],
+  },
+  defaultBilingual: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(['generated']);
@@ -42,11 +54,14 @@ const store = useStore();
 
 const dialogRef = ref(null);
 const isSubmitting = ref(false);
+const isGeneratingAi = ref(false);
+const aiModelLabel = ref('openai/gpt-6.1-terra');
 const submitError = ref('');
 const selectedPreviewKey = ref(APPOINTMENT_REMINDER_PRESETS[0].key);
 
 const options = reactive({
   languageMode: 'both',
+  selectedLanguage: 'ru',
   includeCompany: true,
   companyNameRu: '',
   companyNameKk: '',
@@ -60,6 +75,7 @@ const options = reactive({
 });
 
 const customOverrides = reactive({});
+const aiGeneratedOverrides = reactive({});
 
 const languageModeOptions = computed(() => [
   {
@@ -76,6 +92,32 @@ const languageModeOptions = computed(() => [
   },
 ]);
 
+const isBilingualMode = computed({
+  get: () => options.languageMode === 'both',
+  set: val => {
+    if (val) {
+      options.languageMode = 'both';
+    } else {
+      options.languageMode = options.selectedLanguage || 'ru';
+    }
+  },
+});
+
+const selectLanguageMode = modeId => {
+  options.languageMode = modeId;
+  if (modeId !== 'both') {
+    options.selectedLanguage = modeId;
+  }
+};
+
+const handleLanguageSelectChange = event => {
+  const code = normalizeClientLanguageCode(event.target.value) || 'ru';
+  options.selectedLanguage = code;
+  if (options.languageMode !== 'both') {
+    options.languageMode = code;
+  }
+};
+
 const existingNameSet = computed(
   () =>
     new Set(
@@ -87,7 +129,7 @@ const existingNameSet = computed(
     )
 );
 
-const validateDraftFields = ({ name, bodyText, serialized, buttons }) => {
+const validateDraftFields = ({ name, bodyText, serialized, buttons, language }) => {
   const trimmedName = String(name || '').trim();
   if (!trimmedName) {
     return t('SCHEDULING.REMINDERS.ERRORS.TEMPLATE_NAME_REQUIRED');
@@ -114,6 +156,19 @@ const validateDraftFields = ({ name, bodyText, serialized, buttons }) => {
     return t('SCHEDULING.REMINDERS.ERRORS.TEMPLATE_BUTTON_TEXT_REQUIRED');
   }
 
+  const programmatic = validateUtilityTemplateDraft({
+    name: trimmedName,
+    bodyText: trimmedBody,
+    language: language || 'ru',
+    category: 'UTILITY',
+    buttons,
+    bilingual: options.languageMode === 'both',
+  });
+
+  if (!programmatic.valid) {
+    return programmatic.firstError;
+  }
+
   return '';
 };
 
@@ -121,14 +176,22 @@ const baseDrafts = computed(() => buildAppointmentTemplatePackDrafts(options));
 
 const drafts = computed(() =>
   baseDrafts.value.map(baseDraft => {
+    const aiDraft = aiGeneratedOverrides[baseDraft.presetKey] || {};
     const override = customOverrides[baseDraft.presetKey] || {};
     const hasNameOverride = override.name !== undefined;
     const hasBodyOverride = override.bodyText !== undefined;
     const hasButtonOverride = override.buttonText !== undefined;
 
-    const name = hasNameOverride ? override.name : baseDraft.name;
-    const bodyText = hasBodyOverride ? override.bodyText : baseDraft.bodyText;
-    const buttons = baseDraft.buttons.map((btn, idx) =>
+    const name = hasNameOverride
+      ? override.name
+      : aiDraft.name || baseDraft.name;
+    const bodyText = hasBodyOverride
+      ? override.bodyText
+      : aiDraft.bodyText ?? baseDraft.bodyText;
+    const sourceButtons = aiDraft.buttons?.length
+      ? aiDraft.buttons
+      : baseDraft.buttons;
+    const buttons = sourceButtons.map((btn, idx) =>
       idx === 0 && hasButtonOverride
         ? { ...btn, text: override.buttonText }
         : { ...btn }
@@ -142,12 +205,16 @@ const drafts = computed(() =>
       ])
     );
     const isCustomized =
-      hasNameOverride || hasBodyOverride || hasButtonOverride;
+      hasNameOverride ||
+      hasBodyOverride ||
+      hasButtonOverride ||
+      Boolean(aiDraft.bodyText);
     const validationError = validateDraftFields({
       name,
       bodyText,
       serialized,
       buttons,
+      language: baseDraft.language,
     });
 
     return {
@@ -219,7 +286,56 @@ const insertVariableIntoActiveDraft = token => {
 const resetDraftOverride = presetKey => {
   if (!presetKey) return;
   delete customOverrides[presetKey];
+  delete aiGeneratedOverrides[presetKey];
   submitError.value = '';
+};
+
+const handleGenerateWithAi = async () => {
+  isGeneratingAi.value = true;
+  submitError.value = '';
+  try {
+    const targetLang =
+      options.languageMode === 'both'
+        ? options.selectedLanguage || 'ru'
+        : options.languageMode;
+    const response = await TemplateMasterAPI.generate({
+      language: targetLang,
+      bilingual: options.languageMode === 'both',
+      options: {
+        include_company: options.includeCompany,
+        company_name_ru: options.companyNameRu || props.defaultCompanyName,
+        company_name_kk: options.companyNameKk || props.defaultCompanyName,
+        greet_by_name: options.greetByName,
+        include_datetime: options.includeDateTime,
+        include_specialist: options.includeSpecialist,
+        include_service: options.includeService,
+        confirmation_day_before: options.confirmationDayBefore,
+        include_location_url: options.includeLocationUrl,
+        location_url: options.locationUrl,
+      },
+    });
+    const payload = response?.data || {};
+    if (payload.model) {
+      aiModelLabel.value = payload.model;
+    }
+    (payload.drafts || []).forEach(aiDraft => {
+      const key = aiDraft.preset_key || aiDraft.presetKey;
+      if (!key) return;
+      delete customOverrides[key];
+      aiGeneratedOverrides[key] = {
+        name: aiDraft.name,
+        bodyText: aiDraft.body_text || aiDraft.bodyText,
+        buttons: aiDraft.buttons || [],
+      };
+    });
+  } catch (error) {
+    submitError.value =
+      error?.response?.data?.error ||
+      error?.message ||
+      t('SCHEDULING.REMINDERS.PACK_MODAL.ERROR');
+  } finally {
+    isGeneratingAi.value = false;
+  }
 };
 
 const suggestNextAvailableName = rawName => {
@@ -260,6 +376,14 @@ const open = () => {
   if (!options.companyNameRu && props.defaultCompanyName) {
     options.companyNameRu = props.defaultCompanyName;
     options.companyNameKk = props.defaultCompanyName;
+  }
+  if (props.accountClientLanguages?.length) {
+    const primary =
+      normalizeClientLanguageCode(props.accountClientLanguages[0]) || 'ru';
+    options.selectedLanguage = primary;
+    if (props.defaultBilingual) {
+      options.languageMode = 'both';
+    }
   }
   dialogRef.value?.open();
 };
@@ -342,10 +466,22 @@ defineExpose({
     overflow-y-auto
   >
     <div class="space-y-6">
-      <div class="space-y-2">
-        <label class="block text-sm font-medium text-n-slate-12">
-          {{ t('SCHEDULING.REMINDERS.PACK_MODAL.LANGUAGE_LABEL') }}
-        </label>
+      <div class="space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <label class="block text-sm font-medium text-n-slate-12">
+            {{ t('SCHEDULING.REMINDERS.PACK_MODAL.LANGUAGE_LABEL') }}
+          </label>
+          <Button
+            data-testid="generate-ai-templates-btn"
+            size="xs"
+            variant="faded"
+            icon="i-lucide-sparkles"
+            :label="`Сгенерировать через ИИ (${aiModelLabel})`"
+            :is-loading="isGeneratingAi"
+            @click="handleGenerateWithAi"
+          />
+        </div>
+
         <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <button
             v-for="mode in languageModeOptions"
@@ -358,10 +494,47 @@ defineExpose({
                 ? 'border-n-brand bg-n-brand/10 text-n-brand'
                 : 'border-n-weak bg-n-alpha-black2 text-n-slate-12 hover:border-n-slate-6'
             "
-            @click="options.languageMode = mode.id"
+            @click="selectLanguageMode(mode.id)"
           >
             {{ mode.label }}
           </button>
+        </div>
+
+        <div
+          class="grid grid-cols-1 gap-3 rounded-xl border border-n-weak bg-n-alpha-black2 p-3 sm:grid-cols-2"
+        >
+          <label class="block text-xs font-medium text-n-slate-12">
+            Язык шаблона (все языки WhatsApp)
+            <select
+              data-testid="pack-language-select"
+              :value="options.selectedLanguage"
+              class="mt-1 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 py-1.5 text-sm text-n-slate-12"
+              @change="handleLanguageSelectChange"
+            >
+              <option
+                v-for="lang in WHATSAPP_SUPPORTED_CLIENT_LANGUAGES"
+                :key="lang.code"
+                :value="lang.code"
+              >
+                {{ lang.name }} ({{ lang.code }})
+              </option>
+            </select>
+          </label>
+
+          <div class="flex items-center justify-between gap-3 pt-2 sm:pt-4">
+            <div>
+              <p class="mb-0 text-xs font-medium text-n-slate-12">
+                Два языка в одном сообщении
+              </p>
+              <p class="mb-0 text-[11px] text-n-slate-11">
+                Қазақша + Русский через разделитель в одном шаблоне
+              </p>
+            </div>
+            <Switch
+              v-model="isBilingualMode"
+              data-testid="pack-bilingual-switch"
+            />
+          </div>
         </div>
       </div>
 

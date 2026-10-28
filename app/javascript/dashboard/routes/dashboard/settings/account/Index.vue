@@ -19,6 +19,11 @@ import AccountDelete from './components/AccountDelete.vue';
 import SectionLayout from './components/SectionLayout.vue';
 import WorkspaceLogo from './components/WorkspaceLogo.vue';
 import { setDashboardLocale } from 'dashboard/i18n';
+import {
+  WHATSAPP_SUPPORTED_CLIENT_LANGUAGES,
+  getClientLanguageLabel,
+  normalizeClientLanguagesList,
+} from 'dashboard/helper/appointmentTemplatePresets';
 
 export default {
   components: {
@@ -72,6 +77,9 @@ export default {
       id: '',
       name: '',
       locale: 'ru',
+      clientLanguages: ['ru', 'kk'],
+      bilingualTemplatesEnabled: false,
+      languageToAdd: '',
       features: {},
       logoFile: null,
       logoUrl: '',
@@ -97,6 +105,11 @@ export default {
         l1.iso_639_1_code.localeCompare(l2.iso_639_1_code)
       );
     },
+    availableWhatsAppLanguages() {
+      return WHATSAPP_SUPPORTED_CLIENT_LANGUAGES.filter(
+        item => !this.clientLanguages.includes(item.code)
+      );
+    },
     isUpdating() {
       return this.uiFlags.isUpdating;
     },
@@ -110,11 +123,19 @@ export default {
       const account = this.accountRecord;
       if (!account?.id || Number(this.id) !== Number(account.id)) return false;
 
+      const savedClientLangs = this.extractAccountClientLanguages(account);
+      const savedBilingual = Boolean(
+        account.settings?.bilingual_templates_enabled ??
+          account.bilingual_templates_enabled
+      );
+
       return (
         Boolean(this.logoFile) ||
         this.normalizeTextField(this.name) !==
           this.normalizeTextField(account.name) ||
-        this.locale !== account.locale
+        this.locale !== account.locale ||
+        this.clientLanguages.join(',') !== savedClientLangs.join(',') ||
+        Boolean(this.bilingualTemplatesEnabled) !== savedBilingual
       );
     },
   },
@@ -134,6 +155,41 @@ export default {
     window.removeEventListener('beforeunload', this.handleBeforeUnload);
   },
   methods: {
+    getClientLanguageLabel,
+    extractAccountClientLanguages(account) {
+      const raw =
+        account?.settings?.client_languages || account?.client_languages;
+      return normalizeClientLanguagesList(raw, ['ru', 'kk']);
+    },
+    toggleClientLanguage(rawCode) {
+  const code = String(rawCode || '').trim();
+  if (!code) return;
+  if (this.clientLanguages.includes(code)) {
+    this.removeClientLanguage(code);
+  } else {
+    this.clientLanguages = [...this.clientLanguages, code];
+  }
+},
+addClientLanguage(event) {
+      const code = event?.target?.value || this.languageToAdd;
+      if (!code) return;
+      this.clientLanguages = normalizeClientLanguagesList([
+        ...this.clientLanguages,
+        code,
+      ]);
+      this.languageToAdd = '';
+      if (event?.target) event.target.value = '';
+    },
+    removeClientLanguage(code) {
+      if (this.clientLanguages.length <= 1) return;
+      this.clientLanguages = this.clientLanguages.filter(item => item !== code);
+    },
+    makePrimaryClientLanguage(code) {
+      this.clientLanguages = [
+        code,
+        ...this.clientLanguages.filter(item => item !== code),
+      ];
+    },
     normalizeTextField(value) {
       return String(value || '').trim();
     },
@@ -142,6 +198,8 @@ export default {
         id: this.id,
         locale: this.locale,
         name: this.normalizeTextField(this.name),
+        client_languages: this.clientLanguages,
+        bilingual_templates_enabled: Boolean(this.bilingualTemplatesEnabled),
         logo: this.logoFile,
       };
     },
@@ -159,6 +217,11 @@ export default {
       this.name = name || '';
       this.locale = locale;
       this.id = id;
+      this.clientLanguages = this.extractAccountClientLanguages(account);
+      this.bilingualTemplatesEnabled = Boolean(
+        account?.settings?.bilingual_templates_enabled ??
+          account?.bilingual_templates_enabled
+      );
       this.features = features;
       this.logoFile = null;
       this.logoUrl = logo_url || '';
@@ -341,6 +404,88 @@ export default {
                 </option>
               </NextSelect>
             </WithLabel>
+
+            <div
+              data-test="client-languages-section"
+              class="rounded-xl border border-n-weak bg-n-alpha-black2 p-4 space-y-3"
+            >
+              <div>
+                <p class="m-0 text-sm font-medium text-n-slate-12">
+                  Языки общения с клиентами (WhatsApp)
+                </p>
+                <p class="m-0 text-xs text-n-slate-11">
+                  Первый язык в списке считается основным языком компании, если язык клиента ещё не определён.
+                </p>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-2">
+                <span
+                  v-for="(code, idx) in clientLanguages"
+                  :key="code"
+                  :data-test="`client-lang-chip-${code}`"
+                  class="inline-flex items-center gap-1.5 rounded-lg border border-n-weak bg-n-surface-1 px-2.5 py-1 text-xs font-medium text-n-slate-12"
+                >
+                  <button
+                    v-if="idx > 0 && !isWorkspaceReadOnly"
+                    type="button"
+                    class="text-n-slate-10 hover:text-n-brand"
+                    title="Сделать основным языком"
+                    @click="makePrimaryClientLanguage(code)"
+                  >
+                    ↑
+                  </button>
+                  <span>{{ getClientLanguageLabel(code) }}</span>
+                  <span
+                    v-if="idx === 0"
+                    class="rounded bg-n-brand/15 px-1.5 py-0.5 text-[10px] text-n-brand"
+                  >
+                    Основной
+                  </span>
+                  <button
+                    v-if="clientLanguages.length > 1 && !isWorkspaceReadOnly"
+                    type="button"
+                    class="text-n-slate-10 hover:text-n-ruby-11"
+                    @click="removeClientLanguage(code)"
+                  >
+                    ×
+                  </button>
+                </span>
+
+                <select
+                  v-if="!isWorkspaceReadOnly && availableWhatsAppLanguages.length"
+                  data-test="add-client-language-select"
+                  :value="languageToAdd"
+                  class="rounded-lg border border-n-weak bg-n-surface-1 px-2.5 py-1 text-xs text-n-slate-12"
+                  @change="addClientLanguage"
+                >
+                  <option value="">+ Добавить язык WhatsApp</option>
+                  <option
+                    v-for="lang in availableWhatsAppLanguages"
+                    :key="lang.code"
+                    :value="lang.code"
+                  >
+                    {{ lang.name }} ({{ lang.code }})
+                  </option>
+                </select>
+              </div>
+
+              <label
+                class="flex items-center justify-between gap-3 border-t border-n-weak pt-3 text-sm text-n-slate-12"
+              >
+                <div>
+                  <span class="font-medium">Два языка в одном сообщении</span>
+                  <p class="m-0 text-xs text-n-slate-11">
+                    Отправлять двуязычный шаблон (например, Қазақша + Русский) вместо отдельных шаблонов по языкам
+                  </p>
+                </div>
+                <input
+                  v-model="bilingualTemplatesEnabled"
+                  data-test="bilingual-templates-checkbox"
+                  type="checkbox"
+                  :disabled="isWorkspaceReadOnly"
+                />
+              </label>
+            </div>
           </form>
         </SectionLayout>
 

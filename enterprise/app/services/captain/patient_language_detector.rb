@@ -50,7 +50,7 @@ class Captain::PatientLanguageDetector
                  'punctuation, emoji, names, IIN, medical abbreviations or a bare one-word confirmation (yes/ok/good).'
   }.freeze
 
-  def initialize(conversation:)
+  def initialize(conversation:, **_unused)
     @conversation = conversation
   end
 
@@ -161,5 +161,6 @@ class Captain::PatientLanguageDetector
       attributes[ATTRIBUTE] = language[:language] if language.key?(:language)
       conversation.update_columns(additional_attributes: attributes) # rubocop:disable Rails/SkipsModelValidations
     end
+    conversation.contact&.record_detected_language!(language[:language]) if language[:language].present? && conversation.respond_to?(:contact)
   end
 end

@@ -37,6 +37,11 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
     @automation_rule.assign_attributes(automation_rules_permit)
     @automation_rule.actions = actions if params[:actions]
     @automation_rule.conditions = params[:conditions] if params[:conditions]
+    if ActiveModel::Type::Boolean.new.cast(params[:calendar_context]) &&
+       @automation_rule.appointment_event? &&
+       Array(@automation_rule.actions).any? { |action| action.to_h['action_name'] == 'create_touch' }
+      @automation_rule.calendar_managed = true
+    end
 
     return render_automation_rule_validation_error(@automation_rule) unless @automation_rule.valid?
 

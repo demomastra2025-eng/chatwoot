@@ -221,6 +221,21 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
       }
     end
 
+    if incoming_attributes.key?(Contact::CLIENT_LANGUAGE_KEY)
+      normalized_lang = Whatsapp::SupportedLanguages.normalize_code(incoming_attributes[Contact::CLIENT_LANGUAGE_KEY])
+      if normalized_lang.present?
+        merged_attributes[Contact::CLIENT_LANGUAGE_KEY] = normalized_lang
+        unless incoming_attributes[Contact::CLIENT_LANGUAGE_SOURCE_KEY] == Contact::CLIENT_LANGUAGE_SOURCE_AI
+          merged_attributes[Contact::CLIENT_LANGUAGE_SOURCE_KEY] = Contact::CLIENT_LANGUAGE_SOURCE_MANUAL
+          merged_attributes.delete(Contact::CLIENT_LANGUAGE_CONFIDENCE_KEY)
+        end
+      else
+        merged_attributes.delete(Contact::CLIENT_LANGUAGE_KEY)
+        merged_attributes.delete(Contact::CLIENT_LANGUAGE_SOURCE_KEY)
+        merged_attributes.delete(Contact::CLIENT_LANGUAGE_CONFIDENCE_KEY)
+      end
+    end
+
     merged_attributes[Contact::DISPLAY_PREFERENCES_KEY] = display_preferences if display_preferences.present?
     merged_attributes
   end

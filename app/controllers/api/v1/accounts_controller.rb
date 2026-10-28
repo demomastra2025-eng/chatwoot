@@ -122,6 +122,14 @@ class Api::V1::AccountsController < Api::BaseController
 
   def settings_params
     permitted = params.permit(*permitted_settings_attributes)
+    if params.key?(:client_languages)
+      raw_languages = permitted[:client_languages].presence || params[:client_languages]
+      permitted[:client_languages] = Whatsapp::SupportedLanguages.normalize_list(raw_languages)
+    end
+    if permitted.key?(:bilingual_templates_enabled)
+      permitted[:bilingual_templates_enabled] =
+        ActiveModel::Type::Boolean.new.cast(permitted[:bilingual_templates_enabled]) == true
+    end
     return permitted unless permitted.key?(:conversation_assignment_policy_id)
 
     value = permitted[:conversation_assignment_policy_id]
@@ -148,6 +156,8 @@ class Api::V1::AccountsController < Api::BaseController
       :auto_resolve_label,
       :scheduling_contact_required,
       :scheduling_company_enabled,
+      :bilingual_templates_enabled,
+      { client_languages: [] },
       :workspace_timezone,
       { workspace_working_hours: %i[day_of_week closed_all_day open_all_day open_hour open_minutes close_hour close_minutes] },
       { workspace_breaks: [:title, :start_time, :end_time, { days: [] }] },

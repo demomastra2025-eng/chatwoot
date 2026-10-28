@@ -216,4 +216,35 @@ describe('ContactInfo', () => {
       undefined
     );
   });
+  it('renders client language with AI confidence badge and dispatches update on manual selection', async () => {
+    const wrapper = buildWrapper({
+      contact: {
+        additional_attributes: {
+          client_language: 'kk',
+          client_language_source: 'ai',
+          client_language_confidence: 96,
+        },
+      },
+    });
+
+    const row = wrapper.get('[data-test="contact-client-language-row"]');
+    expect(row.text()).toContain('96%');
+
+    const select = wrapper.get('[data-test="contact-client-language-select"]');
+    expect(select.element.value).toBe('kk');
+
+    await select.setValue('ru');
+    expect(dispatchMock).toHaveBeenCalledWith(
+      'contacts/update',
+      expect.objectContaining({
+        id: 154,
+        client_language: 'ru',
+        additional_attributes: expect.objectContaining({
+          client_language: 'ru',
+          client_language_source: 'manual',
+          client_language_confidence: 100,
+        }),
+      })
+    );
+  });
 });

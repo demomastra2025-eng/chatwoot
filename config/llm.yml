@@ -451,6 +451,7 @@ features:
   editor:
     models:
       [
+        openai/gpt-6.1-terra,
         openai/gpt-6-luna,
         openai/gpt-5.6-luna,
         gpt-4.1-mini,
@@ -559,7 +560,7 @@ features:
     models: [openai/gpt-6-luna, openai/gpt-5.6-luna, gpt-4.1-mini, gpt-5-mini, gpt-5.4-mini]
     default: openai/gpt-6-luna
   customer_notice:
-    models: [openai/gpt-6-luna, openai/gpt-5.6-luna, gpt-4.1-mini, gpt-5-mini, gpt-5.4-mini]
+    models: [openai/gpt-6.1-terra, openai/gpt-6-luna, openai/gpt-5.6-luna, gpt-4.1-mini, gpt-5-mini, gpt-5.4-mini]
     default: openai/gpt-6-luna
   label_suggestion:
     models:

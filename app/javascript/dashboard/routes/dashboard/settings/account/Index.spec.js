@@ -245,4 +245,24 @@ describe('Account settings', () => {
     expect(context.confirmWorkspaceNavigation).toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(false);
   });
+  it('persists client_languages and bilingual_templates_enabled in account settings', async () => {
+    const { wrapper, updateAction } = buildWrapper();
+    await wrapper.vm.hydrateAccountForm();
+
+    wrapper.vm.toggleClientLanguage('en');
+    await wrapper.setData({ bilingualTemplatesEnabled: true });
+    await nextTick();
+
+    expect(wrapper.vm.hasWorkspaceChanges).toBe(true);
+    await wrapper.vm.updateAccount();
+
+    expect(updateAction).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        id: 530,
+        client_languages: expect.arrayContaining(['ru', 'kk', 'en']),
+        bilingual_templates_enabled: true,
+      })
+    );
+  });
 });

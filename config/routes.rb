@@ -207,6 +207,10 @@ Rails.application.routes.draw do
           resources :dashboard_apps, only: [:index, :show, :create, :update, :destroy]
 
           namespace :scheduling do
+            resource :template_master, only: [], controller: 'template_master' do
+              post :generate
+              post :validate
+            end
             resource :appointment_field_fill, only: [:show], controller: 'appointment_field_fill'
             resources :medelement_patients, only: [:create] do
               post :search, on: :collection

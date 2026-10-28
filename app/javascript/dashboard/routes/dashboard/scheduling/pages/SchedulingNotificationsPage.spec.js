@@ -35,6 +35,10 @@ vi.mock('dashboard/composables/useAccount', () => ({
       id: 1,
       name: 'Test Clinic',
       workspace_working_hours_timezone: 'Asia/Almaty',
+      settings: {
+        client_languages: ['ru', 'kk'],
+        bilingual_templates_enabled: false,
+      },
     }),
   }),
 }));
@@ -132,7 +136,7 @@ beforeEach(() => {
 });
 
 describe('SchedulingNotificationsPage', () => {
-  it('shows six off cards, channel, template counts and the pack wizard on first run', async () => {
+  it('shows six accordion preset cards with toggle switches, channel, template counts and the pack wizard on first run', async () => {
     const wrapper = await mountPage();
     expect(
       wrapper.findAll('[data-testid^="reminder-preset-card-"]')
@@ -145,7 +149,7 @@ describe('SchedulingNotificationsPage', () => {
     ).toHaveLength(6);
   });
 
-  it('recognizes a preset by marker after its send time changes', async () => {
+  it('recognizes a preset by marker after its send time changes and renders inline WhatsApp preview', async () => {
     mocks.rules = [
       rule({
         actions: [
@@ -170,6 +174,9 @@ describe('SchedulingNotificationsPage', () => {
       '[data-testid="reminder-preset-card-appointment_created"]'
     );
     expect(card.text()).toContain('visit_notice');
+    expect(
+      card.find('[data-testid="preset-whatsapp-preview-text"]').text()
+    ).toContain('Здравствуйте');
     expect(
       wrapper.findAll('[data-testid^="reminder-preset-card-"]')
     ).toHaveLength(6);
@@ -312,23 +319,26 @@ describe('SchedulingNotificationsPage', () => {
     );
   });
 
-  it('reviews and adopts only the selected legacy rule', async () => {
+  it('allows toggling and editing rules in Другие правила directly without a review-and-adopt prompt', async () => {
     mocks.rules = [
       rule({ id: 2, description: '', calendar_managed: false }),
-      rule({ id: 3, description: '', calendar_managed: false }),
     ];
     const wrapper = await mountPage();
-    await wrapper
-      .findAll('button')
-      .find(button => button.text() === 'SCHEDULING.NOTIFICATIONS.REVIEW_ADOPT')
-      .trigger('click');
-    expect(wrapper.find('[data-testid="adoption-review"]').exists()).toBe(true);
-    await wrapper
-      .find('[data-testid="adoption-review"] button')
-      .trigger('click');
+    expect(wrapper.find('[data-testid="adoption-review"]').exists()).toBe(
+      false
+    );
+    expect(wrapper.text()).not.toContain(
+      'SCHEDULING.NOTIFICATIONS.REVIEW_ADOPT'
+    );
+    const otherCard = wrapper.find('[data-testid="other-rule-card-2"]');
+    expect(otherCard.exists()).toBe(true);
+    await otherCard.find('input[type="checkbox"]').trigger('change');
     await flushPromises();
-    expect(AutomationAPI.adoptCalendarNotification).toHaveBeenCalledTimes(1);
-    expect(AutomationAPI.adoptCalendarNotification).toHaveBeenCalledWith(2);
+    expect(AutomationAPI.update).toHaveBeenCalledWith(2, {
+      active: true,
+      calendar_managed: true,
+      calendar_context: true,
+    });
   });
 
   it('keeps untouched custom conditions and saves the preset marker when switched off', async () => {

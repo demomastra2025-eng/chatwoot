@@ -31,6 +31,13 @@ class AccountAPI extends ApiClient {
     Object.entries(accountAttributes).forEach(([key, value]) => {
       if (value === undefined) return;
 
+      if (Array.isArray(value)) {
+        value.forEach(item => {
+          formData.append(`${key}[]`, item);
+        });
+        return;
+      }
+
       formData.append(key, value);
     });
 

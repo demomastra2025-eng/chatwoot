@@ -1,10 +1,14 @@
 import {
   APPOINTMENT_REMINDER_PRESETS,
   APPOINTMENT_SEMANTIC_VARIABLES,
+  WHATSAPP_SUPPORTED_CLIENT_LANGUAGES,
   buildAppointmentTemplatePackDrafts,
   buildPresetMarker,
   extractPresetKeyFromRule,
+  normalizeClientLanguageCode,
+  normalizeClientLanguagesList,
   serializeSemanticTemplateText,
+  validateUtilityTemplateDraft,
 } from '../appointmentTemplatePresets';
 import {
   buildWhatsAppTemplatePayload,
@@ -25,6 +29,7 @@ describe('appointmentTemplatePresets', () => {
       true
     );
   });
+
   describe('#serializeSemanticTemplateText', () => {
     it('converts universal semantic variables into sequential Meta placeholders with examples and field:// bindings', () => {
       const result = serializeSemanticTemplateText(
@@ -62,6 +67,51 @@ describe('appointmentTemplatePresets', () => {
         'Сәлеметсіз бе, {{1}}! Уақыты: {{2}}.\n\n—————————\n\nЗдравствуйте, {{1}}! Время: {{2}}.'
       );
       expect(result.variables).toEqual(['1', '2']);
+    });
+  });
+
+  describe('#validateUtilityTemplateDraft', () => {
+    it('rejects Kazakh case endings attached via hyphen to variables, promotional stop-words, and adjacent variables', () => {
+      const caseSuffixResult = validateUtilityTemplateDraft({
+        name: 'booking_reminder_1d',
+        language: 'kk',
+        bodyText:
+          'Сәлеметсіз бе, {{имя клиента}}! Сіз сағат {{время записи}}-ке жазылдыңыз.',
+      });
+      expect(caseSuffixResult.valid).toBe(false);
+      expect(caseSuffixResult.errors.map(e => e.code)).toContain(
+        'variable_case_suffix'
+      );
+
+      const promoResult = validateUtilityTemplateDraft({
+        name: 'booking_created_notice',
+        language: 'ru',
+        bodyText:
+          'Здравствуйте, {{имя клиента}}! На ваш приём действует скидка 20%.',
+      });
+      expect(promoResult.valid).toBe(false);
+      expect(promoResult.errors.map(e => e.code)).toContain(
+        'promotional_content'
+      );
+
+      const validKkResult = validateUtilityTemplateDraft({
+        name: 'booking_reminder_1d',
+        language: 'kk',
+        bodyText:
+          'Сәлеметсіз бе, {{имя клиента}}! Күні: {{дата записи}}, сағат {{время записи}} уақытында күтеміз.',
+      });
+      expect(validKkResult.valid).toBe(true);
+    });
+
+    it('normalizes supported WhatsApp client languages', () => {
+      expect(WHATSAPP_SUPPORTED_CLIENT_LANGUAGES.length).toBeGreaterThan(20);
+      expect(normalizeClientLanguageCode('kz')).toBe('kk');
+      expect(normalizeClientLanguageCode('en_US')).toBe('en');
+      expect(normalizeClientLanguagesList(['kz', 'ru', 'en'])).toEqual([
+        'kk',
+        'ru',
+        'en',
+      ]);
     });
   });
 

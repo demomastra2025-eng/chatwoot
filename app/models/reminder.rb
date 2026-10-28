@@ -625,7 +625,11 @@ class Reminder < ApplicationRecord
   end
 
   def renderable_template_params(conversation: nil, sender: nil)
-    params = template_params.deep_stringify_keys
+    params = Whatsapp::TemplateLanguageResolver.new(
+      reminder: self,
+      template_params: template_params,
+      conversation: conversation
+    ).call
     return params if params['processed_params'].blank?
 
     params['processed_params'] = render_template_param_value(
