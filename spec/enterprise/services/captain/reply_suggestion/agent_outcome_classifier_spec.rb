@@ -21,6 +21,15 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
         pending_actions: [{ 'action_id' => 'a-1' }], captain_trace: { 'version' => 1, 'tool_calls' => [] }, suggestion_meta: meta
       )
     end
+
+    it 'blocks a draft that claims a completed appointment action without evidence' do
+      blocked = described_class.new(reply.merge('response' => 'Спасибо, записала вас.',
+                                                'unsupported_completed_actions' => ['book']), trace_collector: trace_collector).perform
+
+      expect(blocked).to include(outcome: 'human_needed', reason_source: 'safety')
+      expect(blocked[:reason]).to include('Спасибо, записала вас.')
+      expect(blocked).not_to have_key(:message)
+    end
   end
 
   context 'when the agent says that no reply is needed' do

@@ -163,6 +163,11 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
 
   # 8
   def draft
+    if payload[:unsupported_completed_actions].present?
+      return human_needed(I18n.t('captain.reply_suggestion.reasons.unsupported_claims',
+                                 claims: payload[:response].to_s.squish.truncate(120)), 'safety')
+    end
+
     meta = draft_meta
     trace = trace_collector.captain_trace(payload)
     Captain::ReplySuggestion::Outcome.draft(

@@ -70,6 +70,13 @@ class Captain::ReplySuggestionService < Captain::BaseTaskService
   end
 
   def legacy_draft(result)
+    if Captain::ReplySuggestion::DraftClaims.unsupported_completed_actions(draft: result[:message], context: {}).any?
+      return Captain::ReplySuggestion::Outcome.human_needed(
+        reason: I18n.t('captain.reply_suggestion.reasons.unsupported_claims', claims: result[:message].to_s.squish.truncate(120)),
+        reason_source: 'safety', engine: LEGACY_ENGINE
+      )
+    end
+
     Captain::ReplySuggestion::Outcome.draft(
       message: result[:message].to_s.strip, engine: LEGACY_ENGINE, usage: result[:usage], follow_up_context: result[:follow_up_context],
       agent: nil, captain_trace: nil, suggestion_meta: nil
@@ -92,10 +99,12 @@ class Captain::ReplySuggestionService < Captain::BaseTaskService
   end
 
   def prompt_variables
+    staff_signature = account.account_users.find_by(user_id: user.id)&.reply_signature
     {
       'channel_type' => conversation.inbox.channel_type,
+      'staff_signature' => staff_signature,
       'agent_name' => user.name,
-      'agent_signature' => user.message_signature.presence,
+      'agent_signature' => staff_signature.presence || user.message_signature.presence,
       'has_search_tool' => false
     }
   end
