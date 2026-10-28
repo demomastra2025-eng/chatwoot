@@ -4,7 +4,8 @@
 class Captain::SuggestionResponseSchema < RubyLLM::Schema
   RESPONSE_MODES = %w[reply suppress human].freeze
   RESPONSE_MODE_DESCRIPTION = 'reply - a draft reply for the operator to send; suppress - no reply is needed (the patient wrote only ' \
-                              'thanks, ok or an emoji, or staff already answered); human - a staff member must answer instead of the AI ' \
+                              'thanks, ok or an emoji, or staff already answered; never for a greeting, which opens or resumes the dialog); ' \
+                              'human - a staff member must answer instead of the AI ' \
                               '(the clinic data has no answer, or it needs a staff decision: a medical judgement, a complaint, a refund, ' \
                               'an exception to the clinic rules).'.freeze
   OPERATOR_NOTE_DESCRIPTION = 'For the clinic operator, never the patient. With suppress: why no reply is needed. With human: why a ' \

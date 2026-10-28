@@ -199,7 +199,7 @@ class Captain::Runtime::DecisionRouter::Questions
 
   def short_plain_message?(text, clinic)
     !clinic&.match?(/[?？]/) && !text.match?(NO_REPLY_BREAKERS) && text.split.size <= NO_REPLY_MAX_WORDS &&
-      !Captain::PatientIntent.booking_change?(text) && !Captain::PatientIntent.question?(text)
+      !Captain::PatientIntent.booking_change?(text) && !Captain::PatientIntent.question?(text) && !Captain::PatientIntent.greeting?(text)
   end
 
   # The current agent; with no current agent, the agent with the highest include probability.

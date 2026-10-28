@@ -39,6 +39,13 @@ module Captain::PatientIntent
   # A thanks (the stems are folded): «спасибо», «благодарю», «рахмет» and «рақмет», «алғыс», «thanks».
   THANKS_STEMS = %w[спасиб спс благодар рахмет ракмет алгыс thank thx].freeze
 
+  # A greeting that opens or resumes a dialog (the stems are folded): «здравствуйте», «добрый день», «сәлеметсіз бе», «саламатсызьа».
+  GREETING_STEMS = [
+    'здравствуй', 'здраст', 'добр\p{L}+ (?:утр|ден|вечер|ноч)', 'привет', 'салеметсиз', 'саламатсыз', 'салем(?![[:alpha:]])',
+    'кайырлы (?:тан|кун|кеш)', 'ассалаума', 'ассаляму', 'уагалейкум', 'hello(?![[:alpha:]])', 'hi(?![[:alpha:]])',
+    'good (?:morning|afternoon|evening)'
+  ].freeze
+
   # An answer that accepts what was offered (the stems are folded): «да», «ок», «хорошо», «подходит», «давайте», «жарайды», «иә», «yes».
   ACCEPT_STEMS = [
     'да(?![[:alpha:]])', 'ок(?:ей)?(?![[:alpha:]])', 'хорошо', 'ладно', 'подход', 'давайт', 'согласн', 'договорил', 'идет', 'отличн', 'устраивает',
@@ -119,6 +126,7 @@ module Captain::PatientIntent
 
   BOOKING_CHANGE = pattern(BOOKING_CHANGE_STEMS)
   THANKS = pattern(THANKS_STEMS)
+  GREETING = pattern(GREETING_STEMS)
   DONE = pattern(DONE_STEMS, whole_word: true)
   # «суд» and «иск» are whole words (not «судороги», «искать»), the others stems.
   HUMAN = pattern(HUMAN_STEMS - %w[суд иск сот])
@@ -148,6 +156,12 @@ module Captain::PatientIntent
 
   def thanks?(text)
     folded(text).match?(THANKS)
+  end
+
+  # The patient greets the clinic («Здравствуйте», «Добрый день», «Сәлеметсіз бе», «Саламатсызьа», «Қайырлы күн»).
+  def greeting?(text)
+    folded = folded(text)
+    folded.match?(GREETING) && !folded.match?(THANKS)
   end
 
   # The patient accepts what was offered («да», «ок», «хорошо, подходит», «жарайды»).
