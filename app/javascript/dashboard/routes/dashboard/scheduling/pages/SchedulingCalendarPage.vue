@@ -27,7 +27,6 @@ import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
 import CrmDealConversationPanel from 'dashboard/components-next/CRM/CrmDealConversationPanel.vue';
-import PersonDialogActions from 'dashboard/components-next/Contacts/PersonDialogActions.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import AppointmentDealSelector from 'dashboard/components-next/CRM/AppointmentDealSelector.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
@@ -133,10 +132,7 @@ import {
 } from 'dashboard/stores/scheduling/providerCommands';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 import { parseIinMetadata } from 'dashboard/stores/scheduling/iin';
-import {
-  useMedelementPatientSearch,
-  visibleRemotePatients,
-} from '../composables/useMedelementPatientSearch';
+import { useMedelementPatientSearch } from '../composables/useMedelementPatientSearch';
 
 const { t, locale } = useI18n();
 const calendarStore = useSchedulingCalendarStore();
@@ -180,6 +176,7 @@ const contactEditorMode = ref(null);
 const contactSelectorFieldRef = ref(null);
 const contactProfile = ref(null);
 const isPatientSearchOpen = ref(false);
+const localPatientSearchQuery = ref('');
 const appointmentMenuOpen = ref(false);
 const rescheduleDialogRef = ref(null);
 const savedFormSnapshot = ref('');
@@ -672,6 +669,10 @@ const contactOptions = computed(() => {
   const list =
     hasSelectedOption ||
     !fallbackLabel ||
+    (localPatientSearchQuery.value &&
+      !fallbackLabel
+        .toLocaleLowerCase()
+        .includes(localPatientSearchQuery.value.toLocaleLowerCase())) ||
     !(formStore.form.patientContactId || formStore.form.contactId)
       ? options
       : [
@@ -751,13 +752,6 @@ const appointmentPatientAge = computed(() =>
 );
 const appointmentPatientIin = computed(() =>
   maskedPatientIin(appointmentPatient.value)
-);
-const appointmentPatientChannels = computed(
-  () =>
-    contactProfile.value?.contact_inboxes ||
-    formStore.selectedContact?.contactInboxes ||
-    formStore.selectedContact?.contact_inboxes ||
-    []
 );
 const isEditingContact = computed(
   () =>
@@ -1014,14 +1008,6 @@ const openAppointmentChat = () => {
   if (isAppointmentPage.value) appointmentPageTab.value = 'chat';
 };
 provide(PERSON_DIALOG_OPENER, openAppointmentChat);
-// A call from the drawer made the dialog of the person: the chat beside the appointment shows it.
-const handleAppointmentCallInitiated = response => {
-  openAppointmentChat();
-  store.dispatch('promotePersonDialog', {
-    contactId: formStore.form.contactId,
-    communicationThreadId: response?.communication_thread_id,
-  });
-};
 const canManageAppointmentConversation = computed(
   () =>
     formStore.mode === 'edit' &&
@@ -1905,11 +1891,11 @@ const medelementSearch = useMedelementPatientSearch({
     contactSelectorFieldRef.value?.close();
   },
 });
+const medelementPatientSearchEnabled = computed(() =>
+  Boolean(calendarStore.payload?.medelementPatientSearchEnabled)
+);
 const remoteContactOptions = computed(() => {
-  return visibleRemotePatients(
-    medelementSearch.patients.value,
-    contactOptions.value
-  ).map(patient => ({
+  return medelementSearch.patients.value.map(patient => ({
     ...patient,
     birthDate: patient.birthDate?.split('-').reverse().join('.') || '',
     iinMasked: patient.iinMasked
@@ -1917,9 +1903,37 @@ const remoteContactOptions = computed(() => {
       : '',
   }));
 });
+const localPatientSearchTitle = computed(() => {
+  if (formStore.ui.isLoadingContacts)
+    return t('SCHEDULING.PATIENT_SEARCH.LOCAL_LOADING');
+  if (contactOptions.value.length)
+    return t('SCHEDULING.PATIENT_SEARCH.LOCAL_FOUND', {
+      count: contactOptions.value.length,
+    });
+  return t('SCHEDULING.PATIENT_SEARCH.LOCAL_EMPTY');
+});
+const remotePatientSearchTitle = computed(() =>
+  medelementSearch.status.value === 'found'
+    ? t('SCHEDULING.PATIENT_SEARCH.REMOTE_FOUND', {
+        count: medelementSearch.patients.value.length,
+      })
+    : t('SCHEDULING.PATIENT_SEARCH.REMOTE_SECTION')
+);
+const remotePatientSearchHint = computed(() => {
+  if (
+    !medelementPatientSearchEnabled.value ||
+    medelementSearch.status.value !== 'hint'
+  )
+    return '';
+  const searchHint = t('SCHEDULING.PATIENT_SEARCH.SEARCH_HINT');
+  return medelementSearch.hint.value
+    ? `${t('SCHEDULING.PATIENT_SEARCH.INVALID_IIN')} · ${searchHint}`
+    : searchHint;
+});
 
 const handleContactDropdownOpen = async () => {
   if (formStore.ui.isSaving || formStore.ui.isLoadingContacts) return;
+  localPatientSearchQuery.value = '';
 
   try {
     await formStore.searchContacts('');
@@ -1935,6 +1949,7 @@ const openContactSelector = () => {
 };
 const closePatientSearch = () => {
   medelementSearch.clear();
+  localPatientSearchQuery.value = '';
   isPatientSearchOpen.value = false;
 };
 const updateInlineContactField = (field, value) => {
@@ -1942,6 +1957,7 @@ const updateInlineContactField = (field, value) => {
 };
 const searchAppointmentContacts = query => {
   if (!formStore.ui.isSaving) {
+    localPatientSearchQuery.value = query.trim();
     medelementSearch.query(query);
     return formStore.searchContacts(query);
   }
@@ -3074,15 +3090,34 @@ onMounted(async () => {
                   rounded-full
                 />
                 <div class="min-w-0 flex-1">
-                  <button
+                  <div
                     v-if="appointmentPatientContactId"
-                    data-test="appointment-patient-name"
-                    type="button"
-                    class="line-clamp-2 max-w-full text-left text-base font-semibold text-n-slate-12"
-                    @click="openAppointmentContactPanel"
+                    class="flex min-w-0 items-center gap-2"
                   >
-                    {{ appointmentPatient.fullName || appointmentClientName() }}
-                  </button>
+                    <button
+                      data-test="appointment-patient-name"
+                      type="button"
+                      class="line-clamp-2 max-w-full text-left text-base font-semibold text-n-slate-12"
+                      @click="openAppointmentContactPanel"
+                    >
+                      {{
+                        appointmentPatient.fullName || appointmentClientName()
+                      }}
+                    </button>
+                    <Button
+                      v-if="
+                        formStore.mode === 'create' &&
+                        !isSelectedAppointmentInMedelement
+                      "
+                      data-test="appointment-header-change-patient"
+                      size="sm"
+                      variant="link"
+                      color="blue"
+                      :label="$t('SCHEDULING.PATIENT_CONTEXT.CHANGE_PATIENT')"
+                      :disabled="formStore.ui.isSaving"
+                      @click="changeAppointmentPatient"
+                    />
+                  </div>
                   <h2
                     v-else
                     class="m-0 truncate text-base font-semibold text-n-slate-12"
@@ -3171,7 +3206,10 @@ onMounted(async () => {
                 </div>
 
                 <div class="appointment-contact-section">
-                  <div class="appointment-contact-section-heading">
+                  <div
+                    v-if="appointmentPatientContactId || isContactEditorOpen"
+                    class="appointment-contact-section-heading"
+                  >
                     <h3
                       class="mb-0 flex items-center gap-2 text-sm font-semibold text-n-slate-12"
                     >
@@ -3179,125 +3217,6 @@ onMounted(async () => {
                         $t('SCHEDULING.PATIENT_CONTEXT.PATIENT')
                       }}</span>
                     </h3>
-                    <div
-                      class="relative flex items-center gap-2 ltr:ml-auto rtl:mr-auto"
-                    >
-                      <Button
-                        v-if="
-                          !isContactEditorOpen &&
-                          !formStore.form.contactId &&
-                          !formStore.form.patientContactId &&
-                          !isSelectedAppointmentInMedelement
-                        "
-                        size="sm"
-                        variant="link"
-                        color="blue"
-                        :label="$t('SCHEDULING.CONTACT.SELECT_ACTION')"
-                        :disabled="formStore.ui.isSaving"
-                        @click="openContactSelector"
-                      />
-                    </div>
-                  </div>
-
-                  <div
-                    v-if="
-                      formStore.mode === 'create' &&
-                      !isContactEditorOpen &&
-                      (formStore.form.contactId ||
-                        formStore.form.patientContactId)
-                    "
-                    class="grid gap-3 rounded-xl border border-n-weak p-3"
-                    data-test="calendar-selected-patient-card"
-                  >
-                    <div class="flex min-w-0 items-center gap-3">
-                      <Avatar
-                        :name="
-                          appointmentPatient.fullName || appointmentClientName()
-                        "
-                        :src="
-                          contactProfile?.thumbnail ||
-                          formStore.selectedContact?.thumbnail ||
-                          ''
-                        "
-                        :size="48"
-                        rounded-full
-                      />
-                      <div class="min-w-0 flex-1">
-                        <div
-                          class="truncate text-sm font-semibold text-n-slate-12"
-                        >
-                          {{
-                            appointmentPatient.fullName ||
-                            appointmentClientName()
-                          }}
-                        </div>
-                        <div class="text-xs text-n-slate-11">
-                          <span v-if="appointmentPatientAge">{{
-                            appointmentPatientAge
-                          }}</span>
-                          <span v-if="appointmentPatientIin">
-                            · {{ $t('SCHEDULING.CONTACT.IIN') }}
-                            {{ appointmentPatientIin }}</span
-                          >
-                        </div>
-                      </div>
-                      <Button
-                        v-if="!isSelectedAppointmentInMedelement"
-                        size="sm"
-                        variant="link"
-                        color="blue"
-                        :label="$t('SCHEDULING.PATIENT_CONTEXT.CHANGE_PATIENT')"
-                        :disabled="formStore.ui.isSaving"
-                        @click="openContactSelector"
-                      />
-                    </div>
-                    <SchedulingContactPhoneEditor
-                      :contact-id="
-                        formStore.form.patientContactId ||
-                        formStore.form.contactId
-                      "
-                      :phone="
-                        formStore.selectedContact?.phone ||
-                        formStore.form.clientPhone
-                      "
-                      :saving="isPhoneSaving || formStore.ui.isSaving"
-                      :error="phoneEditorError"
-                      @save="saveContactPhone"
-                    />
-                    <div
-                      v-if="appointmentPatientChannels.length"
-                      class="flex flex-wrap gap-1"
-                    >
-                      <span
-                        v-for="item in appointmentPatientChannels"
-                        :key="item.inbox?.id || item.inbox_id"
-                        class="rounded-full bg-n-slate-3 px-2 py-0.5 text-xs text-n-slate-11"
-                        >{{
-                          item.inbox?.name || item.inbox?.channel_type
-                        }}</span
-                      >
-                    </div>
-                    <div class="flex flex-wrap items-center gap-2">
-                      <PersonDialogActions
-                        :contact-id="formStore.form.contactId"
-                        :patient-contact-id="
-                          formStore.form.patientContactId || null
-                        "
-                        :phone="
-                          formStore.selectedContact?.phone ||
-                          formStore.form.clientPhone
-                        "
-                        size="xs"
-                        @call-initiated="handleAppointmentCallInitiated"
-                      />
-                      <a
-                        :href="`/app/accounts/${route.params.accountId}/contacts/${formStore.form.patientContactId || formStore.form.contactId}`"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="rounded-lg border border-n-weak px-3 py-1.5 text-xs text-n-slate-12"
-                        >{{ $t('SCHEDULING.PATIENT_CONTEXT.PATIENT_CARD') }}</a
-                      >
-                    </div>
                   </div>
 
                   <div
@@ -3317,8 +3236,28 @@ onMounted(async () => {
                         isSelectedAppointmentInMedelement
                       "
                       :options="contactOptions"
+                      :local-title="localPatientSearchTitle"
+                      :local-loading="formStore.ui.isLoadingContacts"
                       :remote-options="remoteContactOptions"
-                      :remote-title="$t('SCHEDULING.PATIENT_SEARCH.TITLE')"
+                      :remote-title="
+                        medelementPatientSearchEnabled
+                          ? remotePatientSearchTitle
+                          : ''
+                      "
+                      :remote-status="
+                        medelementPatientSearchEnabled
+                          ? medelementSearch.status.value
+                          : ''
+                      "
+                      :remote-empty-label="
+                        $t('SCHEDULING.PATIENT_SEARCH.REMOTE_EMPTY')
+                      "
+                      :remote-retry-label="
+                        $t('SCHEDULING.PATIENT_SEARCH.RETRY')
+                      "
+                      :remote-no-phone-label="
+                        $t('SCHEDULING.PATIENT_SEARCH.NO_PHONE')
+                      "
                       :remote-loading="medelementSearch.loading.value"
                       :remote-error="
                         medelementSearch.error.value ||
@@ -3336,14 +3275,8 @@ onMounted(async () => {
                       :remote-truncated-label="
                         $t('SCHEDULING.PATIENT_SEARCH.TRUNCATED')
                       "
-                      :remote-phone-label="
-                        $t('SCHEDULING.PATIENT_SEARCH.PHONE_KNOWN')
-                      "
-                      :remote-hint="
-                        medelementSearch.hint.value
-                          ? $t('SCHEDULING.PATIENT_SEARCH.INVALID_IIN')
-                          : ''
-                      "
+                      :remote-phone-label="$t('SCHEDULING.CONTACT.PHONE')"
+                      :remote-hint="remotePatientSearchHint"
                       :remote-busy-token="medelementSearch.busyToken.value"
                       :create-option-label="
                         $t('SCHEDULING.PATIENT_CONTEXT.NEW_PATIENT')
@@ -3363,6 +3296,7 @@ onMounted(async () => {
                       @search="searchAppointmentContacts"
                       @close="closePatientSearch"
                       @select-remote="medelementSearch.select"
+                      @retry-remote="medelementSearch.retry"
                       @create="handleContactSelect('__create_new_contact__')"
                       @update:model-value="handleContactSelect"
                     />

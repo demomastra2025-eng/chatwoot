@@ -35,6 +35,31 @@ RSpec.describe 'Scheduling MedElement patients API', type: :request do
     Rails.logger = previous_logger
   end
 
+  it 'returns a distinct empty result, a skipped result, and an unavailable error' do
+    allow(client).to receive(:search_patients_by_name).and_return([])
+    post "#{path}/search", params: { query: 'Қуаныш' }, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload']).to include('patients' => [], 'truncated' => false)
+
+    post "#{path}/search", params: { query: 'Қу' }, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'reason')).to eq('too_short')
+
+    allow(client).to receive(:search_patients_by_name).and_raise(Timeout::Error)
+    post "#{path}/search", params: { query: 'Қуаныш' }, headers: headers, as: :json
+    expect(response).to have_http_status(:service_unavailable)
+    expect(response.parsed_body['code']).to eq('MEDELEMENT_PATIENT_SEARCH_UNAVAILABLE')
+  end
+
+  it 'returns only the last four phone digits for a found patient' do
+    phone = '+77010000001'
+    allow(client).to receive(:search_patients_by_iin).and_return([card.merge('PATIENT_PHONE_2' => phone)])
+    post "#{path}/search", params: { query: iin }, headers: headers, as: :json
+    patient = response.parsed_body.dig('payload', 'patients', 0)
+    expect(patient['phone_masked']).to eq('••••0001')
+    expect(response.body).not_to include(phone)
+  end
+
   it 'imports a chosen card and returns the scheduling contact shape' do
     allow(client).to receive(:search_patients_by_name).and_return([card])
     post "#{path}/search", params: { query: 'Қуаныш' }, headers: headers, as: :json

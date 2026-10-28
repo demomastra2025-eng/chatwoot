@@ -6,6 +6,115 @@ import ComboBoxDropdown from '../ComboBoxDropdown.vue';
 import TagMultiSelectComboBox from '../TagMultiSelectComboBox.vue';
 
 describe('ComboBoxDropdown', () => {
+  const patientProps = {
+    inline: true,
+    open: true,
+    options: [],
+    localTitle: 'В OneLink не найдено',
+    remoteTitle: 'МедЭлемент',
+    remoteEmptyLabel: 'В МедЭлементе не найдено',
+    remoteLoadingLabel: 'Ищем в МедЭлементе…',
+    remoteErrorLabel: 'МедЭлемент не ответил',
+    remoteRetryLabel: 'Повторить',
+    remoteNoPhoneLabel: 'без телефона',
+    remotePhoneLabel: 'Телефон',
+    remoteHint: 'ИИН, телефон или 3+ буквы фамилии',
+    createOptionLabel: '+ Новый пациент',
+    showCreateAlways: true,
+  };
+
+  it.each([
+    ['hint', {}, 'ИИН, телефон или 3+ буквы фамилии'],
+    [
+      'searching',
+      { remoteLoading: true, remoteHint: '' },
+      'Ищем в МедЭлементе…',
+    ],
+    [
+      'empty',
+      { remoteStatus: 'empty', remoteHint: '' },
+      'В МедЭлементе не найдено',
+    ],
+    ['error', { remoteError: true, remoteHint: '' }, 'МедЭлемент не ответил'],
+  ])('shows the MedElement %s state', (_, overrides, message) => {
+    const wrapper = mount(ComboBoxDropdown, {
+      props: { ...patientProps, ...overrides },
+    });
+    expect(wrapper.text()).toContain(message);
+    expect(
+      wrapper.find('[data-testid="combobox-create-option"]').exists()
+    ).toBe(true);
+    if (overrides.remoteStatus === 'empty') {
+      const empty = wrapper.get('[data-testid="combobox-remote-empty"]');
+      expect(empty.element.nextElementSibling).toBe(
+        wrapper.get('[data-testid="combobox-create-option"]').element
+      );
+    }
+  });
+
+  it('shows a selectable found row with masked identity and retries an error', async () => {
+    const wrapper = mount(ComboBoxDropdown, {
+      props: {
+        ...patientProps,
+        localTitle: 'В OneLink: 1',
+        options: [{ label: 'Локальный пациент', value: 1 }],
+        remoteTitle: 'Найдено в МедЭлементе · 1',
+        remoteStatus: 'found',
+        remoteHint: '',
+        remoteOptions: [
+          {
+            token: 'fake-token',
+            fullName: 'Қуаныш Аян',
+            birthDate: '01.01.2000',
+            iinMasked: 'ИИН ••••0123',
+            phoneMasked: '••••0001',
+          },
+        ],
+      },
+    });
+    expect(wrapper.text()).toContain('В OneLink: 1');
+    expect(wrapper.text()).toContain('Найдено в МедЭлементе · 1');
+    expect(wrapper.text()).toContain('01.01.2000');
+    expect(wrapper.text()).toContain('ИИН ••••0123');
+    expect(wrapper.text()).toContain('••••0001');
+    expect(wrapper.text()).toContain('Телефон ••••0001');
+    await wrapper.findAll('li[role="option"]')[1].trigger('click');
+    expect(wrapper.emitted('selectRemote')?.[0]?.[0]?.token).toBe('fake-token');
+    await wrapper.setProps({
+      remoteError: true,
+      remoteStatus: 'error',
+      remoteOptions: [],
+    });
+    await wrapper.get('[data-testid="combobox-remote-retry"]').trigger('click');
+    expect(wrapper.emitted('retryRemote')).toHaveLength(1);
+  });
+
+  it('shows OneLink searching, found, and empty states and a phone-less MedElement row', async () => {
+    const wrapper = mount(ComboBoxDropdown, {
+      props: {
+        ...patientProps,
+        localTitle: 'В OneLink: 1',
+        options: [{ label: 'Локальный пациент', value: 1 }],
+        remoteTitle: 'Найдено в МедЭлементе · 1',
+        remoteHint: '',
+        remoteStatus: 'found',
+        remoteOptions: [{ token: 'fake-token', fullName: 'Қуаныш Аян' }],
+      },
+    });
+    expect(wrapper.text()).toContain('В OneLink: 1');
+    expect(wrapper.text()).toContain('Локальный пациент');
+    expect(wrapper.text()).toContain('без телефона');
+    expect(wrapper.text()).not.toContain('В OneLink не найдено');
+    await wrapper.setProps({
+      localTitle: 'Ищем в OneLink…',
+      localLoading: true,
+    });
+    expect(wrapper.text()).toContain('Ищем в OneLink…');
+    expect(wrapper.text()).not.toContain('Локальный пациент');
+    expect(mount(ComboBoxDropdown, { props: patientProps }).text()).toContain(
+      'В OneLink не найдено'
+    );
+  });
   it('offers to create the searched value and highlights that value', async () => {
     const wrapper = mount(ComboBoxDropdown, {
       props: {

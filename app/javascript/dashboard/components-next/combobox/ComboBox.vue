@@ -17,7 +17,13 @@ const props = defineProps({
       value.every(option => 'value' in option && 'label' in option),
   },
   remoteOptions: { type: Array, default: () => [] },
+  localTitle: { type: String, default: '' },
+  localLoading: { type: Boolean, default: false },
   remoteTitle: { type: String, default: '' },
+  remoteStatus: { type: String, default: '' },
+  remoteEmptyLabel: { type: String, default: '' },
+  remoteRetryLabel: { type: String, default: '' },
+  remoteNoPhoneLabel: { type: String, default: '' },
   remoteLoading: { type: Boolean, default: false },
   remoteError: { type: Boolean, default: false },
   remoteTruncated: { type: Boolean, default: false },
@@ -62,6 +68,7 @@ const emit = defineEmits([
   'open',
   'close',
   'selectRemote',
+  'retryRemote',
   'update:modelValue',
   'search',
 ]);
@@ -426,8 +433,14 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
         :open="open"
         :inline="inlineDropdown"
         :options="filteredOptions"
+        :local-title="localTitle"
+        :local-loading="localLoading"
         :remote-options="remoteOptions"
         :remote-title="remoteTitle"
+        :remote-status="remoteStatus"
+        :remote-empty-label="remoteEmptyLabel"
+        :remote-retry-label="remoteRetryLabel"
+        :remote-no-phone-label="remoteNoPhoneLabel"
         :remote-loading="remoteLoading"
         :remote-error="remoteError"
         :remote-truncated="remoteTruncated"
@@ -448,6 +461,7 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
         @create="createOption"
         @search="emit('search', $event)"
         @select-remote="emit('selectRemote', $event)"
+        @retry-remote="emit('retryRemote')"
         @select="selectOption"
       />
 

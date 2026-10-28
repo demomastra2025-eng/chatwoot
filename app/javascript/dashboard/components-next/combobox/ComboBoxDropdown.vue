@@ -26,7 +26,13 @@ const props = defineProps({
     required: true,
   },
   remoteOptions: { type: Array, default: () => [] },
+  localTitle: { type: String, default: '' },
+  localLoading: { type: Boolean, default: false },
   remoteTitle: { type: String, default: '' },
+  remoteStatus: { type: String, default: '' },
+  remoteEmptyLabel: { type: String, default: '' },
+  remoteRetryLabel: { type: String, default: '' },
+  remoteNoPhoneLabel: { type: String, default: '' },
   remoteLoading: { type: Boolean, default: false },
   remoteError: { type: Boolean, default: false },
   remoteTruncated: { type: Boolean, default: false },
@@ -67,7 +73,13 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['create', 'select', 'selectRemote', 'search']);
+const emit = defineEmits([
+  'create',
+  'select',
+  'selectRemote',
+  'retryRemote',
+  'search',
+]);
 
 const { t } = useI18n();
 
@@ -78,12 +90,13 @@ const searchValue = defineModel('searchValue', {
 
 const searchInput = ref(null);
 const activeIndex = ref(-1);
+const localOptions = computed(() => (props.localLoading ? [] : props.options));
 const selectable = computed(() => [
-  ...props.options.map(option => ({ option, remote: false })),
+  ...localOptions.value.map(option => ({ option, remote: false })),
   ...props.remoteOptions.map(option => ({ option, remote: true })),
 ]);
 watch(
-  () => [props.options, props.remoteOptions],
+  () => [props.options, props.remoteOptions, props.localLoading],
   () => {
     activeIndex.value = -1;
   }
@@ -181,12 +194,26 @@ defineExpose({
         :aria-multiselectable="multiple"
       >
         <li
-          v-for="option in options"
+          v-if="localTitle"
+          class="px-3 pt-1 text-xs font-medium text-n-slate-11"
+          role="presentation"
+          data-testid="combobox-local-state"
+        >
+          <span
+            v-if="localLoading"
+            class="i-lucide-loader-circle mr-1 inline-block size-3 animate-spin"
+            aria-hidden="true"
+          />
+          {{ localTitle }}
+        </li>
+        <li
+          v-for="option in localOptions"
           :key="option.value"
           class="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-colors duration-150 hover:bg-n-alpha-2"
           :class="{
             'bg-n-alpha-2':
-              isSelected(option) || activeIndex === options.indexOf(option),
+              isSelected(option) ||
+              activeIndex === localOptions.indexOf(option),
           }"
           role="option"
           :aria-selected="isSelected(option)"
@@ -246,7 +273,8 @@ defineExpose({
         <li
           v-if="
             remoteTitle &&
-            (remoteLoading ||
+            (remoteStatus ||
+              remoteLoading ||
               remoteError ||
               remoteOptions.length ||
               remoteTruncated ||
@@ -262,11 +290,11 @@ defineExpose({
           :key="option.token"
           class="min-w-0 cursor-pointer rounded-lg px-3 py-2 text-sm text-n-slate-12 hover:bg-n-alpha-2"
           :class="{
-            'bg-n-alpha-2': activeIndex === options.length + index,
+            'bg-n-alpha-2': activeIndex === localOptions.length + index,
             'opacity-60': remoteBusyToken === option.token,
           }"
           role="option"
-          :aria-selected="activeIndex === options.length + index"
+          :aria-selected="activeIndex === localOptions.length + index"
           @click="emit('selectRemote', option)"
         >
           <div class="min-w-0 break-words font-medium">
@@ -278,13 +306,16 @@ defineExpose({
             <span v-if="option.birthDate">{{ option.birthDate }}</span>
             <span v-if="option.iinMasked">{{ option.iinMasked }}</span>
             <span
-              v-if="option.phoneKnown"
+              v-if="option.phoneMasked || remoteNoPhoneLabel"
               class="inline-flex items-center gap-1"
             >
               <span class="i-lucide-phone size-3" aria-hidden="true" />{{
-                remotePhoneLabel
+                option.phoneMasked
+                  ? `${remotePhoneLabel} ${option.phoneMasked}`
+                  : remoteNoPhoneLabel
               }}
             </span>
+            <span v-else-if="option.phoneKnown">{{ remotePhoneLabel }}</span>
             <span
               v-if="remoteBusyToken === option.token"
               class="i-lucide-loader-circle size-3 animate-spin"
@@ -297,7 +328,19 @@ defineExpose({
           class="px-3 py-2 text-xs text-n-slate-11"
           role="status"
         >
+          <span
+            class="i-lucide-loader-circle mr-1 inline-block size-3 animate-spin"
+            aria-hidden="true"
+          />
           {{ remoteLoadingLabel }}
+        </li>
+        <li
+          v-if="remoteStatus === 'empty'"
+          class="px-3 py-2 text-xs text-n-slate-11"
+          role="status"
+          data-testid="combobox-remote-empty"
+        >
+          {{ remoteEmptyLabel }}
         </li>
         <li
           v-if="remoteError"
@@ -305,6 +348,15 @@ defineExpose({
           role="status"
         >
           {{ remoteErrorLabel }}
+          <button
+            v-if="remoteRetryLabel"
+            type="button"
+            class="ml-2 font-medium text-n-blue-11"
+            data-testid="combobox-remote-retry"
+            @click="emit('retryRemote')"
+          >
+            {{ remoteRetryLabel }}
+          </button>
         </li>
         <li
           v-if="remoteTruncated"

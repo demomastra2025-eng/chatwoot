@@ -136,10 +136,14 @@ class Integrations::Medelement::PatientDirectorySearch
 
   def identity_fields(row)
     iin = row['IIN'].to_s.gsub(/\D/, '')
+    phone = row.values_at('PATIENT_PHONE_2_STR', 'PATIENT_PHONE_2', 'PHONES_STR').find do |value|
+      value.to_s.gsub(/\D/, '').length >= 4
+    end
+    phone_digits = phone.to_s.gsub(/\D/, '')
     {
       first_name: row['NAME'].presence, last_name: row['LASTNAME'].presence, middle_name: row['MIDDLENAME'].presence,
       birth_date: birth_date(row['BIRTHDAY']), iin_masked: ("••••#{iin.last(4)}" if iin.present?),
-      phone_known: row.values_at('PATIENT_PHONE_2', 'PHONES_STR').any?(&:present?)
+      phone_known: phone.present?, phone_masked: ("••••#{phone_digits.last(4)}" if phone.present?)
     }
   end
 

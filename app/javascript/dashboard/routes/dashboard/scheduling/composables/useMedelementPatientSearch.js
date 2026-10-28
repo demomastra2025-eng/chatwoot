@@ -49,6 +49,7 @@ export const useMedelementPatientSearch = ({
   const hint = ref('');
   const truncated = ref(false);
   const busyToken = ref('');
+  const status = ref('hint');
   let timer;
   let controller;
   let generation = 0;
@@ -66,6 +67,7 @@ export const useMedelementPatientSearch = ({
     hint.value = '';
     truncated.value = false;
     lastQuery = '';
+    status.value = 'hint';
   };
 
   const query = raw => {
@@ -96,6 +98,7 @@ export const useMedelementPatientSearch = ({
     hint.value = '';
     truncated.value = false;
     loading.value = true;
+    status.value = 'searching';
     timer = setTimeout(async () => {
       controller = new AbortController();
       try {
@@ -103,12 +106,15 @@ export const useMedelementPatientSearch = ({
         if (requestGeneration !== generation) return;
         patients.value = result.patients || [];
         truncated.value = Boolean(result.truncated);
+        if (result.reason) status.value = 'hint';
+        else status.value = patients.value.length ? 'found' : 'empty';
       } catch (requestError) {
         if (
           requestGeneration === generation &&
           requestError?.code !== 'ERR_CANCELED'
         ) {
           error.value = true;
+          status.value = 'error';
         }
       } finally {
         if (requestGeneration === generation) {
@@ -117,6 +123,12 @@ export const useMedelementPatientSearch = ({
         }
       }
     }, 400);
+  };
+
+  const retry = () => {
+    const text = lastQuery;
+    lastQuery = '';
+    if (text) query(text);
   };
 
   const select = async patient => {
@@ -130,6 +142,8 @@ export const useMedelementPatientSearch = ({
       clear();
     } catch {
       importError.value = true;
+      patients.value = [];
+      status.value = 'error';
     } finally {
       busyToken.value = '';
     }
@@ -144,8 +158,10 @@ export const useMedelementPatientSearch = ({
     hint,
     truncated,
     busyToken,
+    status,
     clear,
     query,
+    retry,
     select,
     visible: computed(
       () =>

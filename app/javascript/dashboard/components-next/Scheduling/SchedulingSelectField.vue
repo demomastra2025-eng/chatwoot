@@ -47,7 +47,13 @@ const props = defineProps({
     required: true,
   },
   remoteOptions: { type: Array, default: () => [] },
+  localTitle: { type: String, default: '' },
+  localLoading: { type: Boolean, default: false },
   remoteTitle: { type: String, default: '' },
+  remoteStatus: { type: String, default: '' },
+  remoteEmptyLabel: { type: String, default: '' },
+  remoteRetryLabel: { type: String, default: '' },
+  remoteNoPhoneLabel: { type: String, default: '' },
   remoteLoading: { type: Boolean, default: false },
   remoteError: { type: Boolean, default: false },
   remoteTruncated: { type: Boolean, default: false },
@@ -93,6 +99,7 @@ const emit = defineEmits([
   'close',
   'search',
   'selectRemote',
+  'retryRemote',
   'update:modelValue',
 ]);
 const comboBoxRef = ref(null);
@@ -138,8 +145,14 @@ defineOptions({
       v-bind="$attrs"
       :model-value="modelValue"
       :options="options"
+      :local-title="localTitle"
+      :local-loading="localLoading"
       :remote-options="remoteOptions"
       :remote-title="remoteTitle"
+      :remote-status="remoteStatus"
+      :remote-empty-label="remoteEmptyLabel"
+      :remote-retry-label="remoteRetryLabel"
+      :remote-no-phone-label="remoteNoPhoneLabel"
       :remote-loading="remoteLoading"
       :remote-error="remoteError"
       :remote-truncated="remoteTruncated"
@@ -168,6 +181,7 @@ defineOptions({
       @close="emit('close')"
       @search="handleSearch"
       @select-remote="emit('selectRemote', $event)"
+      @retry-remote="emit('retryRemote')"
       @update:model-value="emit('update:modelValue', $event)"
     >
       <template v-if="$slots.append" #append>

@@ -47,6 +47,42 @@ afterEach(() => {
 });
 
 describe('MedElement patient picker search', () => {
+  it('maps skipped, searching, found, empty, and failed responses to distinct states', async () => {
+    vi.useFakeTimers();
+    const { state, search, wrapper } = setup();
+    expect(state.status.value).toBe('hint');
+    state.query('Ая');
+    expect(state.status.value).toBe('hint');
+    expect(search).not.toHaveBeenCalled();
+
+    search.mockResolvedValueOnce({ patients: [{ token: 'fake-token' }] });
+    state.query('Аян');
+    expect(state.status.value).toBe('searching');
+    await vi.advanceTimersByTimeAsync(400);
+    expect(state.status.value).toBe('found');
+
+    search.mockResolvedValueOnce({ patients: [] });
+    state.query('Қуаныш');
+    await vi.advanceTimersByTimeAsync(400);
+    expect(state.status.value).toBe('empty');
+
+    search.mockResolvedValueOnce({ patients: [], reason: 'too_short' });
+    state.query('Болат');
+    await vi.advanceTimersByTimeAsync(400);
+    expect(state.status.value).toBe('hint');
+
+    search.mockRejectedValueOnce(new Error('timeout'));
+    state.query('Жанар');
+    await vi.advanceTimersByTimeAsync(400);
+    expect(state.status.value).toBe('error');
+    search.mockResolvedValueOnce({ patients: [] });
+    state.retry();
+    expect(state.status.value).toBe('searching');
+    await vi.advanceTimersByTimeAsync(400);
+    expect(state.status.value).toBe('empty');
+    expect(search).toHaveBeenLastCalledWith('Жанар', expect.anything());
+    wrapper.unmount();
+  });
   it('classifies IIN, phone, name length and mixed text without sending invalid text', () => {
     const iin = validIin();
     expect(patientSearchKind(iin)).toBe('iin');
