@@ -148,8 +148,11 @@ internal:
   - deferred_touch_materialization
   - captain_openrouter_byok
 
-# New accounts get a short trial of the base plus these modules.
+# New accounts get a short trial of the base plus every available product module.
 trial:
   days: 3
   modules:
     - ai_agents
+    - broadcasts
+    - quality
+    - extensions

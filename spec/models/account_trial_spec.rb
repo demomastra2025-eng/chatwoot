@@ -279,7 +279,8 @@ RSpec.describe Account, type: :model do
       it 'grants the base plus the trial modules, without the fake channel_whatsapp flag' do
         expect(Account::TRIAL_FEATURES).to eq(plans.trial_features)
         expect(Account::TRIAL_FEATURES).to include('channel_voice', 'captain_integration', 'crm', 'channel_email', 'labels')
-        expect(Account::TRIAL_FEATURES).not_to include('channel_whatsapp', 'campaigns', 'sla', 'scheduling_finance')
+        expect(Account::TRIAL_FEATURES).to include('campaigns', 'sla')
+        expect(Account::TRIAL_FEATURES).not_to include('channel_whatsapp', 'scheduling_finance')
       end
 
       it 'takes its length from the plans' do

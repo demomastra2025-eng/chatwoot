@@ -38,6 +38,10 @@ class Api::V1::AccountsController < Api::BaseController
   def create
     @user, @account = AccountBuilder.new(
       account_name: account_params[:account_name],
+      contact_phone: account_params[:contact_phone],
+      company_size: account_params[:company_size],
+      industry: account_params[:industry],
+      industry_other: account_params[:industry_other],
       user_full_name: account_params[:user_full_name],
       email: account_params[:email],
       user_password: account_params[:password],
@@ -90,7 +94,6 @@ class Api::V1::AccountsController < Api::BaseController
     # this change is to align the behaviour with the v2 accounts controller
     # since these values are not required directly there
     return if account_params[:account_name].present?
-    return if account_params[:user_full_name].present?
 
     raise CustomExceptions::Account::InvalidParams.new({})
   end
@@ -109,7 +112,8 @@ class Api::V1::AccountsController < Api::BaseController
   end
 
   def account_params
-    params.permit(:account_name, :email, :name, :password, :locale, :user_full_name, :logo)
+    params.permit(:account_name, :contact_phone, :company_size, :industry, :industry_other,
+                  :email, :name, :password, :locale, :user_full_name, :logo)
   end
 
   def custom_attributes_params

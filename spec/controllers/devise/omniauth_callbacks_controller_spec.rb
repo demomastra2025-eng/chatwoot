@@ -27,12 +27,10 @@ RSpec.describe 'DeviseOverrides::OmniauthCallbacksController', type: :request do
       GlobalConfig.clear_cache
     end
 
-    it 'allows signup' do
+    it 'asks a new OAuth user for a company name before signup' do
       with_modified_env ENABLE_ACCOUNT_SIGNUP: 'true', FRONTEND_URL: 'http://www.example.com' do
         set_omniauth_config('test_not_preset@example.com')
-        allow(AccountBuilder).to receive(:new).and_return(account_builder)
-        allow(account_builder).to receive(:perform).and_return(user_double)
-        allow(Avatar::AvatarFromUrlJob).to receive(:perform_later).and_return(true)
+        expect(AccountBuilder).not_to receive(:new)
         allow(email_validation_service).to receive(:perform).and_return(true)
 
         get '/omniauth/google_oauth2/callback'
@@ -41,14 +39,7 @@ RSpec.describe 'DeviseOverrides::OmniauthCallbacksController', type: :request do
         expect(response).to redirect_to('http://www.example.com/auth/google_oauth2/callback')
         follow_redirect!
 
-        expect(AccountBuilder).to have_received(:new).with({
-                                                             account_name: 'example',
-                                                             user_full_name: 'test',
-                                                             email: 'test_not_preset@example.com',
-                                                             locale: I18n.locale,
-                                                             confirmed: nil
-                                                           })
-        expect(account_builder).to have_received(:perform)
+        expect(response).to redirect_to('http://www.example.com/app/auth/signup?email=test_not_preset%40example.com')
       end
     end
 

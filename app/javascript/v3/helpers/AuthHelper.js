@@ -42,11 +42,10 @@ const capitalize = str =>
     .join(' ');
 
 export const getCredentialsFromEmail = email => {
-  const [localPart, domain] = email.split('@');
+  const [localPart] = email.split('@');
   const namePart = localPart.split('+')[0];
   return {
     fullName: capitalize(namePart),
-    accountName: capitalize(domain.split('.')[0]),
   };
 };
 

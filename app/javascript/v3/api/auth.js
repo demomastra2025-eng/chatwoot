@@ -49,9 +49,13 @@ export const login = async ({
 
 export const register = async creds => {
   try {
-    const { fullName, accountName } = getCredentialsFromEmail(creds.email);
+    const { fullName } = getCredentialsFromEmail(creds.email);
     const response = await wootAPI.post('api/v1/accounts.json', {
-      account_name: accountName,
+      account_name: creds.companyName,
+      contact_phone: creds.contactPhone,
+      company_size: creds.companySize,
+      industry: creds.industry,
+      industry_other: creds.industryOther,
       user_full_name: fullName,
       email: creds.email,
       password: creds.password,

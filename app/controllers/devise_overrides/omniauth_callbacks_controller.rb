@@ -44,11 +44,9 @@ class DeviseOverrides::OmniauthCallbacksController < DeviseTokenAuth::OmniauthCa
     return redirect_to login_page_url(error: 'no-account-found'), allow_other_host: true unless account_signup_allowed?
     return redirect_to login_page_url(error: 'business-account-only'), allow_other_host: true unless validate_signup_email_is_business_domain?
 
-    create_account_for_user
-    set_random_password_if_oauth_user
-    token = @resource.send(:set_reset_password_token)
     frontend_url = ENV.fetch('FRONTEND_URL', nil)
-    redirect_to "#{frontend_url}/app/auth/password/edit?config=default&reset_password_token=#{token}", allow_other_host: true
+    email = ERB::Util.url_encode(auth_hash['info']['email'].to_s)
+    redirect_to "#{frontend_url}/app/auth/signup?email=#{email}", allow_other_host: true
   end
 
   def login_page_url(error: nil, email: nil, sso_auth_token: nil)
@@ -77,17 +75,6 @@ class DeviseOverrides::OmniauthCallbacksController < DeviseTokenAuth::OmniauthCa
     Account::SignUpEmailValidationService.new(auth_hash['info']['email']).perform
   rescue CustomExceptions::Account::InvalidEmail
     false
-  end
-
-  def create_account_for_user
-    @resource, @account = AccountBuilder.new(
-      account_name: extract_domain_without_tld(auth_hash['info']['email']),
-      user_full_name: auth_hash['info']['name'],
-      email: auth_hash['info']['email'],
-      locale: I18n.locale,
-      confirmed: auth_hash['info']['email_verified']
-    ).perform
-    Avatar::AvatarFromUrlJob.perform_later(@resource, auth_hash['info']['image'])
   end
 
   def oauth_user_needs_password_reset?

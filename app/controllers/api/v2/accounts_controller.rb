@@ -4,22 +4,19 @@ class Api::V2::AccountsController < Api::BaseController
   skip_before_action :authenticate_user!, :set_current_user, :handle_with_exception,
                      only: [:create], raise: false
   before_action :check_signup_enabled, only: [:create]
+  before_action :ensure_account_name, only: [:create]
   before_action :validate_captcha, only: [:create]
   before_action :fetch_account, except: [:create]
   before_action :check_authorization, except: [:create]
 
   rescue_from CustomExceptions::Account::InvalidEmail,
+              CustomExceptions::Account::InvalidParams,
               CustomExceptions::Account::UserExists,
               CustomExceptions::Account::UserErrors,
               with: :render_error_response
 
   def create
-    @user, @account = AccountBuilder.new(
-      email: account_params[:email],
-      user_password: account_params[:password],
-      locale: account_params[:locale],
-      user: current_user
-    ).perform
+    @user, @account = signup_account
 
     fetch_account_and_user_info
     update_account_info if @account.present?
@@ -33,6 +30,24 @@ class Api::V2::AccountsController < Api::BaseController
   end
 
   private
+
+  def signup_account
+    AccountBuilder.new(
+      account_name: account_params[:account_name],
+      contact_phone: account_params[:contact_phone],
+      company_size: account_params[:company_size],
+      industry: account_params[:industry],
+      industry_other: account_params[:industry_other],
+      email: account_params[:email],
+      user_password: account_params[:password],
+      locale: account_params[:locale],
+      user: current_user
+    ).perform
+  end
+
+  def ensure_account_name
+    raise CustomExceptions::Account::InvalidParams.new({}) if account_params[:account_name].blank?
+  end
 
   def account_attributes
     {
@@ -54,7 +69,8 @@ class Api::V2::AccountsController < Api::BaseController
   end
 
   def account_params
-    params.permit(:account_name, :email, :name, :password, :locale, :user_full_name)
+    params.permit(:account_name, :contact_phone, :company_size, :industry, :industry_other,
+                  :email, :name, :password, :locale, :user_full_name)
   end
 
   def check_signup_enabled

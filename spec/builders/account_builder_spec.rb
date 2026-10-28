@@ -31,6 +31,25 @@ RSpec.describe AccountBuilder do
         expect(account.name).to eq(account_name)
       end
 
+      it 'requires the company name even when the email has a domain' do
+        expect do
+          described_class.new(account_name: '', email: 'person@gmail.com', user_password: user_password).perform
+        end.to raise_error(CustomExceptions::Account::InvalidParams)
+        expect(Account.where(name: 'gmail')).not_to exist
+      end
+
+      it 'stores the optional company profile without deriving it from email' do
+        _user, account = described_class.new(
+          account_name: 'Клиника А', email: email, user_password: user_password,
+          contact_phone: '+7 700 000 00 00', company_size: '11-50', industry: 'other', industry_other: 'Ветеринария'
+        ).perform
+
+        expect(account.name).to eq('Клиника А')
+        expect(account.custom_attributes).to include('contact_phone' => '+7 700 000 00 00',
+                                                     'company_size' => '11-50', 'industry' => 'other',
+                                                     'industry_other' => 'Ветеринария')
+      end
+
       it 'creates a new confirmed user with correct details' do
         user, _account = account_builder.perform
         expect(user).to be_a(User)
@@ -73,7 +92,8 @@ RSpec.describe AccountBuilder do
                                                        'plan_type' => 'trial')
           expect(account.trial_active?).to be(true)
           expect(account.trial_expires_at).to be_within(1.minute).of(plans.trial_days.days.from_now)
-          expect(account.enabled_features.keys).to include(*plans.base_features, *plans.locked_on, *plans.module_features('ai_agents'))
+          module_features = plans.module_keys.flat_map { |key| plans.module_features(key) }
+          expect(account.enabled_features.keys).to include(*plans.base_features, *plans.locked_on, *module_features)
         end
 
         it 'does not get the flags that no plan offers' do

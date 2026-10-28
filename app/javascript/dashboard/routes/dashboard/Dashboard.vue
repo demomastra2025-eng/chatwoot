@@ -1,5 +1,5 @@
 <script>
-import { defineAsyncComponent, ref, computed } from 'vue';
+import { defineAsyncComponent, computed } from 'vue';
 
 import NextSidebar from 'next/sidebar/Sidebar.vue';
 import WootKeyShortcutModal from 'dashboard/components/widgets/modal/WootKeyShortcutModal.vue';
@@ -25,10 +25,6 @@ const PhoneWidget = defineAsyncComponent(
   () => import('dashboard/components/widgets/PhoneWidget.vue')
 );
 
-const WhatsappCallWidget = defineAsyncComponent(
-  () => import('dashboard/components/widgets/WhatsappCallWidget.vue')
-);
-
 import MobileSidebarLauncher from 'dashboard/components-next/sidebar/MobileSidebarLauncher.vue';
 import { useCallsStore } from 'dashboard/stores/calls';
 import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
@@ -42,7 +38,6 @@ export default {
     AddAccountModal,
     FloatingCallWidget,
     PhoneWidget,
-    WhatsappCallWidget,
     MobileSidebarLauncher,
   },
   setup() {
@@ -68,6 +63,7 @@ export default {
       canChoosePlan: computed(() =>
         shouldShow('', ['administrator'], [INSTALLATION_TYPES.CLOUD])
       ),
+      isAccountAdmin: computed(() => shouldShow('', ['administrator'])),
       windowWidth,
       hasActiveCall: computed(() => callsStore.hasActiveCall),
       hasIncomingCall: computed(() => callsStore.hasIncomingCall),
@@ -95,11 +91,22 @@ export default {
       return this.windowWidth < wootConstants.SMALL_SCREEN_BREAKPOINT;
     },
     isTrialPlan() {
-      return this.currentAccount?.custom_attributes?.plan_type === 'trial';
+      return (
+        this.isAccountAdmin &&
+        this.currentAccount?.custom_attributes?.plan_type === 'trial'
+      );
     },
     trialExpiry() {
       const attributes = this.currentAccount?.custom_attributes;
       return attributes?.trial_expires_at || attributes?.trial_ends_at;
+    },
+    trialExpiryDate() {
+      if (!this.trialExpiry) return '';
+      return new Intl.DateTimeFormat('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        timeZone: this.currentAccount?.timezone || 'Asia/Almaty',
+      }).format(new Date(this.trialExpiry));
     },
     isTrialExpired() {
       if (!this.isTrialPlan || !this.trialExpiry) return false;
@@ -238,7 +245,10 @@ export default {
         >
           <div class="flex items-center gap-2 truncate">
             <span>{{
-              $t('TRIAL_BANNER.ACTIVE', { time: trialTimeText })
+              $t('TRIAL_BANNER.ACTIVE', {
+                time: trialTimeText,
+                date: trialExpiryDate,
+              })
             }}</span>
           </div>
           <router-link

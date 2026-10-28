@@ -112,8 +112,10 @@ RSpec.describe Accounts::Plans do
 
     it 'derives the trial from the base plus the trial modules' do
       expect(plans.trial_days).to eq(3)
-      expect(plans.trial_modules).to eq(%w[ai_agents])
-      expect(plans.trial_features).to match_array(plans.base_features + plans.module_features('ai_agents') + plans.locked_on)
+      expect(plans.trial_modules).to eq(plans.module_keys)
+      expect(plans.trial_features).to match_array(plans.base_features + plans.module_keys.flat_map { |key|
+        plans.module_features(key)
+      } + plans.locked_on)
       expect(plans.trial_features).not_to include('channel_whatsapp')
     end
 

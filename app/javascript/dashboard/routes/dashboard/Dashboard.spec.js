@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
 
+const accountState = vi.hoisted(() => ({ account: null, admin: false }));
+
 vi.mock('dashboard/composables/useUISettings', async () => {
   const { ref } = await vi.importActual('vue');
   return {
@@ -13,9 +15,17 @@ vi.mock('dashboard/composables/useUISettings', async () => {
     }),
   };
 });
+vi.mock('dashboard/composables/usePolicy', () => ({
+  usePolicy: () => ({ shouldShow: () => accountState.admin }),
+}));
 vi.mock('dashboard/composables/useAccount', async () => {
   const { ref } = await vi.importActual('vue');
-  return { useAccount: () => ({ accountId: ref(1) }) };
+  return {
+    useAccount: () => ({
+      accountId: ref(1),
+      currentAccount: ref(accountState.account),
+    }),
+  };
 });
 const whatsappCallsState = vi.hoisted(() => ({
   hasActiveCall: false,
@@ -80,9 +90,34 @@ const mountDashboard = () =>
 
 describe('Dashboard call windows', () => {
   beforeEach(() => {
+    accountState.account = null;
+    accountState.admin = false;
     setActivePinia(createPinia());
     whatsappCallsState.hasActiveCall = false;
     whatsappCallsState.hasIncomingCall = false;
+  });
+
+  it('shows the trial end date to account administrators only', async () => {
+    accountState.account = {
+      custom_attributes: {
+        plan_type: 'trial',
+        trial_expires_at: '2026-10-31T13:30:00+05:00',
+      },
+    };
+    accountState.admin = true;
+    const adminView = mountDashboard();
+    await flushPromises();
+    expect(adminView.vm.trialExpiryDate).toBe('31.10');
+    expect(adminView.find('[data-testid="trial-active-banner"]').exists()).toBe(
+      true
+    );
+
+    accountState.admin = false;
+    const agentView = mountDashboard();
+    await flushPromises();
+    expect(agentView.find('[data-testid="trial-active-banner"]').exists()).toBe(
+      false
+    );
   });
 
   it('shows the standalone call cards only to employees without the phone widget', async () => {

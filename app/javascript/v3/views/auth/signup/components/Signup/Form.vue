@@ -16,6 +16,13 @@ import GoogleOAuthButton from '../../../../../components/GoogleOauth/Button.vue'
 import { register } from '../../../../../api/auth';
 
 const MIN_PASSWORD_LENGTH = 6;
+const companySizes = [
+  { value: '1-10', label: '1–10' },
+  { value: '11-50', label: '11–50' },
+  { value: '51-200', label: '51–200' },
+  { value: '201-1000', label: '201–1000' },
+  { value: '1000+', label: '1000+' },
+];
 
 const store = useStore();
 const { t, locale } = useI18n();
@@ -25,7 +32,12 @@ const isPasswordFocused = ref(false);
 const isSignupInProgress = ref(false);
 
 const credentials = reactive({
-  email: '',
+  email: new URLSearchParams(window.location.search).get('email') || '',
+  companyName: '',
+  contactPhone: '',
+  companySize: '',
+  industry: '',
+  industryOther: '',
   password: '',
   hCaptchaClientResponse: '',
 });
@@ -37,6 +49,11 @@ const consent = reactive({
 
 const rules = {
   credentials: {
+    companyName: { required, minLength: minLength(2) },
+    industryOther: {
+      requiredWhenOther: value =>
+        credentials.industry !== 'other' || Boolean(value?.trim()),
+    },
     email: {
       required,
       email,
@@ -122,6 +139,74 @@ const onCaptchaError = () => {
 <template>
   <div class="flex-1">
     <form class="space-y-3" @submit.prevent="submit">
+      <FormInput
+        v-model="credentials.companyName"
+        name="company_name"
+        :label="$t('REGISTER.COMPANY_NAME.LABEL')"
+        :placeholder="$t('REGISTER.COMPANY_NAME.PLACEHOLDER')"
+        :has-error="v$.credentials.companyName.$error"
+        :error-message="$t('REGISTER.COMPANY_NAME.ERROR')"
+        @blur="v$.credentials.companyName.$touch"
+      />
+      <FormInput
+        v-model="credentials.contactPhone"
+        type="tel"
+        name="contact_phone"
+        :label="$t('REGISTER.CONTACT_PHONE.LABEL')"
+        :placeholder="$t('REGISTER.CONTACT_PHONE.PLACEHOLDER')"
+      />
+      <label class="block text-sm text-n-slate-12" for="company-size">{{
+        $t('REGISTER.COMPANY_SIZE.LABEL')
+      }}</label>
+      <select
+        id="company-size"
+        v-model="credentials.companySize"
+        class="w-full rounded-md border border-n-container bg-n-solid-2 px-3 py-2 text-n-slate-12"
+      >
+        <option value="">{{ $t('REGISTER.COMPANY_SIZE.SELECT') }}</option>
+        <option
+          v-for="size in companySizes"
+          :key="size.value"
+          :value="size.value"
+        >
+          {{ size.label }}
+        </option>
+      </select>
+      <label class="block text-sm text-n-slate-12" for="industry">{{
+        $t('REGISTER.INDUSTRY.LABEL')
+      }}</label>
+      <select
+        id="industry"
+        v-model="credentials.industry"
+        class="w-full rounded-md border border-n-container bg-n-solid-2 px-3 py-2 text-n-slate-12"
+      >
+        <option value="">{{ $t('REGISTER.INDUSTRY.SELECT') }}</option>
+        <option value="healthcare">
+          {{ $t('REGISTER.INDUSTRY.HEALTHCARE') }}
+        </option>
+        <option value="retail">{{ $t('REGISTER.INDUSTRY.RETAIL') }}</option>
+        <option value="education">
+          {{ $t('REGISTER.INDUSTRY.EDUCATION') }}
+        </option>
+        <option value="services">{{ $t('REGISTER.INDUSTRY.SERVICES') }}</option>
+        <option value="manufacturing">
+          {{ $t('REGISTER.INDUSTRY.MANUFACTURING') }}
+        </option>
+        <option value="technology">
+          {{ $t('REGISTER.INDUSTRY.TECHNOLOGY') }}
+        </option>
+        <option value="finance">{{ $t('REGISTER.INDUSTRY.FINANCE') }}</option>
+        <option value="other">{{ $t('REGISTER.INDUSTRY.OTHER') }}</option>
+      </select>
+      <FormInput
+        v-if="credentials.industry === 'other'"
+        v-model="credentials.industryOther"
+        name="industry_other"
+        :label="$t('REGISTER.INDUSTRY_OTHER.LABEL')"
+        :has-error="v$.credentials.industryOther.$error"
+        :error-message="$t('REGISTER.INDUSTRY_OTHER.ERROR')"
+        @blur="v$.credentials.industryOther.$touch"
+      />
       <FormInput
         v-model="credentials.email"
         type="email"

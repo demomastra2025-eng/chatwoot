@@ -2,9 +2,12 @@
 
 class AccountBuilder
   include CustomExceptions::Account
-  pattr_initialize [:account_name, :email!, :confirmed, :user, :user_full_name, :user_password, :super_admin, :locale]
+  pattr_initialize [:account_name, :contact_phone, :company_size, :industry, :industry_other,
+                    :email!, :confirmed, :user, :user_full_name, :user_password, :super_admin, :locale]
 
   def perform
+    raise InvalidParams.new({}) if @account_name.to_s.strip.blank?
+
     if @user.nil?
       validate_email
       validate_user
@@ -26,10 +29,7 @@ class AccountBuilder
     @user_full_name.presence || @email.to_s.split('@').first.to_s
   end
 
-  def account_name
-    # the empty string ensures that not-null constraint is not violated
-    @account_name || ''
-  end
+  def account_name = @account_name.to_s.strip
 
   def validate_email
     Account::SignUpEmailValidationService.new(@email).perform
@@ -49,6 +49,12 @@ class AccountBuilder
     @account = Account.create!(name: account_name, locale: I18n.locale)
     Accounts::ApplyPlan.new(account: @account, modules: []).call
     @account.activate_trial!
+    @account.update!(custom_attributes: @account.custom_attributes.merge(
+      'contact_phone' => @contact_phone.to_s.strip.presence,
+      'company_size' => @company_size.to_s.strip.presence,
+      'industry' => @industry.to_s.strip.presence,
+      'industry_other' => (@industry_other.to_s.strip.presence if @industry.to_s == 'other')
+    ).compact)
     Current.account = @account
   end
 

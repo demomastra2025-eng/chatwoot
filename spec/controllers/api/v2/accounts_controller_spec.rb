@@ -2,6 +2,11 @@ require 'rails_helper'
 
 RSpec.describe 'Accounts API', type: :request do
   describe 'POST /api/v2/accounts' do
+    def builder_params(params)
+      params.except(:password).merge(user_password: params[:password], contact_phone: nil, company_size: nil,
+                                     industry: nil, industry_other: nil)
+    end
+
     let(:email) { Faker::Internet.email }
 
     context 'when posting to accounts with correct parameters' do
@@ -17,13 +22,13 @@ RSpec.describe 'Accounts API', type: :request do
         with_modified_env ENABLE_ACCOUNT_SIGNUP: 'true' do
           allow(account_builder).to receive(:perform).and_return([user, account])
 
-          params = { email: email, user: nil, locale: nil, password: 'Password1!' }
+          params = { account_name: 'Клиника А', email: email, user: nil, locale: nil, password: 'Password1!' }
 
           post api_v2_accounts_url,
                params: params,
                as: :json
 
-          expect(AccountBuilder).to have_received(:new).with(params.except(:password).merge(user_password: params[:password]))
+          expect(AccountBuilder).to have_received(:new).with(builder_params(params))
           expect(account_builder).to have_received(:perform)
           expect(response.headers.keys).to include('access-token', 'token-type', 'client', 'expiry', 'uid')
           expect(response.body).to include('en')
@@ -34,7 +39,7 @@ RSpec.describe 'Accounts API', type: :request do
         with_modified_env ENABLE_ACCOUNT_SIGNUP: 'true' do
           allow(account_builder).to receive(:perform).and_return([user, account])
 
-          params = { email: email, user: nil, locale: nil, password: 'Password1!' }
+          params = { account_name: 'Клиника А', email: email, user: nil, locale: nil, password: 'Password1!' }
 
           post api_v2_accounts_url,
                params: params,
@@ -51,7 +56,8 @@ RSpec.describe 'Accounts API', type: :request do
           allow(ChatwootCaptcha).to receive(:new).and_return(captcha)
           allow(captcha).to receive(:valid?).and_return(true)
 
-          params = { email: email, user: nil, password: 'Password1!', locale: nil, h_captcha_client_response: '123' }
+          params = { account_name: 'Клиника А', email: email, user: nil, password: 'Password1!', locale: nil,
+                     h_captcha_client_response: '123' }
 
           post api_v2_accounts_url,
                params: params,
@@ -67,17 +73,28 @@ RSpec.describe 'Accounts API', type: :request do
         with_modified_env ENABLE_ACCOUNT_SIGNUP: 'true' do
           allow(account_builder).to receive(:perform).and_return(nil)
 
-          params = { email: nil, user: nil, locale: nil }
+          params = { account_name: 'Клиника А', email: nil, user: nil, locale: nil }
 
           post api_v2_accounts_url,
                params: params,
                as: :json
 
-          expect(AccountBuilder).to have_received(:new).with(params.merge(user_password: params[:password]))
+          expect(AccountBuilder).to have_received(:new).with(builder_params(params))
           expect(account_builder).to have_received(:perform)
           expect(response).to have_http_status(:forbidden)
           expect(response.body).to eq({ message: I18n.t('errors.signup.failed') }.to_json)
         end
+      end
+    end
+
+    it 'rejects signup without a company name before creating an account' do
+      with_modified_env ENABLE_ACCOUNT_SIGNUP: 'true' do
+        expect(AccountBuilder).not_to receive(:new)
+
+        post api_v2_accounts_url, params: { email: email, password: 'Password1!' }, as: :json
+
+        expect(response).to have_http_status(:forbidden)
+        expect(response.body).to eq({ message: I18n.t('errors.signup.invalid_params') }.to_json)
       end
     end
 
@@ -126,13 +143,13 @@ RSpec.describe 'Accounts API', type: :request do
         allow(AccountBuilder).to receive(:new).and_return(account_builder)
         allow(account_builder).to receive(:perform).and_return([user, account])
 
-        params = { email: email, user: nil, password: 'Password1!', locale: nil }
+        params = { account_name: 'Клиника А', email: email, user: nil, password: 'Password1!', locale: nil }
         with_modified_env ENABLE_ACCOUNT_SIGNUP: 'api_only' do
           post api_v2_accounts_url,
                params: params,
                as: :json
 
-          expect(AccountBuilder).to have_received(:new).with(params.except(:password).merge(user_password: params[:password]))
+          expect(AccountBuilder).to have_received(:new).with(builder_params(params))
           expect(response).to have_http_status(:success)
         end
       end

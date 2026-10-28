@@ -2,6 +2,11 @@ require 'rails_helper'
 
 RSpec.describe 'Accounts API', type: :request do
   describe 'POST /api/v1/accounts' do
+    def builder_params(params)
+      params.except(:password).merge(user_password: params[:password], contact_phone: nil, company_size: nil,
+                                     industry: nil, industry_other: nil)
+    end
+
     let(:email) { Faker::Internet.email }
     let(:user_full_name) { Faker::Name.name_with_middle }
 
@@ -24,7 +29,7 @@ RSpec.describe 'Accounts API', type: :request do
                params: params,
                as: :json
 
-          expect(AccountBuilder).to have_received(:new).with(params.except(:password).merge(user_password: params[:password]))
+          expect(AccountBuilder).to have_received(:new).with(builder_params(params))
           expect(account_builder).to have_received(:perform)
           expect(response.headers.keys).to include('access-token', 'token-type', 'client', 'expiry', 'uid')
           expect(response.body).to include('en')
@@ -51,6 +56,20 @@ RSpec.describe 'Accounts API', type: :request do
         end
       end
 
+      it 'passes the company profile to account creation' do
+        with_modified_env ENABLE_ACCOUNT_SIGNUP: 'true' do
+          allow(account_builder).to receive(:perform).and_return([user, account])
+          profile = { account_name: 'Клиника А', contact_phone: '+7 700 000 00 00', company_size: '11-50',
+                      industry: 'other', industry_other: 'Ветеринария' }
+
+          post api_v1_accounts_url,
+               params: profile.merge(email: email, password: 'Password1!'),
+               as: :json
+
+          expect(AccountBuilder).to have_received(:new).with(hash_including(profile))
+        end
+      end
+
       it 'renders error response on invalid params' do
         with_modified_env ENABLE_ACCOUNT_SIGNUP: 'true' do
           allow(account_builder).to receive(:perform).and_return(nil)
@@ -62,6 +81,17 @@ RSpec.describe 'Accounts API', type: :request do
                as: :json
 
           expect(AccountBuilder).not_to have_received(:new)
+          expect(response).to have_http_status(:forbidden)
+          expect(response.body).to eq({ message: I18n.t('errors.signup.invalid_params') }.to_json)
+        end
+      end
+
+      it 'requires the company name even when the user name is present' do
+        with_modified_env ENABLE_ACCOUNT_SIGNUP: 'true' do
+          expect(AccountBuilder).not_to receive(:new)
+
+          post api_v1_accounts_url, params: { email: email, user_full_name: user_full_name, password: 'Password1!' }, as: :json
+
           expect(response).to have_http_status(:forbidden)
           expect(response.body).to eq({ message: I18n.t('errors.signup.invalid_params') }.to_json)
         end

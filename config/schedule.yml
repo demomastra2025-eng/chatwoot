@@ -291,7 +291,7 @@ accounts_storage_threshold_alert_job:
   queue: housekeeping
 
 accounts_expire_trials_job:
-  cron: '5 * * * *'
+  cron: '5 0 * * *'
   class: 'Accounts::ExpireTrialsJob'
   queue: housekeeping
 
