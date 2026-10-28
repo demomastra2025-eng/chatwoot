@@ -293,21 +293,28 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'service_id')).to be_nil
   end
 
-  it 'rejects a Medelement appointment with an unmapped service before persistence' do
-    resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
+  it 'books a Medelement appointment to the specialist without an unmapped service and retains the service name' do
+    stub_medelement_availability
+    resource.update!(
+      custom_attributes: {
+        'medelement_specialist_code' => 'specialist-1',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
     params = base_params.merge(
       client_first_name: 'Айжан',
       client_last_name: 'Касымова',
-      client_phone: '+77000000001'
+      client_phone: '+77000000001',
+      custom_attributes: { medelement_cabinet_code: 'cabinet-1' }
     )
-    expect(Integrations::Medelement::ResourceAvailabilityService).not_to receive(:new)
 
     expect do
       post path, params: params, headers: headers, as: :json
-    end.not_to change(Scheduling::Appointment, :count)
+    end.to change(Scheduling::Appointment, :count).by(1)
 
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response_body['code']).to eq('MEDELEMENT_SERVICE_UNMAPPED')
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'service_id')).to be_nil
+    expect(response_body.dig('payload', 'client_comment')).to include(service.name)
   end
 
   it 'creates a Medelement appointment with a mapped service' do
@@ -1086,13 +1093,16 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.fetch('details').keys).to match_array(%w[busy free_starts time_zone])
   end
 
-  it 'rejects inactive service-resource combinations' do
+  it 'books the specialist without an inactive service and retains the service name' do
     service.update!(active: false)
 
-    post path, params: base_params, headers: headers, as: :json
+    expect do
+      post path, params: base_params, headers: headers, as: :json
+    end.to change(Scheduling::Appointment, :count).by(1)
 
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response_body['code']).to eq('SERVICE_NOT_AVAILABLE_FOR_RESOURCE')
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'service_id')).to be_nil
+    expect(response_body.dig('payload', 'client_comment')).to include(service.name)
   end
 
   it 'replays idempotent create requests with status 200' do
