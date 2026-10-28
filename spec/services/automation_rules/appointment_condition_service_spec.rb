@@ -78,6 +78,11 @@ RSpec.describe AutomationRules::AppointmentConditionService do
     expect(described_class.new(rule, appointment).perform).to be(true)
     rule.conditions.first['filter_operator'] = 'not_equal_to'
     expect(described_class.new(rule, appointment).perform).to be(false)
+
+    appointment.update_columns(created_at: appointment.starts_at + 15.minutes) # rubocop:disable Rails/SkipsModelValidations
+    rule.conditions.first['filter_operator'] = 'equal_to'
+    rule.conditions.first['values'] = ['-15']
+    expect(described_class.new(rule, appointment.reload).perform).to be(true)
   end
 
   it 'matches the Captain source selected in an appointment automation rule' do

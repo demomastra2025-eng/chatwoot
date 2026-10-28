@@ -139,7 +139,7 @@ class AutomationRules::AppointmentFieldCatalog
     when 'appointment_source'
       normalized_values.one? && normalized_values.first.to_s.in?(%w[onelink medelement provider])
     when 'lead_time_minutes'
-      normalized_values.one? && normalized_values.first.to_s.match?(/\A\d+\z/)
+      normalized_values.one? && normalized_values.first.to_s.match?(/\A-?\d+\z/)
     when 'service_id'
       service_values_supported?(normalized_values)
     when 'resource_id'

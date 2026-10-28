@@ -24,7 +24,7 @@ class AutomationRules::AppointmentDerivedConditionService
       { 'equal_to' => matches, 'not_equal_to' => !matches }.fetch(operator, false)
     when 'lead_time_minutes'
       expected = Array.wrap(condition['values']).first
-      return false unless expected.to_s.match?(/\A\d+\z/) && appointment.created_at && appointment.starts_at
+      return false unless expected.to_s.match?(/\A-?\d+\z/) && appointment.created_at && appointment.starts_at
 
       evaluate_comparable(((appointment.starts_at - appointment.created_at) / 60).floor, expected.to_i, operator)
     when 'resource_id'
