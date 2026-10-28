@@ -23,6 +23,7 @@ class Scheduling::Appointments::UpsertService
     return @persisted_appointment = cancel_linked_appointment_locally! if local_only_provider_cancellation?
     return @persisted_appointment = persist_provider_imported_local_fields! if provider_imported_local_mutation?
 
+    drop_unconfirmed_services!
     with_actor_context { persist_appointment! }
 
     appointment.reload
@@ -40,6 +41,23 @@ class Scheduling::Appointments::UpsertService
   private
 
   attr_reader :account, :actor, :appointment, :params, :appointment_access
+
+  def drop_unconfirmed_services!
+    return unless params.key?(:service_id) || params.key?(:service_ids)
+
+    resource = resolve_resource!
+    services = resolve_services(current: [])
+    confirmed, unconfirmed = services.partition do |service|
+      Scheduling::Appointments::ServiceConfirmation.bookable?(service: service, resource: resource)
+    end
+    return if unconfirmed.empty?
+
+    params[:service_ids] = confirmed.map(&:id) if params.key?(:service_ids)
+    params[:service_id] = confirmed.first&.id
+    comment = params.key?(:client_comment) ? params[:client_comment].to_s : appointment.client_comment.to_s
+    names = unconfirmed.map(&:name).reject { |name| comment.include?(name) }
+    params[:client_comment] = ([comment.presence] + names.map { |name| "Услуга: #{name}" }).compact.join("\n")
+  end
 
   def provider_confirmation_pending?
     status = Integrations::Medelement::AppointmentProviderStatus

@@ -231,28 +231,19 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       account: account, resource_id: required_positive_id(resource_id, field_name: 'resource_id')
     )
     service = choice.perform
-    resource = account.scheduling_resources.find(resource_id)
-    return if service && resource.custom_attributes.to_h['medelement_specialist_code'].present? &&
-              service.custom_attributes.to_h['medelement_nomenclature_code'].blank?
+    return unless service
 
-    service&.id
+    resource = account.scheduling_resources.find(resource_id)
+    service.id if Scheduling::Appointments::ServiceConfirmation.bookable?(service: service, resource: resource)
   end
 
   def bookable_service_and_comment(resource_id, service, comment)
     return [nil, comment] unless service
 
     resource = account.scheduling_resources.find(resource_id)
-    return [service, comment] if bookable_service?(service, resource)
+    return [service, comment] if Scheduling::Appointments::ServiceConfirmation.bookable?(service: service, resource: resource)
 
     [nil, comment.to_s.include?(service.name) ? comment : [comment.presence, "Услуга: #{service.name}"].compact.join("\n")]
-  end
-
-  def bookable_service?(service, resource)
-    price = service.prices.find_by(resource_id: resource.id)
-    priced = (price&.active? && price.price.to_i.positive?) || service.base_price.to_i.positive?
-    mapped = resource.custom_attributes.to_h['medelement_specialist_code'].blank? ||
-             service.custom_attributes.to_h['medelement_nomenclature_code'].present?
-    service.active? && priced && mapped
   end
 
   # The active appointment of the same patient with the same specialist, the same service and the same start. A booking of the agent

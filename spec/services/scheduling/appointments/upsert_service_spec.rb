@@ -63,6 +63,15 @@ RSpec.describe Scheduling::Appointments::UpsertService do
 
       expect(book(service)).to have_attributes(duration_min: 40)
     end
+
+    it 'books the specialist without an unpriced local service and retains its name' do
+      service = create(:scheduling_service, account: account, name: 'Consultation', base_price: 0)
+
+      appointment = book(service)
+
+      expect(appointment).to have_attributes(resource_id: resource.id, service_id: nil)
+      expect(appointment.client_comment).to include(service.name)
+    end
   end
 
   # Cancellation guards below belong to the removal flow (remove_reception_on_cancel on). The local-only default
@@ -758,23 +767,18 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       )
     end
 
-    it 'rejects a service that is not linked to Medelement before persistence' do
-      original_service_id = appointment.service_id
-      unmapped_service = create(:scheduling_service, account: account)
-      request = lambda do
-        perform(
-          client_first_name: 'Айжан',
-          client_last_name: 'Касымова',
-          client_phone: '+77000000001',
-          service_id: unmapped_service.id
-        )
-      end
+    it 'books to the specialist without an unmapped Medelement service and retains the requested name' do
+      unmapped_service = create(:scheduling_service, account: account, name: 'Additional visit')
 
-      expect(&request).to raise_error(Scheduling::Error) do |error|
-        expect(error.code).to eq('MEDELEMENT_SERVICE_UNMAPPED')
-      end
+      perform(
+        client_first_name: 'Айжан',
+        client_last_name: 'Касымова',
+        client_phone: '+77000000001',
+        service_id: unmapped_service.id
+      )
 
-      expect(appointment.reload.service_id).to eq(original_service_id)
+      expect(appointment.reload).to have_attributes(resource_id: resource.id, service_id: nil)
+      expect(appointment.client_comment).to include(unmapped_service.name)
     end
 
     it 'accepts a complete provider patient identity and mapped service' do
