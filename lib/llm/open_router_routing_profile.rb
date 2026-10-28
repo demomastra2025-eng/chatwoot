@@ -56,7 +56,7 @@ class Llm::OpenRouterRoutingProfile
     'copilot' => %w[openai/gpt-5.4-mini],
     'editor' => %w[openai/gpt-5.4-mini openai/gpt-4.1-mini],
     'label_suggestion' => %w[openai/gpt-5.4-mini openai/gpt-4.1-mini],
-    'audio_transcription' => %w[openai/gpt-4o-mini-transcribe openai/gpt-audio-mini],
+    'audio_transcription' => [],
     'moderation' => %w[openai/gpt-oss-safeguard-20b],
     # Vectors of two models cannot be compared: the embedding client sends one model and never a list of fallbacks.
     'embedding' => [],

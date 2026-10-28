@@ -283,6 +283,13 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
       expect(described_class.for(feature: :knowledge_rerank, model: 'rerank/model').native_endpoint).to eq('/rerank')
     end
 
+    it 'never adds transcription-endpoint fallback models to audio_transcription' do
+      profile = described_class.for(feature: :audio_transcription, model: 'google/gemini-3.8-flash')
+
+      expect(profile.models).to eq(['google/gemini-3.8-flash'])
+      expect(profile.fallback_models).to eq([])
+    end
+
     it 'emits explicit sensitive privacy policy for account runtime preferences' do
       account = instance_double(Account, captain_preferences: { runtime: { privacy_profile: 'sensitive' } })
 
