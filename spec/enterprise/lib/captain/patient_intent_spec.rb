@@ -167,6 +167,17 @@ RSpec.describe Captain::PatientIntent do
       end
     end
 
+    it 'sees a greeting in Russian, Kazakh (including one-word and mistyped forms) and English, and not a closing thanks' do
+      ['Здравствуйте', 'Здравствуйте!', 'Добрый день', 'Доброе утро', 'Добрый вечер', 'Привет',
+       'Сәлеметсіз бе', 'Сәлеметсізбе', 'Саламатсыз ба', 'Саламатсызьа', 'Саламатсызба', 'Қайырлы күн', 'Қайырлы таң',
+       'Сәлем', 'Ассалаумағалейкум', 'Hello', 'Good morning'].each do |text|
+        expect(described_class.greeting?(text)).to be(true), text
+      end
+      ['Спасибо', 'Рахмет, сау болыңыз', 'Ок, спасибо', 'Хорошо, буду', '👍', '', nil].each do |text|
+        expect(described_class.greeting?(text)).to be(false), text.inspect
+      end
+    end
+
     it 'sees a question put in words, with no question mark' do
       ['Спасибо, буду. Адрес какой', 'Рахмет, қашан келемін', 'Во сколько приём', 'Можно позже', 'Где вы находитесь', 'Есть ли окно',
        'Келемін, адрес қайда'].each { |text| expect(described_class.question?(text)).to be(true), text }

@@ -123,12 +123,16 @@ RSpec.describe Captain::SuggestionResponseSchema do
         '(only thanks, ok or an emoji with no doctor, service, date, time or question in them, or staff already answered them), set ' \
           'response_mode to suppress'
       end
+      let(:greeting_reply_rule) do
+        'A greeting ("Здравствуйте", "Добрый день", "Сәлеметсіз бе", "Саламатсыз ба", "Қайырлы күн") opens or resumes the dialog and ' \
+          'always gets a reply (greet the patient and ask how you can help), never suppress.'
+      end
       let(:thanks_request_rule) { 'A thanks that also names a doctor, a service, a date, a time or a question is a request: answer it.' }
 
       it 'looks up before handing over, searches free times before asking, lists tariffs, asks when unclear and offers searched future times' do
         draft = system_prompt(assistant.agent(suggestion_tools: true), 'reply_suggestion')
 
-        expect(draft).to include(lookup_rule, slots_first_rule, future_rule, exact_time_rule, silence_rule, thanks_request_rule,
+        expect(draft).to include(lookup_rule, slots_first_rule, future_rule, exact_time_rule, silence_rule, greeting_reply_rule, thanks_request_rule,
                                  price_rule, closing_thanks_rule)
         expect(draft.scan('search_scheduling_services').size).to eq(1)
         expect(draft).not_to include('For a price, search_scheduling_services before saying no answer is available.')

@@ -335,11 +335,16 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
     end
 
     # Review of df3aaff78 (router benchmark SZ20): a first «Здравствуйте!» waits for an answer.
-    it 'answers a message that opens the dialog, also when the decision models found it needs no answer' do
+    it 'answers a message that opens or resumes the dialog with a greeting, also when the decision models found it needs no answer' do
       opening = build(3, message: 'Здравствуйте!', history: [])
 
       expect(opening.resolve(answered('no_reply_needed', include_probabilities: { 10 => 0.3, 20 => 0.1, 30 => 0.2 })))
         .to have_attributes(kind: 'agent', key: 'route_agent_10')
+
+      ['Здравствуйте!', 'Добрый день', 'Сәлеметсіз бе', 'Саламатсыз ба', 'Саламатсызьа', 'Қайырлы күн'].each do |greeting|
+        expect(build(3, current: 20, message: greeting).resolve(answered('no_reply_needed')))
+          .to have_attributes(kind: 'stay', agent_ids: [20], key: 'stay_current'), greeting
+      end
     end
 
     it 'has no default agent for a reply suggestion' do
