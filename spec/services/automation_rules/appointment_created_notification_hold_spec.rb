@@ -2,6 +2,9 @@ require 'rails_helper'
 
 RSpec.describe AutomationRules::AppointmentCreatedNotificationHold do
   include ActiveJob::TestHelper
+  include ActiveSupport::Testing::TimeHelpers
+
+  around { |example| travel_to(Time.zone.parse('2026-10-20 08:00')) { example.run } }
 
   let(:account) { create(:account) }
   let(:resource) do

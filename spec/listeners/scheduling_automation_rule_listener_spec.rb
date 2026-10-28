@@ -219,6 +219,7 @@ RSpec.describe SchedulingAutomationRuleListener do
 
     it 'enqueues local appointment-created webhooks immediately' do
       local_appointment = appointment
+      local_appointment.update_columns(starts_at: 2.hours.from_now, ends_at: 2.hours.from_now + 30.minutes) # rubocop:disable Rails/SkipsModelValidations
       create(
         :automation_rule, account: account, event_name: 'appointment_created',
                           conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }],

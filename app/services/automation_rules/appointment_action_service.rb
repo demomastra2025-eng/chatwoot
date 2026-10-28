@@ -13,6 +13,8 @@ class AutomationRules::AppointmentActionService
     actions.each do |action|
       action = action.with_indifferent_access
       begin
+        next if short_lead_time_notification?(action)
+
         @current_action_id = action[:action_id]
         send(action[:action_name], action[:action_params])
       rescue StandardError => e
@@ -27,6 +29,21 @@ class AutomationRules::AppointmentActionService
   end
 
   private
+
+  def short_lead_time_notification?(action)
+    return false unless @rule.event_name == 'appointment_created'
+    return false unless confirmation_action?(action)
+
+    AutomationRules::AppointmentNotificationLeadTime.short?(@appointment, rule: @rule)
+  end
+
+  def confirmation_action?(action)
+    return true if action[:action_name] == 'send_webhook_event'
+    return false unless action[:action_name] == 'create_touch'
+
+    params = Array.wrap(action[:action_params]).first.to_h.with_indifferent_access
+    !params[:relative_anchor].to_s.in?(Reminders::MissedAutomationTouchPolicy::APPOINTMENT_ANCHORS)
+  end
 
   def send_webhook_event(webhook_url)
     payload = @appointment.automation_webhook_data.merge(event: "automation_event.#{@rule.event_name}")

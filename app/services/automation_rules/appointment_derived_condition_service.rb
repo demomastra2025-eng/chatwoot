@@ -1,7 +1,8 @@
 class AutomationRules::AppointmentDerivedConditionService
   CABINET_CODE_KEY = AutomationRules::AppointmentFieldCatalog::CABINET_CODE_KEY
   CONTACT_KEY = AutomationRules::ContactCondition::KEY
-  FIELD_KEYS = ['starts_at_weekday', 'starts_at_time', 'service_id', 'resource_id', CABINET_CODE_KEY, CONTACT_KEY].freeze
+  FIELD_KEYS = ['starts_at_weekday', 'starts_at_time', 'service_id', 'resource_id', 'appointment_source', 'lead_time_minutes',
+                CABINET_CODE_KEY, CONTACT_KEY].freeze
 
   def initialize(rule, appointment)
     @rule = rule
@@ -16,6 +17,16 @@ class AutomationRules::AppointmentDerivedConditionService
       evaluate_time(condition, operator)
     when 'service_id'
       evaluate_service(condition, operator)
+    when 'appointment_source'
+      values = normalize_values(condition['values'])
+      source = appointment.source == 'medelement' ? 'medelement' : 'onelink'
+      matches = values.include?(source) || (source == 'medelement' && values.include?('provider'))
+      { 'equal_to' => matches, 'not_equal_to' => !matches }.fetch(operator, false)
+    when 'lead_time_minutes'
+      expected = Array.wrap(condition['values']).first
+      return false unless expected.to_s.match?(/\A\d+\z/) && appointment.created_at && appointment.starts_at
+
+      evaluate_comparable(((appointment.starts_at - appointment.created_at) / 60).floor, expected.to_i, operator)
     when 'resource_id'
       values = normalize_values(condition['values'])
       matches = values.include?(appointment.resource_id.to_s)
@@ -96,8 +107,8 @@ class AutomationRules::AppointmentDerivedConditionService
   def evaluate_comparable(candidate, expected, operator)
     return candidate == expected if operator == 'equal_to'
     return candidate != expected if operator == 'not_equal_to'
-    return candidate > expected if operator == 'is_greater_than'
-    return candidate < expected if operator == 'is_less_than'
+    return candidate > expected if operator.in?(%w[is_greater_than greater_than])
+    return candidate < expected if operator.in?(%w[is_less_than less_than])
 
     false
   end

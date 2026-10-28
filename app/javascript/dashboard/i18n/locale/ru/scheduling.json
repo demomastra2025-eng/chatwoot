@@ -39,6 +39,10 @@
       "SCHEDULING_PROVIDER_NOT_CONFIGURED": "Поиск пациентов пока недоступен"
     },
     "NOTIFICATIONS": {
+      "BOOKING_SOURCE": {
+        "ONELINK": "OneLink",
+        "MEDELEMENT": "MedElement"
+      },
       "PATIENT_TITLE": "Уведомления пациенту",
       "TITLE": "Уведомления",
       "SUBTITLE": "Сообщения о записях и их доставке",
@@ -112,6 +116,8 @@
         "MEDELEMENT_CABINET_CODE": "Кабинет",
         "STATUS": "Статус",
         "SOURCE": "Источник",
+        "APPOINTMENT_SOURCE": "Источник записи",
+        "LEAD_TIME_MINUTES": "Время до приёма при записи (минуты)",
         "APPOINTMENT_TYPE": "Тип приёма",
         "PAYMENT_STATUS": "Оплата"
       },

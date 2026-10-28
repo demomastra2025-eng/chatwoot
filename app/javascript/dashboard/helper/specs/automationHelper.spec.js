@@ -216,9 +216,12 @@ const BACKEND_APPOINTMENT_CONDITIONS = [
   'payment_status',
   'appointment_type',
   'source',
+  'appointment_source',
+  'lead_time_minutes',
   'starts_at_weekday',
   'starts_at_time',
   'service_id',
+  'resource_id',
   'contact_id',
   'medelement_cabinet_code',
 ];
@@ -836,6 +839,22 @@ describe('getConditionOptions', () => {
         type: 'starts_at_weekday',
       })
     ).toEqual(appointmentWeekdayOptions);
+  });
+
+  it('offers OneLink and MedElement as booking source conditions', () => {
+    const appointmentBookingSourceOptions = [
+      { id: 'onelink', name: 'OneLink' },
+      { id: 'medelement', name: 'MedElement' },
+    ];
+
+    expect(
+      helpers.getConditionOptions({
+        appointmentBookingSourceOptions,
+        customAttributes,
+        eventName: 'appointment_created',
+        type: 'appointment_source',
+      })
+    ).toEqual(appointmentBookingSourceOptions);
   });
 
   it('returns the cabinet options for every appointment event', () => {

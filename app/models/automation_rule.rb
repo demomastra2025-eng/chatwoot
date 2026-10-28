@@ -117,7 +117,8 @@ class AutomationRule < ApplicationRecord
     mail_subject phone_number priority conversation_language labels private_note contact_id
   ].freeze
   APPOINTMENT_CONDITION_ATTRIBUTES = %w[
-    status payment_status appointment_type source starts_at_weekday starts_at_time service_id resource_id medelement_cabinet_code contact_id
+    status payment_status appointment_type source appointment_source lead_time_minutes starts_at_weekday starts_at_time service_id
+    resource_id medelement_cabinet_code contact_id
   ].freeze
 
   include Rails.application.routes.url_helpers

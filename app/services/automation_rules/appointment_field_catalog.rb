@@ -32,6 +32,14 @@ class AutomationRules::AppointmentFieldCatalog
       field_type: 'text',
       operators: %w[equal_to not_equal_to contains does_not_contain starts_with is_present is_not_present]
     },
+    'appointment_source' => {
+      field_type: 'select',
+      operators: %w[equal_to not_equal_to]
+    },
+    'lead_time_minutes' => {
+      field_type: 'number',
+      operators: %w[equal_to not_equal_to greater_than less_than is_greater_than is_less_than]
+    },
     'starts_at_weekday' => {
       field_type: 'weekday',
       operators: %w[equal_to not_equal_to]
@@ -128,6 +136,10 @@ class AutomationRules::AppointmentFieldCatalog
       weekday_values_supported?(normalized_values)
     when 'starts_at_time'
       normalized_values.one? && normalized_values.first.to_s.match?(TIME_OF_DAY_PATTERN)
+    when 'appointment_source'
+      normalized_values.one? && normalized_values.first.to_s.in?(%w[onelink medelement provider])
+    when 'lead_time_minutes'
+      normalized_values.one? && normalized_values.first.to_s.match?(/\A\d+\z/)
     when 'service_id'
       service_values_supported?(normalized_values)
     when 'resource_id'

@@ -157,6 +157,14 @@ export default function useAutomationValues() {
       name: t(`SCHEDULING.APPOINTMENT_SOURCE.${source}`),
     }))
   );
+  const appointmentBookingSourceOptions = computed(() =>
+    ['onelink', 'medelement'].map(source => ({
+      id: source,
+      name: t(
+        `SCHEDULING.NOTIFICATIONS.BOOKING_SOURCE.${source.toUpperCase()}`
+      ),
+    }))
+  );
 
   const appointmentServiceOptions = computed(() =>
     (schedulingReferencesStore.services || []).map(service => ({
@@ -257,6 +265,7 @@ export default function useAutomationValues() {
       appointmentFieldDefinitions: appointmentFieldDefinitions.value,
       appointmentPaymentStatusOptions: appointmentPaymentStatusOptions.value,
       appointmentSourceOptions: appointmentSourceOptions.value,
+      appointmentBookingSourceOptions: appointmentBookingSourceOptions.value,
       appointmentServiceOptions: appointmentServiceOptions.value,
       appointmentStatusOptions: appointmentStatusOptions.value,
       appointmentTypeOptions: appointmentTypeOptions.value,

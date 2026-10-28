@@ -2,12 +2,13 @@
 
 # An appointment notice made by an automation rule on «запись создана» or «запись перенесена» is cancelled instead of
 # sent when it can only confuse the patient:
+#   - an appointment-created confirmation has less than 60 minutes between booking and visit, or less than 60 minutes remain;
 #   - the visit has already started (a MedElement sync miss imported the reception late, or the notice waited too long);
 #   - the action opted in with metadata.skip_if_imported_late and the MedElement reception reached OneLink more than an
 #     hour after it was created there (appointment_created only).
 # Only a text message sent once and soon after the event is a notice. Touches timed from the visit itself
-# (appointment.starts_at / ends_at, e.g. «за 2 часа»), follow-ups planned later than an hour after the event, repeating
-# series and AI wake-ups are not; a late visit-timed touch is handled by Reminders::MissedAutomationTouchPolicy.
+# (appointment.starts_at / ends_at, e.g. «за 2 часа»), absolute follow-ups planned later than an hour after the event,
+# repeating series and AI wake-ups are not; a late visit-timed touch is handled by Reminders::MissedAutomationTouchPolicy.
 class Reminders::StaleAppointmentNoticePolicy
   NOTICE_EVENT_NAMES = %w[appointment_created appointment_rescheduled].freeze
   VISIT_ANCHORS = Reminders::MissedAutomationTouchPolicy::APPOINTMENT_ANCHORS
@@ -16,6 +17,7 @@ class Reminders::StaleAppointmentNoticePolicy
   MAX_NOTICE_DELAY = 1.hour
   STARTED_REASON = 'appointment_notice_after_start'
   LATE_IMPORT_REASON = 'appointment_notice_late_import'
+  SHORT_LEAD_REASON = 'appointment_notice_short_lead_time'
   CANCELLED_VIA = 'stale_appointment_notice'
   UNSCOPED_PROCESSING_CLAIM = Object.new.freeze
 
@@ -46,11 +48,21 @@ class Reminders::StaleAppointmentNoticePolicy
   def stale_reason
     return unless notice?
     return STARTED_REASON if appointment.starts_at.present? && appointment.starts_at <= now && prompt_notice?
+    return SHORT_LEAD_REASON if short_lead_time?
 
     LATE_IMPORT_REASON if late_import?
   end
 
   private
+
+  def short_lead_time?
+    return false unless metadata[Reminder::AUTOMATION_EVENT_NAME_KEY] == 'appointment_created'
+    return false unless prompt_notice? || reminder.relative_anchor.to_s.in?(%w[appointment.created_at touch.created_at])
+
+    rule = AutomationRule.find_by(id: metadata['automation_rule_id'], account_id: appointment.account_id)
+
+    AutomationRules::AppointmentNotificationLeadTime.short?(appointment, rule: rule, now: now)
+  end
 
   def notice?
     cancellable_state? && automation_notice? && appointment.present? && !visit_timed?

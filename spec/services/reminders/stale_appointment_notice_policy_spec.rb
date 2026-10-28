@@ -64,6 +64,30 @@ RSpec.describe Reminders::StaleAppointmentNoticePolicy do
     expect(stale_reason).to be_nil
   end
 
+  it 'cancels an after-created confirmation when the visit is less than an hour away' do
+    appointment.starts_at = now + 45.minutes
+    update_metadata({}, without: [described_class::LATE_IMPORT_OPT_IN_KEY])
+
+    expect(stale_reason).to eq(described_class::SHORT_LEAD_REASON)
+  end
+
+  it 'cancels an after-created confirmation if only 45 minutes remain at delivery' do
+    appointment.starts_at = now + 45.minutes
+    appointment.created_at = now - 2.hours
+    update_metadata({}, without: [described_class::LATE_IMPORT_OPT_IN_KEY])
+
+    expect(stale_reason).to eq(described_class::SHORT_LEAD_REASON)
+  end
+
+  it 'cancels a delayed touch scheduled relative to its creation when the booking lead time was short' do
+    appointment.starts_at = now + 45.minutes
+    reminder.relative_anchor = 'touch.created_at'
+    reminder.scheduled_at = now + 2.hours
+    update_metadata({}, without: [described_class::LATE_IMPORT_OPT_IN_KEY])
+
+    expect(stale_reason).to eq(described_class::SHORT_LEAD_REASON)
+  end
+
   it 'applies the import lag only to MedElement receptions and only to «запись создана»' do
     appointment.source = 'manual'
     expect(stale_reason).to be_nil
@@ -101,11 +125,11 @@ RSpec.describe Reminders::StaleAppointmentNoticePolicy do
       update_metadata({}, without: [described_class::LATE_IMPORT_OPT_IN_KEY])
     end
 
-    it 'keeps a follow-up planned later than an hour after the event' do
+    it 'skips an after-created notice even if it was planned later than an hour after the event' do
       expect(stale_reason).to eq(described_class::STARTED_REASON)
 
       reminder.assign_attributes(relative_offset_seconds: 3.days.to_i, scheduled_at: now + 3.days)
-      expect(stale_reason).to be_nil
+      expect(stale_reason).to eq(described_class::SHORT_LEAD_REASON)
 
       reminder.assign_attributes(timing_mode: 'absolute', relative_anchor: nil, relative_offset_seconds: 0, scheduled_at: now + 30.minutes)
       expect(stale_reason).to eq(described_class::STARTED_REASON)

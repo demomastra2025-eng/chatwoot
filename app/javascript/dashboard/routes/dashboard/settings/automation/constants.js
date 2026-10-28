@@ -54,6 +54,18 @@ const APPOINTMENT_AUTOMATION_CONDITIONS = [
     filterOperators: OPERATOR_TYPES_7,
   },
   {
+    key: 'appointment_source',
+    name: 'APPOINTMENT_SOURCE',
+    inputType: 'multi_select',
+    filterOperators: OPERATOR_TYPES_1,
+  },
+  {
+    key: 'lead_time_minutes',
+    name: 'LEAD_TIME_MINUTES',
+    inputType: 'plain_text',
+    filterOperators: OPERATOR_TYPES_8,
+  },
+  {
     key: 'starts_at_weekday',
     name: 'APPOINTMENT_START_WEEKDAY',
     inputType: 'multi_select',

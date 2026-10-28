@@ -193,6 +193,8 @@ const standardConditionFields = [
   'medelement_cabinet_code',
   'status',
   'source',
+  'appointment_source',
+  'lead_time_minutes',
   'appointment_type',
   'payment_status',
 ];
@@ -219,6 +221,7 @@ const operatorsFor = field => {
       'is_not_present',
     ];
   if (
+    field === 'lead_time_minutes' ||
     ['number', 'currency', 'percent', 'date', 'datetime'].includes(
       definition?.field_type
     )
@@ -256,6 +259,10 @@ const conditionOptions = computed(() => ({
   source: ['manual', 'medelement', 'captain'].map(value => ({
     value,
     label: t(`SCHEDULING.APPOINTMENT_SOURCE.${value}`),
+  })),
+  appointment_source: ['onelink', 'medelement'].map(value => ({
+    value,
+    label: L(`BOOKING_SOURCE.${value.toUpperCase()}`),
   })),
   appointment_type: ['primary', 'secondary', 'other'].map(value => ({
     value,

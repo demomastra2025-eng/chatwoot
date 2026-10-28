@@ -45,6 +45,41 @@ RSpec.describe AutomationRules::AppointmentConditionService do
     expect(described_class.new(rule, appointment).perform).to be(true)
   end
 
+  it 'treats local bookings as OneLink and imported bookings as MedElement' do
+    rule = create(:automation_rule, account: account, event_name: 'appointment_created',
+                 conditions: [{ attribute_key: 'appointment_source', filter_operator: 'equal_to', values: ['onelink'] }],
+                 actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/appointments'] }])
+
+    expect(described_class.new(rule, appointment).perform).to be(true)
+    appointment.update!(source: 'captain')
+    expect(described_class.new(rule, appointment).perform).to be(true)
+    appointment.update!(source: 'medelement')
+    expect(described_class.new(rule, appointment).perform).to be(false)
+    rule.conditions.first['values'] = ['medelement']
+    expect(described_class.new(rule, appointment).perform).to be(true)
+    rule.conditions.first['values'] = ['provider']
+    expect(described_class.new(rule, appointment).perform).to be(true)
+  end
+
+  it 'compares the lead time between booking creation and visit start in minutes' do
+    appointment.update_columns(created_at: appointment.starts_at - 45.minutes) # rubocop:disable Rails/SkipsModelValidations
+    rule = create(:automation_rule, account: account, event_name: 'appointment_created',
+                 conditions: [{ attribute_key: 'lead_time_minutes', filter_operator: 'is_less_than', values: ['60'] }],
+                 actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/appointments'] }])
+
+    expect(described_class.new(rule, appointment.reload).perform).to be(true)
+    rule.conditions.first['filter_operator'] = 'is_greater_than'
+    expect(described_class.new(rule, appointment).perform).to be(false)
+    rule.conditions.first['filter_operator'] = 'greater_than'
+    rule.conditions.first['values'] = ['30']
+    expect(described_class.new(rule, appointment).perform).to be(true)
+    rule.conditions.first['filter_operator'] = 'equal_to'
+    rule.conditions.first['values'] = ['45']
+    expect(described_class.new(rule, appointment).perform).to be(true)
+    rule.conditions.first['filter_operator'] = 'not_equal_to'
+    expect(described_class.new(rule, appointment).perform).to be(false)
+  end
+
   it 'matches the Captain source selected in an appointment automation rule' do
     appointment.update!(source: 'captain')
     rule = create(

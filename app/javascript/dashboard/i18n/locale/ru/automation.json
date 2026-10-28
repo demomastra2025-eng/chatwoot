@@ -279,6 +279,8 @@
       "PAYMENT_STATUS": "Статус оплаты",
       "APPOINTMENT_TYPE": "Тип записи",
       "SOURCE": "Источник",
+      "APPOINTMENT_SOURCE": "Источник записи",
+      "LEAD_TIME_MINUTES": "Время до приёма при записи (минуты)",
       "APPOINTMENT_START_WEEKDAY": "День недели начала записи",
       "APPOINTMENT_START_TIME": "Время начала записи",
       "APPOINTMENT_SERVICE": "Услуга",

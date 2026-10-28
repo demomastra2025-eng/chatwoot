@@ -39,6 +39,21 @@ RSpec.describe AutomationRules::AppointmentActionService do
     )
   end
 
+  it 'suppresses a confirmation when the visit is less than one hour away' do
+    rule.update!(event_name: 'appointment_created')
+    appointment.update_columns(created_at: appointment.starts_at - 30.minutes) # rubocop:disable Rails/SkipsModelValidations
+
+    expect { described_class.new(rule, account, appointment.reload).perform }.not_to have_enqueued_job(WebhookJob)
+  end
+
+  it 'allows a rule with an explicit smaller lead time' do
+    rule.update!(event_name: 'appointment_created',
+                 conditions: [{ attribute_key: 'lead_time_minutes', filter_operator: 'is_greater_than', values: ['10'] }])
+    appointment.update_columns(created_at: appointment.starts_at - 30.minutes) # rubocop:disable Rails/SkipsModelValidations
+
+    expect { described_class.new(rule, account, appointment.reload).perform }.to have_enqueued_job(WebhookJob)
+  end
+
   it 'updates appointment status through the native upsert path' do
     status_rule = create(
       :automation_rule,

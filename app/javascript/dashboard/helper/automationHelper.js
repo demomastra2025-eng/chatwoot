@@ -196,6 +196,7 @@ const getManagedFieldDefinitionsForEvent = (
 };
 
 const getManagedConditionFilterMaps = ({
+  appointmentBookingSourceOptions,
   appointmentCabinetOptions,
   appointmentPaymentStatusOptions,
   appointmentSourceOptions,
@@ -213,6 +214,7 @@ const getManagedConditionFilterMaps = ({
   teams,
 }) => ({
   appointment: {
+    appointment_source: appointmentBookingSourceOptions,
     status: appointmentStatusOptions,
     payment_status: appointmentPaymentStatusOptions,
     appointment_type: appointmentTypeOptions,
@@ -288,6 +290,7 @@ export const getActionOptions = ({
 };
 
 export const getConditionOptions = ({
+  appointmentBookingSourceOptions,
   agents,
   appointmentCabinetOptions,
   appointmentFieldDefinitions,
@@ -352,6 +355,7 @@ export const getConditionOptions = ({
   }
 
   const managedConditionFilterMaps = getManagedConditionFilterMaps({
+    appointmentBookingSourceOptions,
     appointmentCabinetOptions,
     appointmentPaymentStatusOptions,
     appointmentSourceOptions,
