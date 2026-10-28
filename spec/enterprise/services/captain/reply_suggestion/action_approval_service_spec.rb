@@ -602,6 +602,19 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
       described_class.pending_for(account_id: account.id, conversation_id: conversation.id).size
     end
 
+    it 'prepares a doctor booking without a service when several priceable services are offered' do
+      [ultrasound, service_item].each do |service|
+        create(:scheduling_service_price, account: account, resource: doctor, service: service, price: 10_000, active: true)
+      end
+
+      card = JSON.parse(described_class.intercept(
+        tool: create_tool, tool_context: tool_context, arguments: { resource_id: doctor.id, starts_at: at(9, 0).iso8601 }
+      ))
+
+      expect(card).to include('status' => 'pending_operator_approval')
+      expect(described_class.fetch_record(card['action_id'])['arguments']['service_id']).to be_nil
+    end
+
     it 'sizes the booking by the median of the pair, so a slot just before another visit can be proposed' do
       pair(doctor, median: 10)
       book(doctor, at(9, 15), at(9, 30))
@@ -668,24 +681,21 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
       expect(JSON.parse(raw)['status']).to eq('pending_operator_approval')
     end
 
-    # PROD run g1-20261026 (Sezim: none of the 28 services is linked to MedElement): the check refused the service with a technical
-    # failure, which ended the whole suggestion (c78-1231427, c78-1246840). It is now an answer the agent corrects by booking without it.
+    # An unmapped service stays in the comment while the booking proceeds without a service ID.
     describe 'a service that is not linked to the clinic system' do
       def unlinked = @unlinked ||= create(:scheduling_service, account: account, name: 'Приём ЛОРа', duration_min: 30)
 
-      def refusal(raw) = Captain::ToolResult.normalize(raw)
-
-      it 'refuses a booking that names it with an answer to retry without the service, and prepares no card' do
+      it 'prepares a booking to the doctor without the unmapped service' do
         raw = described_class.intercept(
           tool: create_tool, tool_context: tool_context,
           arguments: { resource_id: doctor.id, service_id: unlinked.id, starts_at: at(9, 0).iso8601 }
         )
 
-        expect(refusal(raw)).to include(success: false, error: include('without service_id', 'staff choose the service'),
-                                        audit: include(error_class: 'business', mutation_executed: false),
-                                        data: include(code: 'MEDELEMENT_SERVICE_UNMAPPED', error_class: 'business'))
-        expect(Captain::Runtime::ToolFailure.classify(raw)).to eq('business')
-        expect(pending_count).to eq(0)
+        card = JSON.parse(raw)
+        expect(card).to include('status' => 'pending_operator_approval')
+        expect(described_class.fetch_record(card['action_id'])['arguments']).to include('service_id' => nil,
+                                                                                      'client_comment' => include(unlinked.name))
+        expect(pending_count).to eq(1)
       end
 
       it 'prepares the card when the agent retries the booking without the service' do
@@ -697,18 +707,17 @@ RSpec.describe Captain::ReplySuggestion::ActionApprovalService do
         expect(pending_count).to eq(1)
       end
 
-      it 'refuses a move to it the same way, and prepares the move without it' do
+      it 'prepares a move without the unmapped service' do
         appointment = book(doctor, at(11, 0), at(11, 30), contact: contact)
         token = Captain::Tools::Agent::AppointmentAccess.issue(assistant: assistant, conversation: conversation, appointment: appointment)
         move = { appointment_id: appointment.id, appointment_access_token: token, patient_confirmed: true, starts_at: at(10, 0).iso8601 }
         update_tool = Captain::Tools::UpdateAppointmentTool.new(assistant)
 
-        refused = described_class.intercept(tool: update_tool, tool_context: tool_context, arguments: move.merge(service_id: unlinked.id))
-        expect(refusal(refused)).to include(success: false, data: include(code: 'MEDELEMENT_SERVICE_UNMAPPED', error_class: 'business'))
-        expect(pending_count).to eq(0)
-
-        prepared = described_class.intercept(tool: update_tool, tool_context: tool_context, arguments: move)
-        expect(JSON.parse(prepared)).to include('status' => 'pending_operator_approval')
+        prepared = described_class.intercept(tool: update_tool, tool_context: tool_context, arguments: move.merge(service_id: unlinked.id))
+        card = JSON.parse(prepared)
+        expect(card).to include('status' => 'pending_operator_approval')
+        expect(described_class.fetch_record(card['action_id'])['arguments']).to include('service_id' => nil,
+                                                                                      'client_comment' => include(unlinked.name))
       end
 
       it 'does not refuse it for a specialist that is not in the clinic system' do

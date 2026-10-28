@@ -544,27 +544,13 @@ class Captain::Runtime::ToolWrapper
 
     @context_wrapper.tool_loop_guard_mutex.synchronize do
       return remember_service_specific_scheduling! if positive_service_id?(normalized_args[:service_id])
-      return unless service_specific_scheduling?
 
-      publish_generic_after_service_specific_attempt
-      return unless scheduling_grounding_guard_enabled?
-
-      Captain::ToolResult.failure(
-        error: 'Service-specific availability requires a confirmed service_id.',
-        data: { code: 'service_context_required' },
-        retryable: false,
-        audit: {
-          failure_stage: 'tool_arguments',
-          failure_reason: 'service_context_required',
-          tool_name: canonical_tool_name,
-          provider_call_blocked: true
-        }
-      )
+      publish_generic_after_service_specific_attempt if service_specific_scheduling?
+      nil
     end
   end
 
-  # The booking search with services is a service-specific scheduling read as well: a free-time search without a service after it is
-  # the generic search that the guard above refuses.
+  # Remember service-specific searches for audit context. Later generic searches still run.
   def remember_booking_search_service_context(normalized_args)
     remember_service_specific_scheduling! if normalized_args[:services].present?
     nil
@@ -587,11 +573,6 @@ class Captain::Runtime::ToolWrapper
     ActiveModel::Type::Boolean.new.cast(context_wrapper_context[SERVICE_SPECIFIC_SCHEDULING_KEY])
   end
 
-  def scheduling_grounding_guard_enabled?
-    state = context_wrapper_context[:state].to_h.with_indifferent_access
-    ActiveModel::Type::Boolean.new.cast(state[:captain_scheduling_grounding_guard_enabled])
-  end
-
   def canonical_tool_name
     name = @tool.name.to_s
     %w[search_available_slots search_booking_options search_scheduling_resources search_scheduling_services].find do |candidate|
@@ -608,11 +589,11 @@ class Captain::Runtime::ToolWrapper
       account_id: state[:account_id],
       conversation_id: state.dig(:conversation, :id),
       tool_name: canonical_tool_name,
-      enforced: scheduling_grounding_guard_enabled?,
-      provider_call_blocked: scheduling_grounding_guard_enabled?
+      enforced: false,
+      provider_call_blocked: false
     )
   rescue StandardError => e
-    Rails.logger.warn("[CAPTAIN][ToolWrapper] Failed to publish scheduling context block: #{e.class}: #{e.message}")
+    Rails.logger.warn("[CAPTAIN][ToolWrapper] Failed to publish scheduling context event: #{e.class}: #{e.message}")
   end
 
   def complete_and_render(result)

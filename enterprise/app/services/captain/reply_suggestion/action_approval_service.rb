@@ -464,7 +464,12 @@ class Captain::ReplySuggestion::ActionApprovalService
         :validate_booking_inputs!, starts_at: starts_at, ends_at: ends_at,
                                    duration_min: arguments[:duration_min], service_id: arguments[:service_id]
       )
-      service_id = validated_service&.id || operation.send(:offered_service_id, resource_id)
+      service_omitted = arguments[:service_id].blank?
+      validated_service, arguments[:client_comment] = operation.send(
+        :bookable_service_and_comment, resource_id, validated_service, arguments[:client_comment]
+      )
+      arguments[:service_id] = nil if arguments[:service_id].present? && validated_service.nil?
+      service_id = validated_service&.id || (operation.send(:offered_service_id, resource_id) if service_omitted)
       custom_attrs = if arguments[:custom_attributes].present?
                        operation.send(:parsed_hash, arguments[:custom_attributes], field_name: 'custom_attributes')
                      end
@@ -524,7 +529,12 @@ class Captain::ReplySuggestion::ActionApprovalService
         starts_at: starts_at, ends_at: ends_at, duration_min: arguments[:duration_min],
         service_id: arguments[:service_id], appointment: appointment
       )
-      service_id = validated_service ? validated_service.id : arguments[:service_id]
+      validated_service, arguments[:client_comment] = operation.send(
+        :bookable_service_and_comment, arguments[:resource_id] || appointment.resource_id,
+        validated_service, arguments[:client_comment] || appointment.client_comment
+      )
+      arguments[:service_id] = nil if arguments[:service_id].present? && validated_service.nil?
+      service_id = validated_service&.id
       params = build_update_comparison_params(arguments, starts_at: starts_at, ends_at: ends_at, service_id: service_id, operation: operation)
       if operation.send(:appointment_unchanged?, appointment, params)
         return JSON.generate(Captain::Tools::Agent::AppointmentResult.unchanged(appointment, action: 'update_appointment'))
@@ -551,7 +561,7 @@ class Captain::ReplySuggestion::ActionApprovalService
           starts_at: starts_at || appointment.starts_at,
           ends_at: ends_at,
           duration_min: arguments[:duration_min] || (appointment.duration_min unless validated_service),
-          service: validated_service || appointment.service,
+          service: arguments.key?(:service_id) ? validated_service : appointment.service,
           ignore_appointment_id: appointment.id
         )
       end
@@ -564,7 +574,7 @@ class Captain::ReplySuggestion::ActionApprovalService
     def build_update_comparison_params(arguments, starts_at:, ends_at:, service_id:, operation:)
       params = {}
       params[:resource_id] = arguments[:resource_id] unless arguments[:resource_id].nil?
-      params[:service_id] = service_id unless service_id.nil?
+      params[:service_id] = service_id if arguments.key?(:service_id)
       params[:starts_at] = starts_at unless starts_at.nil?
       params[:ends_at] = ends_at unless ends_at.nil?
       params[:duration_min] = arguments[:duration_min] unless arguments[:duration_min].nil?
@@ -928,7 +938,7 @@ class Captain::ReplySuggestion::ActionApprovalService
       end
       resource_id = arguments[:resource_id].presence || appointment&.resource_id
       resource = account&.scheduling_resources&.find_by(id: resource_id) if resource_id.present?
-      service_id = arguments[:service_id].presence || appointment&.service_id
+      service_id = arguments.key?(:service_id) ? arguments[:service_id] : appointment&.service_id
       service = account&.scheduling_services&.find_by(id: service_id) if service_id.present?
 
       details << { 'label' => 'Специалист', 'value' => resource.name } if resource&.name.present?

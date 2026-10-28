@@ -1,4 +1,5 @@
 class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operations::BaseOperation
+  SERVICE_OMITTED = Object.new.freeze
   # persisted_creation: the appointment a create call saved. unchanged_appointment: the appointment an update call found already
   # in the state it asked for (nothing was sent to the provider and nothing was saved). already_booked_appointment: the appointment
   # a create call of the agent found booked already for the same patient, specialist and start (nothing was created).
@@ -35,8 +36,8 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     resource_id = resolve_agent_resource_id(resource_id, service_id)
     starts_at, ends_at = normalize_appointment_times(resource_id: resource_id, starts_at: starts_at, ends_at: ends_at)
     validated_service = validate_booking_inputs!(starts_at: starts_at, ends_at: ends_at, duration_min: duration_min, service_id: service_id)
-    service_id = validated_service.id if validated_service
-    service_id ||= offered_service_id(resource_id)
+    validated_service, client_comment = bookable_service_and_comment(resource_id, validated_service, client_comment)
+    service_id = validated_service&.id || (offered_service_id(resource_id) if service_id.blank?)
 
     create_params = {
       resource_id: resource_id,
@@ -64,7 +65,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     persist_creation!(create_params)
   end
 
-  def update_current_appointment(appointment_id: nil, resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil,
+  def update_current_appointment(appointment_id: nil, resource_id: nil, service_id: SERVICE_OMITTED, starts_at: nil, ends_at: nil, duration_min: nil,
                                  appointment_type: nil, client_comment: nil, custom_attributes: nil,
                                  appointment_access_token: nil, patient_confirmed: false)
     @unchanged_appointment = nil
@@ -72,13 +73,16 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     appointment = target_appointment(appointment_id, appointment_access_token: appointment_access_token, patient_confirmed: patient_confirmed)
 
     starts_at, ends_at = normalize_appointment_times(resource_id: resource_id || appointment.resource_id, starts_at: starts_at, ends_at: ends_at)
+    explicit_service = !service_id.equal?(SERVICE_OMITTED)
     validated_service = validate_booking_inputs!(starts_at: starts_at, ends_at: ends_at, duration_min: duration_min,
-                                                 service_id: service_id, appointment: appointment)
-    service_id = validated_service.id if validated_service
+                                                 service_id: explicit_service ? service_id : nil, appointment: appointment)
+    validated_service, client_comment = bookable_service_and_comment(resource_id || appointment.resource_id, validated_service,
+                                                                     client_comment || appointment.client_comment)
+    service_id = validated_service&.id
 
     params = {}
     params[:resource_id] = resource_id unless resource_id.nil?
-    params[:service_id] = service_id unless service_id.nil?
+    params[:service_id] = service_id if explicit_service
     params[:starts_at] = starts_at unless starts_at.nil?
     params[:ends_at] = ends_at unless ends_at.nil?
     params[:duration_min] = duration_min unless duration_min.nil?
@@ -155,8 +159,11 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       Scheduling::InputValidation.interval!(starts_at: start_time, ends_at: start_time + duration.minutes)
     end
     ensure_future_start!(starts_at, start_time, appointment)
-    # The validated service is the answer of this method: the callers book with it.
-    Scheduling::InputValidation.service!(account: account, value: service_id) unless service_id.nil?
+    # Keep an inactive catalog record long enough to preserve the patient's requested name in the comment.
+    if service_id.present?
+      id = Scheduling::IntegerNumericNormalizer.normalize(service_id, field_name: 'service_id')
+      account.scheduling_services.find_by(id: id) || Scheduling::InputValidation.service!(account: account, value: service_id)
+    end
   rescue Scheduling::Error => e
     # This boundary only parses arguments and reads the catalog. No local or
     # provider mutation has started, so a corrected call is safe.
@@ -216,15 +223,36 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     ), conversation_id: conversation.id, patient_confirmed: confirmed }
   end
 
-  # The service of a booking of the agent that names none: the only service the specialist offers, none when it offers none, and a
-  # business answer that lists them when it offers several (see BookingServiceChoice). Staff choose their service themselves.
+  # Attach only the sole priceable service when its MedElement mapping is available. Staff choose their service themselves.
   def offered_service_id(resource_id)
     return unless actor.is_a?(Captain::Assistant)
 
     choice = Captain::Tools::Agent::BookingServiceChoice.new(
       account: account, resource_id: required_positive_id(resource_id, field_name: 'resource_id')
     )
-    choice.perform&.id
+    service = choice.perform
+    resource = account.scheduling_resources.find(resource_id)
+    return if service && resource.custom_attributes.to_h['medelement_specialist_code'].present? &&
+              service.custom_attributes.to_h['medelement_nomenclature_code'].blank?
+
+    service&.id
+  end
+
+  def bookable_service_and_comment(resource_id, service, comment)
+    return [nil, comment] unless service
+
+    resource = account.scheduling_resources.find(resource_id)
+    return [service, comment] if bookable_service?(service, resource)
+
+    [nil, comment.to_s.include?(service.name) ? comment : [comment.presence, "Услуга: #{service.name}"].compact.join("\n")]
+  end
+
+  def bookable_service?(service, resource)
+    price = service.prices.find_by(resource_id: resource.id)
+    priced = (price&.active? && price.price.to_i.positive?) || service.base_price.to_i.positive?
+    mapped = resource.custom_attributes.to_h['medelement_specialist_code'].blank? ||
+             service.custom_attributes.to_h['medelement_nomenclature_code'].present?
+    service.active? && priced && mapped
   end
 
   # The active appointment of the same patient with the same specialist, the same service and the same start. A booking of the agent

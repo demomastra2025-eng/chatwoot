@@ -33,6 +33,37 @@ RSpec.describe Captain::Tools::Operations::AppointmentOperations, type: :model d
       expect(operations.already_booked_appointment).to be_nil
     end
 
+    it 'books to the specialist without a service when several are offered' do
+      second = create(:scheduling_service, account: account, duration_min: 30)
+      create(:scheduling_service_price, account: account, service: second, resource: resource, active: true, price: 10_000)
+
+      expect(operations.create_appointment(**booking).service_id).to be_nil
+    end
+
+    it 'drops an unmapped MedElement service and keeps its name in the comment' do
+      resource.update!(custom_attributes: { medelement_specialist_code: 'doctor-1',
+                                            medelement_cabinets: [{ companyCabinetCode: 'cabinet-1' }] })
+      contact.update!(name: 'Ada', last_name: 'Test', phone_number: '+77000000001')
+      stub_provider_availability
+      service = account.scheduling_services.first
+
+      appointment = operations.create_appointment(**booking, service_id: service.id)
+
+      expect(appointment).to have_attributes(resource_id: resource.id, service_id: nil)
+      expect(appointment.client_comment).to include(service.name)
+    end
+
+    it 'keeps a mapped MedElement service with a positive price' do
+      resource.update!(custom_attributes: { medelement_specialist_code: 'doctor-1',
+                                            medelement_cabinets: [{ companyCabinetCode: 'cabinet-1' }] })
+      contact.update!(name: 'Ada', last_name: 'Test', phone_number: '+77000000001')
+      stub_provider_availability
+      service = account.scheduling_services.first
+      service.update!(custom_attributes: { medelement_nomenclature_code: 'service-1' })
+
+      expect(operations.create_appointment(**booking, service_id: service.id).service_id).to eq(service.id)
+    end
+
     it 'books with a named service and without one when the account has no service-price links' do
       Scheduling::ServicePrice.where(account_id: account.id).delete_all
       service = account.scheduling_services.first
@@ -71,6 +102,13 @@ RSpec.describe Captain::Tools::Operations::AppointmentOperations, type: :model d
     end
   end
 
+  def stub_provider_availability
+    result = Integrations::Medelement::ResourceAvailabilityService::Result.new(
+      status: 'fresh', checked_at: Time.current, slots: [{ medelement_cabinet_code: 'cabinet-1' }], reason: nil
+    )
+    allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).and_return(double(perform: result))
+  end
+
   describe 'a booking of staff' do
     let(:user) { create(:user, account: account, role: :administrator) }
     let(:operations) { operations_for(user) }
@@ -79,6 +117,22 @@ RSpec.describe Captain::Tools::Operations::AppointmentOperations, type: :model d
       appointment = operations.create_appointment(**booking)
 
       expect(appointment.service_id).to be_nil
+    end
+
+    it 'removes an unconfirmed service from an existing MedElement booking' do
+      resource.update!(custom_attributes: { medelement_specialist_code: 'doctor-1',
+                                            medelement_cabinets: [{ companyCabinetCode: 'cabinet-1' }] })
+      contact.update!(name: 'Ada', last_name: 'Test', phone_number: '+77000000001')
+      stub_provider_availability
+      mapped = account.scheduling_services.first
+      mapped.update!(custom_attributes: { medelement_nomenclature_code: 'service-1' })
+      appointment = operations.create_appointment(**booking, service_id: mapped.id)
+      unmapped = create(:scheduling_service, account: account, name: 'Additional visit', base_price: 10_000)
+
+      updated = operations.update_current_appointment(appointment_id: appointment.id, service_id: unmapped.id)
+
+      expect(updated.reload).to have_attributes(resource_id: resource.id, service_id: nil)
+      expect(updated.client_comment).to include(unmapped.name)
     end
 
     it 'keeps the taken-slot error of a repeated booking: staff see the conflict, not an answer of the agent' do

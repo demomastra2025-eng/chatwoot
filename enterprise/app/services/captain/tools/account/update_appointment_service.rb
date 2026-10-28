@@ -30,7 +30,8 @@ class Captain::Tools::Account::UpdateAppointmentService < Captain::Tools::Accoun
               'list_*_custom_fields tool first; only returned keys are accepted, and select/multiselect values must match option.value exactly.',
         required: false
 
-  def execute(appointment_id: nil, resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil, appointment_type: nil,
+  def execute(appointment_id: nil, resource_id: nil, service_id: Captain::Tools::Operations::AppointmentOperations::SERVICE_OMITTED,
+              starts_at: nil, ends_at: nil, duration_min: nil, appointment_type: nil,
               client_comment: nil, custom_attributes: nil, appointment_access_token: nil, patient_confirmed: false)
     operations = appointment_operations
     appointment = operations.update_current_appointment(

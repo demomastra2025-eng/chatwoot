@@ -216,36 +216,29 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       allow(Llm::EventBus).to receive(:publish)
     end
 
-    it 'blocks a generic downgrade after a failed service-specific attempt before executing the tool' do
+    it 'allows a generic search after a failed service-specific attempt' do
       failure = Captain::ToolResult.failure(error: 'Service is not available for the requested specialists', retryable: false, audit: { error_class: 'business' })
       scheduling_tool.result = failure
 
       expect_tool_error(scheduling_wrapper.call(service_id: 469, resource_ids: ['157']),
                         'Service is not available for the requested specialists',
                         retryable: false)
-      blocked = scheduling_wrapper.call(resource_ids: ['157'])
-
-      expect_tool_error(blocked, 'Service-specific availability requires a confirmed service_id.', retryable: false)
-      expect(scheduling_tool.calls).to eq(1)
-      expect(events.last[2]).to include(
-        success: false,
-        data: include(code: 'service_context_required'),
-        audit: include(failure_reason: 'service_context_required', provider_call_blocked: true)
-      )
+      scheduling_tool.result = 'slots'
+      expect(scheduling_wrapper.call(resource_ids: ['157'])).to eq('slots')
+      expect(scheduling_tool.calls).to eq(2)
       expect(Llm::EventBus).to have_received(:publish)
         .with(
           'captain.generic_after_service_specific_attempt',
-          hash_including(tool_name: 'search_available_slots', provider_call_blocked: true)
+          hash_including(tool_name: 'search_available_slots')
         )
     end
 
-    it 'counts a booking search with services as a service-specific read: a generic free-time search after it is blocked' do
+    it 'allows a generic free-time search after a booking search with services' do
       booking_tool = ToolWrapperSpecSchedulingTool.new(tool_name: 'account__search_booking_options')
       described_class.new(booking_tool, context_wrapper).call(services: ['ultrasound'])
 
-      expect_tool_error(scheduling_wrapper.call(resource_ids: ['157']), 'Service-specific availability requires a confirmed service_id.',
-                        retryable: false)
-      expect(scheduling_tool.calls).to eq(0)
+      expect(scheduling_wrapper.call(resource_ids: ['157'])).to eq('slots')
+      expect(scheduling_tool.calls).to eq(1)
     end
 
     it 'does not count a booking search of a specialist alone: no service was asked for' do
@@ -1617,7 +1610,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       )
     end
 
-    it 'runs the scheduling guard before the read cache: a generic search after a service-specific one is refused' do
+    it 'allows a generic search after a service-specific one' do
       allow(Llm::EventBus).to receive(:publish)
       scheduling_tool = ToolWrapperSpecSchedulingTool.new
       scheduling_wrapper = described_class.new(scheduling_tool, context_wrapper)
@@ -1625,12 +1618,10 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       expect(scheduling_wrapper.call(resource_ids: ['157'])).to eq('slots')
       scheduling_tool.result = 'therapist slots'
       expect(scheduling_wrapper.call(service_id: 469, resource_ids: ['157'])).to eq('therapist slots')
-      blocked = scheduling_wrapper.call(resource_ids: ['157'])
-
-      expect_tool_error(blocked, 'Service-specific availability requires a confirmed service_id.', retryable: false)
+      expect(scheduling_wrapper.call(resource_ids: ['157'])).to include('Repeated call:')
       expect(scheduling_tool.calls).to eq(2)
       expect(Llm::EventBus).to have_received(:publish)
-        .with('captain.generic_after_service_specific_attempt', hash_including(provider_call_blocked: true))
+        .with('captain.generic_after_service_specific_attempt', hash_including(tool_name: 'search_available_slots'))
     end
 
     it 'reads again after a failed read' do

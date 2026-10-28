@@ -63,6 +63,24 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     expect(payload[:service][:prices]).to eq([])
   end
 
+  it 'includes a specialist linked only by usable appointment history' do
+    create(:scheduling_resource_service_stat, account: account, resource: other_resource, service: service_record)
+
+    expect(perform(service_id: service_record.id)[:resources].pluck(:id)).to contain_exactly(resource.id, other_resource.id)
+  end
+
+  it 'searches an explicitly requested snapshot specialist without a service link' do
+    snapshots = Captain::Playground::SchedulingSnapshots.new(
+      'resources' => [{ 'id' => other_resource.id, 'name' => other_resource.name, 'timezone' => 'Asia/Almaty',
+                        'slot_duration_min' => 30, 'active' => true, 'service_ids' => [] }],
+      'services' => [{ 'id' => service_record.id, 'name' => service_record.name, 'duration_min' => 30, 'active' => true }],
+      'appointments' => []
+    )
+
+    expect(perform(resource_ids: [other_resource.id], service_id: service_record.id, snapshots: snapshots)[:resources].pluck(:id))
+      .to eq([other_resource.id])
+  end
+
   it 'does not use a price row assigned to another account and asks for a specialist instead' do
     foreign_service = create(:scheduling_service, account: account, name: 'Unverified service')
     link = create(:scheduling_service_price, account: account, service: foreign_service, resource: other_resource)

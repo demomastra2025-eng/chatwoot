@@ -4,12 +4,6 @@ class Scheduling::AvailableSlotSearchService
   WEEKDAY_KEYS = %w[sun mon tue wed thu fri sat].freeze
   LAST_BOOKING_PATTERN = /\A([01]\d|2[0-3]):[0-5]\d\z/
   MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
-  # Raised only for the Playground snapshot catalog, which still names the services of each specialist; the clinic catalog
-  # never requires a service-price link.
-  MISSING_LINK_ERROR = 'Service is not available for the requested specialists'.freeze
-
-  class MissingServiceLinkError < ArgumentError; end
-
   # A search for a service with no specialist named, when no available specialist is recorded for that service (neither a price
   # link nor a pair of the visit history, see Scheduling::ResourceServiceStat). Searching every specialist instead would offer the
   # slot of a doctor who does not perform the service, so the caller must choose the specialist first (search_scheduling_resources)
@@ -113,10 +107,9 @@ class Scheduling::AvailableSlotSearchService
       missing_ids = @resource_ids - resolved.map(&:id)
       raise ActiveRecord::RecordNotFound, "Specialists not found: #{missing_ids.join(', ')}" if missing_ids.present?
     end
-    if service.present?
-      linked_ids = @snapshots.linked_resource_ids(service.id)
-      raise MissingServiceLinkError, MISSING_LINK_ERROR if @resource_ids.present? && (resolved.map(&:id) - linked_ids).present?
-
+    if service.present? && @resource_ids.blank?
+      linked_ids = @snapshots.linked_resource_ids(service.id) |
+                   Scheduling::ResourceServiceStat.usable.where(account_id: @account.id, service_id: service.id).pluck(:resource_id)
       resolved = resolved.select { |resource| linked_ids.include?(resource.id) }
     end
     resolved

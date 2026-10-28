@@ -37,7 +37,7 @@ module Captain::Runtime::ToolFailure
   # misused the tool, no external system failed.
   GUARD_REASONS = %w[
     invalid_tool_arguments duplicate_failed_tool_call mutation_retry_blocked tool_attempt_limit parallel_mutating_tool_call
-    service_context_required agent_task_not_active part_plan_required handoff_not_authorized tool_request_limit
+    agent_task_not_active part_plan_required handoff_not_authorized tool_request_limit
     tool_budget_exceeded tool_not_bound
   ].freeze
   # The compact reasons of the scheduling tools that are business outcomes. provider_unavailable, internal_failure and
@@ -50,7 +50,7 @@ module Captain::Runtime::ToolFailure
   # Codes of failures that are answers: a record that is not available to this patient, and the Playground's own policy
   # results (an action waits for the approval of the person who tests, or is not allowed in a test).
   BUSINESS_CODES = %w[
-    record_not_available playground_confirmation_required playground_policy_blocked service_context_required tool_budget_exceeded
+    record_not_available playground_confirmation_required playground_policy_blocked tool_budget_exceeded
   ].freeze
   # Writes that only annotate the conversation: they are not an action for the customer.
   ANNOTATION_TOOLS = %w[add_private_note add_contact_note add_label_to_conversation update_priority].freeze
