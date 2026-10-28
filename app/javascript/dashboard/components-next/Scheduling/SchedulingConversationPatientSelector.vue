@@ -281,7 +281,7 @@ const savePatient = async () => {
 <template>
   <section
     v-show="!chips || showChips || isCreating || isEditing || entry?.error"
-    class="shrink-0"
+    class="w-full min-w-0 shrink-0"
     :class="
       compact || chips
         ? 'py-1'

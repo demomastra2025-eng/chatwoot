@@ -170,7 +170,7 @@ onMounted(() => {
         </template>
         <div
           v-if="!isDraft"
-          class="flex flex-col gap-1 pt-1"
+          class="flex flex-col pt-0.5"
           data-test="contact-panel-tags"
         >
           <ContactDetailsItem

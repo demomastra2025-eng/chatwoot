@@ -263,7 +263,7 @@ export default {
     <div>
       <ContactDetailsItem compact :title="$t('CONTACT_PANEL.PRIORITY_LABEL')" />
       <div
-        class="grid grid-cols-4 gap-1 rounded-lg border border-n-weak bg-n-alpha-1 p-1"
+        class="grid grid-cols-4 gap-0.5 rounded-lg border border-n-weak bg-n-alpha-1 p-1"
         role="group"
         :aria-label="$t('CONTACT_PANEL.PRIORITY_LABEL')"
       >
@@ -272,7 +272,7 @@ export default {
           :key="priority.id"
           type="button"
           :aria-pressed="priority.id === assignedPriority.id"
-          class="min-w-0 truncate rounded-md px-1.5 py-1.5 text-center text-xs transition-colors"
+          class="min-w-0 truncate rounded-md px-1 py-1.5 text-center text-xs transition-colors"
           :class="priorityButtonClass(priority)"
           @click="onClickAssignPriority(priority)"
         >

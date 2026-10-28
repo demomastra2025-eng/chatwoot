@@ -160,11 +160,6 @@ const summaryParts = computed(() => {
   const parts = [patientAgeLabel(props.patient, t, locale.value || 'ru')];
   const iin = maskedPatientIin(props.patient);
   if (iin) parts.push(`${t('SCHEDULING.CONTACT.IIN')} ${iin}`);
-  if (
-    hasProviderPatientIdentity(props.patient) ||
-    attributes.value.medelement_patient_card
-  )
-    parts.push(`${t('SCHEDULING.PATIENT_CONTEXT.MEDELEMENT_CARD')} ✓`);
   if (nearestAppointmentLabel.value)
     parts.push(
       `${t('CONTACT_PANEL.NEAREST_APPOINTMENT')} ${nearestAppointmentLabel.value}`

@@ -144,7 +144,7 @@ describe('SchedulingPatientDetails', () => {
     return { wrapper, store };
   };
 
-  it('renders age, masked IIN and MedElement in one grey summary line', async () => {
+  it('renders age and masked IIN in one grey summary line without MedElement', async () => {
     const wrapper = mount(SchedulingPatientDetails, {
       props: { patient, contextKey: key, showName: false, summary: true },
       global: { plugins: [pinia] },
@@ -152,7 +152,7 @@ describe('SchedulingPatientDetails', () => {
     await flushPromises();
     const summary = wrapper.get('[data-test="patient-summary"]');
     expect(summary.text()).toContain('•••• 0000');
-    expect(summary.text()).toContain('MedElement');
+    expect(summary.text()).not.toContain('MedElement');
     expect(summary.text()).toContain(' · ');
     expect(wrapper.find('[data-test="patient-details"]').exists()).toBe(false);
   });
