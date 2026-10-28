@@ -28,7 +28,14 @@ class Integrations::Medelement::RequestTelemetry
   end
 
   def current_hour
-    read_hour(clock.call.utc.strftime('%Y%m%d%H'))
+    hour = clock.call.utc.strftime('%Y%m%d%H')
+    pool.with do |redis|
+      identities = redis.smembers(index_key(hour)).select { |item| item.end_with?(":#{credential_id}") }
+      totals = identities.map { |item| redis.hgetall("medelement:requests:#{hour}:#{item}") }
+      { 'total' => totals.sum { |data| data.fetch('total', 0).to_i },
+        'rate_limited' => totals.sum { |data| data.fetch('rate_limited', 0).to_i },
+        'first_429_at_count' => redis.hget(data_key(hour), 'first_429_at_count') }
+    end
   end
 
   def record_pause(milliseconds)
@@ -75,8 +82,11 @@ class Integrations::Medelement::RequestTelemetry
   attr_reader :configuration, :pool, :clock
 
   def identity
-    fingerprint = Digest::SHA256.hexdigest("#{configuration.integrator_key}\n#{configuration.company_login}").first(32)
-    "#{configuration.account_id}:#{configuration.hook_id}:#{fingerprint}"
+    "#{configuration.account_id}:#{configuration.hook_id}:#{credential_id}"
+  end
+
+  def credential_id
+    Digest::SHA256.hexdigest("#{configuration.integrator_key}\n#{configuration.company_login}").first(32)
   end
 
   def data_key(hour) = "medelement:requests:#{hour}:#{identity}"

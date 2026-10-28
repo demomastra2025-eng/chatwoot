@@ -27,4 +27,16 @@ RSpec.describe Integrations::Medelement::RequestTelemetry do
     expect(rows.last[:last_429_headers]).to include('"x-ratelimit-reason":"[non-numeric]"')
     expect(rows.last.to_s).not_to include('Alice')
   end
+
+  it 'shows a credential-wide 429 count when two hooks share credentials' do
+    attributes = { account_id: 33, hook_id: 44, integrator_key: 'fake-key', company_login: 'fake-clinic' }
+    other_configuration = instance_double(Integrations::Medelement::Configuration, **attributes)
+    first = described_class.new(configuration: configuration, pool: pool, clock: -> { now })
+    second = described_class.new(configuration: other_configuration, pool: pool, clock: -> { now })
+    response = Struct.new(:code, :headers, :body).new(429, {}, 'Too many requests')
+    first.record(operation: 'timetable', lane: :sync_far, response: response, duration_ms: 10)
+    second.record(operation: 'receptions', lane: :other_jobs, response: response, duration_ms: 10)
+
+    expect(first.current_hour).to include('total' => 2, 'rate_limited' => 2)
+  end
 end
