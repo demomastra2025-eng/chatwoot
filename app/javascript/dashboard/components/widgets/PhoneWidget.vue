@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { useWindowSize } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter } from 'dashboard/composables/store';
@@ -63,6 +64,9 @@ const { hasCallActivity, isVisible, ownIncomingCalls, hide } =
 const phone = ref('');
 const selectedInboxId = ref(phoneWidgetStore.selectedInboxId || null);
 const isExpanded = ref(false);
+const mobileOpen = ref(false);
+const { width: viewportWidth } = useWindowSize();
+const mobileDocked = computed(() => viewportWidth.value < 640);
 const isBootstrapping = ref(false);
 const hasBootstrapped = ref(false);
 const sipSessions = ref([]);
@@ -677,16 +681,37 @@ onUnmounted(() => {
         hasOwnCall)
     "
     ref="widgetRef"
-    class="fixed z-40 w-[336px] max-w-[calc(100vw-2rem)]"
-    :class="{ 'ltr:right-4 rtl:left-4 top-16': !position }"
-    :style="positionStyle"
+    class="fixed z-40 max-w-[calc(100vw-2rem)]"
+    :class="
+      mobileDocked
+        ? 'ltr:right-4 rtl:left-4 bottom-4'
+        : ['w-[336px]', !position && 'ltr:right-4 rtl:left-4 top-16']
+    "
+    :style="mobileDocked ? undefined : positionStyle"
     :data-state="callState"
     data-testid="phone-widget"
   >
+    <button
+      v-if="mobileDocked && !mobileOpen"
+      type="button"
+      class="flex items-center gap-2 rounded-full border border-n-strong bg-n-solid-2 px-4 py-2 text-sm font-medium text-n-slate-12 shadow-xl"
+      :aria-label="t('PHONE_WIDGET.EXPAND')"
+      :aria-expanded="false"
+      data-testid="phone-widget-mobile-pill"
+      @click="mobileOpen = true"
+    >
+      <i class="i-lucide-phone" aria-hidden="true" />
+      {{ t('PHONE_WIDGET.TITLE') }}
+    </button>
     <section
+      :style="{ display: mobileDocked && !mobileOpen ? 'none' : 'flex' }"
       class="flex flex-col overflow-hidden rounded-xl border border-n-strong bg-n-solid-2 text-n-slate-12 shadow-xl"
       :class="
-        position ? 'max-h-[calc(100vh-1rem)]' : 'max-h-[calc(100vh-5rem)]'
+        mobileDocked
+          ? 'w-[336px] max-w-[calc(100vw-2rem)] max-h-[min(50vh,420px)]'
+          : position
+            ? 'max-h-[calc(100vh-1rem)]'
+            : 'max-h-[calc(100vh-5rem)]'
       "
       :aria-label="t('PHONE_WIDGET.TITLE')"
       data-testid="phone-widget-panel"
@@ -695,7 +720,7 @@ onUnmounted(() => {
         class="flex shrink-0 touch-none select-none items-center gap-1.5 border-b border-n-weak px-4 py-3"
         :class="isDragging ? 'cursor-grabbing' : 'cursor-grab'"
         data-testid="phone-widget-drag-handle"
-        @pointerdown="startDrag"
+        @pointerdown="!mobileDocked && startDrag($event)"
       >
         <div
           class="flex min-w-0 flex-1 items-center gap-1.5"
@@ -787,10 +812,14 @@ onUnmounted(() => {
           size="sm"
           icon="i-lucide-x"
           class="shrink-0"
-          :aria-label="t('PHONE_WIDGET.HIDE')"
-          :title="t('PHONE_WIDGET.HIDE')"
+          :aria-label="
+            mobileDocked ? t('PHONE_WIDGET.MINIMIZE') : t('PHONE_WIDGET.HIDE')
+          "
+          :title="
+            mobileDocked ? t('PHONE_WIDGET.MINIMIZE') : t('PHONE_WIDGET.HIDE')
+          "
           data-testid="phone-widget-hide"
-          @click="hide"
+          @click="mobileDocked ? (mobileOpen = false) : hide()"
         />
       </header>
 

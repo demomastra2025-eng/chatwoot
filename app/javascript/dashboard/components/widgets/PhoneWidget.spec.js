@@ -208,6 +208,52 @@ describe('PhoneWidget', () => {
     expect(wrapper.find('[data-testid="phone-widget"]').exists()).toBe(false);
   });
 
+  it('docks as a collapsed pill below the dialog header at 390 px and opens on demand', async () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    window.dispatchEvent(new Event('resize'));
+    try {
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      const widget = wrapper.get('[data-testid="phone-widget"]');
+      expect(widget.classes()).toContain('bottom-4');
+      expect(widget.classes()).not.toContain('top-16');
+      expect(
+        wrapper.get('[data-testid="phone-widget-mobile-pill"]').isVisible()
+      ).toBe(true);
+      expect(
+        wrapper.get('[data-testid="phone-widget-panel"]').isVisible()
+      ).toBe(false);
+
+      await wrapper
+        .get('[data-testid="phone-widget-mobile-pill"]')
+        .trigger('click');
+      await flushPromises();
+      expect(
+        wrapper.find('[data-testid="phone-widget-mobile-pill"]').exists()
+      ).toBe(false);
+      expect(
+        wrapper.get('[data-testid="phone-widget-panel"]').element.style.display
+      ).not.toBe('none');
+      await wrapper.get('[data-testid="phone-widget-hide"]').trigger('click');
+      expect(
+        wrapper.get('[data-testid="phone-widget-mobile-pill"]').isVisible()
+      ).toBe(true);
+    } finally {
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        writable: true,
+        value: originalWidth,
+      });
+      window.dispatchEvent(new Event('resize'));
+    }
+  });
+
   it('shows live status outside the profile and keeps sessions running while hidden', async () => {
     const wrapper = mountComponent();
     await flushPromises();
