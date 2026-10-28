@@ -44,6 +44,10 @@ class AccountUser < ApplicationRecord
   validates :user_id, uniqueness: { scope: :account_id }
   validates :reply_signature, length: { maximum: 200 }
 
+  def reply_signature
+    has_attribute?(:reply_signature) ? self[:reply_signature] : nil
+  end
+
   attr_accessor :transfer_to_user_id
 
   def create_notification_setting
