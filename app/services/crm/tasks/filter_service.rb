@@ -15,6 +15,7 @@ class Crm::Tasks::FilterService
     filtered_scope = filter_by_calendar_range(filtered_scope)
     filtered_scope = filter_by_time_bucket(filtered_scope)
     filtered_scope = filter_by_state(filtered_scope)
+    filtered_scope = filter_by_contact(filtered_scope)
     filtered_scope = filter_by_query(filtered_scope)
     apply_custom_attribute_filters(filtered_scope)
   end
@@ -35,6 +36,15 @@ class Crm::Tasks::FilterService
     return scope if params[field_name].blank?
 
     scope.where(field_name => params[field_name])
+  end
+
+  def filter_by_contact(scope)
+    return scope if params[:contact_id].blank?
+
+    contact = account.contacts.find(params[:contact_id])
+    conversation_ids = account.conversations.where(contact_id: contact.id).select(:id)
+    deal_ids = ::Crm::DealContact.where(account_id: account.id, contact_id: contact.id).select(:deal_id)
+    scope.where(originating_conversation_id: conversation_ids).or(scope.where(deal_id: deal_ids))
   end
 
   def filter_by_due_range(scope)

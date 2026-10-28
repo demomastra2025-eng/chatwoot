@@ -12,6 +12,25 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     Crm::Bootstrap::AccountService.new(account: account).perform
   end
 
+  it 'lists only tasks linked to the requested contact through a dialog or deal' do
+    contact = create(:contact, :with_email, account: account)
+    other_contact = create(:contact, :with_email, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    other_conversation = create(:conversation, account: account, contact: other_contact)
+    dialog_task = create(:crm_task, account: account, originating_conversation: conversation)
+    other_task = create(:crm_task, account: account, originating_conversation: other_conversation)
+    deal = create(:crm_deal, account: account)
+    create(:crm_deal_contact, account: account, deal: deal, contact: contact)
+    deal_task = create(:crm_task, account: account, deal: deal, context_kind: 'sales')
+
+    get path, params: { contact_id: contact.id }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    ids = response.parsed_body.fetch('payload').pluck('id')
+    expect(ids).to contain_exactly(dialog_task.id, deal_task.id)
+    expect(ids).not_to include(other_task.id)
+  end
+
   it 'reads an old-writer row through the canonical catalog snapshot without writing on show' do
     task_type = account.crm_task_types.find_by!(code: 'call')
     task_outcome = task_type.outcomes.find_by!(code: 'answered')
