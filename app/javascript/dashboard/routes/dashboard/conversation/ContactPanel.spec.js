@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   toggle: vi.fn(),
   update: vi.fn(),
+  openSections: {},
   sidebarItems: [
     { name: 'conversation_actions' },
     { name: 'macros' },
@@ -42,7 +43,7 @@ vi.mock('dashboard/composables/useUISettings', async () => {
     useUISettings: () => ({
       updateUISettings: mocks.update,
       toggleSidebarUIState: mocks.toggle,
-      isContactSidebarItemOpen: () => true,
+      isContactSidebarItemOpen: key => mocks.openSections[key] ?? true,
       conversationSidebarItemsOrder: ref(mocks.sidebarItems),
     }),
   };
@@ -105,6 +106,9 @@ const mountPanel = async props => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  Object.keys(mocks.openSections).forEach(
+    key => delete mocks.openSections[key]
+  );
   delete chat.is_draft;
 });
 
@@ -144,6 +148,24 @@ describe('ContactPanel modules from PROD base 8f576715f', () => {
     expect(wrapper.findComponent({ name: 'ConversationAction' }).exists()).toBe(
       false
     );
+    expect(
+      wrapper.findComponent({ name: 'CustomAttributes' }).props('contactId')
+    ).toBe(42);
+    expect(
+      wrapper.findComponent({ name: 'ContactNotes' }).props('contactId')
+    ).toBe(42);
+    expect(wrapper.findComponent({ name: 'SharedFiles' }).exists()).toBe(false);
+    expect(wrapper.findComponent({ name: 'MacrosList' }).exists()).toBe(false);
+  });
+
+  it('loads attachments only when the original saved section is open', async () => {
+    mocks.openSections.is_shared_files_open = false;
+    const wrapper = await mountPanel();
+    const attachments = wrapper.findAllComponents({ name: 'AccordionItem' })[3];
+    expect(attachments.props('isOpen')).toBe(false);
+    expect(wrapper.findComponent({ name: 'SharedFiles' }).exists()).toBe(false);
+    attachments.vm.$emit('toggle', true);
+    expect(mocks.toggle).toHaveBeenCalledWith('is_shared_files_open', true);
   });
 });
 
@@ -154,6 +176,21 @@ describe('ContactPanel patient context', () => {
     patientContextKey: '1:9:conversation:123',
     selectedPatient: patient,
   };
+
+  it('keeps the contact profile visible without patient context', async () => {
+    const wrapper = await mountPanel();
+    expect(
+      wrapper.findComponent({ name: 'ContactInfo' }).props('contact').id
+    ).toBe(42);
+    expect(
+      wrapper.findComponent({ name: 'SchedulingPatientDetails' }).exists()
+    ).toBe(false);
+    expect(
+      wrapper
+        .findComponent({ name: 'SchedulingConversationPatientSelector' })
+        .exists()
+    ).toBe(false);
+  });
 
   it('uses contact details when no patient is available', async () => {
     const wrapper = await mountPanel({

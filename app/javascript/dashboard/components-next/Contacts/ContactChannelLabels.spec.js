@@ -62,7 +62,20 @@ describe('ContactChannelLabels', () => {
     expect(wrapper.text()).toContain(
       'Email · Support Email · user@example.com'
     );
+    expect(
+      wrapper.find('[data-testid="new-conversation-indicator"]').exists()
+    ).toBe(false);
   });
+
+  it.each([[], [1], null])(
+    'keeps the new-conversation indicator absent for %s',
+    inboxIds => {
+      const wrapper = mount({ existingConversationInboxIds: inboxIds });
+      expect(
+        wrapper.find('[data-testid="new-conversation-indicator"]').exists()
+      ).toBe(false);
+    }
+  );
 
   it('shows every requested channel brand as one round icon', () => {
     const types = [
