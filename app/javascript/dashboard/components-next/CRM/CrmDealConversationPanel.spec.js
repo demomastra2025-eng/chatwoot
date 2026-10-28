@@ -972,6 +972,32 @@ describe('CrmDealConversationPanel', () => {
       );
     });
 
+    it('keeps an embedded linked conversation on the person dialog after a reply uses another channel', async () => {
+      const wrapper = mountPanel({
+        contacts: [{ id: 42, label: 'Contact', value: 42 }],
+        selectedContactId: 42,
+      });
+      await flushPromises();
+
+      currentChat.value = {
+        id: 41,
+        display_id: 41,
+        is_communication_thread: true,
+        contact_id: 42,
+        meta: { sender: { id: 42 } },
+        conversation_ids: [185],
+        dataFetched: true,
+      };
+      await flushPromises();
+
+      expect(wrapper.emitted('dialogCreated')).toEqual([
+        [{ communicationThreadId: 41, contactId: 42 }],
+      ]);
+      expect(wrapper.findComponent({ name: 'ConversationBox' }).exists()).toBe(
+        true
+      );
+    });
+
     it('asks which of several people to write to', async () => {
       dispatch.mockImplementation(async action => {
         if (action === 'openPersonDialog')

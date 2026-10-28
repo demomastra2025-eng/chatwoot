@@ -82,6 +82,19 @@ const mountComponent = props =>
   });
 
 describe('ConversationContextMenu', () => {
+  it('does not request agents for an inbox that no longer exists', () => {
+    const dispatch = vi.fn();
+    ConversationContextMenu.mounted.call({
+      inboxId: 4865,
+      $store: {
+        getters: { 'inboxes/getInbox': () => undefined },
+        dispatch,
+      },
+    });
+
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
   it('emits label assignment from desktop submenu clicks', async () => {
     const wrapper = mountComponent();
 

@@ -162,10 +162,6 @@ export default {
       type: Boolean,
       default: false,
     },
-    portalSlug: {
-      type: String,
-      default: '',
-    },
     conversationType: {
       type: String,
       default: '',
@@ -362,7 +358,7 @@ export default {
     showReplyChannelMenu() {
       const hasCommunicationChannelMenu =
         this.showCommunicationChannelSelector &&
-        this.replyableCommunicationChannels.length > 1;
+        this.replyableCommunicationChannels.length > 0;
 
       return this.showDirectWhatsappActionMenu || hasCommunicationChannelMenu;
     },

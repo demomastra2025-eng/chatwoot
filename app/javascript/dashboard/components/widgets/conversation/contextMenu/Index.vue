@@ -86,7 +86,6 @@ export default {
     'markAsUnread',
     'markAsRead',
     'assignAgent',
-    'assignTeam',
     'assignLabel',
     'removeLabel',
     'deleteConversation',
@@ -205,7 +204,6 @@ export default {
   computed: {
     ...mapGetters({
       labels: 'labels/getLabels',
-      teams: 'teams/getTeams',
       assignableAgentsUiFlags: 'inboxAssignableAgents/getUIFlags',
       currentUser: 'getCurrentUser',
       currentAccountId: 'getCurrentAccountId',
@@ -243,6 +241,7 @@ export default {
     },
   },
   mounted() {
+    if (!this.$store.getters['inboxes/getInbox']?.(this.inboxId)?.id) return;
     this.$store.dispatch('inboxAssignableAgents/fetch', [this.inboxId]);
   },
   methods: {
@@ -350,9 +349,7 @@ export default {
       />
       <hr class="m-1 rounded border-b border-n-weak dark:border-n-weak" />
     </template>
-    <template
-      v-if="isAllowed([MENU.PRIORITY, MENU.LABEL, MENU.AGENT])"
-    >
+    <template v-if="isAllowed([MENU.PRIORITY, MENU.LABEL, MENU.AGENT])">
       <MenuItemWithSubmenu
         v-if="isAllowed([MENU.PRIORITY])"
         :option="priorityConfig"

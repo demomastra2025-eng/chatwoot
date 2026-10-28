@@ -184,8 +184,8 @@ const normalizedCommunicationThreadDisplayIdFromProps = computed(() =>
 );
 const normalizedCommunicationThreadDisplayId = computed(
   () =>
-    normalizedCommunicationThreadDisplayIdFromProps.value ||
-    personThreadDisplayId.value
+    personThreadDisplayId.value ||
+    normalizedCommunicationThreadDisplayIdFromProps.value
 );
 const isCommunicationThreadTarget = computed(
   () =>
@@ -526,13 +526,15 @@ watch(
   () => currentChat.value?.id,
   () => {
     const chat = currentChat.value;
+    const contactId =
+      selectedPlaceholderContactId.value ||
+      (isLinkedByParent.value ? props.selectedContactId : '');
     if (
-      !selectedPlaceholderContactId.value ||
+      !contactId ||
       !chat?.id ||
       chat.is_draft ||
       !chat.is_communication_thread ||
-      String(chat.contact_id ?? chat.meta?.sender?.id) !==
-        String(selectedPlaceholderContactId.value)
+      String(chat.contact_id ?? chat.meta?.sender?.id) !== String(contactId)
     ) {
       return;
     }
@@ -545,7 +547,7 @@ watch(
     personThreadDisplayId.value = threadId;
     emit('dialogCreated', {
       communicationThreadId: threadId,
-      contactId: selectedPlaceholderContactId.value,
+      contactId,
     });
   }
 );

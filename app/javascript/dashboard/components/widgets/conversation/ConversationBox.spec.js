@@ -100,4 +100,20 @@ describe('ConversationBox labels', () => {
     ]);
     expect(dispatch).not.toHaveBeenCalledWith('dashboardApps/get');
   });
+
+  it('does not request assignable agents for a deleted inbox', () => {
+    const dispatch = vi.fn();
+    ConversationBox.watch.currentChatReplyInboxId.handler.call(
+      {
+        $store: {
+          getters: { 'inboxes/getInbox': () => undefined },
+          state: { inboxAssignableAgents: { records: {} } },
+          dispatch,
+        },
+      },
+      4865
+    );
+
+    expect(dispatch).not.toHaveBeenCalled();
+  });
 });

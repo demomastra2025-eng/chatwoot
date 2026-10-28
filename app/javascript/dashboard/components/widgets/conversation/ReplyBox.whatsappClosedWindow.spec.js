@@ -2,12 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { shallowMount, flushPromises } from '@vue/test-utils';
 import { createStore } from 'vuex';
 import { ref } from 'vue';
+import { config } from '@vue/test-utils';
 
 import inboxes from 'dashboard/store/modules/inboxes';
+import PersonDialogApi from 'dashboard/api/personDialog';
+import ru from 'dashboard/i18n/locale/ru';
 import { REPLY_EDITOR_MODES } from 'dashboard/components/widgets/WootWriter/constants';
 import en from 'dashboard/i18n/locale/en/conversation.json';
 import enTemplates from 'dashboard/i18n/locale/en/whatsappTemplates.json';
 import ReplyBox from './ReplyBox.vue';
+import ReplyTopPanel from 'dashboard/components/widgets/WootWriter/ReplyTopPanel.vue';
+import ReplyBottomPanel from 'dashboard/components/widgets/WootWriter/ReplyBottomPanel.vue';
 
 const FOOTER = en.CONVERSATION.FOOTER;
 const PICKER = enTemplates.WHATSAPP_TEMPLATES.PICKER;
@@ -187,6 +192,7 @@ const mountReplyBox = async ({
   messageTemplates = [],
   chat = chatOf(canReply),
   otherInboxes = [],
+  routeName = 'conversation_through_id',
 } = {}) => {
   mockChat.value = chat;
   const wrapper = shallowMount(ReplyBox, {
@@ -194,6 +200,7 @@ const mountReplyBox = async ({
     global: {
       plugins: [buildStore(inbox, messageTemplates, otherInboxes)],
       directives: { 'on-clickaway': {} },
+      mocks: { $route: { name: routeName, query: {} } },
       stubs: {
         NextButton: NextButtonStub,
         Icon: true,
@@ -213,6 +220,170 @@ const mountReplyBox = async ({
   await flushPromises();
   return wrapper;
 };
+
+const alternateWhatsapp = {
+  conversation_id: null,
+  inbox_id: INBOX_ID,
+  inbox_name: 'WhatsApp',
+  channel: 'Channel::Whatsapp',
+  channel_key: `inbox:${INBOX_ID}`,
+  can_reply: false,
+  can_send_text: false,
+  requires_template: true,
+  disabled: false,
+};
+
+const alternateWeb = {
+  conversation_id: 99,
+  inbox_id: INSTAGRAM_INBOX_ID,
+  inbox_name: 'Сайт',
+  channel: 'Channel::WebWidget',
+  channel_key: 'conversation:99',
+  can_reply: true,
+  can_send_text: true,
+  disabled: false,
+};
+
+describe.each([
+  ['main conversation', 'conversation_through_id'],
+  ['appointment dialog', 'scheduling_appointment'],
+])('blocked conversation in %s', (_surface, routeName) => {
+  let wrapper;
+  const locale = config.global.plugins[0].global.locale;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    locale.value = 'ru';
+  });
+
+  afterEach(() => {
+    wrapper?.unmount();
+    locale.value = 'en';
+    vi.restoreAllMocks();
+  });
+
+  it('offers other channels for a deleted call inbox and sends through the person dialog', async () => {
+    vi.spyOn(PersonDialogApi, 'show').mockResolvedValue({
+      data: { channels: [alternateWhatsapp, alternateWeb] },
+    });
+    wrapper = await mountReplyBox({
+      routeName,
+      chat: {
+        ...chatOf(false),
+        inbox_id: 4865,
+        additional_attributes: { telephony_provider: 'asterisk_analog' },
+      },
+      otherInboxes: [INSTAGRAM_INBOX],
+    });
+
+    expect(PersonDialogApi.show).toHaveBeenCalledWith(5, {
+      includeReplyChannels: true,
+    });
+    expect(wrapper.vm.blockedReplyMessage).toBe(
+      ru.CONVERSATION.REPLY_BLOCKED.CALL
+    );
+    expect(
+      wrapper.findComponent(ReplyTopPanel).props('isReplyRestricted')
+    ).toBe(false);
+    expect(wrapper.vm.replyType).toBe(REPLY_EDITOR_MODES.REPLY);
+    expect(
+      wrapper.findComponent(ReplyBottomPanel).vm.showReplyChannelMenu
+    ).toBe(true);
+
+    wrapper.vm.selectReplyChannel(`inbox:${INBOX_ID}`);
+    await flushPromises();
+    expect(wrapper.vm.isWhatsappTemplateOnly).toBe(true);
+    await wrapper.vm.onSendWhatsAppReply({
+      templateParams: { name: 'sample' },
+    });
+    expect(sendMessageAction.mock.calls.at(-1)[1]).toMatchObject({
+      person_contact_id: 5,
+      targetInboxId: INBOX_ID,
+      channelKey: `inbox:${INBOX_ID}`,
+    });
+  });
+
+  it('offers contact editing when no reply channel exists', async () => {
+    vi.spyOn(PersonDialogApi, 'show').mockResolvedValue({
+      data: { channels: [] },
+    });
+    wrapper = await mountReplyBox({
+      routeName,
+      chat: { ...chatOf(false), inbox_id: null },
+    });
+
+    expect(wrapper.vm.blockedReplyMessage).toBe(
+      ru.CONVERSATION.REPLY_BLOCKED.NO_CHANNEL
+    );
+    expect(
+      wrapper.findComponent(ReplyTopPanel).props('isReplyRestricted')
+    ).toBe(false);
+    expect(wrapper.vm.replyType).toBe(REPLY_EDITOR_MODES.REPLY);
+    expect(wrapper.vm.isEditorDisabled).toBe(true);
+    expect(
+      wrapper.findComponent({ name: 'Banner' }).props('hasActionButton')
+    ).toBe(true);
+    wrapper.findComponent({ name: 'Banner' }).vm.$emit('primaryAction');
+    expect(wrapper.vm.showContactEditModal).toBe(true);
+  });
+
+  it('keeps the reply tab and channel selector in a call-only person thread', async () => {
+    wrapper = await mountReplyBox({
+      routeName,
+      chat: {
+        ...chatOf(false),
+        is_communication_thread: true,
+        channels: [
+          {
+            conversation_id: 42,
+            inbox_id: 4865,
+            channel: 'Channel::Voice',
+            channel_key: 'conversation:42',
+            can_reply: true,
+            disabled: false,
+          },
+          alternateWhatsapp,
+        ],
+      },
+    });
+    wrapper.vm.selectReplyChannel('conversation:42');
+    await flushPromises();
+
+    expect(wrapper.vm.blockedReplyMessage).toBe(
+      ru.CONVERSATION.REPLY_BLOCKED.CALL
+    );
+    expect(wrapper.vm.replyType).toBe(REPLY_EDITOR_MODES.REPLY);
+    expect(
+      wrapper.findComponent(ReplyBottomPanel).vm.showReplyChannelMenu
+    ).toBe(true);
+
+    wrapper.vm.selectReplyChannel(`inbox:${INBOX_ID}`);
+    await flushPromises();
+    expect(wrapper.vm.isWhatsappTemplateOnly).toBe(true);
+    expect(wrapper.vm.blockedReplyReason).toBeNull();
+  });
+
+  it('keeps reply available without channels in a person thread', async () => {
+    wrapper = await mountReplyBox({
+      routeName,
+      chat: {
+        ...chatOf(false),
+        inbox_id: null,
+        is_communication_thread: true,
+        channels: [],
+      },
+    });
+
+    expect(wrapper.vm.blockedReplyMessage).toBe(
+      ru.CONVERSATION.REPLY_BLOCKED.NO_CHANNEL
+    );
+    expect(wrapper.vm.replyType).toBe(REPLY_EDITOR_MODES.REPLY);
+    expect(
+      wrapper.findComponent(ReplyTopPanel).props('isReplyRestricted')
+    ).toBe(false);
+    expect(wrapper.vm.isEditorDisabled).toBe(true);
+  });
+});
 
 const find = selector => document.body.querySelector(selector);
 const calmLine = () => find('[data-test-id="whatsapp-template-only-notice"]');

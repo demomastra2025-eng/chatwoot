@@ -17,6 +17,9 @@ import CopilotEditorSection from './CopilotEditorSection.vue';
 import CopilotSuggestionNotice from './copilot/CopilotSuggestionNotice.vue';
 import MessageSignatureMissingAlert from './MessageSignatureMissingAlert.vue';
 import ReplyBoxBanner from './ReplyBoxBanner.vue';
+import Banner from 'dashboard/components/ui/Banner.vue';
+import EditContact from 'dashboard/routes/dashboard/conversation/contact/EditContact.vue';
+import PersonDialogApi from 'dashboard/api/personDialog';
 import QuotedEmailPreview from './QuotedEmailPreview.vue';
 import { REPLY_EDITOR_MODES } from 'dashboard/components/widgets/WootWriter/constants';
 import WootMessageEditor from 'dashboard/components/widgets/WootWriter/Editor.vue';
@@ -62,7 +65,6 @@ import {
   getCommunicationReplyChannels,
   isCommunicationCallChannel,
   isCommunicationChannelReplyable,
-  isCommunicationThread,
   isCommunicationVoiceChannel,
   isDraftDialog,
   isPersonDialogSending,
@@ -85,6 +87,8 @@ export default {
     AttachmentPreview,
     AudioRecorder,
     ReplyBoxBanner,
+    Banner,
+    EditContact,
     EmojiInput,
     MessageSignatureMissingAlert,
     ReplyBottomPanel,
@@ -162,6 +166,11 @@ export default {
       copilotAcceptedMeta: {},
       selectedReplyConversationId: null,
       selectedDirectReplyAction: COMMUNICATION_CHANNEL_ACTIONS.MESSAGE,
+      alternativeChannels: [],
+      alternativeChatId: null,
+      alternativeRequestId: 0,
+      alternativeLoading: false,
+      showContactEditModal: false,
     };
   },
   computed: {
@@ -177,7 +186,11 @@ export default {
     currentContact() {
       const senderId = this.currentChat?.meta?.sender?.id;
       if (!senderId) return {};
-      return this.$store.getters['contacts/getContact'](senderId);
+      return (
+        this.$store.getters['contacts/getContact'](senderId) ||
+        this.currentChat?.meta?.sender ||
+        {}
+      );
     },
     voiceCallContactId() {
       return this.currentContact?.id || this.currentChat?.meta?.sender?.id;
@@ -190,7 +203,7 @@ export default {
       );
     },
     isCommunicationThreadConversation() {
-      return isCommunicationThread(this.currentChat);
+      return Boolean(this.currentChat?.is_communication_thread || this.isDraft);
     },
     // The dialog of a person who has none yet: its first message makes the dialog, and nothing of it exists on the server.
     isDraft() {
@@ -202,16 +215,71 @@ export default {
       return this.isDraft && isPersonDialogSending(this.currentChat);
     },
     communicationChannels() {
-      return getCommunicationReplyChannels(this.currentChat?.channels || []);
+      const channels = this.isAlternativeReply
+        ? this.alternativeChannels
+        : this.currentChat?.channels || [];
+      const replyChannels = getCommunicationReplyChannels(channels);
+      return this.isAlternativeReply
+        ? replyChannels.filter(channel => !isCommunicationCallChannel(channel))
+        : replyChannels;
+    },
+    needsAlternativeReply() {
+      const sourceInbox = this.$store.getters['inboxes/getInbox'](
+        this.currentChat?.inbox_id
+      );
+      const callOnly =
+        sourceInbox?.channel_type === 'Channel::Voice' ||
+        Boolean(this.currentChat?.additional_attributes?.telephony_provider);
+      const missingInbox = Boolean(
+        this.currentChat?.inbox_id && !sourceInbox?.id
+      );
+      return (
+        !this.isDraft &&
+        !this.isCommunicationThreadConversation &&
+        (this.currentChat?.can_reply === false ||
+          this.currentChat?.meta?.channel === null ||
+          missingInbox ||
+          callOnly) &&
+        this.isFeatureEnabledonAccount(
+          this.accountId,
+          FEATURE_FLAGS.COMMUNICATION_THREADS
+        ) &&
+        !(
+          sourceInbox?.id &&
+          (sourceInbox.channel_type === 'Channel::Whatsapp' ||
+            (sourceInbox.channel_type === 'Channel::TwilioSms' &&
+              sourceInbox.medium === 'whatsapp'))
+        )
+      );
+    },
+    isAlternativeReply() {
+      return this.needsAlternativeReply;
+    },
+    isUnavailableThreadReply() {
+      return (
+        this.isCommunicationThreadConversation &&
+        !this.isDraft &&
+        this.currentChat?.can_reply === false &&
+        this.communicationChannels.length === 0
+      );
+    },
+    usesReplyChannels() {
+      return this.isCommunicationThreadConversation || this.isAlternativeReply;
     },
     showCommunicationChannelSelector() {
       return (
-        this.isCommunicationThreadConversation &&
-        this.communicationChannels.length > 1 &&
+        this.usesReplyChannels &&
+        this.communicationChannels.length > (this.isAlternativeReply ? 0 : 1) &&
         !this.isEditingMessage
       );
     },
     activeReplyChannel() {
+      if (this.isAlternativeReply) {
+        return getCommunicationReplyChannel(
+          { channels: this.communicationChannels },
+          this.selectedReplyConversationId
+        );
+      }
       return (
         getCommunicationReplyChannel(
           this.currentChat,
@@ -223,19 +291,19 @@ export default {
     },
     isDraftOfficialWhatsApp() {
       return (
-        this.isDraft &&
+        (this.isDraft || this.isAlternativeReply) &&
         this.activeReplyChannel?.channel === 'Channel::Whatsapp' &&
         this.activeReplyChannel?.disabled !== true
       );
     },
     selectedChannelCanReply() {
-      if (!this.isCommunicationThreadConversation) {
+      if (!(this.usesReplyChannels || this.isCommunicationThreadConversation)) {
         return this.currentChat?.can_reply;
       }
       return isCommunicationChannelReplyable(this.activeReplyChannel);
     },
     selectedChannelCanSendText() {
-      if (!this.isCommunicationThreadConversation) {
+      if (!(this.usesReplyChannels || this.isCommunicationThreadConversation)) {
         return this.selectedChannelCanReply;
       }
 
@@ -280,6 +348,8 @@ export default {
     isPrivate() {
       if (
         this.selectedChannelCanReply ||
+        this.isAlternativeReply ||
+        this.isUnavailableThreadReply ||
         this.isAWhatsAppChannel ||
         this.isDraftOfficialWhatsApp ||
         this.isAPIInbox ||
@@ -292,6 +362,8 @@ export default {
     isReplyRestricted() {
       return (
         !this.selectedChannelCanReply &&
+        !this.isAlternativeReply &&
+        !this.isUnavailableThreadReply &&
         !(
           this.isAWhatsAppChannel ||
           this.isDraftOfficialWhatsApp ||
@@ -301,7 +373,7 @@ export default {
       );
     },
     inboxId() {
-      return this.isCommunicationThreadConversation
+      return this.usesReplyChannels || this.isCommunicationThreadConversation
         ? this.activeReplyChannel?.inbox_id ||
             this.currentChat?.active_reply_channel_inbox_id ||
             this.currentChat?.inbox_id
@@ -310,7 +382,11 @@ export default {
     inbox() {
       const inbox = this.$store.getters['inboxes/getInbox'](this.inboxId);
       if (inbox?.id) return inbox;
-      if (!this.isDraft || !this.activeReplyChannel) return {};
+      if (
+        (!this.isDraft && !this.isAlternativeReply) ||
+        !this.activeReplyChannel
+      )
+        return {};
 
       return {
         id: this.activeReplyChannel.inbox_id,
@@ -441,7 +517,7 @@ export default {
     isCommunicationVoiceReplyAction() {
       return (
         !this.isOnPrivateNote &&
-        (this.isCommunicationThreadConversation
+        (this.usesReplyChannels || this.isCommunicationThreadConversation
           ? isCommunicationVoiceChannel(this.activeReplyChannel)
           : this.isAVoiceChannel)
       );
@@ -458,7 +534,7 @@ export default {
     isCommunicationCallReplyAction() {
       return (
         !this.isOnPrivateNote &&
-        (this.isCommunicationThreadConversation
+        (this.usesReplyChannels || this.isCommunicationThreadConversation
           ? isCommunicationCallChannel(this.activeReplyChannel)
           : this.isAVoiceChannel || this.isDirectWhatsappCallReplyAction)
       );
@@ -538,6 +614,9 @@ export default {
     conversationId() {
       // A draft has no conversation: no request may carry its screen id.
       if (this.isDraft) return null;
+      if (this.isAlternativeReply) {
+        return this.activeReplyChannel?.conversation_id || null;
+      }
       if (!this.isCommunicationThreadConversation) {
         return this.currentChat.id;
       }
@@ -640,6 +719,15 @@ export default {
     isEditorDisabled() {
       if (this.isCommunicationCallReplyAction) return false;
 
+      if (this.isUnavailableThreadReply && !this.isOnPrivateNote) return true;
+
+      if (
+        this.isAlternativeReply &&
+        !this.isOnPrivateNote &&
+        !this.selectedChannelCanSendText
+      )
+        return true;
+
       return (
         (this.isAWhatsAppChannel ||
           this.isDraftOfficialWhatsApp ||
@@ -658,9 +746,42 @@ export default {
         !this.isEditingMessage
       );
     },
+    blockedReplyReason() {
+      if (this.isUnavailableThreadReply) return 'no_channel';
+      if (
+        this.isCommunicationThreadConversation &&
+        !this.isDraft &&
+        isCommunicationCallChannel(this.activeReplyChannel)
+      )
+        return 'call';
+      if (!this.needsAlternativeReply) return null;
+      const sourceInbox = this.$store.getters['inboxes/getInbox'](
+        this.currentChat?.inbox_id
+      );
+      if (
+        sourceInbox?.channel_type === 'Channel::Voice' ||
+        this.currentChat?.additional_attributes?.telephony_provider ||
+        (this.currentChat?.inbox_id && !sourceInbox?.id)
+      )
+        return 'call';
+      return this.communicationChannels.length || this.alternativeLoading
+        ? null
+        : 'no_channel';
+    },
+    blockedReplyMessage() {
+      return this.$t(
+        `CONVERSATION.REPLY_BLOCKED.${this.blockedReplyReason === 'call' ? 'CALL' : 'NO_CHANNEL'}`
+      );
+    },
   },
   watch: {
     currentChat(conversation, oldConversation) {
+      if (
+        conversation?.id !== oldConversation?.id ||
+        conversation?.can_reply !== oldConversation?.can_reply
+      ) {
+        this.fetchAlternativeChannels();
+      }
       this.syncSelectedReplyChannel(conversation);
       const canReply = this.selectedChannelCanReply;
       if (oldConversation && oldConversation.id !== conversation.id) {
@@ -680,6 +801,8 @@ export default {
 
       if (
         canReply ||
+        this.isAlternativeReply ||
+        this.isUnavailableThreadReply ||
         this.isAWhatsAppChannel ||
         this.isDraftOfficialWhatsApp ||
         this.isAPIInbox ||
@@ -738,6 +861,7 @@ export default {
   },
 
   mounted() {
+    this.fetchAlternativeChannels();
     this.syncSelectedReplyChannel();
     this.syncCopilotSuggestion();
     this.getFromDraft();
@@ -789,6 +913,39 @@ export default {
     emitter.off(CMD_AI_ASSIST, this.executeCopilotAction);
   },
   methods: {
+    async fetchAlternativeChannels() {
+      const chatId = this.currentChat?.id;
+      this.alternativeRequestId += 1;
+      const requestId = this.alternativeRequestId;
+      const contactId =
+        this.currentChat?.contact_id || this.currentChat?.meta?.sender?.id;
+      this.alternativeChannels = [];
+      this.alternativeChatId = chatId;
+      if (!this.needsAlternativeReply || !contactId) return;
+      this.alternativeLoading = true;
+      try {
+        const { data } = await PersonDialogApi.show(contactId, {
+          includeReplyChannels: true,
+        });
+        if (
+          this.alternativeChatId !== chatId ||
+          this.alternativeRequestId !== requestId
+        )
+          return;
+        this.alternativeChannels = data.channels || [];
+        this.syncSelectedReplyChannel();
+        this.syncReplyModeWithSelectedChannel();
+      } catch {
+        // The existing conversation stays visible if the contact dialog cannot be loaded.
+      } finally {
+        if (
+          this.alternativeChatId === chatId &&
+          this.alternativeRequestId === requestId
+        ) {
+          this.alternativeLoading = false;
+        }
+      }
+    },
     syncCopilotSuggestion() {
       this.copilot.detach();
       // A person with no dialog has no conversation to prepare a suggestion for.
@@ -806,7 +963,11 @@ export default {
       });
     },
     syncSelectedReplyChannel(conversation = this.currentChat) {
-      if (!isCommunicationThread(conversation)) {
+      if (
+        !conversation?.is_communication_thread &&
+        !conversation?.is_draft &&
+        !this.isAlternativeReply
+      ) {
         this.selectedReplyConversationId = null;
         return;
       }
@@ -814,14 +975,17 @@ export default {
       this.selectedDirectReplyAction = COMMUNICATION_CHANNEL_ACTIONS.MESSAGE;
       // Nothing is chosen yet: the channel the dialog was opened from (the card lists the channels of the person), else the
       // channel of the last activity.
+      const channelChat = this.isAlternativeReply
+        ? { channels: this.communicationChannels }
+        : conversation;
       const currentChannel = this.selectedReplyConversationId
         ? getCommunicationReplyChannel(
-            conversation,
+            channelChat,
             this.selectedReplyConversationId
           )
-        : this.requestedReplyChannel(conversation);
+        : this.requestedReplyChannel(channelChat);
       const nextChannel =
-        currentChannel || getCommunicationReplyChannel(conversation);
+        currentChannel || getCommunicationReplyChannel(channelChat);
       this.selectedReplyConversationId =
         nextChannel?.channel_key || nextChannel?.conversation_id || null;
     },
@@ -842,6 +1006,8 @@ export default {
 
       if (
         this.selectedChannelCanReply ||
+        this.isAlternativeReply ||
+        this.isUnavailableThreadReply ||
         this.isAWhatsAppChannel ||
         this.isDraftOfficialWhatsApp ||
         this.isAPIInbox ||
@@ -860,6 +1026,20 @@ export default {
         action || COMMUNICATION_CHANNEL_ACTIONS.MESSAGE;
     },
     decorateMessagePayload(messagePayload) {
+      if (this.isAlternativeReply && !this.isOnPrivateNote) {
+        return decoratePayloadWithCommunicationThread(
+          messagePayload,
+          {
+            is_communication_thread: true,
+            is_draft: true,
+            person_contact_id:
+              this.currentChat?.contact_id ||
+              this.currentChat?.meta?.sender?.id,
+            channels: this.communicationChannels,
+          },
+          this.selectedReplyConversationId
+        );
+      }
       return decoratePayloadWithCommunicationThread(
         messagePayload,
         this.currentChat,
@@ -1333,6 +1513,13 @@ export default {
           'createPendingMessageAndSend',
           payload
         );
+        if (this.isAlternativeReply && sentMessage?.communication_thread_id) {
+          const thread = await this.$store.dispatch('getCommunicationThread', {
+            conversationId: sentMessage.communication_thread_id,
+          });
+          if (thread)
+            await this.$store.dispatch('setActiveChat', { data: thread });
+        }
         emitter.emit(BUS_EVENTS.MESSAGE_SENT);
         emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE, { force: true });
         this.removeFromDraft();
@@ -1405,6 +1592,8 @@ export default {
       });
       if (
         canReply ||
+        this.isAlternativeReply ||
+        this.isUnavailableThreadReply ||
         this.isAWhatsAppChannel ||
         this.isDraftOfficialWhatsApp ||
         this.isAPIInbox
@@ -1813,6 +2002,15 @@ export default {
 
 <template>
   <ReplyBoxBanner :message="message" :is-on-private-note="isOnPrivateNote" />
+  <Banner
+    v-if="blockedReplyReason"
+    color-scheme="alert"
+    class="mx-2 mb-2 rounded-lg"
+    :banner-message="blockedReplyMessage"
+    :has-action-button="blockedReplyReason === 'no_channel'"
+    :action-button-label="$t('EDIT_CONTACT.BUTTON_LABEL')"
+    @primary-action="showContactEditModal = true"
+  />
   <CopilotSuggestionNotice
     v-if="showSuggestionNotice"
     :notice="copilot.suggestionNotice.value"
@@ -2040,7 +2238,7 @@ export default {
         :recording-audio-state="recordingAudioState"
         :send-button-text="replyButtonLabel"
         :show-communication-channel-selector="showCommunicationChannelSelector"
-        :is-communication-thread="isCommunicationThreadConversation"
+        :is-communication-thread="usesReplyChannels"
         :communication-channels="communicationChannels"
         :active-reply-channel="activeReplyChannel"
         :direct-reply-action="selectedDirectReplyAction"
@@ -2069,6 +2267,12 @@ export default {
       :show="showWhatsAppTemplatesModal"
       @on-send="onSendWhatsAppReply"
       @cancel="hideWhatsappTemplatesModal"
+    />
+
+    <EditContact
+      v-if="showContactEditModal"
+      v-model:show="showContactEditModal"
+      :contact="currentContact"
     />
 
     <ContentTemplates

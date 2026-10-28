@@ -376,6 +376,11 @@ export default {
         !this.isDraft &&
         !this.currentChat?.can_reply &&
         !this.isAVoiceChannel &&
+        Boolean(this.currentChat?.meta?.channel) &&
+        (this.isAFacebookInbox ||
+          this.isAnInstagramChannel ||
+          this.isATiktokChannel ||
+          this.isAPIInbox) &&
         // A WhatsApp conversation explains its closed window in the reply box
         // itself (one line and the template button), not in a second alert.
         !this.isAWhatsAppChannel &&

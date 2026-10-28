@@ -76,6 +76,7 @@ export default {
       immediate: true,
       handler(inboxId) {
         if (!inboxId) return;
+        if (!this.$store.getters['inboxes/getInbox']?.(inboxId)?.id) return;
         const records = this.$store.state?.inboxAssignableAgents?.records || {};
         const hasCachedInbox = Object.prototype.hasOwnProperty.call(
           records,
@@ -83,17 +84,17 @@ export default {
         );
         if (hasCachedInbox) return;
 
-        this.$options._inFlightInboxIds ||= new Set();
+        this.$options.inFlightInboxIds ||= new Set();
         const key = String(inboxId);
-        if (this.$options._inFlightInboxIds.has(key)) return;
+        if (this.$options.inFlightInboxIds.has(key)) return;
 
-        this.$options._inFlightInboxIds.add(key);
+        this.$options.inFlightInboxIds.add(key);
         Promise.resolve(
           this.$store.dispatch('inboxAssignableAgents/fetch', [inboxId])
         )
           .catch(() => {})
           .finally(() => {
-            this.$options._inFlightInboxIds?.delete(key);
+            this.$options.inFlightInboxIds?.delete(key);
           });
       },
     },
