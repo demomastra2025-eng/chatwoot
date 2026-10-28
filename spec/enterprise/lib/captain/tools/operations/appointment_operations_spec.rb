@@ -106,7 +106,8 @@ RSpec.describe Captain::Tools::Operations::AppointmentOperations, type: :model d
     result = Integrations::Medelement::ResourceAvailabilityService::Result.new(
       status: 'fresh', checked_at: Time.current, slots: [{ medelement_cabinet_code: 'cabinet-1' }], reason: nil
     )
-    allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).and_return(double(perform: result))
+    service = instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: result)
+    allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).and_return(service)
   end
 
   describe 'a booking of staff' do
@@ -132,6 +133,30 @@ RSpec.describe Captain::Tools::Operations::AppointmentOperations, type: :model d
       updated = operations.update_current_appointment(appointment_id: appointment.id, service_id: unmapped.id)
 
       expect(updated.reload).to have_attributes(resource_id: resource.id, service_id: nil)
+      expect(updated.client_comment).to include(unmapped.name)
+    end
+
+    it 'drops an existing unmapped service when moving a booking to a MedElement specialist without passing service_id' do
+      contact.update!(name: 'Ada', last_name: 'Test', phone_number: '+77000000001')
+      stub_provider_availability
+      unmapped = account.scheduling_services.first
+      appointment = operations.create_appointment(**booking, service_id: unmapped.id)
+      medelement_doctor = create(
+        :scheduling_resource,
+        account: account,
+        custom_attributes: {
+          medelement_specialist_code: 'doctor-2',
+          medelement_cabinets: [{ companyCabinetCode: 'cabinet-1' }]
+        }
+      )
+
+      updated = operations.update_current_appointment(
+        appointment_id: appointment.id,
+        resource_id: medelement_doctor.id,
+        custom_attributes: { medelement_cabinet_code: 'cabinet-1' }
+      )
+
+      expect(updated.reload).to have_attributes(resource_id: medelement_doctor.id, service_id: nil)
       expect(updated.client_comment).to include(unmapped.name)
     end
 

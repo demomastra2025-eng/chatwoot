@@ -43,16 +43,17 @@ class Scheduling::Appointments::UpsertService
   attr_reader :account, :actor, :appointment, :params, :appointment_access
 
   def drop_unconfirmed_services!
-    return unless params.key?(:service_id) || params.key?(:service_ids)
+    resource_changed = appointment.persisted? && params.key?(:resource_id) && appointment.resource_id != params[:resource_id].to_i
+    return unless params.key?(:service_id) || params.key?(:service_ids) || resource_changed
 
     resource = resolve_resource!
-    services = resolve_services(current: [])
+    services = resolve_services(current: current_services)
     confirmed, unconfirmed = services.partition do |service|
       Scheduling::Appointments::ServiceConfirmation.bookable?(service: service, resource: resource)
     end
     return if unconfirmed.empty?
 
-    params[:service_ids] = confirmed.map(&:id) if params.key?(:service_ids)
+    params[:service_ids] = confirmed.map(&:id) if params.key?(:service_ids) || current_service_ids.present?
     params[:service_id] = confirmed.first&.id
     comment = params.key?(:client_comment) ? params[:client_comment].to_s : appointment.client_comment.to_s
     names = unconfirmed.map(&:name).reject { |name| comment.include?(name) }

@@ -162,7 +162,7 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
           }
         ],
         observability: observability.merge(provider: 'openrouter'),
-        options: { temperature: 0 }
+        options: openrouter_chat_options
       )
     end
 
@@ -186,6 +186,12 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
     )
   ensure
     FileUtils.rm_f(provider_file_path) if provider_file_path.present? && provider_file_path != file_path
+  end
+
+  def openrouter_chat_options
+    return { temperature: 0 } unless model.to_s.include?('gemini-3')
+
+    { temperature: 0.1, params: { reasoning: { effort: 'minimal' } } }
   end
 
   def openrouter_transcription_prompt

@@ -152,10 +152,16 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
         }
       ],
       observability: observability.merge(runtime_mode: 'audio_transcription', provider: 'openrouter'),
-      options: { temperature: TRANSCRIPTION_TEMPERATURE }
+      options: openrouter_chat_options
     )
 
     response&.content.to_s
+  end
+
+  def openrouter_chat_options
+    return { temperature: TRANSCRIPTION_TEMPERATURE } unless model.to_s.include?('gemini-3')
+
+    { temperature: 0.1, params: { reasoning: { effort: 'minimal' } } }
   end
 
   def update_transcription(transcribed_text)

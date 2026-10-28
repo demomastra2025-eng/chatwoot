@@ -75,8 +75,7 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
 
     call_session.reload
     expect(call_session.transcript_ref).to eq('call_recording_transcript:operator-call-1')
-    expect(call_session.metadata.dig('recording', 'transcription', 'status')).to eq('completed')
-    expect(call_session.metadata.dig('recording', 'transcription', 'text')).to eq(transcript)
+    expect(call_session.metadata.dig('recording', 'transcription')).to include('status' => 'completed', 'text' => transcript)
 
     data = voice_message.reload.content_attributes['data']
     expect(data['transcript_ref']).to eq('call_recording_transcript:operator-call-1')
@@ -254,5 +253,42 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
     result = service.perform
     expect(result).to include(success: true, transcript: "[00:01] Сотрудник: Добрый день\n[00:04] Клиент: Здравствуйте")
     expect(call_session.reload.metadata.dig('recording', 'transcription', 'model')).to eq('google/gemini-3.8-flash')
+  end
+
+  it 'persists summary and clears stale transcript text when a forced re-transcription finds only IVR pre-roll' do
+    call_session.update!(
+      metadata: call_session.metadata.deep_merge(
+        'recording' => {
+          'transcription' => {
+            'status' => 'completed',
+            'text' => '[00:00] Сотрудник: Сервис тажахсартуишен жазамас.',
+            'transcript_items' => [{ 'speaker' => 'operator', 'start_sec' => 0, 'text' => 'Сервис тажахсартуишен жазамас.' }]
+          }
+        }
+      )
+    )
+    service = described_class.new(call_session, force: true)
+    allow(service).to receive(:model).and_return('google/gemini-3.8-flash')
+    allow(Llm::Config).to receive(:provider_for_model).with('google/gemini-3.8-flash', account: account).and_return('openrouter')
+    allow(Llm::Models).to receive(:type_for).with('google/gemini-3.8-flash', account: account).and_return('chat')
+    allow(Llm::Models).to receive(:supports_audio_input?).with('google/gemini-3.8-flash', account: account).and_return(true)
+
+    payload = '{"summary":"Звонок прервался на приветствии автоответчика оператора связи, разговора не было.",' \
+              '"outcome":"no_answer","topics":[],"items":[]}'
+    allow(Llm::Runtime).to receive(:chat).and_return(instance_double(RubyLLM::Message, content: payload))
+
+    result = service.perform
+    expect(result).to include(
+      success: true,
+      transcript: 'Звонок прервался на приветствии автоответчика оператора связи, разговора не было.'
+    )
+    tr = call_session.reload.metadata.dig('recording', 'transcription')
+    expect(tr).to include(
+      'status' => 'completed',
+      'model' => 'google/gemini-3.8-flash',
+      'outcome' => 'no_answer',
+      'text' => '',
+      'transcript_items' => []
+    )
   end
 end

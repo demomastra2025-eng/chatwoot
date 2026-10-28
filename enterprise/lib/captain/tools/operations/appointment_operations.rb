@@ -74,15 +74,17 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
 
     starts_at, ends_at = normalize_appointment_times(resource_id: resource_id || appointment.resource_id, starts_at: starts_at, ends_at: ends_at)
     explicit_service = !service_id.equal?(SERVICE_OMITTED)
+    resource_changed = resource_id.present? && resource_id.to_i != appointment.resource_id
     validated_service = validate_booking_inputs!(starts_at: starts_at, ends_at: ends_at, duration_min: duration_min,
                                                  service_id: explicit_service ? service_id : nil, appointment: appointment)
-    validated_service, client_comment = bookable_service_and_comment(resource_id || appointment.resource_id, validated_service,
+    candidate_service = explicit_service ? validated_service : (appointment.service if resource_changed)
+    validated_service, client_comment = bookable_service_and_comment(resource_id || appointment.resource_id, candidate_service,
                                                                      client_comment || appointment.client_comment)
     service_id = validated_service&.id
 
     params = {}
     params[:resource_id] = resource_id unless resource_id.nil?
-    params[:service_id] = service_id if explicit_service
+    params[:service_id] = service_id if explicit_service || (resource_changed && candidate_service.present? && service_id.nil?)
     params[:starts_at] = starts_at unless starts_at.nil?
     params[:ends_at] = ends_at unless ends_at.nil?
     params[:duration_min] = duration_min unless duration_min.nil?

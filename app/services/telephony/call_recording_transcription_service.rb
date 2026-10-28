@@ -25,7 +25,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
     end
 
     result = Telephony::CallTranscript.parse(transcribe_recording)
-    transcript = result['text']
+    transcript = result['text'].presence || result['summary']
     return { error: 'Empty transcript' } if transcript.blank?
 
     update_call_and_message!(result, source: 'audio_transcription')
@@ -112,7 +112,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
     if provider_path != file_path && @audio_probe['duration_seconds'].blank?
       @audio_probe = @audio_probe.merge(Telephony::CallTranscript.probe(provider_path))
     end
-    return unless @audio_probe['channels'] == 2
+    return unless @audio_probe['channels'] == 2 && !openrouter_chat_transcription?
 
     @channel_activity = Telephony::CallTranscript.channel_activity(provider_path, duration_seconds: @audio_probe['duration_seconds'])
   end
@@ -352,6 +352,8 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
       'Transcribe the attached clinic call recording accurately in the languages spoken (Russian, Kazakh, or mixed). ' \
       'Preserve code switching; do not translate. Ignore carrier IVR pre-roll ' \
       '("Сервисті жақсарту үшін жазамыз / Ведётся запись для улучшения сервиса"). ' \
+      'If the recording has only carrier IVR pre-roll, ringback, or silence with no human conversation, return items: [], ' \
+      'outcome: "no_answer", and a 1-sentence Russian summary stating that no conversation took place. ' \
       'Return ONLY valid compact JSON with summary in Russian (1-2 factual sentences), ' \
       'outcome (booked/rescheduled/cancelled/consultation/callback_requested/no_answer/other), 1-5 topics, ' \
       'and items ([[start_sec, "op"|"cl", "text"]]) or transcript_items (speaker operator/client, timestamp MM:SS, start_sec, text).',
@@ -378,11 +380,16 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
 
     channel_1_role = channel_role_label('channel_1', default: 'Operator')
     channel_2_role = channel_role_label('channel_2', default: 'Client')
-    [
+    base = [
       'This is a 2-channel stereo call recording where each speaker is recorded on a separate channel:',
       "Channel 1 (Left channel) is #{channel_1_role}, and Channel 2 (Right channel) is #{channel_2_role}.",
-      'Use the left/right channel activity to attribute every turn; never infer the role from dialogue content when channels disagree.'
-    ].join(' ') + " Activity windows in seconds, left=#{@channel_activity&.dig('0')}, right=#{@channel_activity&.dig('1')}."
+      'Attribute each speaker consistently by voice and role throughout the call: "op" (operator / Сотрудник) is the clinic ' \
+      'representative or receptionist who answers on behalf of the clinic, explains services/prices/doctors or books visits, ' \
+      'and "cl" (client / Клиент) is the caller/patient.'
+    ].join(' ')
+    return base if @channel_activity.blank?
+
+    "#{base} Activity windows in seconds, left=#{@channel_activity['0']}, right=#{@channel_activity['1']}."
   end
 
   def dual_channel_recording?

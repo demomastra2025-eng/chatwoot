@@ -524,16 +524,18 @@ class Captain::ReplySuggestion::ActionApprovalService
         starts_at: arguments[:starts_at],
         ends_at: arguments[:ends_at]
       )
+      resource_changed = arguments[:resource_id].present? && arguments[:resource_id].to_i != appointment.resource_id
       validated_service = operation.send(
         :validate_booking_inputs!,
         starts_at: starts_at, ends_at: ends_at, duration_min: arguments[:duration_min],
         service_id: arguments[:service_id], appointment: appointment
       )
+      candidate_service = arguments.key?(:service_id) ? validated_service : (appointment.service if resource_changed)
       validated_service, arguments[:client_comment] = operation.send(
         :bookable_service_and_comment, arguments[:resource_id] || appointment.resource_id,
-        validated_service, arguments[:client_comment] || appointment.client_comment
+        candidate_service, arguments[:client_comment] || appointment.client_comment
       )
-      arguments[:service_id] = nil if arguments[:service_id].present? && validated_service.nil?
+      arguments[:service_id] = nil if (arguments[:service_id].present? || (resource_changed && candidate_service.present?)) && validated_service.nil?
       service_id = validated_service&.id
       params = build_update_comparison_params(arguments, starts_at: starts_at, ends_at: ends_at, service_id: service_id, operation: operation)
       if operation.send(:appointment_unchanged?, appointment, params)
