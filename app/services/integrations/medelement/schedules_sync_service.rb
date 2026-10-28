@@ -8,14 +8,14 @@ class Integrations::Medelement::SchedulesSyncService
   MAX_FAILURE_BACKOFF = 6.hours
   NEAR_REFRESH = 1.hour
   FAR_REFRESH = 12.hours
-  LONG_REFRESH = 24.hours
+  LONG_REFRESH = 48.hours
   LAST_SEEN_MAX_AGE = 1.hour
   SPECIALIST_CODE_KEY = Integrations::Medelement::SpecialistsSyncService::SPECIALIST_CODE_KEY
   LAST_SEEN_AT_KEY = Integrations::Medelement::SpecialistsSyncService::LAST_SEEN_AT_KEY
 
   def self.refresh_interval(offset)
     return NEAR_REFRESH if offset < 2
-    return FAR_REFRESH if offset < 14
+    return FAR_REFRESH if offset < 15
 
     LONG_REFRESH
   end
@@ -39,7 +39,7 @@ class Integrations::Medelement::SchedulesSyncService
       @counters[:skipped_count] -= days.size
       refresh(days)
     rescue Integrations::Medelement::Client::ApiError => e
-      if e.status == 429
+      if e.status == 429 || e.is_a?(Integrations::Medelement::Client::RateLimitedError)
         rate_limited = true
         break
       end
@@ -77,10 +77,11 @@ class Integrations::Medelement::SchedulesSyncService
   def due_days_for_resource(resource, existing)
     return [] unless recently_polled?(resource)
 
+    changes = Integrations::Medelement::ScheduleChangeTracker.new(hook: hook).changes_for(resource.id)
     SCHEDULE_HORIZON_DAYS.times.filter_map do |offset|
       date = today + offset
       stored = existing[[resource.id, date]]
-      [resource, date, stored] if due?(stored, offset)
+      [resource, date, stored] if due?(stored, offset, changes[date.iso8601])
     end
   end
 
@@ -96,12 +97,16 @@ class Integrations::Medelement::SchedulesSyncService
     false
   end
 
-  def due?(stored, offset)
+  def due?(stored, offset, changed_at = nil)
     return false if retry_backoff?(stored)
 
     checked_at = stored&.source_checked_at
     refresh_interval = self.class.refresh_interval(offset)
-    checked_at.nil? || checked_at <= now - refresh_interval
+    return true if checked_at.nil? || checked_at <= now - refresh_interval
+
+    changed_at.present? && Time.iso8601(changed_at) > checked_at
+  rescue ArgumentError
+    false
   end
 
   def retry_backoff?(stored)
@@ -169,8 +174,9 @@ class Integrations::Medelement::SchedulesSyncService
     resource = days.first.first
     dates = days.map { |_resource, date, _stored| date }
     @counters[:request_count] += 1
+    lane = dates.min < today + 2 ? :sync_near : :sync_far
     payload = client.timetable(specialist_code: resource.custom_attributes[SPECIALIST_CODE_KEY].to_s,
-                               starts_on: dates.min, ends_on: dates.max, allow_partial: true, retry_429: false)
+                               starts_on: dates.min, ends_on: dates.max, allow_partial: true, retry_429: false, lane: lane)
     days.each do |_day_resource, date, stored|
       day = payload[date.strftime('%d.%m.%Y')] if payload.is_a?(Hash)
       kind, windows = classify_day(day, date)

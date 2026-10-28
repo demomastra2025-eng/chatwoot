@@ -454,6 +454,7 @@ class Integrations::Medelement::ReceptionsSyncService
       kind: appointment.previous_changes.key?('id') ? 'created' : 'changed',
       changed_fields: changed_fields, full_sweep_run: @sync_run
     )
+    Integrations::Medelement::ScheduleChangeTracker.new(hook: @hook).mark_reception!(reception)
   rescue ActiveRecord::ActiveRecordError => e
     raise Integrations::Medelement::DeltaMissAudit::AuditUnavailableError, 'Medelement delta miss audit failed', cause: e
   end

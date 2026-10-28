@@ -111,6 +111,7 @@ class Integrations::Medelement::ReceptionsDeltaService
 
     result = apply_or_skip(code, detail, entries)
     mark_seen!(code, marker)
+    Integrations::Medelement::ScheduleChangeTracker.new(hook: hook).mark_reception!(detail) unless refused?(result)
     result
   end
 
