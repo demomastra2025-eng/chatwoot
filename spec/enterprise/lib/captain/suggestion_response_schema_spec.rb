@@ -70,6 +70,18 @@ RSpec.describe Captain::SuggestionResponseSchema do
       expect(prompt).not_to include('response_mode to human')
     end
 
+    it 'uses the staff signature for suggestions while preserving the autonomous persona' do
+      context = OpenStruct.new(context: { state: { source: 'reply_suggestion' }, staff_reply_signature: 'Clinic Test, operator Ana' })
+      suggestion = assistant.agent(suggestion_tools: true).get_system_prompt(context)
+      autonomous = system_prompt(assistant.agent, 'incoming_message')
+
+      expect(suggestion).to include('# Staff signature for this suggestion', 'Clinic Test, operator Ana',
+                                    'Never introduce yourself with the assistant persona name')
+      expect(autonomous).not_to include('Clinic Test, operator Ana', 'Staff signature for this suggestion')
+      expect([suggestion, autonomous]).to all(include('put each offered time, price and condition on its own line',
+                                                      'Offer no more than three time options', 'do not infer a reason from empty slots alone'))
+    end
+
     describe 'the rules of a suggestion before it hands over, asks or stays silent' do
       let(:lookup_rule) do
         '- Before you decide that the sources have no answer, call the tools the clinic instructions and this request need: ' \

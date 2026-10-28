@@ -11,6 +11,7 @@ import { parseBoolean } from '@chatwoot/utils';
 import UserProfilePicture from './UserProfilePicture.vue';
 import UserBasicDetails from './UserBasicDetails.vue';
 import MessageSignature from './MessageSignature.vue';
+import ReplySignature from './ReplySignature.vue';
 import FontSize from './FontSize.vue';
 import UserLanguageSelect from './UserLanguageSelect.vue';
 import HotKeyCard from './HotKeyCard.vue';
@@ -27,6 +28,7 @@ import { CONVERSATION_ACCESS_PERMISSIONS } from 'dashboard/constants/permissions
 export default {
   components: {
     MessageSignature,
+    ReplySignature,
     SectionLayout,
     FontSize,
     UserLanguageSelect,
@@ -62,6 +64,7 @@ export default {
       displayName: '',
       email: '',
       messageSignature: '',
+      replySignature: '',
       hotKeys: [
         {
           key: 'enter',
@@ -99,6 +102,14 @@ export default {
     isMfaEnabled() {
       return parseBoolean(window.chatwootConfig?.isMfaEnabled);
     },
+    profileAccountId() {
+      return Number(this.$route.params.accountId);
+    },
+  },
+  watch: {
+    '$route.params.accountId'() {
+      this.initializeReplySignature();
+    },
   },
   mounted() {
     if (this.currentUserId) {
@@ -112,6 +123,13 @@ export default {
       this.avatarUrl = this.currentUser.avatar_url;
       this.displayName = this.currentUser.display_name;
       this.messageSignature = this.currentUser.message_signature;
+      this.initializeReplySignature();
+    },
+    initializeReplySignature() {
+      const membership = this.currentUser.accounts?.find(
+        account => account.id === this.profileAccountId
+      );
+      this.replySignature = membership?.reply_signature || '';
     },
     async dispatchUpdate(payload, successMessage, errorMessage) {
       let alertMessage = '';
@@ -162,6 +180,16 @@ export default {
       );
 
       await this.dispatchUpdate(payload, successMessage, errorMessage);
+    },
+    async updateReplySignature(signature) {
+      await this.dispatchUpdate(
+        {
+          account_id: this.profileAccountId,
+          reply_signature: signature,
+        },
+        this.$t('PROFILE_SETTINGS.FORM.REPLY_SIGNATURE.API_SUCCESS'),
+        this.$t('PROFILE_SETTINGS.FORM.REPLY_SIGNATURE.API_ERROR')
+      );
     },
     updateProfilePicture({ file, url }) {
       this.avatarFile = file;
@@ -261,6 +289,16 @@ export default {
         <MessageSignature
           :message-signature="messageSignature"
           @update-signature="updateSignature"
+        />
+      </SectionLayout>
+      <SectionLayout
+        with-border
+        :title="$t('PROFILE_SETTINGS.FORM.REPLY_SIGNATURE.TITLE')"
+        :description="$t('PROFILE_SETTINGS.FORM.REPLY_SIGNATURE.NOTE')"
+      >
+        <ReplySignature
+          :model-value="replySignature"
+          @save="updateReplySignature"
         />
       </SectionLayout>
       <SectionLayout

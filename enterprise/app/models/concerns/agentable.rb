@@ -37,6 +37,7 @@ module Concerns::Agentable
       part = context&.context&.[](:part_run).present?
       suggestion = (state[:source] || state['source']).to_s == 'reply_suggestion'
       enhanced_context[:patient_language] = context&.context&.[](:patient_language)
+      enhanced_context[:staff_reply_signature] = context&.context&.[](:staff_reply_signature) if suggestion
       return compact_agent_instructions(
         enhanced_context, state, prompt_state, part: part, suggestion: suggestion, done: Captain::DoneActions.for_run(context&.context),
                                                preload: (context&.context&.[](:suggestion_preload) if suggestion)

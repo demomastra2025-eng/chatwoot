@@ -110,6 +110,14 @@
         "ERROR": "Message Signature cannot be empty",
         "PLACEHOLDER": "Insert your personal message signature here."
       },
+      "REPLY_SIGNATURE": {
+        "TITLE": "Подпись в ответах",
+        "NOTE": "Используется в приветствии черновиков «Предложить ответ» только в этом рабочем пространстве.",
+        "PLACEHOLDER": "Клиника «Әлия», администратор Улжан",
+        "SAVE": "Сохранить подпись",
+        "API_SUCCESS": "Подпись сохранена",
+        "API_ERROR": "Не удалось сохранить подпись"
+      },
       "PASSWORD_SECTION": {
         "TITLE": "Password",
         "NOTE": "Updating your password would reset your logins in multiple devices.",

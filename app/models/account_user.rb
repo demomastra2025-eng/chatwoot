@@ -42,6 +42,7 @@ class AccountUser < ApplicationRecord
   after_save :update_presence_in_redis, if: :saved_change_to_availability?
 
   validates :user_id, uniqueness: { scope: :account_id }
+  validates :reply_signature, length: { maximum: 200 }
 
   attr_accessor :transfer_to_user_id
 

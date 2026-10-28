@@ -11,6 +11,7 @@ module Captain::Assistant::RunPayloadHelper
     }
     # A caller with an id of its own (a reply suggestion request) gives it to the run: all llm events of the run share it.
     context[:agent_request_id] = @request_id if @request_id.present?
+    context[:staff_reply_signature] = Current.account_user&.reply_signature.to_s.strip if suggestion_run?
     graph_run? ? agent_run_context.prepare(context) : context
   end
 
