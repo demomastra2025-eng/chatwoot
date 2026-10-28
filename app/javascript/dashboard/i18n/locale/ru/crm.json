@@ -571,8 +571,8 @@
       "RETRY_LOAD": "Повторить загрузку",
       "NEW_TASK": "Новая задача",
       "PREFILL": {
-        "CONVERSATION_GENERIC": "Follow-up по диалогу #{conversationId}",
-        "CONVERSATION_WITH_CONTACT": "Follow-up с {contactName}",
+        "CONVERSATION_GENERIC": "Задача по диалогу #{conversationId}",
+        "CONVERSATION_WITH_CONTACT": "Задача для {contactName}",
         "DEAL": "Задача по сделке «{dealTitle}»"
       },
       "PRIORITY": {

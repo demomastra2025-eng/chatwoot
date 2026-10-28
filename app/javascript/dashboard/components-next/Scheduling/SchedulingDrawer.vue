@@ -270,6 +270,7 @@ const handleOutsideTrigger = () => {
           >
             <aside
               ref="panelRef"
+              data-modal-safe-interaction
               class="flex h-full w-full flex-col overflow-hidden border border-n-weak bg-n-solid-2 shadow-2xl sm:rounded-[1.75rem]"
               :class="[widthClass, panelClass]"
               role="dialog"

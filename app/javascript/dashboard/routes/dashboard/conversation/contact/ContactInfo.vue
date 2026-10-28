@@ -18,11 +18,9 @@ import SocialIcons from './SocialIcons.vue';
 import EditContact from './EditContact.vue';
 import ContactChannelLabels from 'dashboard/components-next/Contacts/ContactChannelLabels.vue';
 import ContactMergeModal from 'dashboard/modules/contact/ContactMergeModal.vue';
+import CrmContactTaskDrawer from 'dashboard/components-next/CRM/CrmContactTaskDrawer.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import InlineInput from 'dashboard/components-next/inline-input/InlineInput.vue';
-import NextDialog from 'dashboard/components-next/dialog/Dialog.vue';
-import NextInput from 'dashboard/components-next/input/Input.vue';
-import CrmTasksAPI from 'dashboard/api/crm/tasks';
 import SchedulingConversationAppointmentsSidebar from 'dashboard/components-next/Scheduling/SchedulingConversationAppointmentsSidebar.vue';
 import CrmConversationDealsSidebar from 'dashboard/components-next/CRM/CrmConversationDealsSidebar.vue';
 
@@ -41,9 +39,8 @@ export default {
     SocialIcons,
     ContactChannelLabels,
     ContactMergeModal,
+    CrmContactTaskDrawer,
     InlineInput,
-    NextDialog,
-    NextInput,
     SchedulingConversationAppointmentsSidebar,
     CrmConversationDealsSidebar,
   },
@@ -59,8 +56,9 @@ export default {
     selectedPatient: { type: Object, default: null },
     patientContextKey: { type: String, default: '' },
     patientContextEnabled: { type: Boolean, default: false },
+    canAddFamilyMember: { type: Boolean, default: false },
   },
-  emits: ['panelClose'],
+  emits: ['panelClose', 'addFamilyMember'],
   setup() {
     const { isAdmin } = useAdmin();
     return {
@@ -76,8 +74,7 @@ export default {
       moreOpen: false,
       appointmentOpen: false,
       dealOpen: false,
-      taskTitle: '',
-      taskSaving: false,
+      taskOpen: false,
     };
   },
   computed: {
@@ -295,31 +292,13 @@ export default {
       });
     },
     onCreateTask() {
-      this.$refs.taskDialog?.open?.();
+      this.taskOpen = true;
     },
     onCreateAppointment() {
       this.appointmentOpen = true;
       this.$nextTick(() => {
         this.$refs.appointmentSidebar?.startCreateAppointment?.();
       });
-    },
-    async saveTask() {
-      if (!this.taskTitle.trim() || this.taskSaving) return;
-      this.taskSaving = true;
-      try {
-        await CrmTasksAPI.create({
-          title: this.taskTitle.trim(),
-          activity_type: 'task',
-          context_kind: 'personal',
-        });
-        this.taskTitle = '';
-        this.$refs.taskDialog?.close?.();
-        useAlert(this.$t('CRM.TASKS.SUCCESS_CREATED'));
-      } catch (error) {
-        useAlert(error.message || this.$t('CONTACT_PANEL.TASK_ERROR'));
-      } finally {
-        this.taskSaving = false;
-      }
     },
     startEditingName() {
       this.editName = this.contact.name || '';
@@ -417,6 +396,7 @@ export default {
               />
             </h3>
           </div>
+          <slot name="patient-summary" />
 
           <p v-if="additionalAttributes.description" class="break-words mb-0.5">
             {{ additionalAttributes.description }}
@@ -484,7 +464,9 @@ export default {
               :existing-conversation-inbox-ids="existingConversationInboxIds"
               :title="$t('CONTACT_PANEL.CHANNEL_IDENTITIES')"
               :copy-on-click="false"
+              icon-only
             />
+            <slot name="after-channels" />
           </div>
         </div>
         <div
@@ -563,6 +545,17 @@ export default {
                 >{{ $t('CONTACT_PANEL.OPEN_PROFILE') }}</a
               >
               <button
+                v-if="canAddFamilyMember"
+                type="button"
+                class="block w-full rounded px-3 py-2 text-left text-sm text-n-slate-12 hover:bg-n-alpha-2"
+                @click="
+                  moreOpen = false;
+                  $emit('addFamilyMember');
+                "
+              >
+                {{ $t('SCHEDULING.PATIENT_CONTEXT.ADD_FAMILY_MEMBER') }}
+              </button>
+              <button
                 v-if="isAdmin"
                 type="button"
                 class="block w-full rounded px-3 py-2 text-left text-sm text-n-ruby-11 hover:bg-n-alpha-2"
@@ -586,17 +579,12 @@ export default {
         @cancel="closeEditModal"
       />
       <ContactMergeModal ref="mergeModal" :primary-contact="contact" />
-      <NextDialog
-        ref="taskDialog"
-        width="md"
-        :title="$t('CRM.TASKS.NEW_TASK')"
-        :confirm-button-label="$t('SCHEDULING.GENERAL.CREATE')"
-        :disable-confirm-button="!taskTitle.trim() || taskSaving"
-        :is-loading="taskSaving"
-        @confirm="saveTask"
-      >
-        <NextInput v-model="taskTitle" :label="$t('CRM.TASKS.FORM.TITLE')" />
-      </NextDialog>
+      <CrmContactTaskDrawer
+        v-if="taskOpen"
+        v-model="taskOpen"
+        :contact="contact"
+        :current-chat="currentChat"
+      />
     </div>
     <woot-delete-modal
       v-if="showDeleteModal"

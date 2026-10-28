@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { shallowMount } from '@vue/test-utils';
 
 import ContactInfo from './ContactInfo.vue';
-import CrmTasksAPI from 'dashboard/api/crm/tasks';
 import {
   CRM_DEAL_MANAGE_PERMISSIONS,
   CRM_TASK_MANAGE_PERMISSIONS,
@@ -16,9 +15,6 @@ const useUISettingsMock = vi.fn();
 
 vi.mock('dashboard/composables/useAdmin', () => ({
   useAdmin: (...args) => useAdminMock(...args),
-}));
-vi.mock('dashboard/api/crm/tasks', () => ({
-  default: { create: vi.fn() },
 }));
 
 vi.mock('dashboard/composables/useUISettings', () => ({
@@ -67,9 +63,11 @@ const buildWrapper = ({
   conversations = [],
   contact = {},
   showActions = false,
+  canAddFamilyMember = false,
 } = {}) =>
   shallowMount(ContactInfo, {
     props: {
+      canAddFamilyMember,
       contact: {
         id: 154,
         name: 'Jane Doe',
@@ -98,6 +96,7 @@ const buildWrapper = ({
         ContactInfoRow: true,
         ContactMergeModal: true,
         CrmConversationDealsSidebar: true,
+        CrmContactTaskDrawer: true,
         SchedulingConversationAppointmentsSidebar: true,
         ComboBox: true,
         EditContact: true,
@@ -196,19 +195,27 @@ describe('ContactInfo', () => {
     expect(routerPushMock).not.toHaveBeenCalled();
   });
 
-  it('creates a task from a popup without navigating away', async () => {
-    CrmTasksAPI.create.mockResolvedValue({ data: { payload: { id: 16 } } });
+  it('opens the shared full task form over the contact panel', async () => {
     const wrapper = buildWrapper();
     wrapper.vm.onCreateTask();
-    await wrapper.setData({ taskTitle: 'Позвонить пациенту' });
-    await wrapper.vm.saveTask();
-    expect(CrmTasksAPI.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: 'Позвонить пациенту',
-        activity_type: 'task',
-      })
-    );
+    await wrapper.vm.$nextTick();
+    expect(
+      wrapper.findComponent({ name: 'CrmContactTaskDrawer' }).exists()
+    ).toBe(true);
     expect(routerPushMock).not.toHaveBeenCalled();
+  });
+
+  it('places family-member creation in the More menu', async () => {
+    const wrapper = buildWrapper({ canAddFamilyMember: true });
+    await wrapper.setData({ moreOpen: true });
+    const action = wrapper
+      .findAll('button')
+      .find(button =>
+        button.text().includes('SCHEDULING.PATIENT_CONTEXT.ADD_FAMILY_MEMBER')
+      );
+    expect(action).toBeDefined();
+    await action.trigger('click');
+    expect(wrapper.emitted('addFamilyMember')).toHaveLength(1);
   });
 
   it('keeps the contact owner in the edit modal instead of the panel', async () => {
