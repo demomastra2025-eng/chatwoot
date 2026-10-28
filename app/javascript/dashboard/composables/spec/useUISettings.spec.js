@@ -97,6 +97,22 @@ describe('useUISettings', () => {
       DEFAULT_CONVERSATION_SIDEBAR_ITEMS_ORDER;
   });
 
+  it('migrates legacy default conversation_sidebar_items_order to place notes and files first', () => {
+    getUISettingsMock.value.conversation_sidebar_items_order = [
+      { name: 'conversation_actions' },
+      { name: 'macros' },
+      { name: 'contact_attributes' },
+      { name: 'contact_notes' },
+      { name: 'shared_files' },
+    ];
+    const { conversationSidebarItemsOrder } = useUISettings();
+    expect(conversationSidebarItemsOrder.value).toEqual(
+      DEFAULT_CONVERSATION_SIDEBAR_ITEMS_ORDER
+    );
+    getUISettingsMock.value.conversation_sidebar_items_order =
+      DEFAULT_CONVERSATION_SIDEBAR_ITEMS_ORDER;
+  });
+
   it('returns correct contact sidebar items order', () => {
     const { contactSidebarItemsOrder } = useUISettings();
     expect(contactSidebarItemsOrder.value).toEqual(

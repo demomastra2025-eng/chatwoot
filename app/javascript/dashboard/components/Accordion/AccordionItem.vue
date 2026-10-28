@@ -1,6 +1,5 @@
 <script setup>
 import EmojiOrIcon from 'shared/components/EmojiOrIcon.vue';
-import { defineEmits } from 'vue';
 
 defineProps({
   title: {
@@ -8,6 +7,10 @@ defineProps({
     required: true,
   },
   compact: {
+    type: Boolean,
+    default: false,
+  },
+  secondary: {
     type: Boolean,
     default: false,
   },
@@ -35,21 +38,46 @@ const onToggle = () => {
 <template>
   <div class="text-sm">
     <button
-      class="flex items-center select-none w-full rounded-lg bg-n-slate-2 outline outline-1 outline-n-weak m-0 cursor-grab justify-between py-2 px-4 drag-handle"
-      :class="{ 'rounded-bl-none rounded-br-none': isOpen }"
+      class="flex items-center select-none w-full rounded-lg outline outline-1 outline-n-weak m-0 cursor-grab justify-between drag-handle"
+      :class="[
+        secondary ? 'bg-n-alpha-1 py-1.5 px-3' : 'bg-n-slate-2 py-2 px-4',
+        { 'rounded-bl-none rounded-br-none': isOpen },
+      ]"
       @click.stop="onToggle"
     >
-      <div class="flex justify-between">
-        <EmojiOrIcon class="inline-block w-5" :icon="icon" :emoji="emoji" />
-        <h5 class="text-n-slate-12 text-sm mb-0 py-0 pr-2 pl-0">
+      <div class="flex items-center justify-between">
+        <EmojiOrIcon
+          v-if="icon || emoji"
+          class="inline-block w-5"
+          :icon="icon"
+          :emoji="emoji"
+        />
+        <h5
+          class="mb-0 py-0 pr-2 pl-0"
+          :class="
+            secondary
+              ? 'text-xs font-medium text-n-slate-11'
+              : 'text-sm text-n-slate-12'
+          "
+        >
           {{ title }}
         </h5>
       </div>
-      <div class="flex flex-row">
+      <div class="flex flex-row items-center">
         <slot name="button" />
         <div class="flex justify-end w-3 text-n-blue-11 cursor-pointer">
-          <fluent-icon v-if="isOpen" size="24" icon="subtract" type="solid" />
-          <fluent-icon v-else size="24" icon="add" type="solid" />
+          <fluent-icon
+            v-if="isOpen"
+            :size="secondary ? 18 : 24"
+            icon="subtract"
+            type="solid"
+          />
+          <fluent-icon
+            v-else
+            :size="secondary ? 18 : 24"
+            icon="add"
+            type="solid"
+          />
         </div>
       </div>
     </button>

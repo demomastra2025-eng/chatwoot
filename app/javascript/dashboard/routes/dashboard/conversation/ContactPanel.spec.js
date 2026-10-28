@@ -10,10 +10,10 @@ const mocks = vi.hoisted(() => ({
   openSections: {},
   sidebarItems: [
     { name: 'conversation_actions' },
-    { name: 'macros' },
-    { name: 'contact_attributes' },
     { name: 'contact_notes' },
     { name: 'shared_files' },
+    { name: 'contact_attributes' },
+    { name: 'macros' },
   ],
 }));
 const chat = {
@@ -60,15 +60,24 @@ const stubs = {
   },
   AccordionItem: {
     name: 'AccordionItem',
-    props: ['title', 'isOpen'],
+    props: { title: String, isOpen: Boolean, secondary: Boolean },
     emits: ['toggle'],
     template: '<div><slot /></div>',
   },
+  ContactDetailsItem: {
+    name: 'ContactDetailsItem',
+    props: ['title', 'compact'],
+    template: '<div />',
+  },
+  ConversationLabels: {
+    name: 'ConversationLabels',
+    props: ['conversationId'],
+    template: '<div />',
+  },
   ContactInfo: {
     name: 'ContactInfo',
-    props: ['contact', 'canAddFamilyMember'],
-    template:
-      '<div><slot name="patient-summary" /><slot name="after-channels" /></div>',
+    props: ['contact', 'selectedPatient', 'patientContextEnabled'],
+    template: '<div><slot name="after-channels" /><slot /></div>',
   },
   ConversationAction: { name: 'ConversationAction', template: '<div />' },
   SchedulingPatientDetails: {
@@ -112,29 +121,42 @@ beforeEach(() => {
   delete chat.is_draft;
 });
 
-describe('ContactPanel modules from PROD base 8f576715f', () => {
-  it('keeps Macros, Attributes, Notes, Attachments separate and in the saved order', async () => {
+describe('ContactPanel modules', () => {
+  it('orders Notes and Attachments first and marks Attributes and Macros as compact secondary accordions', async () => {
     const wrapper = await mountPanel();
-    expect(
-      wrapper
-        .findAllComponents({ name: 'AccordionItem' })
-        .map(item => item.props('title'))
-    ).toEqual([
-      'CONVERSATION_SIDEBAR.ACCORDION.MACROS',
-      'CONVERSATION_SIDEBAR.ACCORDION.CONTACT_ATTRIBUTES',
+    const accordions = wrapper.findAllComponents({ name: 'AccordionItem' });
+    expect(accordions.map(item => item.props('title'))).toEqual([
       'CONVERSATION_SIDEBAR.ACCORDION.CONTACT_NOTES',
       'CONVERSATION_SIDEBAR.ACCORDION.SHARED_FILES',
+      'CONVERSATION_SIDEBAR.ACCORDION.CONTACT_ATTRIBUTES',
+      'CONVERSATION_SIDEBAR.ACCORDION.MACROS',
     ]);
+    expect(accordions.map(item => Boolean(item.props('secondary')))).toEqual([
+      false,
+      false,
+      true,
+      true,
+    ]);
+    expect(wrapper.text()).not.toContain('CONTACT_PANEL.THIS_DIALOG');
+    expect(
+      wrapper
+        .find('[data-test="contact-panel-tags"]')
+        .findComponent({ name: 'ContactDetailsItem' })
+        .props('title')
+    ).toBe('CONTACT_PANEL.LABELS_LABEL');
+    expect(
+      wrapper
+        .findComponent({ name: 'ConversationLabels' })
+        .props('conversationId')
+    ).toBe(123);
     expect(wrapper.findComponent({ name: 'ConversationAction' }).exists()).toBe(
       true
     );
-    wrapper
-      .findAllComponents({ name: 'AccordionItem' })[0]
-      .vm.$emit('toggle', false);
-    expect(mocks.toggle).toHaveBeenCalledWith('is_macro_open', false);
+    accordions[0].vm.$emit('toggle', false);
+    expect(mocks.toggle).toHaveBeenCalledWith('is_contact_notes_open', false);
   });
 
-  it('keeps person modules but hides conversation modules for a draft', async () => {
+  it('keeps person modules but hides conversation modules and tags for a draft', async () => {
     chat.is_draft = true;
     const wrapper = await mountPanel({ conversationId: '' });
     expect(
@@ -142,10 +164,13 @@ describe('ContactPanel modules from PROD base 8f576715f', () => {
         .findAllComponents({ name: 'AccordionItem' })
         .map(item => item.props('title'))
     ).toEqual([
-      'CONVERSATION_SIDEBAR.ACCORDION.CONTACT_ATTRIBUTES',
       'CONVERSATION_SIDEBAR.ACCORDION.CONTACT_NOTES',
+      'CONVERSATION_SIDEBAR.ACCORDION.CONTACT_ATTRIBUTES',
     ]);
     expect(wrapper.findComponent({ name: 'ConversationAction' }).exists()).toBe(
+      false
+    );
+    expect(wrapper.find('[data-test="contact-panel-tags"]').exists()).toBe(
       false
     );
     expect(
@@ -158,10 +183,10 @@ describe('ContactPanel modules from PROD base 8f576715f', () => {
     expect(wrapper.findComponent({ name: 'MacrosList' }).exists()).toBe(false);
   });
 
-  it('loads attachments only when the original saved section is open', async () => {
+  it('loads attachments only when the saved section is open', async () => {
     mocks.openSections.is_shared_files_open = false;
     const wrapper = await mountPanel();
-    const attachments = wrapper.findAllComponents({ name: 'AccordionItem' })[3];
+    const attachments = wrapper.findAllComponents({ name: 'AccordionItem' })[1];
     expect(attachments.props('isOpen')).toBe(false);
     expect(wrapper.findComponent({ name: 'SharedFiles' }).exists()).toBe(false);
     attachments.vm.$emit('toggle', true);
@@ -209,24 +234,22 @@ describe('ContactPanel patient context', () => {
     ).toBe(42);
   });
 
-  it('shows one patient summary below the name without tabs', async () => {
+  it('does not render an empty patient selector box when there is only one patient', async () => {
     const wrapper = await mountPanel({
       ...common,
       patientEntry: { loaded: true, patients: [patient] },
     });
     expect(
       wrapper
-        .findComponent({ name: 'SchedulingPatientDetails' })
-        .props('summary')
-    ).toBe(true);
-    expect(
-      wrapper
         .findComponent({ name: 'SchedulingConversationPatientSelector' })
-        .props('showChips')
+        .exists()
     ).toBe(false);
     expect(
-      wrapper.findComponent({ name: 'ContactInfo' }).props('canAddFamilyMember')
-    ).toBe(true);
+      wrapper.findComponent({ name: 'SchedulingPatientDetails' }).exists()
+    ).toBe(false);
+    expect(
+      wrapper.findComponent({ name: 'ContactInfo' }).props('selectedPatient')
+    ).toEqual(patient);
   });
 
   it('shows tabs for two people and uses selected patient for notes and attributes', async () => {

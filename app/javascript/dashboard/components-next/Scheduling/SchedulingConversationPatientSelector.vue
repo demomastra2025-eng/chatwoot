@@ -280,8 +280,13 @@ const savePatient = async () => {
 
 <template>
   <section
+    v-show="!chips || showChips || isCreating || isEditing || entry?.error"
     class="shrink-0"
-    :class="compact ? 'py-2' : 'border-b border-n-weak bg-n-alpha-1 px-3 py-2'"
+    :class="
+      compact || chips
+        ? 'py-1'
+        : 'border-b border-n-weak bg-n-alpha-1 px-3 py-2'
+    "
     data-test="patient-selector"
   >
     <div

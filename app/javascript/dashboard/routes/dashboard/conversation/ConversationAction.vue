@@ -5,7 +5,6 @@ import { useAlert } from 'dashboard/composables';
 import { useAgentsList } from 'dashboard/composables/useAgentsList';
 import ContactDetailsItem from './ContactDetailsItem.vue';
 import MultiselectDropdown from 'shared/components/ui/MultiselectDropdown.vue';
-import ConversationLabels from './labels/LabelBox.vue';
 import { CONVERSATION_PRIORITY } from '../../../../shared/constants/messages';
 import { CONVERSATION_EVENTS } from '../../../helper/AnalyticsHelper/events';
 import { useTrack } from 'dashboard/composables';
@@ -15,7 +14,6 @@ export default {
   components: {
     ContactDetailsItem,
     MultiselectDropdown,
-    ConversationLabels,
     NextButton,
   },
   props: {
@@ -39,24 +37,24 @@ export default {
           icon: 'i-woot-priority-empty',
         },
         {
+          id: CONVERSATION_PRIORITY.LOW,
+          name: this.$t('CONTACT_PANEL.PRIORITY_LOW'),
+          icon: 'i-woot-priority-low',
+        },
+        {
+          id: CONVERSATION_PRIORITY.MEDIUM,
+          name: this.$t('CONTACT_PANEL.PRIORITY_MEDIUM'),
+          icon: 'i-woot-priority-medium',
+        },
+        {
           id: CONVERSATION_PRIORITY.HIGH,
-          name: this.$t('CONVERSATION.PRIORITY.OPTIONS.HIGH'),
+          name: this.$t('CONTACT_PANEL.PRIORITY_HIGH'),
           icon: 'i-woot-priority-high',
         },
         {
           id: CONVERSATION_PRIORITY.URGENT,
-          name: this.$t('CONVERSATION.PRIORITY.OPTIONS.URGENT'),
+          name: this.$t('CONTACT_PANEL.PRIORITY_URGENT'),
           icon: 'i-woot-priority-urgent',
-        },
-        {
-          id: CONVERSATION_PRIORITY.MEDIUM,
-          name: this.$t('CONVERSATION.PRIORITY.OPTIONS.MEDIUM'),
-          icon: 'i-woot-priority-medium',
-        },
-        {
-          id: CONVERSATION_PRIORITY.LOW,
-          name: this.$t('CONVERSATION.PRIORITY.OPTIONS.LOW'),
-          icon: 'i-woot-priority-low',
         },
       ],
     };
@@ -79,19 +77,23 @@ export default {
       }
       return this.teams;
     },
+    selectablePriorityOptions() {
+      return this.priorityOptions.filter(item => item.id !== null);
+    },
     assignedAgent: {
       get() {
         return this.currentChat.meta.assignee;
       },
       set(agent) {
         const agentId = agent ? agent.id : null;
+        const conversationId = this.currentChat.id || this.conversationId;
         this.$store.dispatch('setCurrentChatAssignee', {
-          conversationId: this.currentChat.id,
+          conversationId,
           assignee: agent,
         });
         this.$store
           .dispatch('assignAgent', {
-            conversationId: this.currentChat.id,
+            conversationId,
             agentId,
           })
           .then(() => {
@@ -104,7 +106,7 @@ export default {
         return this.currentChat.meta.team;
       },
       set(team) {
-        const conversationId = this.currentChat.id;
+        const conversationId = this.currentChat.id || this.conversationId;
         const teamId = team ? team.id : 0;
         this.$store.dispatch('setCurrentChatTeam', { team, conversationId });
         this.$store
@@ -123,7 +125,7 @@ export default {
         return selectedOption || this.priorityOptions[0];
       },
       set(priorityItem) {
-        const conversationId = this.currentChat.id;
+        const conversationId = this.currentChat.id || this.conversationId;
         const oldValue = this.currentChat?.priority;
         const priority = priorityItem ? priorityItem.id : null;
 
@@ -141,7 +143,9 @@ export default {
             });
             useAlert(
               this.$t('CONVERSATION.PRIORITY.CHANGE_PRIORITY.SUCCESSFUL', {
-                priority: priorityItem.name,
+                priority: priorityItem
+                  ? priorityItem.name
+                  : this.$t('CONVERSATION.PRIORITY.OPTIONS.NONE'),
                 conversationId,
               })
             );
@@ -205,12 +209,29 @@ export default {
 
       this.assignedPriority = isSamePriority ? null : selectedPriorityItem;
     },
+
+    priorityButtonClass(priority) {
+      const isSelected = priority.id === this.assignedPriority?.id;
+      if (!isSelected) {
+        return 'text-n-slate-11 hover:bg-n-alpha-2 hover:text-n-slate-12';
+      }
+      if (priority.id === CONVERSATION_PRIORITY.URGENT) {
+        return 'bg-n-ruby-3 text-n-ruby-11 font-semibold shadow-sm ring-1 ring-inset ring-n-ruby-7/40';
+      }
+      if (priority.id === CONVERSATION_PRIORITY.HIGH) {
+        return 'bg-n-amber-3 text-n-amber-11 font-semibold shadow-sm ring-1 ring-inset ring-n-amber-7/40';
+      }
+      if (priority.id === CONVERSATION_PRIORITY.MEDIUM) {
+        return 'bg-n-blue-3 text-n-blue-11 font-semibold shadow-sm ring-1 ring-inset ring-n-blue-7/40';
+      }
+      return 'bg-n-solid-2 text-n-slate-12 font-semibold shadow-sm ring-1 ring-inset ring-n-weak';
+    },
   },
 };
 </script>
 
 <template>
-  <div>
+  <div class="flex flex-col gap-3">
     <div>
       <ContactDetailsItem compact :title="$t('CONTACT_PANEL.ASSIGNEE_LABEL')">
         <template #button>
@@ -242,42 +263,22 @@ export default {
     <div>
       <ContactDetailsItem compact :title="$t('CONTACT_PANEL.PRIORITY_LABEL')" />
       <div
-        class="flex flex-wrap gap-1 rounded-lg border border-n-weak bg-n-alpha-1 p-1"
+        class="grid grid-cols-4 gap-1 rounded-lg border border-n-weak bg-n-alpha-1 p-1"
         role="group"
         :aria-label="$t('CONTACT_PANEL.PRIORITY_LABEL')"
       >
         <button
-          v-for="priority in priorityOptions.filter(
-            item =>
-              item.id === null ||
-              item.id === 'high' ||
-              item.id === 'urgent' ||
-              item.id === assignedPriority.id
-          )"
-          :key="priority.id || 'none'"
+          v-for="priority in selectablePriorityOptions"
+          :key="priority.id"
           type="button"
           :aria-pressed="priority.id === assignedPriority.id"
-          class="min-w-0 flex-1 rounded-md px-2 py-1 text-xs text-n-slate-12"
-          :class="
-            priority.id === assignedPriority.id
-              ? 'bg-n-solid-2 font-semibold shadow-sm'
-              : 'hover:bg-n-alpha-2'
-          "
-          @click="assignedPriority = priority"
+          class="min-w-0 truncate rounded-md px-1.5 py-1.5 text-center text-xs transition-colors"
+          :class="priorityButtonClass(priority)"
+          @click="onClickAssignPriority(priority)"
         >
-          {{
-            priority.id === null
-              ? $t('CONTACT_PANEL.PRIORITY_NORMAL')
-              : priority.id === 'urgent'
-                ? $t('CONTACT_PANEL.PRIORITY_URGENT')
-                : priority.id === 'high'
-                  ? $t('CONTACT_PANEL.PRIORITY_HIGH')
-                  : priority.name
-          }}
+          {{ priority.name }}
         </button>
       </div>
     </div>
-    <ContactDetailsItem compact :title="$t('CONTACT_PANEL.LABELS_LABEL')" />
-    <ConversationLabels :conversation-id="conversationId" />
   </div>
 </template>

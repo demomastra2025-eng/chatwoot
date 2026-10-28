@@ -13,7 +13,6 @@ import ContactChannelLabels from 'dashboard/components-next/Contacts/ContactChan
 import ContactMergeModal from 'dashboard/modules/contact/ContactMergeModal.vue';
 import InlineInput from 'dashboard/components-next/inline-input/InlineInput.vue';
 import {
-  hasProviderPatientIdentity,
   maskedPatientIin,
   patientAgeLabel,
 } from 'dashboard/stores/scheduling/patientContext';
@@ -67,8 +66,6 @@ export default {
     },
     headerMeta() {
       const patient = this.patientContextEnabled ? this.selectedPatient : null;
-      const attributes =
-        patient?.custom_attributes || patient?.customAttributes || {};
       const parts = [];
       if (patient) {
         parts.push(
@@ -76,17 +73,7 @@ export default {
         );
         const iin = maskedPatientIin(patient);
         if (iin) parts.push(`${this.$t('SCHEDULING.CONTACT.IIN')} ${iin}`);
-        if (
-          hasProviderPatientIdentity(patient) ||
-          attributes.medelement_patient_card
-        )
-          parts.push(
-            `${this.$t('SCHEDULING.PATIENT_CONTEXT.MEDELEMENT_CARD')} ✓`
-          );
       }
-      parts.push(
-        this.additionalAttributes.country || this.additionalAttributes.location
-      );
       return parts.filter(Boolean).join(' · ');
     },
     additionalAttributes() {
@@ -263,7 +250,7 @@ export default {
 <template>
   <div class="relative items-center w-full p-4">
     <div class="flex flex-col w-full gap-4 text-left rtl:text-right">
-      <div class="flex flex-col flex-1 min-w-0 gap-1">
+      <div class="flex flex-col flex-1 min-w-0 gap-2.5">
         <div
           class="flex w-full min-w-0 items-start gap-3"
           data-test="contact-header"

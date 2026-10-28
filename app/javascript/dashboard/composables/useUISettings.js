@@ -3,10 +3,15 @@ import { useStore, useStoreGetters } from 'dashboard/composables/store';
 
 export const DEFAULT_CONVERSATION_SIDEBAR_ITEMS_ORDER = Object.freeze([
   { name: 'conversation_actions' },
-  { name: 'macros' },
-  { name: 'contact_attributes' },
   { name: 'contact_notes' },
   { name: 'shared_files' },
+  { name: 'contact_attributes' },
+  { name: 'macros' },
+]);
+
+const LEGACY_CONVERSATION_SIDEBAR_ITEMS_ORDERS = new Set([
+  'conversation_actions,macros,contact_attributes,contact_notes,shared_files',
+  'macros,contact_attributes,contact_notes,shared_files',
 ]);
 
 const REMOVED_CONVERSATION_SIDEBAR_ITEMS = new Set([
@@ -51,9 +56,14 @@ const useConversationSidebarItemsOrder = uiSettings => {
         itemsOrderCopy.push(item);
       }
     });
-    return itemsOrderCopy.filter(
+    const filteredOrder = itemsOrderCopy.filter(
       item => !REMOVED_CONVERSATION_SIDEBAR_ITEMS.has(item.name)
     );
+    const orderSignature = filteredOrder.map(item => item.name).join(',');
+    if (LEGACY_CONVERSATION_SIDEBAR_ITEMS_ORDERS.has(orderSignature)) {
+      return [...DEFAULT_CONVERSATION_SIDEBAR_ITEMS_ORDER];
+    }
+    return filteredOrder;
   });
 };
 

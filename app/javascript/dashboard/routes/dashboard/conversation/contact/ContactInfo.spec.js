@@ -124,11 +124,11 @@ describe('ContactInfo', () => {
     window.history.replaceState({}, '', '/');
   });
 
-  it('keeps name, phone and one metadata line beside the avatar', () => {
+  it('keeps name and phone beside the avatar and omits MedElement or country subtitle', () => {
     const wrapper = buildWrapper({
       contact: {
         phone_number: '+77000000001',
-        additional_attributes: { country: 'Казахстан' },
+        additional_attributes: { country: 'Kazakhstan' },
       },
     });
     const header = wrapper.get('[data-test="contact-header"]');
@@ -136,8 +136,8 @@ describe('ContactInfo', () => {
     expect(header.findComponent({ name: 'ContactInfoRow' }).exists()).toBe(
       true
     );
-    expect(header.get('[data-test="contact-header-meta"]').text()).toBe(
-      'Казахстан'
+    expect(header.find('[data-test="contact-header-meta"]').exists()).toBe(
+      false
     );
   });
 
