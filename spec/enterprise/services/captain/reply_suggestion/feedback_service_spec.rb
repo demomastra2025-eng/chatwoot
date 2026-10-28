@@ -76,6 +76,23 @@ RSpec.describe Captain::ReplySuggestion::FeedbackService do
       ).perform
 
       expect(event('notice_dismissed').payload).to include('reason_preview' => 'Решает врач.')
+      expect(Redis::Alfred.get("#{store::PREFIX}:dismissed:#{account.id}:#{agent.id}:#{conversation.id}")).to include(notice['id'])
+    end
+
+    it 'links the sent message immediately when the manager replies while the notice is still open' do
+      created = store.create!(record.slice('account_id', 'user_id', 'conversation_id'))
+      notice = store.finish!(created, status: 'human_needed', result: { 'reason' => 'Решает врач.' })
+      sent = create(:message, conversation: conversation, account: account, message_type: :outgoing, sender: agent, content: 'Ответила сама')
+
+      described_class.new(
+        account: account, user: agent, conversation: conversation, outcome: 'notice_dismissed', copilot_action: 'reply_suggestion',
+        requested_display_id: conversation.display_id, suggestion_request_id: notice['id'], message_id: sent.id, final_text: sent.content
+      ).perform
+
+      expect(event('notice_dismissed').payload).to include(
+        'reason_preview' => 'Решает врач.', 'next_message_id' => sent.id, 'next_message_delay_seconds' => 0, 'final_text' => 'Ответила сама'
+      )
+      expect(Redis::Alfred.get("#{store::PREFIX}:dismissed:#{account.id}:#{agent.id}:#{conversation.id}")).to be_nil
     end
   end
 

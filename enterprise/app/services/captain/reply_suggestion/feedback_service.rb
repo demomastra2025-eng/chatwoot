@@ -14,8 +14,9 @@ class Captain::ReplySuggestion::FeedbackService
   class NotFoundError < StandardError; end
 
   # The manager acted on the suggestion: it never reappears on return.
-  CONSUMING_OUTCOMES = %w[applied dismissed notice_dismissed].freeze
-  FULL_TEXT_OUTCOMES = %w[sent dismissed].freeze
+  CONSUMING_OUTCOMES = %w[applied dismissed notice_dismissed cancelled].freeze
+  FULL_TEXT_OUTCOMES = %w[sent dismissed notice_dismissed cancelled].freeze
+  DIRECT_SEND_OUTCOMES = %w[sent notice_dismissed cancelled].freeze
 
   pattr_initialize [
     :account!, :user!, :conversation, :outcome!, :copilot_action!, :requested_display_id,
@@ -35,6 +36,7 @@ class Captain::ReplySuggestion::FeedbackService
     Captain::ReplySuggestion::RequestStore.consume!(record['id']) if CONSUMING_OUTCOMES.include?(outcome)
     rejected(record) if outcome == 'dismissed'
     notice_closed(record) if outcome == 'notice_dismissed'
+    cancelled(record) if outcome == 'cancelled'
     used(record) if USED_OUTCOMES.include?(outcome)
   end
 
@@ -49,8 +51,18 @@ class Captain::ReplySuggestion::FeedbackService
     Captain::ReplySuggestion::StickyAgent.withdraw!(conversation, request_id: record['id'])
   end
 
-  # A closed "no reply needed" / "staff must answer" notice was not a use of its agent: its provisional sticky agent goes.
+  # A closed "no reply needed" / "staff must answer" notice was not a use of its agent: its provisional sticky agent goes,
+  # and the next message the manager writes in its place is linked on the event.
   def notice_closed(record)
+    remember_dismissal(record) if message_id.blank?
+    Captain::ReplySuggestion::StickyAgent.withdraw!(conversation, request_id: record['id'])
+  end
+
+  def cancelled(record)
+    remember_dismissal(record) if message_id.blank?
+    Captain::ReplySuggestion::ActionApprovalService.discard_for_request!(
+      account_id: account.id, conversation_id: record['conversation_id'], request_id: record['id'], reason: 'suggestion_cancelled'
+    )
     Captain::ReplySuggestion::StickyAgent.withdraw!(conversation, request_id: record['id'])
   end
 
@@ -97,7 +109,9 @@ class Captain::ReplySuggestion::FeedbackService
     return {} unless record
 
     { engine: record['engine'], based_on_message_id: record['based_on_message_id'],
-      reason_preview: (record.dig('result', 'reason').to_s.first(300).presence if outcome == 'notice_dismissed') }.compact
+      reason_preview: (record.dig('result', 'reason').to_s.first(300).presence if outcome == 'notice_dismissed'),
+      next_message_id: (message_id.to_i if message_id.present? && %w[notice_dismissed cancelled].include?(outcome)),
+      next_message_delay_seconds: (0 if message_id.present? && %w[notice_dismissed cancelled].include?(outcome)) }.compact
   end
 
   # The text the AI proposed and the manager worked with: what was inserted (it may be a follow-up of the first draft), else the draft.
@@ -119,7 +133,7 @@ class Captain::ReplySuggestion::FeedbackService
 
   # The text that was sent: the message itself when the manager's own message can be found, else what the client reported.
   def sent_text
-    return final_text unless outcome == 'sent'
+    return final_text unless DIRECT_SEND_OUTCOMES.include?(outcome)
 
     sent_message&.content.presence || final_text
   end

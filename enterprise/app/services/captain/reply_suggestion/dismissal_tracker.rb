@@ -10,6 +10,7 @@ require 'json'
 # a user costs one Redis read.
 module Captain::ReplySuggestion::DismissalTracker
   FEEDBACK_EVENT_NAME = 'llm.copilot.feedback'
+  TRACKED_STATUSES = %w[dismissed notice_dismissed cancelled].freeze
   MAX_PENDING = 5
 
   class << self
@@ -49,7 +50,7 @@ module Captain::ReplySuggestion::DismissalTracker
     end
 
     def dismissed_event(account_id, suggestion_request_id)
-      LlmEvent.where(account_id: account_id, event_name: FEEDBACK_EVENT_NAME, request_id: suggestion_request_id, status: 'dismissed')
+      LlmEvent.where(account_id: account_id, event_name: FEEDBACK_EVENT_NAME, request_id: suggestion_request_id, status: TRACKED_STATUSES)
               .order(:id).last
     end
 

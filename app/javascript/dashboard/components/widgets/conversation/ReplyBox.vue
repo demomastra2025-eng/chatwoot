@@ -1407,6 +1407,18 @@ export default {
         isPrivate
       );
 
+      if (
+        !isPrivate &&
+        !normalizedAcceptedMessage &&
+        normalizedEditorMessage &&
+        this.showSuggestionNotice
+      ) {
+        this.copilot.dismissNotice?.({
+          messageId: sentMessage?.id || null,
+          finalText: normalizedEditorMessage,
+        });
+      }
+
       if (normalizedAcceptedMessage && normalizedEditorMessage) {
         const editedBeforeSend =
           normalizedAcceptedMessage !== normalizedEditorMessage;

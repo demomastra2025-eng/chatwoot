@@ -881,6 +881,36 @@ describe('ReplyBox reply suggestion outcomes', () => {
     });
   });
 
+  it('closes an open notice and links the sent message when the manager replies without clicking «Скрыть»', async () => {
+    mockGetReplySuggestionStatus.mockResolvedValueOnce({
+      suggestion: state({
+        status: 'human_needed',
+        result: { reason: 'Нужен врач' },
+      }),
+    });
+    wrapper = await mountReplyBox();
+    expect(notice()).not.toBeNull();
+
+    wrapper.vm.sendMessageAnalyticsData(false, {
+      editorMessage: 'Ответила сама без закрытия плашки',
+      sentMessage: { id: 777 },
+    });
+    await flushPromises();
+
+    expect(notice()).toBeNull();
+    expect(TasksAPI.feedback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 42,
+        requestId: 'sr-42',
+        suggestionRequestId: 'sr-42',
+        copilotAction: 'reply_suggestion',
+        outcome: 'notice_dismissed',
+        messageId: 777,
+        finalText: 'Ответила сама без закрытия плашки',
+      })
+    );
+  });
+
   it('never carries a suggestion of one conversation into another', async () => {
     mockGetReplySuggestionStatus.mockResolvedValueOnce({
       suggestion: state(),
