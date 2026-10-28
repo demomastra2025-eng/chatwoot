@@ -91,12 +91,12 @@ class LlmFormatter::ConversationLlmFormatter < LlmFormatter::DefaultLlmFormatter
     seen_call_refs = []
     sections = @record.messages.voice_calls.order(created_at: :asc).filter_map do |message|
       data = message.content_attributes.to_h['data'] || {}
-      lines = voice_transcript_lines(data)
-      next if lines.blank?
+      transcript = message.voice_call_transcript_for_llm
+      next if transcript.blank?
 
       call_ref = data['call_sid'].presence || data['call_ref'].presence || data['transcript_ref'].presence || message.id
       seen_call_refs << call_ref.to_s
-      "Call #{call_ref}:\n#{lines.join("\n")}"
+      "Call #{call_ref}:\n#{transcript}"
     end
 
     sections.concat(voice_transcripts_from_call_sessions(seen_call_refs))
@@ -104,26 +104,31 @@ class LlmFormatter::ConversationLlmFormatter < LlmFormatter::DefaultLlmFormatter
   end
 
   def voice_transcript_lines(data)
-    items = Array(data['transcript_items']).filter_map do |item|
-      item = item.to_h
-      text = item['text'].to_s.strip
-      next if text.blank?
-
-      "#{voice_speaker_label(item['speaker'])}: #{text}"
-    end
+    items = Array(data['transcript_items']).filter_map { |item| voice_transcript_item_line(item) }
     return items if items.present?
 
-    data['transcript'].to_s.lines.map(&:strip).reject(&:blank?)
+    Telephony::CallTranscript.parse(data['transcript'])['text'].lines.map(&:strip).reject(&:blank?)
+  end
+
+  def voice_transcript_item_line(raw_item)
+    item = raw_item.to_h
+    text = item['text'].to_s.strip
+    return if text.blank?
+
+    seconds = item['start_sec']&.to_i
+    timestamp = item['timestamp'].presence || (seconds && Kernel.format('%<minutes>02d:%<seconds>02d',
+                                                                        minutes: seconds / 60, seconds: seconds % 60))
+    "#{"[#{timestamp}] " if timestamp.present?}#{voice_speaker_label(item['speaker'])}: #{text}"
   end
 
   def voice_speaker_label(speaker)
     case speaker.to_s
     when 'caller', 'customer', 'contact', 'user'
-      'User'
+      'Клиент'
     when 'ai', 'assistant', 'bot'
       'AI Voice Agent'
     when 'agent', 'operator'
-      'Support Agent'
+      'Сотрудник'
     else
       speaker.to_s.presence&.humanize || 'Voice'
     end
@@ -131,17 +136,27 @@ class LlmFormatter::ConversationLlmFormatter < LlmFormatter::DefaultLlmFormatter
 
   def voice_transcripts_from_call_sessions(seen_call_refs)
     @record.telephony_call_sessions.order(created_at: :asc).filter_map do |call_session|
-      call_ref = call_session.external_call_ref.to_s
-      next if call_ref.blank? || seen_call_refs.include?(call_ref)
-
-      lines = voice_transcript_lines(
-        'transcript_items' => call_session_transcript_items(call_session),
-        'transcript' => call_session.metadata&.dig('recording', 'transcription', 'text')
-      )
-      next if lines.blank?
-
-      "Call #{call_ref}:\n#{lines.join("\n")}"
+      call_session_voice_transcript(call_session, seen_call_refs)
     end
+  end
+
+  def call_session_voice_transcript(call_session, seen_call_refs)
+    call_ref = call_session.external_call_ref.to_s
+    return if call_ref.blank? || seen_call_refs.include?(call_ref)
+
+    transcription = call_session.metadata&.dig('recording', 'transcription').to_h
+    lines = call_session_transcript_lines(call_session, transcription)
+    lines.prepend("Темы: #{Array(transcription['topics']).join(', ')}") if transcription['topics'].present?
+    lines.prepend("Итог звонка: #{transcription['summary']}") if transcription['summary'].present?
+    "Call #{call_ref}:\n#{lines.join("\n")}" if lines.present?
+  end
+
+  def call_session_transcript_lines(call_session, transcription)
+    runtime = call_session_transcript_items(call_session)
+    voice_transcript_lines(
+      'transcript_items' => transcription['transcript_items'].presence || (runtime if runtime.is_a?(Array)),
+      'transcript' => transcription['text'].presence || (runtime if runtime.is_a?(String))
+    )
   end
 
   def call_session_transcript_items(call_session)

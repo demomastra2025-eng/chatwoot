@@ -25,6 +25,27 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'preserves completed structured transcription on later voice event sync' do
+      existing_call_session.update!(metadata: {
+                                      'recording' => { 'transcription' => {
+                                        'status' => 'completed', 'text' => '[00:02] Сотрудник: Добрый день',
+                                        'transcript_items' => [{ 'speaker' => 'operator', 'timestamp' => '00:02', 'text' => 'Добрый день' }],
+                                        'summary' => 'Пациент записался.', 'outcome' => 'booked', 'topics' => ['запись']
+                                      } }
+                                    })
+      message = create(:message, account: account, conversation: existing_call_session.conversation,
+                                 inbox: existing_call_session.inbox, content_type: :voice_call,
+                                 source_id: existing_call_session.voice_call_source_id,
+                                 content_attributes: { 'data' => { 'transcript' => 'старый текст' } })
+
+      service.send(:sync_voice_message_without_group_lock!, existing_call_session)
+
+      expect(message.reload.content_attributes['data']).to include(
+        'transcript' => '[00:02] Сотрудник: Добрый день', 'transcript_summary' => 'Пациент записался.',
+        'transcript_outcome' => 'booked', 'transcript_topics' => ['запись']
+      )
+    end
+
     it 'classifies Wazo lifecycle events as native SIP events' do
       expect(described_class::NATIVE_SIP_PROVIDERS).to include('wazo')
       expect(service.send(:native_sip_provider?, 'wazo')).to be(true)

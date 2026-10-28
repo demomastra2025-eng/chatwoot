@@ -442,19 +442,54 @@ class Message < ApplicationRecord
   end
 
   def voice_call_transcript_for_llm
-    raw_data = message_attributes_hash(content_attributes)[:data]
-    data = message_attributes_hash(raw_data)
-    items = Array(data[:transcript_items]).filter_map do |item|
-      entry = message_attributes_hash(item)
-      text = entry[:text].to_s.strip
-      next if text.blank?
+    data = message_attributes_hash(message_attributes_hash(content_attributes)[:data])
+    transcription = message_attributes_hash(message_attributes_hash(data[:recording])[:transcription])
+    lines = voice_call_context_lines(data, transcription)
+    lines.concat(Array(voice_call_dialogue_for_llm(data, transcription)))
+    lines.join("\n").strip.presence
+  end
 
-      speaker = entry[:speaker].to_s.in?(%w[caller customer contact user]) ? 'Клиент' : 'Оператор'
-      "#{speaker}: #{text}"
-    end
-    return items.join("\n") if items.present?
+  def voice_call_context_lines(data, transcription)
+    summary = data[:transcript_summary].presence || transcription[:summary].presence
+    topics = data[:transcript_topics].presence || transcription[:topics].presence
+    lines = []
+    lines << "Итог звонка: #{summary}" if summary.present?
+    lines << "Темы: #{Array(topics).join(', ')}" if topics.present?
+    lines
+  end
 
-    data[:transcript].to_s.strip.presence
+  def voice_call_dialogue_for_llm(data, transcription)
+    entries = data[:transcript_items].presence || transcription[:transcript_items]
+    dialogue = Array(entries).filter_map { |item| voice_call_turn_for_llm(item) }
+    dialogue.presence || voice_call_plain_text_for_llm(data, transcription)
+  end
+
+  def voice_call_turn_for_llm(item)
+    entry = message_attributes_hash(item)
+    text = entry[:text].to_s.strip
+    return if text.blank?
+
+    speaker = if entry[:speaker].to_s.in?(%w[caller customer contact user client])
+                'Клиент'
+              elsif entry[:speaker].to_s.in?(%w[ai assistant bot])
+                'AI Voice Agent'
+              else
+                'Сотрудник'
+              end
+    timestamp = entry[:timestamp].presence || timestamp_from_seconds(entry[:start_sec])
+    "#{"[#{timestamp}] " if timestamp.present?}#{speaker}: #{text}"
+  end
+
+  def voice_call_plain_text_for_llm(data, transcription)
+    raw_text = data[:transcript].presence || transcription[:text]
+    parsed = Telephony::CallTranscript.parse_lines(raw_text)
+    parsed.present? ? Telephony::CallTranscript.format(parsed) : raw_text
+  end
+
+  def timestamp_from_seconds(seconds)
+    return if seconds.nil?
+
+    Kernel.format('%<minutes>02d:%<seconds>02d', minutes: seconds.to_i / 60, seconds: seconds.to_i % 60)
   end
 
   def ai_voice_transcript_turn?

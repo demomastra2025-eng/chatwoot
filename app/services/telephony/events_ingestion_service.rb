@@ -1998,7 +1998,18 @@ class Telephony::EventsIngestionService
     end
     data['data']['transcript_ref'] = call_session.transcript_ref if call_session.transcript_ref.present?
     transcript = payload_value('transcript')
-    data['data']['transcript'] = transcript if transcript.present?
+    if transcript.present? && data['data']['transcript_items'].blank?
+      data['data']['transcript'] = transcript
+      data['data']['transcript_items'] = Telephony::CallTranscript.parse_lines(transcript)
+    end
+    transcription = call_session.metadata.to_h.dig('recording', 'transcription').to_h
+    if transcription['status'] == 'completed'
+      data['data']['transcript'] = transcription['text'] if transcription['text'].present?
+      data['data']['transcript_items'] = transcription['transcript_items'] if transcription['transcript_items'].present?
+      data['data']['transcript_summary'] = transcription['summary'] if transcription['summary'].present?
+      data['data']['transcript_outcome'] = transcription['outcome'] if transcription['outcome'].present?
+      data['data']['transcript_topics'] = transcription['topics'] if transcription['topics'].present?
+    end
     data['data']['summary'] = call_session.summary if call_session.summary.present?
     data['data']['duration'] = call_session.duration_seconds if call_session.duration_seconds.present?
     if Telephony::MissedCallCallbackTracker.unanswered_inbound_terminal?(call_session)

@@ -1548,7 +1548,19 @@ RSpec.describe Message do
         }
       )
 
-      expect(message.content_for_llm).to eq("[Voice Call] Оператор: Чем могу помочь?\nКлиент: Нужно перенести запись")
+      expect(message.content_for_llm).to eq("[Voice Call] Сотрудник: Чем могу помочь?\nКлиент: Нужно перенести запись")
+    end
+
+    it 'includes call summary, topics and timestamped role turns for Captain' do
+      message = create(
+        :message, conversation: create(:conversation), content_type: :voice_call,
+                  content_attributes: { 'data' => {
+                    'transcript_summary' => 'Пациент записался.', 'transcript_topics' => ['запись'],
+                    'transcript_items' => [{ 'speaker' => 'operator', 'start_sec' => 2, 'text' => 'Добрый день' }]
+                  } }
+      )
+
+      expect(message.content_for_llm).to include('Итог звонка: Пациент записался.', 'Темы: запись', '[00:02] Сотрудник: Добрый день')
     end
   end
 end

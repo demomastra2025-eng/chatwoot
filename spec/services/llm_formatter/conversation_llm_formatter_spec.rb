@@ -81,7 +81,7 @@ RSpec.describe LlmFormatter::ConversationLlmFormatter do
 
         expect(output).to include('Voice Call Transcripts:')
         expect(output).to include('Call voice-call-llm-1:')
-        expect(output).to include('User: Хочу узнать тариф')
+        expect(output).to include('Клиент: Хочу узнать тариф')
         expect(output).to include('AI Voice Agent: Тариф начинается от 1000 тенге')
         expect(output).not_to include('User: Voice Call')
       end
@@ -108,7 +108,7 @@ RSpec.describe LlmFormatter::ConversationLlmFormatter do
         output = formatter.format
 
         expect(output).to include('Call voice-call-metadata-1:')
-        expect(output).to include('User: Можно доставку завтра?')
+        expect(output).to include('Клиент: Можно доставку завтра?')
         expect(output).to include('AI Voice Agent: Да, оформим доставку на завтра.')
       end
     end
