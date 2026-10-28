@@ -2,6 +2,7 @@ class Telephony::CallRecordingTranscriptionJob < ApplicationJob
   queue_as :voice_recording_transcription
 
   retry_on Telephony::CallRecordingTranscriptionService::RecordingNotFound, wait: 10.seconds, attempts: 3
+  retry_on ActiveRecord::LockWaitTimeout, ActiveRecord::QueryCanceled, wait: :polynomially_longer, attempts: 5
 
   discard_on RubyLLM::BadRequestError do |job, error|
     Rails.logger.warn(

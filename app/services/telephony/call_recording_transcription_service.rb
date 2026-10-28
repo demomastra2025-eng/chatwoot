@@ -235,8 +235,6 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
 
   def update_call_and_message!(transcript, source:)
     transcript_ref = "call_recording_transcript:#{call_session.external_call_ref}"
-    message = nil
-
     call_session.with_lock do
       metadata = (call_session.reload.metadata || {}).deep_dup
       recording = metadata['recording'] ||= {}
@@ -247,8 +245,11 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
         'completed_at' => Time.current.iso8601
       }
       call_session.update!(metadata: metadata, transcript_ref: transcript_ref)
-      message = update_voice_message!(transcript, transcript_ref)
     end
+
+    # Message callbacks and competing voice-event writes can be slow. Do not keep the
+    # call-session row locked while waiting for the message row or its callbacks.
+    message = update_voice_message!(transcript, transcript_ref)
 
     message&.reload&.send_update_event
   end

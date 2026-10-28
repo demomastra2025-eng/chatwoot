@@ -12,10 +12,12 @@ class Telephony::AiVoice::TranscriptIngestionService
     call_session.with_lock do
       call_session.reload
       update_call_session!(normalized_items)
-      sync_voice_message_transcript!
-      remove_legacy_transcript_messages!
-      sync_conversation_timeline!
     end
+    # The session metadata write needs serialization; message and timeline work does
+    # not. Those writes can wait on other rows and must not hold the session lock.
+    sync_voice_message_transcript!
+    remove_legacy_transcript_messages!
+    sync_conversation_timeline!
 
     {
       status: 'ok',
@@ -52,6 +54,13 @@ class Telephony::AiVoice::TranscriptIngestionService
     message = call_session.voice_message_for_current_call
     return if message.blank?
 
+    message.with_lock do
+      call_session.reload
+      write_voice_message_transcript!(message)
+    end
+  end
+
+  def write_voice_message_transcript!(message)
     data = (message.content_attributes || {}).deep_dup
     data['data'] ||= {}
     transcript_items = voice_message_transcript_items
