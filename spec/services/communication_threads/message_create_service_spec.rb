@@ -79,6 +79,17 @@ RSpec.describe CommunicationThreads::MessageCreateService do
       expect(service.communication_thread.conversations).to contain_exactly(service.conversation)
     end
 
+    it 'assigns a reply sent through the person dialog to its first responding agent' do
+      account.update!(conversation_assign_on_first_reply_enabled: true, conversation_auto_assignment_enabled: false)
+      conversation = create(:conversation, account: account, inbox: api_inbox, contact: contact, assignee: nil)
+      conversation.refresh_communication_thread!
+
+      service = build_service({ channel_key: "conversation:#{conversation.display_id}", content: 'Здравствуйте', echo_id: SecureRandom.uuid })
+      service.perform
+
+      expect(conversation.reload.assignee).to eq(agent)
+    end
+
     it 'has made the thread and its link before the message is created, so a second send that waits for the lock finds them', :aggregate_failures do
       seen = nil
       allow(Messages::MessageBuilder).to receive(:new).and_wrap_original do |original, user, conversation, params|

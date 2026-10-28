@@ -694,6 +694,7 @@ class Message < ApplicationRecord
 
     conversation.update(assignee: sender)
   end
+  public :assign_conversation_to_responding_agent
 
   def activate_captain_human_control_for_human_response; end
 

@@ -417,7 +417,10 @@ class Telephony::EventsIngestionService
             call_session.reload
           end
           step.call { apply_call_status!(call_session) unless suppress_native_sip_conversation_update?(call_session) }
-          step.call { sync_voice_message!(call_session) }
+          step.call do
+            sync_voice_message!(call_session)
+            assign_answered_inbound_call!(call_session)
+          end
         end
         step.call { Telephony::MissedCallCallbackTracker.sync_for_call_session!(call_session) }
         step.call { linked_runtime_call_sessions.each { |linked_call_session| sync_voice_message!(linked_call_session) } }
@@ -2004,10 +2007,27 @@ class Telephony::EventsIngestionService
       data['data']['waiting_for_callback'] = false
     end
     message.source_id ||= call_session.voice_call_source_id
+    # The first voice bubble may be created before the provider identifies the operator.
+    # A later answer event supplies the binding; preserve it on the bubble and apply
+    # the same first-reply assignment used for dashboard messages.
+    message.sender = call_session.agent_binding.user if message.outgoing? && message.sender.blank? && call_session.agent_binding&.user.present?
     message.update!(content_attributes: data)
+    message.assign_conversation_to_responding_agent if message.outgoing? && message.sender.is_a?(User)
     remove_native_sip_group_duplicate_messages!(call_session, message)
     mark_linked_runtime_duplicate_message!(call_session, message)
     message
+  end
+
+  def assign_answered_inbound_call!(call_session)
+    return unless call_session.direction == 'inbound' && call_session.answered_at.present?
+    return if call_session.answered_by == 'ai_agent'
+
+    conversation = call_session.conversation
+    agent = call_session.agent_binding&.user
+    return unless conversation&.account&.conversation_assign_on_first_reply_enabled?
+    return unless agent && conversation.assignee_id.blank? && conversation.account.users.exists?(id: agent.id)
+
+    conversation.update!(assignee: agent)
   end
 
   def enqueue_missed_call_whatsapp_followup(call_session)

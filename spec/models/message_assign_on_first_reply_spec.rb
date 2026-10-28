@@ -20,6 +20,23 @@ RSpec.describe Message, 'assign_conversation_to_responding_agent' do
     expect(conversation.reload.assignee).to eq(agent)
   end
 
+  it 'keeps the first responder on a resolved conversation' do
+    conversation.update!(status: :resolved)
+
+    create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing, sender: agent)
+
+    expect(conversation.reload).to have_attributes(status: 'resolved', assignee_id: agent.id)
+  end
+
+  it 'does not guess an agent for a WhatsApp phone echo without sender identity' do
+    message = build(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing,
+                              content_attributes: { external_echo: true })
+    message.sender = nil
+    message.save!
+
+    expect(conversation.reload.assignee).to be_nil
+  end
+
   it 'does not assign the conversation when the agent writes a private note' do
     create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing, private: true, sender: agent)
 

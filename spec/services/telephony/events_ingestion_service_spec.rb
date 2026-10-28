@@ -30,6 +30,49 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(service.send(:native_sip_provider?, 'wazo')).to be(true)
     end
 
+    it 'assigns the caller when a later outbound call event identifies the operator' do
+      account.update!(conversation_assign_on_first_reply_enabled: true, conversation_auto_assignment_enabled: false)
+      agent = create(:user, account: account, role: :agent)
+      binding = create(:telephony_agent_binding, account: account, user: agent)
+      conversation = existing_call_session.conversation
+      conversation.update!(assignee: nil)
+      existing_call_session.update!(direction: 'outbound', agent_binding: binding)
+      message = build(:message, account: account, inbox: conversation.inbox, conversation: conversation,
+                                message_type: :outgoing, content_type: :voice_call,
+                                source_id: "voice_call:#{existing_call_session.external_call_ref}",
+                                content_attributes: { 'data' => { 'status' => 'ringing' } })
+      message.sender = nil
+      message.save!
+
+      service.send(:sync_voice_message_without_group_lock!, existing_call_session)
+
+      expect(message.reload.sender).to eq(agent)
+      expect(conversation.reload.assignee).to eq(agent)
+    end
+
+    it 'assigns an answered inbound call to its identified operator' do
+      account.update!(conversation_assign_on_first_reply_enabled: true, conversation_auto_assignment_enabled: false)
+      agent = create(:user, account: account, role: :agent)
+      binding = create(:telephony_agent_binding, account: account, user: agent)
+      existing_call_session.update!(agent_binding: binding, answered_at: Time.current, answered_by: 'operator_device')
+      existing_call_session.conversation.update!(assignee: nil)
+
+      service.send(:assign_answered_inbound_call!, existing_call_session)
+
+      expect(existing_call_session.conversation.reload.assignee).to eq(agent)
+    end
+
+    it 'does not treat an AI answered call as a human first reply' do
+      account.update!(conversation_assign_on_first_reply_enabled: true, conversation_auto_assignment_enabled: false)
+      binding = create(:telephony_agent_binding, account: account)
+      existing_call_session.update!(agent_binding: binding, answered_at: Time.current, answered_by: 'ai_agent')
+      existing_call_session.conversation.update!(assignee: nil)
+
+      service.send(:assign_answered_inbound_call!, existing_call_session)
+
+      expect(existing_call_session.conversation.reload.assignee).to be_nil
+    end
+
     it 'retries uniqueness conflicts outside the failed transaction and reuses the persisted call session' do
       expected_conversation_id = existing_call_session.conversation_id
       expected_contact_id = existing_call_session.contact_id
