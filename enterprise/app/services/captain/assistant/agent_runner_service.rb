@@ -577,18 +577,13 @@ class Captain::Assistant::AgentRunnerService
   end
 
   # A suggestion offers only the times its scheduling reads found, each under the specialist whose list holds it
-  # (Captain::ReplySuggestion::DraftTimes), says that a visit is cancelled or moved only when the run called the tool that does it, and
-  # never that the patient has no appointment (Captain::ReplySuggestion::DraftClaims): any other time, a time under the name of another
-  # specialist and such a claim are named to the manager above the draft (see ReplySuggestion::AgentOutcomeClassifier); the draft is
-  # not changed.
+  # (Captain::ReplySuggestion::DraftTimes) and gives a time under the specialist whose search found it. A claim that a booking,
+  # cancellation or move was completed now is checked by DraftClaims and blocked when this run has no evidence. The draft is not changed.
   def flag_draft!(response, context)
     draft = response['response']
     flag_kind!(response, 'unverified_times') { Captain::ReplySuggestion::DraftTimes.unverified(draft: draft, context: context) }
     flag_kind!(response, 'misattributed_times') { Captain::ReplySuggestion::DraftSpecialists.misattributed(draft: draft, context: context) }
-    flag_kind!(response, 'unsupported_claims') { Captain::ReplySuggestion::DraftClaims.unsupported(draft: draft, context: context) }
-    flag_kind!(response, 'unsupported_completed_actions') do
-      Captain::ReplySuggestion::DraftClaims.unsupported_completed_actions(draft: draft, context: context)
-    end
+    response['reply_claim_check'] = Captain::ReplySuggestion::DraftClaims.check(draft: draft, context: context, account: account).to_s
   end
 
   def flag_kind!(response, key)

@@ -70,7 +70,14 @@ class Captain::ReplySuggestionService < Captain::BaseTaskService
   end
 
   def legacy_draft(result)
-    if Captain::ReplySuggestion::DraftClaims.unsupported_completed_actions(draft: result[:message], context: {}).any?
+    claim_check = Captain::ReplySuggestion::DraftClaims.check(draft: result[:message], context: {}, account: account)
+    if claim_check == :unavailable
+      return Captain::ReplySuggestion::Outcome.human_needed(
+        reason: I18n.t('captain.reply_suggestion.reasons.claim_check_unavailable'),
+        reason_source: 'safety', engine: LEGACY_ENGINE
+      )
+    end
+    if claim_check == :done
       return Captain::ReplySuggestion::Outcome.human_needed(
         reason: I18n.t('captain.reply_suggestion.reasons.unsupported_claims', claims: result[:message].to_s.squish.truncate(120)),
         reason_source: 'safety', engine: LEGACY_ENGINE

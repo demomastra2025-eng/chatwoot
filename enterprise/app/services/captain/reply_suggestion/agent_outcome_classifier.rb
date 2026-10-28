@@ -19,9 +19,8 @@
 #                                                           (suggestion_meta operator_note), and so does a draft that names a time
 #                                                           its scheduling reads did not find (unverified_times, see DraftTimes) or
 #                                                           gives a time under the name of a specialist whose list does not hold it
-#                                                           (misattributed_times, see DraftSpecialists), says that a visit is cancelled
-#                                                           or moved when the run did not do it, or that the patient has no appointment
-#                                                           (unsupported_claims, see DraftClaims)
+#                                                           (misattributed_times, see DraftSpecialists). A completed appointment
+#                                                           claim without evidence, or an unavailable claim check, goes to a human.
 #                                                           or a draft that leaves a part of the request to staff (the agent's
 #                                                           operator_note)
 #
@@ -163,7 +162,10 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
 
   # 8
   def draft
-    if payload[:unsupported_completed_actions].present?
+    if payload[:reply_claim_check].to_s == 'unavailable'
+      return human_needed(I18n.t('captain.reply_suggestion.reasons.claim_check_unavailable'), 'safety')
+    end
+    if payload[:reply_claim_check].to_s == 'done'
       return human_needed(I18n.t('captain.reply_suggestion.reasons.unsupported_claims',
                                  claims: payload[:response].to_s.squish.truncate(120)), 'safety')
     end

@@ -23,6 +23,7 @@ RSpec.describe Captain::ReplySuggestionService do
     allow(Llm::Config).to receive(:context).and_return(mock_context)
     allow(Llm::Config).to receive(:provider_for_model).and_return('openai')
     allow(Llm::SafetyPolicy).to receive(:check!).and_return(true)
+    allow(Captain::ReplySuggestion::DraftClaims).to receive(:check).and_return(:allowed)
     allow(mock_chat).to receive(:model).and_return('gpt-5.4-mini')
     allow(mock_chat).to receive(:with_headers).and_return(mock_chat)
     allow(mock_chat).to receive(:with_temperature).and_return(mock_chat)
@@ -566,7 +567,17 @@ RSpec.describe Captain::ReplySuggestionService do
         it 'blocks a one-shot draft that claims an appointment was booked without an action' do
           legacy = described_class.new(account: account, conversation_display_id: conversation.display_id, user: agent, engine: 'legacy_prompt')
 
+          allow(Captain::ReplySuggestion::DraftClaims).to receive(:check).and_return(:done)
           expect(legacy.send(:legacy_draft, message: 'Спасибо, записала вас.')).to include(outcome: 'human_needed', reason_source: 'safety')
+        end
+
+        it 'sends a one-shot draft to a human when the claim check is unavailable' do
+          legacy = described_class.new(account: account, conversation_display_id: conversation.display_id, user: agent, engine: 'legacy_prompt')
+          allow(Captain::ReplySuggestion::DraftClaims).to receive(:check).and_return(:unavailable)
+
+          expect(legacy.send(:legacy_draft, message: 'Предлагаю время.')).to include(
+            outcome: 'human_needed', reason_source: 'safety', reason: I18n.t('captain.reply_suggestion.reasons.claim_check_unavailable')
+          )
         end
       end
 

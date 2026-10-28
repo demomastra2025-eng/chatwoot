@@ -24,11 +24,18 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
 
     it 'blocks a draft that claims a completed appointment action without evidence' do
       blocked = described_class.new(reply.merge('response' => 'Спасибо, записала вас.',
-                                                'unsupported_completed_actions' => ['book']), trace_collector: trace_collector).perform
+                                                'reply_claim_check' => 'done'), trace_collector: trace_collector).perform
 
       expect(blocked).to include(outcome: 'human_needed', reason_source: 'safety')
       expect(blocked[:reason]).to include('Спасибо, записала вас.')
       expect(blocked).not_to have_key(:message)
+    end
+
+    it 'sends a draft to a human when the decision chain is exhausted' do
+      blocked = described_class.new(reply.merge('reply_claim_check' => 'unavailable'), trace_collector: trace_collector).perform
+
+      expect(blocked).to include(outcome: 'human_needed', reason_source: 'safety',
+                                 reason: I18n.t('captain.reply_suggestion.reasons.claim_check_unavailable'))
     end
   end
 

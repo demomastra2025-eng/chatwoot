@@ -14,7 +14,9 @@ class Llm::DecisionChain
   DEFAULT_MODELS = %w[inception/mercury-decide microsoft/microsoft-decision-1 openai/gpt-6-luna-decisions].freeze
   FEATURE_CHAINS = {
     'agent_routing' => { config: 'CAPTAIN_AGENT_ROUTING_MODELS',
-                         default: %w[perplexity/pplx-decider-v1.2 inception/mercury-decide microsoft/microsoft-decision-1].freeze }
+                         default: %w[perplexity/pplx-decider-v1.2 inception/mercury-decide microsoft/microsoft-decision-1].freeze },
+    'reply_claim_check' => { config: 'CAPTAIN_REPLY_CLAIM_CHECK_MODELS',
+                             default: %w[microsoft/microsoft-decision-1 perplexity/pplx-decider-v1.2].freeze }
   }.freeze
   MAX_MODELS = 3
   # Below this a call cannot finish, so the chain stops instead of starting it.

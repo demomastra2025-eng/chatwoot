@@ -359,6 +359,12 @@
   value: '["perplexity/pplx-decider-v1.2", "inception/mercury-decide", "microsoft/microsoft-decision-1"]'
   locked: false
   type: code
+- name: CAPTAIN_REPLY_CLAIM_CHECK_MODELS
+  display_title: 'Цепочка проверки заявления о выполненной записи'
+  description: 'Модели решений для проверки черновика по порядку. Пусто — microsoft/microsoft-decision-1, затем perplexity/pplx-decider-v1.2. На каждую модель отводится около 1,5 секунды; если обе недоступны, черновик передаётся сотруднику.'
+  value: '["microsoft/microsoft-decision-1", "perplexity/pplx-decider-v1.2"]'
+  locked: false
+  type: code
 - name: CAPTAIN_AGENT_ROUTING_ESCALATION_MODEL
   display_title: 'Модель трудных решений о выборе агента'
   description: 'Сильная модель чата с рассуждением. Получает тот же вопрос, что и модели решений, когда их уверенность ниже порога (0.75 для агента и консилиума, 0.80 для передачи сотруднику), и возвращает один вариант со структурированным ответом. Если она не ответила вовремя или с ошибкой, решает ответ моделей решений, когда он сложился в вариант (агент, консилиум, сотрудник); иначе ход завершается технической ошибкой и диалог передаётся сотрудникам. Пусто — openai/gpt-6-luna.'

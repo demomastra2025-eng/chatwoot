@@ -42,6 +42,14 @@ RSpec.describe Llm::DecisionChain do
     LlmEvent.where(account_id: account.id, event_name: 'llm.decision.complete').order(:id)
   end
 
+  it 'uses the reply claim feature profile and its own ordered model chain' do
+    profile = Llm::FeatureProfile.for(:reply_claim_check, account: account)
+    expect(profile).to have_attributes(timeout_seconds: 1.5, strict_timeout?: true, native_endpoint: '/alpha/decisions')
+    expect(described_class.models(:reply_claim_check)).to eq(%w[microsoft/microsoft-decision-1 perplexity/pplx-decider-v1.2])
+    setting = YAML.load_file(Rails.root.join('config/installation_config.yml')).find { |entry| entry['name'] == 'CAPTAIN_REPLY_CLAIM_CHECK_MODELS' }
+    expect(JSON.parse(setting.fetch('value'))).to eq(described_class.models(:reply_claim_check))
+  end
+
   it 'answers with the head of the chain in one call and returns the choice, confidence, probabilities and model' do
     head = stub_decision_model('inception/mercury-decide', answer('inception/mercury-decide'))
 

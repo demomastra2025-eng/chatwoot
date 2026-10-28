@@ -118,6 +118,8 @@ class Llm::FeatureProfile
       decision_fallback_models: %w[openai/gpt-6-luna-decisions]
     },
     'agent_routing' => TURN_DECISION_DEFINITION.merge(config_feature_key: 'agent_routing'),
+    'reply_claim_check' => TURN_DECISION_DEFINITION.merge(config_feature_key: 'reply_claim_check', timeout_seconds: 1.5,
+                                                          cost_policy: 'guardrail'),
     'fact_check_gate' => TURN_DECISION_DEFINITION.merge(config_feature_key: 'fact_check_gate', cost_policy: 'guardrail'),
     'inbound_triage' => TURN_DECISION_DEFINITION.merge(config_feature_key: 'inbound_triage'),
     # The strong reasoning chat model that decides a routing turn the decision models were not confident about: the same state

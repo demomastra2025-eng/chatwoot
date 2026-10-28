@@ -24,6 +24,7 @@ module Llm::Models
     'language_detection' => %w[decision_classification],
     'custom_guardrail' => %w[structured_output],
     'agent_routing' => %w[decision_classification],
+    'reply_claim_check' => %w[decision_classification],
     'fact_check_gate' => %w[decision_classification],
     'inbound_triage' => %w[decision_classification],
     'agent_routing_escalation' => %w[structured_output],
