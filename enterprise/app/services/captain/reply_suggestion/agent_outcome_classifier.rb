@@ -165,9 +165,13 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
     if payload[:reply_claim_check].to_s == 'unavailable'
       return human_needed(I18n.t('captain.reply_suggestion.reasons.claim_check_unavailable'), 'safety')
     end
+
     if payload[:reply_claim_check].to_s == 'done'
       return human_needed(I18n.t('captain.reply_suggestion.reasons.unsupported_claims',
                                  claims: payload[:response].to_s.squish.truncate(120)), 'safety')
+    end
+    if payload[:reply_claim_check].to_s == 'no_appointment'
+      return human_needed(I18n.t('captain.reply_suggestion.reasons.appointment_exists'), 'safety')
     end
 
     meta = draft_meta

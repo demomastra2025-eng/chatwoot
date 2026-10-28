@@ -37,6 +37,14 @@ RSpec.describe Captain::ReplySuggestion::AgentOutcomeClassifier do
       expect(blocked).to include(outcome: 'human_needed', reason_source: 'safety',
                                  reason: I18n.t('captain.reply_suggestion.reasons.claim_check_unavailable'))
     end
+
+    it 'sends a false no-appointment draft to a human with its own reason' do
+      blocked = described_class.new(reply.merge('reply_claim_check' => 'no_appointment'), trace_collector: trace_collector).perform
+
+      expect(blocked).to include(outcome: 'human_needed', reason_source: 'safety',
+                                 reason: I18n.t('captain.reply_suggestion.reasons.appointment_exists'))
+      expect(blocked).not_to have_key(:message)
+    end
   end
 
   context 'when the agent says that no reply is needed' do
