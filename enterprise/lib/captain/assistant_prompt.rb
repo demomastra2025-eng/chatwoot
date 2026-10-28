@@ -39,7 +39,8 @@ class Captain::AssistantPrompt
     return variables unless @suggestion
 
     variables.merge(operator_language: operator_language, staff_voice_note: staff_voice_note,
-                    booking_search: booking_search?, faq_lines: faq_lines)
+                    booking_search: booking_search?, faq_lines: faq_lines,
+                    staff_reply_signature: @context[:staff_reply_signature].to_s)
   end
 
   private

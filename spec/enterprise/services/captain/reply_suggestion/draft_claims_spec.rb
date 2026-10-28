@@ -73,4 +73,39 @@ RSpec.describe Captain::ReplySuggestion::DraftClaims do
 
     expect(described_class.unsupported(draft: 'Ваша запись отменена.', context: context)).to eq([])
   end
+
+  describe '.unsupported_completed_actions' do
+    def completed(draft, records: [], cards: [])
+      described_class.unsupported_completed_actions(
+        draft: draft, context: { captain_v2_completed_tool_results: records, captain_suggestion_pending_actions: cards }
+      )
+    end
+
+    it 'blocks unsupported booking, cancellation and move claims in Russian and Kazakh' do
+      ['Спасибо, записала вас.', 'Вы записаны.', 'Запись создана.', 'Жаздым.', 'Жазылдыңыз.', 'Тіркелдіңіз.'].each do |draft|
+        expect(completed(draft)).not_to be_empty, draft
+      end
+      ['Отменила запись.', 'Запись отменена.', 'Тоқтаттым.', 'Перенесла запись.', 'Ауыстырдым.'].each do |draft|
+        expect(completed(draft)).not_to be_empty, draft
+      end
+    end
+
+    it 'requires a successful result or a pending approval card for the matching action' do
+      failed = [{ tool_name: 'cancel_appointment', success: false }]
+      succeeded = [{ tool_name: 'cancel_appointment', success: true }]
+      card = [{ tool_name: 'create_appointment', status: 'pending' }]
+
+      expect(completed('Я отменила запись.', records: failed)).to eq(['cancel'])
+      expect(completed('Я отменила запись.', records: succeeded)).to eq([])
+      expect(completed('Записала вас.', cards: card)).to eq([])
+      expect(completed('Записала вас.', cards: [{ tool_name: 'create_appointment', status: 'rejected' }])).to eq(['book'])
+      expect(completed('Запись создана.', records: [{ tool_name: 'create_task', success: true }])).to eq(['create_state'])
+    end
+
+    it 'does not flag questions, future promises or facts unrelated to appointments' do
+      ['Записать вас?', 'Запишу после подтверждения.', 'Я записала ваш номер.'].each do |draft|
+        expect(completed(draft)).to eq([]), draft
+      end
+    end
+  end
 end

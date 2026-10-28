@@ -108,6 +108,9 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
     publish_service_match(payload)
     answer = Captain::Tools::Agent::SlotsPayload.answer(payload, days_limit: limit)
     answer = answer.merge(empty_range_fields(payload, search_params)) if payload[:total_slots].to_i.zero?
+    absences = Scheduling::TimeOffPayload.for(account: account, resource_ids: payload[:candidate_resource_ids],
+                                              from: search_params[:from], to: search_params[:to])
+    answer[:absences] = absences if absences.any?
     compact_payload(answer)
   end
 

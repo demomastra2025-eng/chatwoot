@@ -25,4 +25,10 @@ RSpec.describe Telephony::CallRecordingTranscriptionJob do
 
     described_class.perform_now(999_999)
   end
+
+  it 'retries a transient statement timeout while another call update holds the session row' do
+    allow(Telephony::CallRecordingTranscriptionService).to receive(:new).and_raise(ActiveRecord::QueryCanceled, 'statement timeout')
+
+    expect { described_class.perform_now(call_session.id) }.to have_enqueued_job(described_class).with(call_session.id)
+  end
 end

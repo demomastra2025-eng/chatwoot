@@ -37,6 +37,15 @@ RSpec.describe Captain::AssistantPrompt do
     suggestion = described_class.new(assistant: assistant, context: context, state: {}, prompt_state: {}, suggestion: true).variables
     expect(suggestion[:staff_voice_note]).to eq(Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE)
     expect(suggestion[:operator_language]).to be_present
+    expect(suggestion[:staff_reply_signature]).to eq('')
+  end
+
+  it 'passes the requesting staff signature only to a suggestion prompt' do
+    suggestion = described_class.new(assistant: assistant, context: context.merge(staff_reply_signature: 'Clinic Test, operator Ana'),
+                                     state: {}, prompt_state: {}, suggestion: true).variables
+
+    expect(suggestion[:staff_reply_signature]).to eq('Clinic Test, operator Ana')
+    expect(variables(staff_reply_signature: 'Clinic Test, operator Ana')).not_to have_key(:staff_reply_signature)
   end
 
   it 'resolves the contact field of the clinic context, which the clinic instruction does not link' do

@@ -589,7 +589,9 @@ class Captain::ReplySuggestion::ActionApprovalService
         appointment_access_token: arguments[:appointment_access_token],
         patient_confirmed: arguments[:patient_confirmed] == true
       )
-      Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
+      # Imported receptions are cancelled by ImportedProviderMutationService after approval.
+      Scheduling::Appointments::MutationGuard.ensure_editable!(appointment) unless
+        appointment.source == Scheduling::Appointments::MutationGuard::PROVIDER_SOURCE
       nil
     rescue StandardError => e
       Captain::Tools::Agent::AppointmentResult.failure_output(e, account: account)

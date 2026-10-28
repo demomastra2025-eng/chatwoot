@@ -554,6 +554,20 @@ RSpec.describe Captain::ReplySuggestionService do
 
           expect(legacy.send(:request_event_context, 'gpt-5.4-mini')).to include(request_id: 'req-9')
         end
+
+        it 'uses the requesting staff member workspace signature in the one-shot prompt' do
+          account.account_users.find_by!(user_id: agent.id).update!(reply_signature: 'Clinic Test, operator Ana')
+          legacy = described_class.new(account: account, conversation_display_id: conversation.display_id, user: agent, engine: 'legacy_prompt')
+
+          expect(legacy.send(:system_prompt)).to include('Clinic Test, operator Ana')
+          expect(legacy.send(:system_prompt)).not_to include('End with a professional sign-off using the agent\'s name')
+        end
+
+        it 'blocks a one-shot draft that claims an appointment was booked without an action' do
+          legacy = described_class.new(account: account, conversation_display_id: conversation.display_id, user: agent, engine: 'legacy_prompt')
+
+          expect(legacy.send(:legacy_draft, message: 'Спасибо, записала вас.')).to include(outcome: 'human_needed', reason_source: 'safety')
+        end
       end
 
       describe 'the history of the agent' do

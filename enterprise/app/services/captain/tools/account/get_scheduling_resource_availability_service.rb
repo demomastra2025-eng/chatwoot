@@ -31,6 +31,8 @@ class Captain::Tools::Account::GetSchedulingResourceAvailabilityService < Captai
     range_from, range_to = present
     payload = availability_payload(resource, service_record, service_id, range_from, range_to, duration_min, limit)
     payload = named_slots(payload, resource) if agent_scope?
+    absences = Scheduling::TimeOffPayload.for(account: account, resource_ids: [resource.id], from: range_from, to: range_to)
+    payload[:absences] = absences if absences.any?
 
     formatted_payload(with_provider_note(resource, range_from, range_to, payload.merge(availability_metadata(resource, service_record))))
   rescue StandardError => e

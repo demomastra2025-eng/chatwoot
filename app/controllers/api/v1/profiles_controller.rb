@@ -15,15 +15,17 @@ class Api::V1::ProfilesController < Api::BaseController
   end
 
   def update
-    if password_params[:password].present?
-      render_could_not_create_error('Invalid current password') and return unless @user.valid_password?(password_params[:current_password])
-
-      @user.update!(password_params.except(:current_password))
+    if password_params[:password].present? && !@user.valid_password?(password_params[:current_password])
+      render_could_not_create_error('Invalid current password') and return
     end
 
-    @user.assign_attributes(profile_params)
-    @user.custom_attributes.merge!(custom_attributes_params)
-    @user.save!
+    AccountUser.transaction do
+      @user.update!(password_params.except(:current_password)) if password_params[:password].present?
+      @user.assign_attributes(profile_params.except(:account_id))
+      @user.custom_attributes.merge!(custom_attributes_params)
+      @user.save!
+      update_reply_signature! if reply_signature_params.key?(:reply_signature)
+    end
   end
 
   def avatar
@@ -83,6 +85,16 @@ class Api::V1::ProfilesController < Api::BaseController
       :account_id,
       ui_settings: {}
     )
+  end
+
+  def reply_signature_params
+    params.require(:profile).permit(:account_id, :reply_signature)
+  end
+
+  def update_reply_signature!
+    membership = @user.account_users.find_by!(account_id: reply_signature_params[:account_id])
+    membership.update!(reply_signature: reply_signature_params[:reply_signature].to_s.strip.presence)
+    @user.account_users.reload
   end
 
   def custom_attributes_params

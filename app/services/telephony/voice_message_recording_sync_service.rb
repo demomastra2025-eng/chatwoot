@@ -6,10 +6,8 @@ class Telephony::VoiceMessageRecordingSyncService
   end
 
   def perform
-    call_session.with_lock do
-      call_session.reload
-      sync_exact_message
-    end
+    call_session.reload
+    sync_exact_message
   end
 
   private
@@ -20,7 +18,10 @@ class Telephony::VoiceMessageRecordingSyncService
     message = call_session.logical_group_voice_message
     return if message.blank?
 
-    message.with_lock { sync_message(message) }
+    message.with_lock do
+      call_session.reload
+      sync_message(message)
+    end
   end
 
   def sync_message(message)

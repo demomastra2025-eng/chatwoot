@@ -23,6 +23,12 @@ module Captain::ReplySuggestion::DraftClaims
     reschedule: %w[update_appointment],
     reschedule_state: %w[update_appointment]
   }.freeze
+  COMPLETED_SUPPORT = {
+    book: %w[create_appointment], book_state: %w[create_appointment],
+    reschedule: %w[update_appointment], reschedule_state: %w[update_appointment],
+    cancel: %w[cancel_appointment], cancel_state: %w[cancel_appointment]
+  }.merge(%i[create create_state done done_state].index_with { Captain::Evals::RoutingBenchmark::SuccessClaims::MUTATING_TOOLS }).freeze
+  APPOINTMENT_OBJECT = /(?<!\p{L})(?:запис\p{L}*|при[её]м\p{L}*|брон\p{L}*|жаз\p{L}*|тіркел\p{L}*)(?!\p{L})/i
   # «нет записи», «у вас нет предстоящих записей», «записей нет», «запись не найдена», «не нашла вашу запись», «нечего отменять»,
   # «ничего не записано», «отменять нечего», «жазба жоқ», «жазылмағансыз». The Kazakh letters are written as typed.
   ABSENCE = Regexp.union(
@@ -38,6 +44,41 @@ module Captain::ReplySuggestion::DraftClaims
   )
 
   module_function
+
+  # A completed appointment action needs evidence from this run. A tool name alone is
+  # insufficient: a failed call to cancel_appointment must never authorize "отменила".
+  def unsupported_completed_actions(draft:, context:)
+    return [] if draft.to_s.blank?
+
+    supported = successful_actions(context.to_h)
+    Captain::Evals::RoutingBenchmark::SuccessClaims.kinds(draft).filter_map do |kind|
+      required = completion_support(kind, draft)
+      kind.to_s if required && !required.intersect?(supported)
+    end.uniq
+  end
+
+  def completion_support(kind, draft)
+    return %w[create_appointment] if kind.in?(%i[create create_state]) && draft.match?(APPOINTMENT_OBJECT)
+
+    COMPLETED_SUPPORT[kind]
+  end
+
+  def successful_actions(context)
+    details = context.with_indifferent_access
+    successful = Array(details[:captain_v2_completed_tool_results]).filter_map { |record| successful_tool_name(record) }
+    pending = Array(details[:captain_suggestion_pending_actions]).filter_map { |card| pending_tool_name(card) }
+    (successful + pending).map { |name| Captain::Runtime::ToolFailure.canonical_name(name) }.uniq
+  end
+
+  def successful_tool_name(record)
+    item = record.to_h.with_indifferent_access
+    item[:tool_name] if item[:success] == true
+  end
+
+  def pending_tool_name(card)
+    item = card.to_h.with_indifferent_access
+    item[:tool_name] if item[:status].to_s.in?(%w[pending pending_operator_approval])
+  end
 
   # The claims of the draft that nothing in the run supports: any of KINDS; empty when the draft claims nothing unsupported.
   def unsupported(draft:, context:)

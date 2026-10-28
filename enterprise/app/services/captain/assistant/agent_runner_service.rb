@@ -586,6 +586,9 @@ class Captain::Assistant::AgentRunnerService
     flag_kind!(response, 'unverified_times') { Captain::ReplySuggestion::DraftTimes.unverified(draft: draft, context: context) }
     flag_kind!(response, 'misattributed_times') { Captain::ReplySuggestion::DraftSpecialists.misattributed(draft: draft, context: context) }
     flag_kind!(response, 'unsupported_claims') { Captain::ReplySuggestion::DraftClaims.unsupported(draft: draft, context: context) }
+    flag_kind!(response, 'unsupported_completed_actions') do
+      Captain::ReplySuggestion::DraftClaims.unsupported_completed_actions(draft: draft, context: context)
+    end
   end
 
   def flag_kind!(response, key)

@@ -58,6 +58,17 @@ RSpec.describe Captain::Tools::Account::GetSchedulingResourceAvailabilityService
       expect(payload['slots'].first['ends_at']).to eq('2026-04-20T09:30:00+05:00')
     end
 
+    it 'includes the specialist absence reason and last day even with provider hours' do
+      resource.update!(custom_attributes: { 'medelement_specialist_code' => 'provider-123' })
+      zone = Time.find_zone!('Asia/Almaty')
+      create(:scheduling_time_off, account: account, resource: resource, kind: 'vacation',
+                                   starts_at: zone.local(2026, 4, 20), ends_at: zone.local(2026, 4, 23), notes: 'Annual leave')
+
+      payload = JSON.parse(service.execute(resource_id: resource.id, from: from_time.iso8601, to: to_time.iso8601))
+
+      expect(payload['absences']).to include(include('kind' => 'vacation', 'through' => '2026-04-22', 'reason' => 'Annual leave'))
+    end
+
     it 'does not return local windows for a provider specialist when provider access is unavailable' do
       resource.update!(custom_attributes: { 'medelement_specialist_code' => 'provider-123' })
 

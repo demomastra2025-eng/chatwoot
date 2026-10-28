@@ -87,6 +87,34 @@ RSpec.describe 'Profile API', type: :request do
         expect(json_response['message_signature']).to eq('Thanks\nMy Signature')
       end
 
+      it 'saves the reply signature only for the requested workspace membership' do
+        other_account = create(:account)
+        create(:account_user, account: other_account, user: agent)
+
+        put '/api/v1/profile',
+            params: { profile: { account_id: account.id, reply_signature: 'Клиника Тест, администратор Анна' } },
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(agent.account_users.find_by!(account: account).reply_signature).to eq('Клиника Тест, администратор Анна')
+        expect(agent.account_users.find_by!(account: other_account).reply_signature).to be_nil
+        expect(response.parsed_body.fetch('accounts').find { |item| item['id'] == account.id }['reply_signature'])
+          .to eq('Клиника Тест, администратор Анна')
+      end
+
+      it 'refuses to save a signature for a workspace without membership' do
+        foreign_account = create(:account)
+
+        put '/api/v1/profile',
+            params: { profile: { account_id: foreign_account.id, reply_signature: 'Not allowed' } },
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:not_found)
+        expect(agent.account_users.find_by!(account: account).reply_signature).to be_nil
+      end
+
       it 'updates the password when current password is provided' do
         put '/api/v1/profile',
             params: { profile: { current_password: 'Test123!', password: 'Test1234!', password_confirmation: 'Test1234!' } },

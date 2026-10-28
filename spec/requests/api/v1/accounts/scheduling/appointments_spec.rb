@@ -1324,6 +1324,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       resource: resource,
       account: account,
       contact: contact,
+      patient_contact: nil,
       service: service,
       source: 'medelement',
       external_ref: 'medelement:reception:1'
