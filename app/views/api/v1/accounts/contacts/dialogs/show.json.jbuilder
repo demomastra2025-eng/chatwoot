@@ -1,4 +1,4 @@
-json.communication_thread_id nil
+json.communication_thread_id @communication_thread_id
 json.contact do
   json.partial! 'api/v1/models/contact', formats: [:json], resource: @contact
 end

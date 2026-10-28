@@ -17,14 +17,15 @@ class Api::V1::Accounts::Contacts::DialogsController < Api::V1::Accounts::Contac
 
   def show
     thread = accessible_thread
-    return render json: { communication_thread_id: thread.display_id } if thread
+    return render json: { communication_thread_id: thread.display_id } if thread && params[:include_reply_channels].to_s != 'true'
 
     @channels = CommunicationThreads::ChannelCapabilitiesBuilder.new(
-      links: [],
+      links: thread ? accessible_links_for(thread).joins(:inbox).includes(:conversation, :contact_inbox).to_a : [],
       contact: @contact,
       available_inboxes: accessible_inboxes.to_a,
       include_unlinked: true
     ).perform
+    @communication_thread_id = thread&.display_id
     @shared_phone_holder = Contacts::SharedPhone.holder_contact(@contact)
   end
 

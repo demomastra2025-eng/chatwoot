@@ -98,6 +98,26 @@ RSpec.describe 'Contact dialog API', type: :request do
       expect(response.parsed_body).to eq('communication_thread_id' => thread.display_id)
     end
 
+    it 'offers reachable reply channels for an existing dialog when requested' do
+      conversation = create(:conversation, account: account, contact: contact, inbox: whatsapp_inbox,
+                                           contact_inbox: create(:contact_inbox, contact: contact, inbox: whatsapp_inbox))
+      thread = conversation.reload.communication_thread
+      second_channel = create(
+        :channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false
+      )
+      second_inbox = second_channel.inbox
+
+      get dialog_path, params: { include_reply_channels: true }, headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      body = response.parsed_body
+      expect(body['communication_thread_id']).to eq(thread.display_id)
+      expect(body['channels'].pluck('inbox_id')).to include(whatsapp_inbox.id, second_inbox.id)
+      expect(body['channels'].find { |channel| channel['inbox_id'] == second_inbox.id }).to include(
+        'channel_key' => "inbox:#{second_inbox.id}", 'requires_template' => true
+      )
+    end
+
     it 'offers an agent only the channels of the inboxes the agent works in', :aggregate_failures do
       other_inbox = inbox_without_agent
 

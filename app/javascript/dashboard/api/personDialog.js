@@ -10,8 +10,11 @@ class PersonDialogApi extends ApiClient {
     super('contacts', { accountScoped: true });
   }
 
-  show(contactId) {
-    return axios.get(`${this.url}/${contactId}/dialog`);
+  show(contactId, { includeReplyChannels = false } = {}) {
+    const url = `${this.url}/${contactId}/dialog`;
+    return includeReplyChannels
+      ? axios.get(url, { params: { include_reply_channels: true } })
+      : axios.get(url);
   }
 
   createMessage(contactId, message) {
