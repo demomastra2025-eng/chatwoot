@@ -27,15 +27,36 @@ class Telephony::CallTranscript
   def self.channel_activity(path, duration_seconds:)
     return {} if Llm::OpenRouterAudioInput.ffmpeg_path.blank?
 
+    limit = duration_seconds.to_f.positive? ? [duration_seconds.to_f, 300.0].min : 300.0
     %w[0 1].to_h do |channel|
       _stdout, stderr, status = Open3.capture3(
         Llm::OpenRouterAudioInput.ffmpeg_path, '-nostdin', '-hide_banner', '-t', '300', '-i', path.to_s,
         '-af', "pan=mono|c0=c#{channel},silencedetect=noise=-35dB:d=0.3", '-f', 'null', '-'
       )
-      [channel, status.success? ? active_intervals(stderr, [duration_seconds.to_f, 300].min) : []]
+      [channel, status.success? ? active_intervals(stderr, limit) : []]
     end
   rescue Errno::ENOENT
     {}
+  end
+
+  def self.from_segments(segments, channel_activity: {}, roles: %w[operator client])
+    Array(segments).filter_map do |seg|
+      data = seg.to_h.stringify_keys
+      start_sec = data['start'].to_f
+      end_sec = [data['end'].to_f, start_sec + 0.1].max
+      speaker = segment_speaker(start_sec, end_sec, channel_activity, roles)
+      normalize_item('speaker' => speaker, 'start_sec' => start_sec.floor, 'text' => data['text'])
+    end
+  end
+
+  def self.segment_speaker(start_sec, end_sec, activity, roles)
+    c0 = Array(activity['0'])
+    c1 = Array(activity['1'])
+    return roles.first if c0.empty? && c1.empty?
+
+    o0 = c0.sum { |s, e| [[end_sec, e.to_f].min - [start_sec, s.to_f].max, 0.0].max }
+    o1 = c1.sum { |s, e| [[end_sec, e.to_f].min - [start_sec, s.to_f].max, 0.0].max }
+    o1 > o0 ? roles.last : roles.first
   end
 
   def self.active_intervals(output, duration)

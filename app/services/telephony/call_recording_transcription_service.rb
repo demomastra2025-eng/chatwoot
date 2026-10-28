@@ -93,25 +93,57 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
 
   def transcribe_recording
     file_path, staged_remote_file = resolve_recording_file!
-    probe_audio!(file_path)
     provider_file_path = audio_file_path_for_provider(file_path)
+    probe_audio!(file_path, provider_path: provider_file_path)
     response = if openrouter_chat_transcription?
                  transcribe_with_openrouter_chat(provider_file_path)
                else
                  transcribe_with_transcription_endpoint(provider_file_path)
                end
 
-    response.respond_to?(:text) ? response.text.to_s : response.to_s
+    format_transcription_response(response)
   ensure
     FileUtils.rm_f(provider_file_path) if provider_file_path.present? && provider_file_path != file_path
     FileUtils.rm_f(file_path) if staged_remote_file && file_path.present?
   end
 
-  def probe_audio!(file_path)
+  def probe_audio!(file_path, provider_path: file_path)
     @audio_probe = Telephony::CallTranscript.probe(file_path)
+    if provider_path != file_path && @audio_probe['duration_seconds'].blank?
+      @audio_probe = @audio_probe.merge(Telephony::CallTranscript.probe(provider_path))
+    end
     return unless @audio_probe['channels'] == 2
 
-    @channel_activity = Telephony::CallTranscript.channel_activity(file_path, duration_seconds: @audio_probe['duration_seconds'])
+    @channel_activity = Telephony::CallTranscript.channel_activity(provider_path, duration_seconds: @audio_probe['duration_seconds'])
+  end
+
+  def format_transcription_response(response)
+    segments = response.respond_to?(:segments) ? Array(response.segments) : []
+    return response.respond_to?(:text) ? response.text.to_s : response.to_s if segments.empty?
+
+    roles = [
+      channel_role_label('channel_1', default: 'Operator').downcase,
+      channel_role_label('channel_2', default: 'Client').downcase
+    ]
+    items = Telephony::CallTranscript.from_segments(segments, channel_activity: @channel_activity.to_h, roles: roles)
+    enrich_segmented_transcript(items, response.text.to_s)
+  end
+
+  def enrich_segmented_transcript(items, fallback_text)
+    dialogue = Telephony::CallTranscript.format(items).presence || fallback_text
+    prompt = 'Analyze this clinic call transcript. Return ONLY JSON with summary (1-2 factual sentences in Russian), ' \
+             'outcome (booked/rescheduled/cancelled/consultation/callback_requested/no_answer/other), and topics (1-5 Russian tags).'
+    prompt += ' Also include transcript_items (speaker operator/client, timestamp, start_sec, text).' unless dual_channel_recording?
+    chat = Llm::Runtime.chat(
+      feature: :customer_notice, account: account,
+      messages: [{ role: 'user', content: "#{prompt}\n\n#{dialogue}" }],
+      options: { temperature: 0.1 }
+    )
+    parsed = Telephony::CallTranscript.decode(chat&.content.to_s)
+    parsed['transcript_items'] = items if dual_channel_recording? || Array(parsed['transcript_items']).empty?
+    parsed.to_json
+  rescue StandardError
+    { 'transcript_items' => items }.to_json
   end
 
   def transcribe_with_transcription_endpoint(file_path)
@@ -123,20 +155,6 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
         model: model,
         input: file_path,
         observability: observability.merge(runtime_mode: 'call_recording_transcription', provider: 'openrouter'),
-        options: { temperature: 0.2 }
-      )
-    end
-  end
-
-  def transcribe_with_openrouter_transcription_endpoint(file_path)
-    observability = instrumentation_params(file_path).merge(provider: 'openrouter')
-    instrument_audio_transcription(observability) do
-      Llm::Runtime.transcribe(
-        feature: :audio_transcription,
-        account: account,
-        model: model,
-        input: file_path,
-        observability: observability.merge(runtime_mode: 'call_recording_transcription'),
         options: { temperature: 0.2 }
       )
     end

@@ -36,10 +36,9 @@ class Llm::OpenRouterTranscriptionClient
         request.body = JSON.generate(
           {
             model: options[:model],
-            input_audio: {
-              data: Base64.strict_encode64(File.binread(file_path)),
-              format: Llm::OpenRouterAudioInput.format_for(file_path)
-            },
+            input_audio: { data: Base64.strict_encode64(File.binread(file_path)), format: Llm::OpenRouterAudioInput.format_for(file_path) },
+            response_format: options.fetch(:response_format, 'verbose_json'),
+            timestamp_granularities: options.fetch(:timestamp_granularities, ['segment']),
             language: options[:language].presence,
             temperature: options[:temperature],
             provider: provider_payload(options)
@@ -84,6 +83,8 @@ class Llm::OpenRouterTranscriptionClient
         model: model,
         language: body['language'],
         duration: usage['seconds'] || body['duration'],
+        segments: body['segments'],
+        words: body['words'],
         input_tokens: usage['input_tokens'] || usage['prompt_tokens'],
         output_tokens: usage['output_tokens'] || usage['completion_tokens']
       )

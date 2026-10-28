@@ -4,7 +4,7 @@ require 'open3'
 
 class Llm::OpenRouterAudioInput
   CHAT_INPUT_FORMATS = %w[mp3 wav].freeze
-  TRANSCRIPTION_INPUT_FORMATS = %w[mp3 wav flac m4a ogg webm aac].freeze
+  TRANSCRIPTION_INPUT_FORMATS = %w[mp3 wav flac m4a ogg aac].freeze
   FORMAT_ALIASES = {
     'mpeg' => 'mp3',
     'mpga' => 'mp3',

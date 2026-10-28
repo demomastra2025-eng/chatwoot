@@ -15,7 +15,7 @@ counts = { scanned: 0, mono: 0, stereo: 0, unknown_channels: 0, succeeded: 0, sk
 channel_counts = { 1 => :mono, 2 => :stereo }.freeze
 duration_seconds = 0.0
 
-scope = scope.order(:id)
+scope = scope.order(id: :desc)
 scope = scope.limit(limit) if limit
 scope.each do |call_session|
   counts[:scanned] += 1
