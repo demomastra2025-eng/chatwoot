@@ -221,6 +221,13 @@ export default {
         null
       );
     },
+    isDraftOfficialWhatsApp() {
+      return (
+        this.isDraft &&
+        this.activeReplyChannel?.channel === 'Channel::Whatsapp' &&
+        this.activeReplyChannel?.disabled !== true
+      );
+    },
     selectedChannelCanReply() {
       if (!this.isCommunicationThreadConversation) {
         return this.currentChat?.can_reply;
@@ -274,6 +281,7 @@ export default {
       if (
         this.selectedChannelCanReply ||
         this.isAWhatsAppChannel ||
+        this.isDraftOfficialWhatsApp ||
         this.isAPIInbox ||
         this.isAVoiceChannel
       ) {
@@ -284,7 +292,12 @@ export default {
     isReplyRestricted() {
       return (
         !this.selectedChannelCanReply &&
-        !(this.isAWhatsAppChannel || this.isAPIInbox || this.isAVoiceChannel)
+        !(
+          this.isAWhatsAppChannel ||
+          this.isDraftOfficialWhatsApp ||
+          this.isAPIInbox ||
+          this.isAVoiceChannel
+        )
       );
     },
     inboxId() {
@@ -295,7 +308,16 @@ export default {
         : this.currentChat.inbox_id;
     },
     inbox() {
-      return this.$store.getters['inboxes/getInbox'](this.inboxId);
+      const inbox = this.$store.getters['inboxes/getInbox'](this.inboxId);
+      if (inbox?.id) return inbox;
+      if (!this.isDraft || !this.activeReplyChannel) return {};
+
+      return {
+        id: this.activeReplyChannel.inbox_id,
+        channel_type: this.activeReplyChannel.channel,
+        provider: this.activeReplyChannel.provider,
+        medium: this.activeReplyChannel.medium,
+      };
     },
     messagePlaceHolder() {
       if (this.isEditorDisabled) {
@@ -619,7 +641,9 @@ export default {
       if (this.isCommunicationCallReplyAction) return false;
 
       return (
-        (this.isAWhatsAppChannel || this.isAPIInbox) &&
+        (this.isAWhatsAppChannel ||
+          this.isDraftOfficialWhatsApp ||
+          this.isAPIInbox) &&
         !this.isOnPrivateNote &&
         !this.selectedChannelCanSendText
       );
@@ -629,7 +653,7 @@ export default {
     // template. The reply area then says so instead of showing an empty editor.
     isWhatsappTemplateOnly() {
       return (
-        this.isAWhatsAppChannel &&
+        (this.isAWhatsAppChannel || this.isDraftOfficialWhatsApp) &&
         this.isEditorDisabled &&
         !this.isEditingMessage
       );
@@ -657,6 +681,7 @@ export default {
       if (
         canReply ||
         this.isAWhatsAppChannel ||
+        this.isDraftOfficialWhatsApp ||
         this.isAPIInbox ||
         this.isAVoiceChannel
       ) {
@@ -818,6 +843,7 @@ export default {
       if (
         this.selectedChannelCanReply ||
         this.isAWhatsAppChannel ||
+        this.isDraftOfficialWhatsApp ||
         this.isAPIInbox ||
         this.isAVoiceChannel
       ) {
@@ -1377,7 +1403,12 @@ export default {
       this.$store.dispatch('draftMessages/setReplyEditorMode', {
         mode,
       });
-      if (canReply || this.isAWhatsAppChannel || this.isAPIInbox)
+      if (
+        canReply ||
+        this.isAWhatsAppChannel ||
+        this.isDraftOfficialWhatsApp ||
+        this.isAPIInbox
+      )
         this.replyType = mode;
       if (this.isRecordingAudio) {
         this.toggleAudioRecorder();

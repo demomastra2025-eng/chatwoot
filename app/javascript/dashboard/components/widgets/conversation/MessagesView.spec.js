@@ -111,6 +111,18 @@ describe('MessagesView', () => {
     ).toBe(false);
   });
 
+  it('does not show the legacy reply-window banner for a draft', () => {
+    expect(
+      MessagesView.computed.shouldShowReplyWindowBanner.call({
+        isDraft: true,
+        currentChat: { is_draft: true, can_reply: false },
+        isAVoiceChannel: false,
+        isAWhatsAppChannel: false,
+        hasCommunicationThreadReplyableChannel: false,
+      })
+    ).toBe(false);
+  });
+
   it('does not show the messaging-window banner for replyable communication threads', () => {
     expect(
       MessagesView.computed.hasCommunicationThreadReplyableChannel.call({
@@ -1090,7 +1102,11 @@ describe('MessagesView', () => {
     it('does not load older history from the top observer before the user scrolls up', () => {
       const fetchPreviousMessages = vi.fn();
       const context = {
-        conversationPanel: { scrollTop: 0, scrollHeight: 1800, clientHeight: 500 },
+        conversationPanel: {
+          scrollTop: 0,
+          scrollHeight: 1800,
+          clientHeight: 500,
+        },
         hasUserScrolled: false,
         hasUserScrolledUp: false,
         fetchPreviousMessages,
@@ -1133,7 +1149,10 @@ describe('MessagesView', () => {
         preserveOpenedUnreadMessages: vi.fn(),
         makeMessagesRead: vi.fn(),
         isNearConversationBottom(offset = 80) {
-          return MessagesView.methods.isNearConversationBottom.call(this, offset);
+          return MessagesView.methods.isNearConversationBottom.call(
+            this,
+            offset
+          );
         },
         scrollToBottom() {
           return MessagesView.methods.scrollToBottom.call(this);
@@ -1148,11 +1167,10 @@ describe('MessagesView', () => {
       };
 
       // 1. Switch from a scrolled chat to a new chat with only 1 preview message
-      MessagesView.watch.currentChat.call(
-        context,
-        context.currentChat,
-        { id: 987, is_communication_thread: true }
-      );
+      MessagesView.watch.currentChat.call(context, context.currentChat, {
+        id: 987,
+        is_communication_thread: true,
+      });
 
       // 2. Browser clamps scrollTop to 0 and fires native scroll event while dataFetched is undefined
       MessagesView.methods.handleScroll.call(context, {
@@ -1190,11 +1208,14 @@ describe('MessagesView', () => {
         programmaticScrollTop: null,
         hasUserScrolled: false,
         hasUserScrolledUp: false,
-         isLoadingPrevious: false,
+        isLoadingPrevious: false,
         lastScrollTop: 500,
         hideUnreadJumpWhenVisible: vi.fn(),
         isNearConversationBottom(offset = 80) {
-          return MessagesView.methods.isNearConversationBottom.call(this, offset);
+          return MessagesView.methods.isNearConversationBottom.call(
+            this,
+            offset
+          );
         },
         fetchPreviousMessages,
       };
@@ -1253,7 +1274,10 @@ describe('MessagesView', () => {
         lastScrollTop: 120,
         hideUnreadJumpWhenVisible: vi.fn(),
         isNearConversationBottom(offset = 80) {
-          return MessagesView.methods.isNearConversationBottom.call(this, offset);
+          return MessagesView.methods.isNearConversationBottom.call(
+            this,
+            offset
+          );
         },
         setScrollParams() {
           MessagesView.methods.setScrollParams.call(this);

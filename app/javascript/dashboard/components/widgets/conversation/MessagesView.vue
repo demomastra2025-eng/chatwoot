@@ -373,6 +373,7 @@ export default {
     },
     shouldShowReplyWindowBanner() {
       return (
+        !this.isDraft &&
         !this.currentChat?.can_reply &&
         !this.isAVoiceChannel &&
         // A WhatsApp conversation explains its closed window in the reply box

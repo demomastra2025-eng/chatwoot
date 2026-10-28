@@ -100,6 +100,7 @@ const whatsappChannel = {
   inbox_id: WHATSAPP_INBOX_ID,
   inbox_name: 'WhatsApp',
   channel: 'Channel::Whatsapp',
+  provider: 'whatsapp_cloud',
   channel_key: 'inbox:12',
   requires_template: true,
   can_reply: false,
@@ -116,7 +117,7 @@ const draftChat = (channels = [whatsappChannel], extra = {}) => ({
   }),
 });
 
-const buildStore = (dispatched = []) =>
+const buildStore = (dispatched = [], inboxLoaded = true) =>
   createStore({
     getters: {
       getSelectedChat: () => mockChat.value,
@@ -152,7 +153,9 @@ const buildStore = (dispatched = []) =>
           ...(typeof inboxes.state === 'function'
             ? inboxes.state()
             : inboxes.state),
-          records: [{ ...WHATSAPP_INBOX, message_templates: [] }],
+          records: inboxLoaded
+            ? [{ ...WHATSAPP_INBOX, message_templates: [] }]
+            : [],
         }),
       },
     },
@@ -162,13 +165,14 @@ const mountReplyBox = async ({
   chat = draftChat(),
   replyChannelState,
   query = {},
+  inboxLoaded = true,
 } = {}) => {
   mockChat.value = chat;
   const dispatched = [];
   const wrapper = shallowMount(ReplyBox, {
     attachTo: document.body,
     global: {
-      plugins: [buildStore(dispatched)],
+      plugins: [buildStore(dispatched, inboxLoaded)],
       directives: { 'on-clickaway': {} },
       mocks: { $route: { query } },
       provide: replyChannelState ? { replyChannelState } : {},
@@ -247,6 +251,34 @@ describe('ReplyBox in the empty dialog of a person', () => {
     expect(
       find('[data-test-id="whatsapp-template-only-notice"]').textContent
     ).toContain(FOOTER.WHATSAPP_TEMPLATE_ONLY);
+  });
+
+  it('keeps Reply available and sends the first template while the draft inbox loads', async () => {
+    wrapper = await mountReplyBox({ inboxLoaded: false });
+
+    expect(wrapper.vm.replyType).toBe('REPLY');
+    expect(
+      wrapper
+        .findComponent({ name: 'ReplyTopPanel' })
+        .props('isReplyRestricted')
+    ).toBe(false);
+    expect(wrapper.vm.inbox.id).toBe(WHATSAPP_INBOX_ID);
+    expect(
+      find('[data-test-id="whatsapp-template-only-notice"]')
+    ).not.toBeNull();
+    expect(find('[data-test="message-editor"]')).toBeNull();
+    expect(find('[data-test-id="reply-template-button"]')).not.toBeNull();
+
+    await wrapper.vm.onSendWhatsAppReply({
+      message: 'Appointment reminder',
+      templateParams: { name: 'appointment_reminder', language: 'ru' },
+    });
+    expect(sendMessageAction.mock.calls[0][1]).toMatchObject({
+      person_contact_id: 5,
+      channelKey: 'inbox:12',
+      targetInboxId: WHATSAPP_INBOX_ID,
+      templateParams: { name: 'appointment_reminder', language: 'ru' },
+    });
   });
 
   it('lists the approved templates of the channel', async () => {
