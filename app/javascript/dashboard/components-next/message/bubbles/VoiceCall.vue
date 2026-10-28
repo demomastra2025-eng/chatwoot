@@ -142,8 +142,62 @@ const rawRecordingUrl = computed(
 const signedRecordingUrl = ref('');
 const signedRecordingCallRef = ref('');
 const accountId = computed(() => route.params?.accountId?.toString?.() || '');
-const transcript = computed(() => data.value?.transcript);
-const transcriptItems = computed(() => data.value?.transcriptItems || []);
+const transcript = computed(
+  () => data.value?.transcript || data.value?.recording?.transcription?.text
+);
+const recordingTranscription = computed(
+  () => data.value?.recording?.transcription || {}
+);
+const transcriptItems = computed(() =>
+  data.value?.transcriptItems?.length
+    ? data.value.transcriptItems
+    : recordingTranscription.value?.transcriptItems || []
+);
+const transcriptSummary = computed(
+  () => data.value?.transcriptSummary || recordingTranscription.value?.summary
+);
+const transcriptTopics = computed(
+  () =>
+    data.value?.transcriptTopics || recordingTranscription.value?.topics || []
+);
+const dialogueTurns = computed(() => {
+  if (transcriptItems.value.length) return transcriptItems.value;
+  const lines = (transcript.value || '')
+    .split('\n')
+    .filter(line => line.trim());
+  const turns = lines.flatMap(line => {
+    const match = line
+      .trim()
+      .match(
+        /^(?:\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s*)?(Сотрудник|Оператор|Клиент):\s*(.+)$/i
+      );
+    if (!match) return [];
+    return [
+      {
+        timestamp: match[1],
+        speaker: match[2] === 'Клиент' ? 'client' : 'operator',
+        text: match[3],
+      },
+    ];
+  });
+  return turns.length === lines.length ? turns : [];
+});
+const plainTranscript = computed(() =>
+  dialogueTurns.value.length ? '' : transcript.value
+);
+const turnLabelKey = turn => {
+  if (turn.speaker === 'ai') return 'CONVERSATION.VOICE_CALL.AI_AGENT';
+  return ['client', 'caller', 'customer', 'contact', 'user'].includes(
+    turn.speaker
+  )
+    ? 'CONVERSATION.VOICE_CALL.CLIENT'
+    : 'CONVERSATION.VOICE_CALL.OPERATOR';
+};
+const speakerName = speaker => {
+  if (speaker === 'ai') return 'AI-агент';
+  if (speaker === 'operator') return 'Сотрудник';
+  return 'Клиент';
+};
 const aiVoice = computed(() => data.value?.aiVoice || {});
 const callRefs = computed(() =>
   [
@@ -465,9 +519,7 @@ const recordingExtension = computed(() => {
 const transcriptFallback = computed(() => {
   if (transcript.value) return transcript.value;
   return transcriptItems.value
-    .map(
-      item => `${item.speaker === 'ai' ? 'AI-агент' : 'Клиент'}: ${item.text}`
-    )
+    .map(item => `${speakerName(item.speaker)}: ${item.text}`)
     .join('\n');
 });
 
@@ -804,10 +856,67 @@ const handleJoinCall = async () => {
         <div class="px-2 pb-2">
           <AudioChip
             :attachment="recordingAttachment"
-            show-transcribed-text
+            :show-transcribed-text="!dialogueTurns.length && !plainTranscript"
             :collapse-transcript="false"
             class="!w-full rounded-xl px-2 py-2 text-n-slate-12 skip-context-menu"
           />
+          <div
+            v-if="
+              !timelineMessagesEnabled &&
+              (transcriptSummary || transcriptTopics.length)
+            "
+            class="px-2 py-2 text-xs text-n-slate-12"
+          >
+            <div v-if="transcriptSummary" class="mb-2">
+              <span class="font-semibold"
+                >{{ $t('CONVERSATION.VOICE_CALL.SUMMARY') }}:</span
+              >
+              {{ transcriptSummary }}
+            </div>
+            <div v-if="transcriptTopics.length" class="flex flex-wrap gap-1">
+              <span
+                v-for="topic in transcriptTopics"
+                :key="topic"
+                class="rounded bg-n-alpha-2 px-2 py-0.5"
+                >{{ topic }}</span
+              >
+            </div>
+          </div>
+          <div
+            v-if="!timelineMessagesEnabled && dialogueTurns.length"
+            class="space-y-2 px-2 pb-2"
+            data-testid="voice-call-dialogue"
+          >
+            <div
+              v-for="(turn, index) in dialogueTurns"
+              :key="index"
+              class="rounded-lg px-2 py-1.5 text-xs"
+              :class="
+                turnLabelKey(turn).endsWith('CLIENT')
+                  ? 'bg-n-blue-2'
+                  : 'bg-n-teal-2'
+              "
+            >
+              <span class="font-semibold">{{ $t(turnLabelKey(turn)) }}</span>
+              <span
+                v-if="turn.timestamp"
+                class="ml-2 font-mono text-n-slate-10"
+                data-testid="voice-call-turn-time"
+                >[{{ turn.timestamp }}]</span
+              >
+              <div
+                class="mt-0.5 whitespace-pre-wrap break-words text-n-slate-12"
+              >
+                {{ turn.text }}
+              </div>
+            </div>
+          </div>
+          <div
+            v-else-if="!timelineMessagesEnabled && plainTranscript"
+            class="whitespace-pre-wrap break-words px-2 pb-2 text-xs text-n-slate-12"
+          >
+            {{ plainTranscript }}
+          </div>
         </div>
       </details>
 

@@ -490,7 +490,7 @@ describe('VoiceCall bubble', () => {
     expect(recording.attributes('data-collapse-transcript')).toBe('false');
   });
 
-  it('renders call transcript through the shared audio chip like audio messages', () => {
+  it('renders a plain transcript below the audio player', () => {
     const wrapper = buildWrapper({
       contentAttributes: ref({
         data: {
@@ -503,7 +503,8 @@ describe('VoiceCall bubble', () => {
     });
 
     const recording = wrapper.find('[data-testid="voice-call-recording"]');
-    expect(recording.attributes('data-show-transcribed-text')).toBe('true');
+    expect(recording.attributes('data-show-transcribed-text')).toBe('false');
+    expect(wrapper.text()).toContain('Agent: здравствуйте');
     expect(recording.attributes('data-transcribed-text')).toBe(
       'Клиент: привет\nAgent: здравствуйте'
     );
@@ -534,6 +535,38 @@ describe('VoiceCall bubble', () => {
         .find('[data-testid="voice-call-recording"]')
         .attributes('data-transcribed-text')
     ).toBe('Клиент: привет\nAI-агент: слушаю вас');
+  });
+
+  it('renders a role-separated dialogue and a separate summary with topics', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          recordingUrl:
+            '/api/v1/accounts/1/telephony/calls/call-1/recording.wav',
+          transcriptSummary: 'Пациент записался.',
+          transcriptTopics: ['запись'],
+          transcriptItems: [
+            { speaker: 'operator', timestamp: '00:02', text: 'Добрый день' },
+            { speaker: 'client', timestamp: '00:07', text: 'Нужна запись' },
+          ],
+        },
+      }),
+    });
+
+    expect(
+      wrapper.find('[data-testid="voice-call-dialogue"]').text()
+    ).toContain('00:02');
+    expect(
+      wrapper.find('[data-testid="voice-call-dialogue"]').text()
+    ).toContain('Нужна запись');
+    expect(wrapper.text()).toContain('Пациент записался.');
+    expect(wrapper.text()).toContain('запись');
+    expect(
+      wrapper
+        .find('[data-testid="voice-call-recording"]')
+        .attributes('data-show-transcribed-text')
+    ).toBe('false');
   });
 
   it('renders the shared audio waveform chip for cancelled terminal calls with an authorized recording URL', () => {
