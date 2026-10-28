@@ -3,6 +3,10 @@ import { shallowMount } from '@vue/test-utils';
 
 import ContactInfo from './ContactInfo.vue';
 import CrmTasksAPI from 'dashboard/api/crm/tasks';
+import {
+  CRM_DEAL_MANAGE_PERMISSIONS,
+  CRM_TASK_MANAGE_PERMISSIONS,
+} from 'dashboard/constants/permissions';
 
 const routerPushMock = vi.fn();
 const dispatchMock = vi.fn();
@@ -28,13 +32,20 @@ vi.mock('dashboard/components-next/Contacts/VoiceCallButton.vue', () => ({
   },
 }));
 
-const createStore = conversations => ({
+const createStore = (conversations, showActions = false) => ({
   getters: {
     getCurrentAccountId: 1,
     getCurrentUser: {
-      accounts: [{ id: 1, permissions: [] }],
+      accounts: [
+        {
+          id: 1,
+          permissions: showActions
+            ? [...CRM_DEAL_MANAGE_PERMISSIONS, ...CRM_TASK_MANAGE_PERMISSIONS]
+            : [],
+        },
+      ],
     },
-    'accounts/isFeatureEnabledonAccount': () => false,
+    'accounts/isFeatureEnabledonAccount': () => showActions,
     'contacts/getUIFlags': {},
     'agents/getVerifiedAgents': [
       { id: 7, name: 'Aigerim Agent' },
@@ -52,7 +63,11 @@ const createStore = conversations => ({
   dispatch: dispatchMock,
 });
 
-const buildWrapper = ({ conversations = [], contact = {} } = {}) =>
+const buildWrapper = ({
+  conversations = [],
+  contact = {},
+  showActions = false,
+} = {}) =>
   shallowMount(ContactInfo, {
     props: {
       contact: {
@@ -74,7 +89,7 @@ const buildWrapper = ({ conversations = [], contact = {} } = {}) =>
         $router: {
           push: routerPushMock,
         },
-        $store: createStore(conversations),
+        $store: createStore(conversations, showActions),
         $t: key => key,
       },
       stubs: {
@@ -108,6 +123,22 @@ describe('ContactInfo', () => {
     });
 
     window.history.replaceState({}, '', '/');
+  });
+
+  it('stacks icons over all four action labels in equal columns', () => {
+    const wrapper = buildWrapper({ showActions: true });
+    const actions = wrapper.get('[data-test="contact-panel-actions"]');
+    expect(actions.classes()).toContain('grid-cols-4');
+    const buttons = actions.findAll('next-button-stub');
+    expect(buttons.map(button => button.attributes('label'))).toEqual([
+      'CONTACT_PANEL.ACTION_DEAL',
+      'CONTACT_PANEL.ACTION_TASK',
+      'CONTACT_PANEL.ACTION_APPOINTMENT',
+      'CONTACT_PANEL.ACTION_MORE',
+    ]);
+    buttons.forEach(button =>
+      expect(button.classes()).toContain('contact-panel-action')
+    );
   });
 
   it('has no button that opens a message to the person whose dialog is already open', () => {

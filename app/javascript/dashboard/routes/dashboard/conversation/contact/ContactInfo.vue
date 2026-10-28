@@ -487,7 +487,10 @@ export default {
             />
           </div>
         </div>
-        <div class="grid w-full grid-cols-4 gap-1 pt-2">
+        <div
+          class="grid w-full grid-cols-4 gap-1 pt-2"
+          data-test="contact-panel-actions"
+        >
           <NextButton
             v-if="canCreateCrmDeal"
             icon="i-lucide-briefcase-business"
@@ -495,6 +498,7 @@ export default {
             slate
             faded
             sm
+            class="contact-panel-action"
             @click="onCreateDeal"
           />
           <NextButton
@@ -504,6 +508,7 @@ export default {
             slate
             faded
             sm
+            class="contact-panel-action"
             @click="onCreateTask"
           />
           <NextButton
@@ -513,15 +518,17 @@ export default {
             slate
             faded
             sm
+            class="contact-panel-action"
             @click="onCreateAppointment"
           />
-          <div class="relative">
+          <div class="relative min-w-0">
             <NextButton
               icon="i-lucide-ellipsis"
               :label="$t('CONTACT_PANEL.ACTION_MORE')"
               slate
               faded
               sm
+              class="contact-panel-action"
               @click="moreOpen = !moreOpen"
             />
             <div
@@ -637,3 +644,20 @@ export default {
     </div>
   </div>
 </template>
+
+<style scoped>
+.contact-panel-action {
+  width: 100%;
+  height: 3.25rem;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.375rem 0;
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+
+.contact-panel-action :deep(> span:last-child) {
+  overflow: visible;
+  text-overflow: clip;
+}
+</style>

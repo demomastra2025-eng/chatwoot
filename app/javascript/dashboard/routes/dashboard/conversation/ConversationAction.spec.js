@@ -44,7 +44,24 @@ describe('ConversationAction priority', () => {
     expect(
       wrapper.find('[role="group"] button[aria-pressed="true"]').text()
     ).toBe('CONVERSATION.PRIORITY.OPTIONS.LOW');
-    await wrapper.findAll('[role="group"] button')[1].trigger('click');
+    expect(
+      wrapper.findAll('[role="group"] button').map(button => button.text())
+    ).toEqual([
+      'CONTACT_PANEL.PRIORITY_NORMAL',
+      'CONTACT_PANEL.PRIORITY_HIGH',
+      'CONTACT_PANEL.PRIORITY_URGENT',
+      'CONVERSATION.PRIORITY.OPTIONS.LOW',
+    ]);
+    expect(
+      wrapper
+        .findAll('contact-details-item-stub')
+        .map(item => item.attributes('title'))
+    ).toEqual([
+      'CONTACT_PANEL.ASSIGNEE_LABEL',
+      'CONTACT_PANEL.PRIORITY_LABEL',
+      'CONTACT_PANEL.LABELS_LABEL',
+    ]);
+    await wrapper.findAll('[role="group"] button')[2].trigger('click');
     expect(dispatch).toHaveBeenCalledWith('setCurrentChatPriority', {
       priority: 'urgent',
       conversationId: 12,

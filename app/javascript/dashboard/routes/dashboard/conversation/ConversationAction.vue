@@ -39,14 +39,14 @@ export default {
           icon: 'i-woot-priority-empty',
         },
         {
-          id: CONVERSATION_PRIORITY.URGENT,
-          name: this.$t('CONVERSATION.PRIORITY.OPTIONS.URGENT'),
-          icon: 'i-woot-priority-urgent',
-        },
-        {
           id: CONVERSATION_PRIORITY.HIGH,
           name: this.$t('CONVERSATION.PRIORITY.OPTIONS.HIGH'),
           icon: 'i-woot-priority-high',
+        },
+        {
+          id: CONVERSATION_PRIORITY.URGENT,
+          name: this.$t('CONVERSATION.PRIORITY.OPTIONS.URGENT'),
+          icon: 'i-woot-priority-urgent',
         },
         {
           id: CONVERSATION_PRIORITY.MEDIUM,
@@ -212,10 +212,7 @@ export default {
 <template>
   <div>
     <div>
-      <ContactDetailsItem
-        compact
-        :title="$t('CONVERSATION_SIDEBAR.ASSIGNEE_LABEL')"
-      >
+      <ContactDetailsItem compact :title="$t('CONTACT_PANEL.ASSIGNEE_LABEL')">
         <template #button>
           <NextButton
             v-if="showSelfAssign"
@@ -243,11 +240,11 @@ export default {
       />
     </div>
     <div>
-      <ContactDetailsItem compact :title="$t('CONVERSATION.PRIORITY.TITLE')" />
+      <ContactDetailsItem compact :title="$t('CONTACT_PANEL.PRIORITY_LABEL')" />
       <div
         class="flex flex-wrap gap-1 rounded-lg border border-n-weak bg-n-alpha-1 p-1"
         role="group"
-        :aria-label="$t('CONVERSATION.PRIORITY.TITLE')"
+        :aria-label="$t('CONTACT_PANEL.PRIORITY_LABEL')"
       >
         <button
           v-for="priority in priorityOptions.filter(
@@ -273,15 +270,14 @@ export default {
               ? $t('CONTACT_PANEL.PRIORITY_NORMAL')
               : priority.id === 'urgent'
                 ? $t('CONTACT_PANEL.PRIORITY_URGENT')
-                : priority.name
+                : priority.id === 'high'
+                  ? $t('CONTACT_PANEL.PRIORITY_HIGH')
+                  : priority.name
           }}
         </button>
       </div>
     </div>
-    <ContactDetailsItem
-      compact
-      :title="$t('CONVERSATION_SIDEBAR.ACCORDION.CONVERSATION_LABELS')"
-    />
+    <ContactDetailsItem compact :title="$t('CONTACT_PANEL.LABELS_LABEL')" />
     <ConversationLabels :conversation-id="conversationId" />
   </div>
 </template>
