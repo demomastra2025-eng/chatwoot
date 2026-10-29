@@ -26,3 +26,6 @@ filter_regex = /\A(?!.*\bwebsite_token\b).*token/i
 
 # Apply the regex for filtering
 Rails.application.config.filter_parameters += [filter_regex]
+
+# Kaspi Pay & patient/cashier phone numbers must not appear unmasked in request logs.
+Rails.application.config.filter_parameters += [/\A(?:payer_phone|phone_number)\z/]

@@ -11,6 +11,7 @@ import { getAllowedFileTypesByChannel } from '@chatwoot/utils';
 import { ALLOWED_FILE_TYPES } from 'shared/constants/messages';
 import { withBusinessCertificateFileTypes } from 'shared/helpers/FileHelper';
 import VideoCallButton from '../VideoCallButton.vue';
+import KaspiPayComposerButton from 'dashboard/routes/dashboard/conversation/kaspiPay/KaspiPayComposerButton.vue';
 import { useWhatsappCallInitiation } from 'dashboard/composables/useWhatsappCallInitiation';
 
 import {
@@ -37,6 +38,7 @@ export default {
     NextButton,
     FileUpload,
 
+    KaspiPayComposerButton,
     VideoCallButton,
     VoiceCallButton,
   },
@@ -551,6 +553,15 @@ export default {
       return Boolean(this.contactId && this.contactPhone);
     },
 
+    showKaspiPayButton() {
+      return (
+        !this.isNote &&
+        !this.isOnPrivateNote &&
+        !this.isEditorDisabled &&
+        !this.isCallReplyAction &&
+        !this.isTemplateOnly
+      );
+    },
     showVideoCallButton() {
       return (
         (this.isAWebWidgetInbox || this.isAPIInbox) &&
@@ -819,6 +830,12 @@ export default {
         @click="$emit('toggleQuotedReply')"
       />
 
+      <KaspiPayComposerButton
+        v-if="showKaspiPayButton"
+        :conversation-id="conversationId"
+        :contact-id="contactId"
+        :contact-phone="contactPhone"
+      />
       <NextButton
         v-if="enableWhatsAppTemplates && !isTemplateOnly"
         v-tooltip.top-end="$t('CONVERSATION.FOOTER.WHATSAPP_TEMPLATES')"

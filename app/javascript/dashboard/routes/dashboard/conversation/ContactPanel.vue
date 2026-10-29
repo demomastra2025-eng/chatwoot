@@ -10,6 +10,7 @@ import ConversationAction from './ConversationAction.vue';
 import ConversationLabels from './labels/LabelBox.vue';
 import ContactInfo from './contact/ContactInfo.vue';
 import SharedFiles from './SharedFiles.vue';
+import KaspiPayPanel from './kaspiPay/KaspiPayPanel.vue';
 import Draggable from 'vuedraggable';
 import SidebarActionsHeader from 'dashboard/components-next/SidebarActionsHeader.vue';
 import SchedulingPatientDetails from 'dashboard/components-next/Scheduling/SchedulingPatientDetails.vue';
@@ -190,6 +191,14 @@ onMounted(() => {
         />
       </div>
       <div class="px-2 pt-1 pb-8 list-group">
+        <KaspiPayPanel
+          v-if="!isDraft"
+          class="mb-2"
+          :conversation-id="conversationId"
+          :contact="contact"
+          :selected-patient="selectedPatient"
+          :is-draft="isDraft"
+        />
         <Draggable
           :list="conversationSidebarItems"
           animation="200"
