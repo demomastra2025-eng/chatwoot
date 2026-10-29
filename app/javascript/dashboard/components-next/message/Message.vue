@@ -28,6 +28,7 @@ import {
   CONTENT_TYPES,
 } from './constants';
 import { isAutomationTouchMessage } from './helpers/messageProvenance';
+import { resolveWhatsappTemplateButtons } from './helpers/whatsappTemplateButtons';
 import {
   councilCaption,
   councilContributors,
@@ -556,8 +557,16 @@ const contextMenuEnabledOptions = computed(() => {
   };
 });
 
+const templateButtons = computed(() =>
+  resolveWhatsappTemplateButtons({
+    additionalAttributes: props.additionalAttributes,
+    inbox: inbox.value,
+  })
+);
+
 const shouldRenderMessage = computed(() => {
   const hasAttachments = !!(props.attachments && props.attachments.length > 0);
+  const hasTemplateButtons = templateButtons.value.length > 0;
   const isEmailContentType = props.contentType === CONTENT_TYPES.INCOMING_EMAIL;
   const isUnsupported = props.contentAttributes?.isUnsupported;
   const isAnIntegrationMessage =
@@ -567,6 +576,7 @@ const shouldRenderMessage = computed(() => {
 
   return (
     hasAttachments ||
+    hasTemplateButtons ||
     props.content ||
     isEmailContentType ||
     isUnsupported ||
@@ -730,6 +740,7 @@ onMounted(setupHighlightTimer);
 
 provideMessageContext({
   ...toRefs(props),
+  templateButtons,
   isPrivate: computed(() => props.private),
   variant,
   orientation,
