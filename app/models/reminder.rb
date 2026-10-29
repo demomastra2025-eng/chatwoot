@@ -623,12 +623,18 @@ class Reminder < ApplicationRecord
   def renderable_body(conversation: nil, sender: nil)
     if channel_template? && template_params.present?
       resolved_params = renderable_template_params(conversation: conversation, sender: sender)
-      switched_body = Whatsapp::TemplateLanguageResolver.new(
+      resolver = Whatsapp::TemplateLanguageResolver.new(
         reminder: self,
         template_params: template_params,
         conversation: conversation
-      ).render_switched_body(resolved_params)
+      )
+      switched_body = resolver.render_switched_body(resolved_params)
       return switched_body if switched_body.present?
+
+      if body.blank?
+        rendered_tpl_body = resolver.render_template_body(resolved_params)
+        return rendered_tpl_body if rendered_tpl_body.present?
+      end
     end
 
     render_text(body, conversation: conversation, sender: sender)

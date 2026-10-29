@@ -200,14 +200,16 @@ class Messages::MessageBuilder
   end
 
   def additional_attributes
-    attrs = {}
-    attrs[:campaign_id] = campaign_id if campaign_id.present?
-    attrs[:campaign_run_id] = campaign_run_id if campaign_run_id.present?
+    attrs = {
+      campaign_id: campaign_id,
+      campaign_run_id: campaign_run_id,
+      template_params: template_params,
+      template_buttons: whatsapp_template_renderer&.render_buttons,
+      # The key of the bubble the screen sent: the same key sent again is answered with this message, see CommunicationThreads::MessageCreateService.
+      echo_id: @params[:echo_id].presence&.to_s,
+      delivery_policy: delivery_policy
+    }.compact_blank
     attrs[:campaign_test_send] = true if ActiveModel::Type::Boolean.new.cast(@params[:campaign_test_send])
-    attrs[:template_params] = template_params if template_params.present?
-    # The key of the bubble the screen sent: the same key sent again is answered with this message, see CommunicationThreads::MessageCreateService.
-    attrs[:echo_id] = @params[:echo_id].to_s if @params[:echo_id].present?
-    attrs[:delivery_policy] = delivery_policy if delivery_policy.present?
     policy = Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: @conversation)
     attrs[Outbound::PlaygroundDeliveryPolicy::ATTRIBUTE_KEY] = policy.deep_dup unless policy.nil?
     attrs.presence
@@ -222,7 +224,7 @@ class Messages::MessageBuilder
       account_id: @conversation.account_id,
       inbox_id: @conversation.inbox_id,
       message_type: message_type,
-      content: @params[:content],
+      content: resolved_message_content,
       private: @private,
       sender: sender,
       content_type: @params[:content_type],
@@ -232,6 +234,24 @@ class Messages::MessageBuilder
       echo_id: @params[:echo_id],
       source_id: @params[:source_id]
     }.merge(external_created_at).merge(automation_rule_id).merge(additional_attributes_payload)
+  end
+
+  def resolved_message_content
+    return @params[:content] if @params[:content].present?
+
+    whatsapp_template_renderer&.render_text || @params[:content]
+  end
+
+  def whatsapp_template_renderer
+    return @whatsapp_template_renderer if defined?(@whatsapp_template_renderer)
+
+    @whatsapp_template_renderer =
+      if @conversation.inbox&.channel.is_a?(Channel::Whatsapp) && template_params.present?
+        Whatsapp::TemplateMessageRenderer.new(
+          channel: @conversation.inbox.channel,
+          template_params: template_params
+        )
+      end
   end
 
   def email_inbox?

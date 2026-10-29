@@ -9,6 +9,10 @@ import TranslationToggle from 'dashboard/components-next/message/TranslationTogg
 import { MESSAGE_TYPES } from '../../constants';
 import { useMessageContext } from '../../provider.js';
 import { useTranslations } from 'dashboard/composables/useTranslations';
+import {
+  resolveWhatsappTemplateButtons,
+  whatsappTemplateButtonIcon,
+} from '../../helpers/whatsappTemplateButtons';
 
 const {
   content,
@@ -16,6 +20,7 @@ const {
   contentAttributes,
   messageType,
   additionalAttributes,
+  templateButtons,
 } = useMessageContext();
 const { t } = useI18n();
 
@@ -40,8 +45,20 @@ const isTemplate = computed(() => {
   return messageType.value === MESSAGE_TYPES.TEMPLATE;
 });
 
+const resolvedTemplateButtons = computed(
+  () =>
+    templateButtons?.value ??
+    resolveWhatsappTemplateButtons({
+      additionalAttributes: additionalAttributes?.value,
+    })
+);
+
 const isEmpty = computed(() => {
-  return !content.value && !attachments.value?.length;
+  return (
+    !content.value &&
+    !attachments.value?.length &&
+    !resolvedTemplateButtons.value.length
+  );
 });
 
 const telegramForwardedFrom = computed(() => {
@@ -103,6 +120,24 @@ const handleSeeOriginal = () => {
         @toggle="handleSeeOriginal"
       />
       <AttachmentChips :attachments="attachments" class="gap-2" />
+      <div
+        v-if="resolvedTemplateButtons.length"
+        data-testid="whatsapp-template-buttons"
+        class="-mx-2 pt-2 border-t border-n-alpha-3 flex flex-col divide-y divide-n-alpha-3"
+      >
+        <div
+          v-for="(btn, idx) in resolvedTemplateButtons"
+          :key="`${btn.type}-${idx}-${btn.text}`"
+          data-testid="whatsapp-template-button"
+          class="flex items-center justify-center gap-1.5 py-1.5 px-2 text-xs font-medium text-n-blue-11 select-text"
+        >
+          <span
+            :class="whatsappTemplateButtonIcon(btn.type)"
+            class="size-3.5 shrink-0"
+          />
+          <span class="truncate">{{ btn.text }}</span>
+        </div>
+      </div>
       <template v-if="isTemplate">
         <div
           v-if="contentAttributes.submittedEmail"

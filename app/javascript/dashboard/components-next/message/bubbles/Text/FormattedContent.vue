@@ -55,6 +55,13 @@ function handleEmojiImageError(event) {
 
 <style lang="scss">
 .prose-bubble {
+  hr {
+    margin: 0.5rem 0 !important;
+    border: 0;
+    border-top: 1px solid currentColor;
+    opacity: 0.16;
+  }
+
   img.apple-emoji--inline {
     display: inline-block !important;
     width: 1.25em !important;

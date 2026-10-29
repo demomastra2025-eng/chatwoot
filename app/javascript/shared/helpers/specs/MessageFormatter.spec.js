@@ -32,6 +32,16 @@ describe('#MessageFormatter', () => {
 <h2>tool</h2>`
       );
     });
+
+    it('does not turn bilingual template paragraphs above dashed dividers into bold h2 headings', () => {
+      const message =
+        'Сәлеметсіз бе!\nДәрігер: Иванов\n--------------------\nЗдравствуйте!\nВрач: Иванов';
+      const html = new MessageFormatter(message).formattedMessage;
+      expect(html).not.toContain('<h2>');
+      expect(html).toContain('<hr />');
+      expect(html).toContain('<p>Сәлеметсіз бе!<br />');
+      expect(html).toContain('<p>Здравствуйте!<br />');
+    });
   });
 
   describe('content with image and has "cw_image_height" query at the end of URL', () => {
