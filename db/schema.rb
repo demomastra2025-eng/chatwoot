@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_28_193000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_29_183000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2134,7 +2134,46 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_28_193000) do
     t.datetime "updated_at", null: false
     t.jsonb "settings", default: {}
     t.check_constraint "app_id::text <> 'postiz'::text", name: "integrations_hooks_app_id_not_postiz"
-    t.check_constraint "app_id::text <> (('ka'::text || 'spi'::text) || '_pay'::text)", name: "integrations_hooks_app_id_not_retired_payment_provider"
+  end
+
+  create_table "kaspi_pay_payments", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "hook_id"
+    t.bigint "contact_id"
+    t.bigint "conversation_id"
+    t.bigint "appointment_id"
+    t.bigint "crm_deal_id"
+    t.bigint "created_by_id"
+    t.string "payment_type", null: false
+    t.string "status", default: "pending", null: false
+    t.string "provider_status"
+    t.text "provider_status_desc"
+    t.string "qr_operation_id", null: false
+    t.string "order_number"
+    t.integer "amount", null: false
+    t.integer "refunded_amount", default: 0, null: false
+    t.string "payer_phone_masked"
+    t.text "comment"
+    t.text "pay_url"
+    t.text "unified_qr_url"
+    t.text "receipt_url"
+    t.datetime "expires_at"
+    t.datetime "paid_at"
+    t.integer "poll_attempts", default: 0, null: false
+    t.datetime "last_polled_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "idx_kaspi_pay_payments_on_account_and_created_at"
+    t.index ["account_id", "qr_operation_id"], name: "idx_kaspi_pay_payments_on_account_and_op_id", unique: true
+    t.index ["account_id", "status"], name: "idx_kaspi_pay_payments_on_account_and_status"
+    t.index ["account_id"], name: "index_kaspi_pay_payments_on_account_id"
+    t.index ["appointment_id"], name: "index_kaspi_pay_payments_on_appointment_id"
+    t.index ["contact_id"], name: "index_kaspi_pay_payments_on_contact_id"
+    t.index ["conversation_id"], name: "index_kaspi_pay_payments_on_conversation_id"
+    t.index ["created_by_id"], name: "index_kaspi_pay_payments_on_created_by_id"
+    t.index ["crm_deal_id"], name: "index_kaspi_pay_payments_on_crm_deal_id"
+    t.index ["hook_id"], name: "index_kaspi_pay_payments_on_hook_id"
   end
 
   create_table "labels", force: :cascade do |t|
@@ -4220,6 +4259,13 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_28_193000) do
   add_foreign_key "crm_tasks", "users", column: "completed_by_id", on_delete: :nullify
   add_foreign_key "crm_tasks", "users", column: "creator_id"
   add_foreign_key "inboxes", "portals"
+  add_foreign_key "kaspi_pay_payments", "accounts"
+  add_foreign_key "kaspi_pay_payments", "contacts", on_delete: :nullify
+  add_foreign_key "kaspi_pay_payments", "conversations", on_delete: :nullify
+  add_foreign_key "kaspi_pay_payments", "crm_deals", on_delete: :nullify
+  add_foreign_key "kaspi_pay_payments", "integrations_hooks", column: "hook_id", on_delete: :nullify
+  add_foreign_key "kaspi_pay_payments", "scheduling_appointments", column: "appointment_id", on_delete: :nullify
+  add_foreign_key "kaspi_pay_payments", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "lead_forms", "accounts"
   add_foreign_key "lead_forms", "inboxes"
   add_foreign_key "lead_submissions", "accounts"

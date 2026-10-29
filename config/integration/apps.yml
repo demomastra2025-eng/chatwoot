@@ -619,3 +619,17 @@ moysklad:
         'help': 'Название типа цены в МойСклад (например: Цена продажи).',
       },
     ]
+
+kaspi_pay:
+  id: kaspi_pay
+  logo: kaspi_pay.png
+  i18n_key: kaspi_pay
+  action: /kaspi_pay
+  hook_type: account
+  allow_multiple_hooks: false
+  access_token_required: true
+  settings_json_schema:
+    {
+      'type': 'object',
+      'additionalProperties': true,
+    }

@@ -31,6 +31,7 @@ class Integrations::Hook < ApplicationRecord
   encrypts :access_token, deterministic: true if Chatwoot.encryption_configured?
 
   validates :account_id, presence: true
+  validates :access_token, length: { maximum: 10_000 }
   validates :app_id, presence: true
   validates :inbox_id, presence: true, if: -> { hook_type == 'inbox' }
   validate :ensure_registered_app, on: :create
@@ -80,6 +81,10 @@ class Integrations::Hook < ApplicationRecord
 
   def moysklad?
     app_id == 'moysklad'
+  end
+
+  def kaspi_pay?
+    app_id == 'kaspi_pay'
   end
 
   def macrocrm_manager_changed_webhook_url

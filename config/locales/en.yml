@@ -402,6 +402,10 @@ en:
       name: 'MoySklad'
       short_description: 'Sync product catalog, variants, bundles, sale prices, and warehouse stock levels with MoySklad.'
       description: 'Connect MoySklad (JSON API 1.2) to automatically import and update products, variants, bundles, retail/wholesale/Kaspi prices, and real-time warehouse stock levels in Products & Services.'
+    kaspi_pay:
+      name: 'Kaspi Pay'
+      short_description: 'Generate payment links, Unified Kaspi QR, and remote phone invoices with automatic payment status reconciliation.'
+      description: 'Connect a virtual Kaspi Pay cashier via SMS to issue payment links, Unified QR codes, and remote Kaspi.kz push invoices right from conversations and appointments.'
   captain:
     channel_matrix:
       invalid_assistant: Agent not found in this workspace.

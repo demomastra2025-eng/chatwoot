@@ -710,6 +710,29 @@ Rails.application.routes.draw do
                 delete :destroy
               end
             end
+            resource :kaspi_pay, controller: 'kaspi_pay', only: [] do
+              collection do
+                get :status
+                post :send_otp
+                post :verify_otp
+                post :check_session
+                patch :update_settings
+                delete :disconnect
+              end
+            end
+          end
+
+          namespace :kaspi_pay do
+            resources :payments, only: [:index, :show, :create] do
+              collection do
+                post :client_info
+              end
+              member do
+                post :refresh
+                post :cancel
+                post :refund
+              end
+            end
           end
           resources :working_hours, only: [:update]
 
