@@ -17,13 +17,22 @@ RSpec.describe Webhooks::TelegramEventsJob do
       expect(described_class.perform_now({})).to be_nil
     end
 
-    it 'logs a warning when channel is not found' do
-      expect(Rails.logger).to receive(:warn).with('Telegram event discarded: Channel not found for bot_token: invalid')
-      described_class.perform_now({ bot_token: 'invalid' })
+    it 'logs a redacted warning without leaking bot_token when channel is not found' do
+      expect(Rails.logger).to receive(:warn).with('Telegram event discarded: Channel not found for bot_token: [REDACTED]')
+      described_class.perform_now({ bot_token: 'invalid-secret-token' })
     end
   end
 
   context 'when valid params' do
+    it 'resolves channel by channel_id without requiring bot_token in Redis payload' do
+      process_service = instance_double(Telegram::IncomingMessageService, perform: true)
+      expect(Telegram::IncomingMessageService).to receive(:new)
+        .with(inbox: telegram_channel.inbox, params: params['telegram'].with_indifferent_access)
+        .and_return(process_service)
+
+      described_class.perform_now({ 'channel_id' => telegram_channel.id, 'telegram' => { test: 'test' } }.with_indifferent_access)
+    end
+
     it 'calls Telegram::IncomingMessageService' do
       process_service = double
       allow(Telegram::IncomingMessageService).to receive(:new).and_return(process_service)

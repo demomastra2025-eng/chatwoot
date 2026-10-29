@@ -207,4 +207,31 @@ RSpec.describe Channel::Telegram do
       expect(telegram_channel.send_message_on_telegram(message)).to eq('telegram_456')
     end
   end
+
+  describe '#webhook_secret_token and webhook registration' do
+    it 'derives a deterministic 64-char hex secret token accepted by Telegram Bot API' do
+      expect(telegram_channel.webhook_secret_token).to match(/\A[0-9a-f]{64}\z/)
+      expect(telegram_channel.webhook_secret_token).to eq(
+        OpenSSL::HMAC.hexdigest('SHA256', Rails.application.secret_key_base.to_s, "telegram-webhook-secret:#{telegram_channel.bot_token}")
+      )
+    end
+
+    it 'registers secret_token when calling Telegram setWebhook' do
+      raw_channel = described_class.new(bot_token: '99887766:TEST_TOKEN', account: telegram_channel.account)
+      with_modified_env FRONTEND_URL: 'https://app.one-link.kz' do
+        stub_request(:post, 'https://api.telegram.org/bot99887766:TEST_TOKEN/deleteWebhook')
+          .to_return(status: 200, body: { ok: true }.to_json, headers: { 'Content-Type' => 'application/json' })
+        expected_body = {
+          url: 'https://app.one-link.kz/webhooks/telegram/99887766:TEST_TOKEN',
+          secret_token: raw_channel.webhook_secret_token
+        }
+        set_stub = stub_request(:post, 'https://api.telegram.org/bot99887766:TEST_TOKEN/setWebhook')
+                   .with(body: expected_body)
+                   .to_return(status: 200, body: { ok: true }.to_json, headers: { 'Content-Type' => 'application/json' })
+
+        raw_channel.send(:setup_telegram_webhook)
+        expect(set_stub).to have_been_requested
+      end
+    end
+  end
 end
