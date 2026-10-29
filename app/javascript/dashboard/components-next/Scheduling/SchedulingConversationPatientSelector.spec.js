@@ -103,7 +103,7 @@ describe('conversation patient selector', () => {
     }
   );
 
-  it('hides patient chips when there is only one patient and shows chips for 2+ patients', async () => {
+  it('hides multi-client switcher for 1 patient and renders a zero-horizontal-scroll compact dropdown switcher for 2+ patients', async () => {
     const i18n = createI18n({
       legacy: false,
       locale: 'ru',
@@ -113,6 +113,9 @@ describe('conversation patient selector', () => {
     const singleWrapper = await mountLoaded();
     await singleWrapper.setProps({ chips: true });
 
+    expect(singleWrapper.find('[data-test="patient-switcher"]').exists()).toBe(
+      false
+    );
     expect(singleWrapper.find('[data-test="patient-chips"]').exists()).toBe(
       false
     );
@@ -124,8 +127,16 @@ describe('conversation patient selector', () => {
         payload: {
           contact_id: 42,
           patients: [
-            { ...owner, full_name: 'Жандаулет', birth_date: '1995-01-01' },
-            { ...patient, full_name: 'Алия', birth_date: '2020-01-01' },
+            {
+              ...owner,
+              full_name: 'DEV QA Intermedical Round2 FAQ',
+              birth_date: '1995-01-01',
+            },
+            {
+              ...patient,
+              full_name: 'Алия Серикова',
+              birth_date: '2020-01-01',
+            },
           ],
         },
       },
@@ -141,13 +152,148 @@ describe('conversation patient selector', () => {
       global: { plugins: [pinia] },
     });
 
-    expect(
-      multiWrapper.get('[data-test="patient-chips"]').findAll('button')
-    ).toHaveLength(2);
+    expect(multiWrapper.find('[data-test="patient-switcher"]').exists()).toBe(
+      true
+    );
+    expect(multiWrapper.html()).not.toContain('overflow-x-auto');
+    expect(multiWrapper.html()).not.toContain('flex-nowrap');
     expect(multiWrapper.find('label').exists()).toBe(false);
     expect(
-      multiWrapper.findAllComponents({ name: 'Button' })[0].props('label')
-    ).toBe('+ Член семьи');
+      multiWrapper.get('[data-test="patient-dropdown-trigger"]').text()
+    ).toContain('DEV QA Intermedical Round2 FAQ');
+    expect(multiWrapper.get('[data-test="patient-count-badge"]').text()).toBe(
+      '1/2'
+    );
+
+    const quickAddButton = multiWrapper
+      .findAllComponents({ name: 'Button' })
+      .find(btn => btn.attributes('data-test') === 'add-family-member-button');
+    expect(quickAddButton.exists()).toBe(true);
+    expect(quickAddButton.attributes('title')).toBe('+ Член семьи');
+
+    await multiWrapper
+      .get('[data-test="patient-dropdown-trigger"]')
+      .trigger('click');
+    expect(
+      multiWrapper.find('[data-test="patient-dropdown-menu"]').exists()
+    ).toBe(true);
+    const listbox = multiWrapper.get(
+      '[data-test="patient-dropdown-menu"] [role="listbox"]'
+    );
+    expect(listbox.findAll('[role="option"]')).toHaveLength(2);
+    expect(listbox.find('[role="separator"]').exists()).toBe(false);
+    expect(
+      listbox.find('[data-test="dropdown-add-family-member-button"]').exists()
+    ).toBe(false);
+
+    const dropdownAddBtn = multiWrapper
+      .findAllComponents({ name: 'Button' })
+      .find(
+        btn =>
+          btn.attributes('data-test') === 'dropdown-add-family-member-button'
+      );
+    expect(dropdownAddBtn?.props('icon')).toBe('i-lucide-user-plus');
+    expect(dropdownAddBtn?.props('label')).toBe('Член семьи');
+
+    // Capture-phase Escape closes only the open dropdown without leaking to bubble listeners
+    const parentBubbleEscape = vi.fn();
+    document.addEventListener('keydown', parentBubbleEscape);
+    try {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Escape',
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      await multiWrapper.vm.$nextTick();
+      expect(
+        multiWrapper.find('[data-test="patient-dropdown-menu"]').exists()
+      ).toBe(false);
+      expect(parentBubbleEscape).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener('keydown', parentBubbleEscape);
+    }
+
+    // Outside mousedown closes the open dropdown
+    await multiWrapper
+      .get('[data-test="patient-dropdown-trigger"]')
+      .trigger('click');
+    expect(
+      multiWrapper.find('[data-test="patient-dropdown-menu"]').exists()
+    ).toBe(true);
+    document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    await multiWrapper.vm.$nextTick();
+    expect(
+      multiWrapper.find('[data-test="patient-dropdown-menu"]').exists()
+    ).toBe(false);
+
+    // Selecting second option updates store, trigger label, and count badge
+    await multiWrapper
+      .get('[data-test="patient-dropdown-trigger"]')
+      .trigger('click');
+    await multiWrapper.get('[data-test="patient-option-84"]').trigger('click');
+    expect(store.contexts[key].selectedId).toBe(84);
+    expect(
+      multiWrapper.get('[data-test="patient-dropdown-trigger"]').text()
+    ).toContain('Алия Серикова');
+    expect(multiWrapper.get('[data-test="patient-count-badge"]').text()).toBe(
+      '2/2'
+    );
+
+    // Transitioning entry to loading auto-closes an open dropdown and disables trigger
+    await multiWrapper
+      .get('[data-test="patient-dropdown-trigger"]')
+      .trigger('click');
+    expect(
+      multiWrapper.find('[data-test="patient-dropdown-menu"]').exists()
+    ).toBe(true);
+    store.contexts[key].loading = true;
+    await multiWrapper.vm.$nextTick();
+    expect(
+      multiWrapper.find('[data-test="patient-dropdown-menu"]').exists()
+    ).toBe(false);
+    expect(
+      multiWrapper
+        .get('[data-test="patient-dropdown-trigger"]')
+        .attributes('disabled')
+    ).toBeDefined();
+    store.contexts[key].loading = false;
+    await multiWrapper.vm.$nextTick();
+
+    // Quick-add button opens inline create form and hides patient-switcher
+    await quickAddButton.vm.$emit('click');
+    await multiWrapper.vm.$nextTick();
+    expect(multiWrapper.vm.isCreating).toBe(true);
+    expect(multiWrapper.find('[data-test="patient-switcher"]').exists()).toBe(
+      false
+    );
+    expect(multiWrapper.find('form').exists()).toBe(true);
+    multiWrapper.vm.startCreate();
+    // Cancel back to switcher
+    const cancelBtn = multiWrapper
+      .findAllComponents({ name: 'Button' })
+      .find(btn => btn.props('variant') === 'ghost');
+    await cancelBtn.vm.$emit('click');
+    await multiWrapper.vm.$nextTick();
+    expect(multiWrapper.vm.isCreating).toBe(false);
+    expect(multiWrapper.find('[data-test="patient-switcher"]').exists()).toBe(
+      true
+    );
+
+    await multiWrapper.setProps({ showAddButton: false });
+    expect(
+      multiWrapper.find('[data-test="add-family-member-button"]').exists()
+    ).toBe(false);
+    await multiWrapper
+      .get('[data-test="patient-dropdown-trigger"]')
+      .trigger('click');
+    expect(
+      multiWrapper
+        .find('[data-test="dropdown-add-family-member-button"]')
+        .exists()
+    ).toBe(false);
+    multiWrapper.unmount();
   });
 
   it.each([

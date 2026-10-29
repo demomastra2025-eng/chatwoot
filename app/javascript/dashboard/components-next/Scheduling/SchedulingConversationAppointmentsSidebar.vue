@@ -3222,7 +3222,7 @@ const isClientFieldsOpen = (form, key) =>
                   >
                     <div
                       v-if="familyPatientChips.length"
-                      class="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5"
+                      class="grid min-w-0 grid-cols-2 gap-1"
                       data-testid="appointment-patient-chips"
                     >
                       <button
@@ -3230,15 +3230,27 @@ const isClientFieldsOpen = (form, key) =>
                         :key="option.value"
                         type="button"
                         :aria-pressed="isFamilyPatientSelected(option)"
-                        class="shrink-0 rounded-full border px-2 py-0.5 text-xs text-n-slate-12"
+                        :title="option.label"
+                        class="inline-flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 text-start text-xs transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-brand"
                         :class="
                           isFamilyPatientSelected(option)
-                            ? 'border-n-teal-7 bg-n-teal-3 text-n-teal-11'
-                            : 'border-n-weak bg-n-solid-1'
+                            ? 'border-n-teal-7 bg-n-teal-3 font-medium text-n-teal-11'
+                            : 'border-n-weak bg-n-solid-1 text-n-slate-12 hover:border-n-slate-6 hover:bg-n-alpha-2'
                         "
                         @click="selectFamilyPatientChip(option.value)"
                       >
-                        {{ option.label }}
+                        <span
+                          class="size-3 shrink-0"
+                          :class="
+                            isFamilyPatientSelected(option)
+                              ? 'i-lucide-check text-n-teal-11'
+                              : 'i-lucide-user text-n-slate-10'
+                          "
+                          aria-hidden="true"
+                        />
+                        <span class="min-w-0 flex-1 truncate">
+                          {{ option.label }}
+                        </span>
                       </button>
                     </div>
                     <div

@@ -441,8 +441,27 @@ describe('CrmDealConversationPanel', () => {
       expect(drawer.classes()).toContain('!absolute');
       expect(wrapper.find('[class*="lg:w-2/3"]').exists()).toBe(true);
       await wrapper
-        .find('[data-test="patient-selector"] select')
-        .setValue('84');
+        .get('[data-test="patient-dropdown-trigger"]')
+        .trigger('click');
+      expect(wrapper.find('[data-test="patient-dropdown-menu"]').exists()).toBe(
+        true
+      );
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Escape',
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      await flushPromises();
+      expect(wrapper.find('[data-test="patient-dropdown-menu"]').exists()).toBe(
+        false
+      );
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(true);
+      await wrapper
+        .get('[data-test="patient-dropdown-trigger"]')
+        .trigger('click');
+      await wrapper.get('[data-test="patient-option-84"]').trigger('click');
       await flushPromises();
       await drawer.find('button[aria-label="i-lucide-plus"]').trigger('click');
       await flushPromises();
@@ -495,8 +514,27 @@ describe('CrmDealConversationPanel', () => {
       const wrapper = mountDealChat();
       await openAppointments(wrapper);
       await wrapper
-        .find('[data-test="patient-selector"] select')
-        .setValue('84');
+        .get('[data-test="patient-dropdown-trigger"]')
+        .trigger('click');
+      expect(wrapper.find('[data-test="patient-dropdown-menu"]').exists()).toBe(
+        true
+      );
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Escape',
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      await flushPromises();
+      expect(wrapper.find('[data-test="patient-dropdown-menu"]').exists()).toBe(
+        false
+      );
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(true);
+      await wrapper
+        .get('[data-test="patient-dropdown-trigger"]')
+        .trigger('click');
+      await wrapper.get('[data-test="patient-option-84"]').trigger('click');
       await flushPromises();
       await wrapper
         .find('[role="dialog"] button[aria-label="i-lucide-plus"]')

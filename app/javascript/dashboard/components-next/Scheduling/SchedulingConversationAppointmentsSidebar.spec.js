@@ -3905,9 +3905,13 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await wrapper.vm.startCreateAppointment({ scroll: false });
     expect(wrapper.vm.isCreating).toBe(true);
 
-    const chips = wrapper
-      .get('[data-testid="appointment-patient-chips"]')
-      .findAll('button');
+    const chipsContainer = wrapper.get(
+      '[data-testid="appointment-patient-chips"]'
+    );
+    expect(chipsContainer.classes()).toContain('grid-cols-2');
+    expect(chipsContainer.classes()).not.toContain('overflow-x-auto');
+    expect(chipsContainer.classes()).not.toContain('flex-nowrap');
+    const chips = chipsContainer.findAll('button');
     expect(chips).toHaveLength(2);
     expect(chips[0].attributes('aria-pressed')).toBe('true');
     expect(chips[1].attributes('aria-pressed')).toBe('false');
