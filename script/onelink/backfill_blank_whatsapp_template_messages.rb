@@ -4,7 +4,7 @@
 # template messages whose `content` was saved blank (`""` or `NULL`).
 #
 # Usage:
-#   # 1. Dry-run (read-only, prints aggregate counts only вЂ” zero PII):
+#   # 1. Dry-run (read-only, prints aggregate counts only — zero PII):
 #   bundle exec rails runner script/onelink/backfill_blank_whatsapp_template_messages.rb
 #
 #   # 2. Apply with pre-change JSON backup:

@@ -3,7 +3,7 @@
 require 'rails_helper'
 
 RSpec.describe Whatsapp::BlankTemplateMessagesBackfill do
-  let(:account) { create(:account) }
+  let(:account) { create(:account, limits: { 'non_web_inboxes' => 10 }) }
   let(:whatsapp_channel) do
     create(
       :channel_whatsapp,
@@ -21,12 +21,12 @@ RSpec.describe Whatsapp::BlankTemplateMessagesBackfill do
           'components' => [
             {
               'type' => 'BODY',
-              'text' => "РЎУ™Р»РµРјРµС‚СЃС–Р· Р±Рµ, {{1}}!\n--------------------\nР—РґСЂР°РІСЃС‚РІСѓР№С‚Рµ, {{1}}!"
+              'text' => "Сәлеметсіз бе, {{1}}!\n--------------------\nЗдравствуйте, {{1}}!"
             },
             {
               'type' => 'BUTTONS',
               'buttons' => [
-                { 'type' => 'QUICK_REPLY', 'text' => 'Р Р°СЃС‚Р°Р№РјС‹РЅ | РџРѕРґС‚РІРµСЂР¶РґР°СЋ' }
+                { 'type' => 'QUICK_REPLY', 'text' => 'Растаймын | Подтверждаю' }
               ]
             }
           ]
@@ -45,7 +45,7 @@ RSpec.describe Whatsapp::BlankTemplateMessagesBackfill do
         'name' => 'dostarmed_visit_reminder_bilingual_v2',
         'language' => 'ru',
         'category' => 'UTILITY',
-        'processed_params' => { 'body' => { '1' => 'РљР»РёРµРЅС‚' } }
+        'processed_params' => { 'body' => { '1' => 'Клиент' } }
       }
     }
   end
@@ -83,9 +83,9 @@ RSpec.describe Whatsapp::BlankTemplateMessagesBackfill do
 
       expect(result[:totals]).to include(total: 1, matched: 1, with_buttons: 1, updated: 1)
       expect(File.exist?(backup_path)).to be(true)
-      expect(msg.reload.content).to eq("РЎУ™Р»РµРјРµС‚СЃС–Р· Р±Рµ, РљР»РёРµРЅС‚!\n--------------------\nР—РґСЂР°РІСЃС‚РІСѓР№С‚Рµ, РљР»РёРµРЅС‚!")
+      expect(msg.reload.content).to eq("Сәлеметсіз бе, Клиент!\n--------------------\nЗдравствуйте, Клиент!")
       expect(msg.additional_attributes['template_buttons']).to eq(
-        [{ 'type' => 'QUICK_REPLY', 'text' => 'Р Р°СЃС‚Р°Р№РјС‹РЅ | РџРѕРґС‚РІРµСЂР¶РґР°СЋ' }]
+        [{ 'type' => 'QUICK_REPLY', 'text' => 'Растаймын | Подтверждаю' }]
       )
     end
   end

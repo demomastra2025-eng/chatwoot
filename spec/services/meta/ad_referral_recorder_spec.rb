@@ -183,5 +183,24 @@ RSpec.describe Meta::AdReferralRecorder do
         expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
       end
     end
+
+    it 'does not poison an outer PG transaction on concurrent label UniqueViolation' do
+      account.update!(custom_attributes: account.custom_attributes.to_h.merge('meta_ads_auto_tag' => true))
+      existing_label = account.labels.create!(title: 'реклама', display_title: 'Реклама')
+      allow(Meta::AdReferralAutoTagger).to receive(:new).and_wrap_original do |orig, **kwargs|
+        orig.call(**kwargs).tap do |tagger|
+          allow(tagger).to receive(:find_default_ad_label).and_return(nil, existing_label)
+        end
+      end
+
+      ActiveRecord::Base.transaction do
+        described_class.new(message: message, payload: payload).perform
+
+        expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
+      end
+
+      expect(conversation.contact.reload.label_list).to include(existing_label.title)
+      expect(conversation.reload.label_list).to include(existing_label.title)
+    end
   end
 end

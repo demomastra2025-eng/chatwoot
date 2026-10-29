@@ -15,10 +15,10 @@ class Meta::AdReferralAutoTagger
   def perform
     return if referral.blank? || account.blank?
 
-    label_titles = resolved_label_titles
-    return if label_titles.empty?
-
     ActiveRecord::Base.transaction(requires_new: true) do
+      label_titles = resolved_label_titles
+      next if label_titles.empty?
+
       assign_labels!(label_titles)
     end
   rescue StandardError => e
@@ -93,8 +93,10 @@ class Meta::AdReferralAutoTagger
   end
 
   def ensure_default_ad_label
-    account.labels.find_or_create_by!(title: DEFAULT_AD_LABEL_TITLE) do |label|
-      label.display_title = DEFAULT_AD_DISPLAY_TITLE
+    Label.transaction(requires_new: true) do
+      account.labels.find_or_create_by!(title: DEFAULT_AD_LABEL_TITLE) do |label|
+        label.display_title = DEFAULT_AD_DISPLAY_TITLE
+      end
     end
   rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
     find_default_ad_label
@@ -105,7 +107,9 @@ class Meta::AdReferralAutoTagger
 
     attrs = { display_title: name }
     attrs[:title] = name.downcase if name.downcase.match?(RegexHelper::UNICODE_CHARACTER_NUMBER_HYPHEN_UNDERSCORE)
-    account.labels.create!(attrs)
+    Label.transaction(requires_new: true) do
+      account.labels.create!(attrs)
+    end
   rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
     find_account_label_by_name(name)
   end

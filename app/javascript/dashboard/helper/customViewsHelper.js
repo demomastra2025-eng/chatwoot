@@ -119,8 +119,15 @@ export const getValuesForFilter = (filter, params) => {
       return getValuesForLanguages(values, languages);
     case 'country_code':
       return getValuesForCountries(values, countries);
-    default:
+    default: {
+      const matchedType = params?.filterTypes?.find(
+        item => item.attributeKey === attribute_key
+      );
+      if (Array.isArray(matchedType?.options)) {
+        return getValuesName(values, matchedType.options, 'id', 'name');
+      }
       return { id: values[0], name: values[0] };
+    }
   }
 };
 

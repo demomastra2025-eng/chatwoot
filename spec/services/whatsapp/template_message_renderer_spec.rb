@@ -3,7 +3,7 @@
 require 'rails_helper'
 
 RSpec.describe Whatsapp::TemplateMessageRenderer do
-  let(:account) { create(:account) }
+  let(:account) { create(:account, limits: { 'non_web_inboxes' => 10 }) }
   let(:whatsapp_channel) do
     create(
       :channel_whatsapp,

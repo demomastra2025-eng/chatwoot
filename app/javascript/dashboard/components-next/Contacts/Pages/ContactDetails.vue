@@ -131,6 +131,20 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () =>
+    props.selectedContact?.notificationsMuted ??
+    props.selectedContact?.notifications_muted,
+  nextMuted => {
+    if (nextMuted === undefined) return;
+    const resolved = Boolean(nextMuted);
+    contactData.value.notificationsMuted = resolved;
+    if ('notifications_muted' in contactData.value) {
+      contactData.value.notifications_muted = resolved;
+    }
+  }
+);
+
 const buildSourcePreference = (source, preferenceType = 'name') => {
   const resolvedSource =
     preferenceType === 'avatar'
