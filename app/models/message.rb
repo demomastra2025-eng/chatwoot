@@ -561,6 +561,7 @@ class Message < ApplicationRecord
     # The activity goes first: the status changes below refresh the communication thread, which keeps one open dialog per
     # person by the latest activity, and a reopened conversation must already carry the time of this message.
     set_conversation_activity
+    refresh_contact_language_stats
     if runtime_events_suppressed?
       mark_pending_conversation_as_open_for_human_response(runtime_events: false)
       update_contact_activity(runtime_events: false)
@@ -580,6 +581,22 @@ class Message < ApplicationRecord
     update_contact_activity(runtime_events: true)
     refresh_communication_thread
     send_reply
+  end
+
+  def refresh_contact_language_stats
+    return if private? || (!incoming? && !voice_call?)
+
+    target = language_stats_target_contact
+    return unless target
+
+    Contacts::LanguageStatsService.refresh!(target)
+    sender.reload if sender.is_a?(Contact) && sender.id == target.id
+  end
+
+  def language_stats_target_contact
+    return conversation.contact if conversation&.contact
+
+    sender if sender.is_a?(Contact)
   end
 
   def update_contact_activity(runtime_events: true)

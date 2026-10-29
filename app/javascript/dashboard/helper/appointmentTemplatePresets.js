@@ -111,6 +111,176 @@ export const getClientLanguageLabel = code => {
     : String(code || '').toUpperCase();
 };
 
+const CLIENT_LANGUAGE_DISPLAY_NAMES_RU = {
+  ru: 'Русский',
+  kk: 'Казахский',
+  en: 'Английский',
+  uz: 'Узбекский',
+  ky: 'Кыргызский',
+  tg: 'Таджикский',
+  az: 'Азербайджанский',
+  tr: 'Турецкий',
+  uk: 'Украинский',
+  be: 'Белорусский',
+  hy: 'Армянский',
+  ka: 'Грузинский',
+  zh_CN: 'Китайский',
+  ar: 'Арабский',
+  de: 'Немецкий',
+  fr: 'Французский',
+  es: 'Испанский',
+  it: 'Итальянский',
+  pt_BR: 'Португальский',
+  ko: 'Корейский',
+  ja: 'Японский',
+  hi: 'Хинди',
+  pl: 'Польский',
+  cs: 'Чешский',
+  ro: 'Румынский',
+  nl: 'Нидерландский',
+  sv: 'Шведский',
+  he: 'Иврит',
+  id: 'Индонезийский',
+  ms: 'Малайский',
+  th: 'Тайский',
+  vi: 'Вьетнамский',
+  fa: 'Персидский',
+};
+
+const CLIENT_LANGUAGE_DISPLAY_NAMES_KK = {
+  ru: 'Орысша',
+  kk: 'Қазақша',
+  en: 'Ағылшынша',
+};
+
+export const getClientLanguageDisplayName = (code, locale = 'ru') => {
+  const normalized = normalizeClientLanguageCode(code);
+  if (!normalized) return '';
+  const langPrefix = String(locale || 'ru')
+    .toLowerCase()
+    .split(/[-_]/)[0];
+
+  if (langPrefix === 'kk' && CLIENT_LANGUAGE_DISPLAY_NAMES_KK[normalized]) {
+    return CLIENT_LANGUAGE_DISPLAY_NAMES_KK[normalized];
+  }
+  if (langPrefix === 'en') {
+    const found = WHATSAPP_SUPPORTED_CLIENT_LANGUAGES.find(
+      item => item.code === normalized
+    );
+    return found ? found.englishName : normalized.toUpperCase();
+  }
+  return (
+    CLIENT_LANGUAGE_DISPLAY_NAMES_RU[normalized] ||
+    getClientLanguageNativeName(normalized)
+  );
+};
+
+const normalizeWeightsToPercentages = entries => {
+  const positive = entries.filter(item => item.code && item.weight > 0);
+  const total = positive.reduce((sum, item) => sum + item.weight, 0);
+  if (total <= 0) return [];
+
+  let kept = positive.filter(item => (item.weight / total) * 100 >= 5);
+  if (!kept.length) kept = positive;
+  const keptTotal = kept.reduce((sum, item) => sum + item.weight, 0);
+
+  const rows = kept
+    .sort((a, b) => b.weight - a.weight)
+    .map((item, idx) => {
+      const exact = (item.weight / keptTotal) * 100;
+      const pct = Math.floor(exact);
+      return { code: item.code, exact, pct, rem: exact - pct, idx };
+    });
+
+  const leftover = Math.max(
+    0,
+    100 - rows.reduce((sum, row) => sum + row.pct, 0)
+  );
+  [...rows]
+    .sort((a, b) => b.rem - a.rem || b.exact - a.exact || a.idx - b.idx)
+    .slice(0, leftover)
+    .forEach(row => {
+      row.pct += 1;
+    });
+
+  return rows
+    .filter(row => row.pct > 0)
+    .sort((a, b) => b.pct - a.pct || a.idx - b.idx)
+    .map(row => ({ code: row.code, percentage: row.pct }));
+};
+
+export const resolveClientLanguageBreakdown = (
+  additionalAttributes = {},
+  fallbackLanguage = '',
+  locale = 'ru'
+) => {
+  const attrs = additionalAttributes || {};
+  const rawBreakdown =
+    attrs.client_language_breakdown || attrs.clientLanguageBreakdown;
+
+  if (Array.isArray(rawBreakdown) && rawBreakdown.length > 0) {
+    const parsed = rawBreakdown
+      .map(item => ({
+        code: normalizeClientLanguageCode(item?.code),
+        percentage: Math.round(Number(item?.percentage || 0)),
+      }))
+      .filter(
+        item =>
+          item.code && Number.isFinite(item.percentage) && item.percentage > 0
+      )
+      .sort((a, b) => b.percentage - a.percentage);
+
+    if (parsed.length > 0) {
+      return parsed.map(item => ({
+        code: item.code,
+        label: getClientLanguageDisplayName(item.code, locale),
+        percentage: item.percentage,
+      }));
+    }
+  }
+
+  const rawCounts = attrs.client_language_counts || attrs.clientLanguageCounts;
+  if (rawCounts && typeof rawCounts === 'object' && !Array.isArray(rawCounts)) {
+    const countEntries = Object.entries(rawCounts).map(([rawCode, count]) => ({
+      code: normalizeClientLanguageCode(rawCode),
+      weight: Number(count || 0),
+    }));
+    const fromCounts = normalizeWeightsToPercentages(countEntries);
+    if (fromCounts.length > 0) {
+      return fromCounts.map(item => ({
+        code: item.code,
+        label: getClientLanguageDisplayName(item.code, locale),
+        percentage: item.percentage,
+      }));
+    }
+  }
+
+  const singleCode = normalizeClientLanguageCode(
+    attrs.client_language ||
+      attrs.clientLanguage ||
+      attrs.patient_language ||
+      fallbackLanguage
+  );
+  if (!singleCode) return [];
+
+  return [
+    {
+      code: singleCode,
+      label: getClientLanguageDisplayName(singleCode, locale),
+      percentage: 100,
+    },
+  ];
+};
+
+export const formatClientLanguageSummary = (
+  additionalAttributes = {},
+  fallbackLanguage = '',
+  locale = 'ru'
+) =>
+  resolveClientLanguageBreakdown(additionalAttributes, fallbackLanguage, locale)
+    .map(item => `${item.label} ${item.percentage}%`)
+    .join(' · ');
+
 export const PROMOTIONAL_STOP_WORDS = [
   'скидк',
   'акци',
@@ -436,8 +606,7 @@ export const validateUtilityTemplateDraft = ({
   if (!trimmedName) {
     errors.push({
       code: 'name_required',
-      message:
-        messages.nameRequired || 'Укажите системное имя шаблона',
+      message: messages.nameRequired || 'Укажите системное имя шаблона',
     });
   } else if (!/^[a-z0-9_]+$/.test(trimmedName)) {
     errors.push({
@@ -451,8 +620,7 @@ export const validateUtilityTemplateDraft = ({
   if (normalizedCategory !== 'UTILITY') {
     errors.push({
       code: 'invalid_category',
-      message:
-        'Категория шаблона для уведомлений о записи должна быть UTILITY',
+      message: 'Категория шаблона для уведомлений о записи должна быть UTILITY',
     });
   }
 
@@ -462,8 +630,7 @@ export const validateUtilityTemplateDraft = ({
   if (!trimmedBody) {
     errors.push({
       code: 'empty_body',
-      message:
-        messages.bodyRequired || 'Текст шаблона не может быть пустым',
+      message: messages.bodyRequired || 'Текст шаблона не может быть пустым',
     });
   } else if (effectiveBodyLength > maxBodyLength) {
     errors.push({
@@ -510,10 +677,7 @@ export const validateUtilityTemplateDraft = ({
 
   const lowerBody = trimmedBody.toLowerCase();
   const matchedStopWord = PROMOTIONAL_STOP_WORDS.find(word => {
-    const pattern = new RegExp(
-      `(?:^|[^a-zа-яёәғқңөұүһі0-9_])(${word})`,
-      'i'
-    );
+    const pattern = new RegExp(`(?:^|[^a-zа-яёәғқңөұүһі0-9_])(${word})`, 'i');
     return pattern.test(lowerBody);
   });
   if (matchedStopWord) {
@@ -524,7 +688,11 @@ export const validateUtilityTemplateDraft = ({
   }
 
   const isBilingual = Boolean(bilingual || trimmedBody.includes('———'));
-  if (!isBilingual && normalizeClientLanguageCode(language) === 'kk' && trimmedBody) {
+  if (
+    !isBilingual &&
+    normalizeClientLanguageCode(language) === 'kk' &&
+    trimmedBody
+  ) {
     if (!/[әғқңөұүһіӘҒҚҢӨҰҮҺІ]/.test(trimmedBody)) {
       errors.push({
         code: 'language_mismatch_kk',
@@ -546,8 +714,7 @@ export const validateUtilityTemplateDraft = ({
     if (!btnText) {
       errors.push({
         code: 'empty_button_text',
-        message:
-          messages.buttonTextRequired || 'Укажите текст кнопки',
+        message: messages.buttonTextRequired || 'Укажите текст кнопки',
       });
     } else if (btnText.length > 20) {
       errors.push({
@@ -801,10 +968,14 @@ const buildLanguageSection = (presetKey, lang, options) => {
         lines.push(`Your appointment at ${targetName} has been cancelled.`);
         break;
       case 'appointment_day_before':
-        lines.push(`Reminder: you have an appointment at ${targetName} tomorrow.`);
+        lines.push(
+          `Reminder: you have an appointment at ${targetName} tomorrow.`
+        );
         break;
       case 'appointment_two_hours_before':
-        lines.push(`Reminder: your appointment at ${targetName} starts in 2 hours.`);
+        lines.push(
+          `Reminder: your appointment at ${targetName} starts in 2 hours.`
+        );
         break;
       case 'appointment_review_request':
         lines.push(`Thank you for visiting ${targetName}!`);
@@ -938,11 +1109,8 @@ export const buildAppointmentTemplatePackDrafts = (options = {}) => {
       buttons.push({
         type: 'QUICK_REPLY',
         text:
-          languageMode === 'kk'
-            ? 'Жазылуды растаймын'
-            : languageMode === 'en'
-              ? 'Confirm visit'
-              : 'Подтверждаю запись',
+          { kk: 'Жазылуды растаймын', en: 'Confirm visit' }[languageMode] ||
+          'Подтверждаю запись',
         url: '',
         example: '',
         phoneNumber: '',
@@ -959,11 +1127,8 @@ export const buildAppointmentTemplatePackDrafts = (options = {}) => {
       buttons.push({
         type: 'URL',
         text:
-          languageMode === 'kk'
-            ? 'Картадан ашу'
-            : languageMode === 'en'
-              ? 'Directions'
-              : 'Как добраться',
+          { kk: 'Картадан ашу', en: 'Directions' }[languageMode] ||
+          'Как добраться',
         url: locationUrl,
         example: '',
         phoneNumber: '',

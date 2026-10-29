@@ -59,8 +59,16 @@ class Contact < ApplicationRecord
   CLIENT_LANGUAGE_SOURCE_KEY = 'client_language_source'.freeze
   CLIENT_LANGUAGE_CONFIDENCE_KEY = 'client_language_confidence'.freeze
   CLIENT_LANGUAGE_COUNTS_KEY = 'client_language_counts'.freeze
+  CLIENT_LANGUAGE_BREAKDOWN_KEY = 'client_language_breakdown'.freeze
   CLIENT_LANGUAGE_SOURCE_MANUAL = 'manual'.freeze
   CLIENT_LANGUAGE_SOURCE_AI = 'ai'.freeze
+  SERVER_OWNED_CLIENT_LANGUAGE_KEYS = [
+    CLIENT_LANGUAGE_KEY,
+    CLIENT_LANGUAGE_SOURCE_KEY,
+    CLIENT_LANGUAGE_CONFIDENCE_KEY,
+    CLIENT_LANGUAGE_COUNTS_KEY,
+    CLIENT_LANGUAGE_BREAKDOWN_KEY
+  ].freeze
 
   include Avatarable
   include AvailabilityStatusable
@@ -291,30 +299,15 @@ class Contact < ApplicationRecord
     end.first
   end
 
+  def client_language_breakdown
+    Contacts::LanguageStatsService.resolve_stored_breakdown(additional_attributes, client_language)
+  end
+
   def record_detected_language!(raw_code)
     normalized = Whatsapp::SupportedLanguages.normalize_code(raw_code)
     return false if normalized.blank?
 
-    with_lock do
-      attrs = (additional_attributes || {}).deep_stringify_keys
-      counts = attrs[CLIENT_LANGUAGE_COUNTS_KEY].is_a?(Hash) ? attrs[CLIENT_LANGUAGE_COUNTS_KEY].deep_stringify_keys : {}
-      existing_lang = Whatsapp::SupportedLanguages.normalize_code(attrs[CLIENT_LANGUAGE_KEY])
-      counts[existing_lang] = 1 if counts.empty? && existing_lang.present?
-      counts[normalized] = counts[normalized].to_i + 1
-      attrs[CLIENT_LANGUAGE_COUNTS_KEY] = counts
-
-      if attrs[CLIENT_LANGUAGE_SOURCE_KEY] != CLIENT_LANGUAGE_SOURCE_MANUAL || existing_lang.blank?
-        dominant_lang, dominant_count = counts.max_by { |_code, count| count.to_i }
-        total_count = counts.values.sum(&:to_i)
-        confidence = total_count.positive? ? ((dominant_count.to_f / total_count) * 100).round.clamp(1, 100) : 100
-        attrs[CLIENT_LANGUAGE_KEY] = dominant_lang
-        attrs[CLIENT_LANGUAGE_SOURCE_KEY] = CLIENT_LANGUAGE_SOURCE_AI
-        attrs[CLIENT_LANGUAGE_CONFIDENCE_KEY] = confidence
-      end
-
-      update_columns(additional_attributes: attrs) # rubocop:disable Rails/SkipsModelValidations
-    end
-    true
+    Contacts::LanguageStatsService.refresh!(self, fallback_language: normalized)
   rescue StandardError => e
     Rails.logger.warn("[Contact#record_detected_language!] failed contact_id=#{id} error=#{e.class.name}")
     false

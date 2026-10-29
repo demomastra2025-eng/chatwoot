@@ -274,7 +274,17 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
     # Message callbacks and competing voice-event writes can be slow. Do not keep the
     # call-session row locked while waiting for the message row or its callbacks.
     message = update_voice_message!(result, transcript_ref)
+    refresh_call_contact_language!(message)
     message&.reload&.send_update_event
+  end
+
+  def refresh_call_contact_language!(message)
+    target_contact = call_session.contact || message&.conversation&.contact
+    return unless target_contact
+
+    before_attrs = target_contact.additional_attributes.to_h
+    Contacts::LanguageStatsService.refresh!(target_contact)
+    target_contact.dispatch_shared_phone_update_event if target_contact.additional_attributes.to_h != before_attrs
   end
 
   def persist_call_transcript!(result, source, transcript_ref)

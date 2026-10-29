@@ -1164,6 +1164,47 @@ RSpec.describe 'Contacts API', type: :request do
     end
   end
 
+  describe 'server-owned client language attributes protection' do
+    let(:agent) { create(:user, account: account, role: :agent) }
+
+    it 'strips server-owned client_language keys on POST /contacts' do
+      post "/api/v1/accounts/#{account.id}/contacts",
+           headers: agent.create_new_auth_token,
+           params: {
+             name: 'Language Protected Contact',
+             additional_attributes: { company_name: 'OneLink Clinic', client_language: 'en', client_language_source: 'manual' }
+           },
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      created = account.contacts.find(response.parsed_body.dig('payload', 'contact', 'id'))
+      expect(created.additional_attributes['company_name']).to eq('OneLink Clinic')
+      expect(created.additional_attributes.keys & Contact::SERVER_OWNED_CLIENT_LANGUAGE_KEYS).to be_empty
+    end
+
+    it 'strips server-owned client_language keys on PATCH /contacts/:id' do
+      existing = create(
+        :contact,
+        account: account,
+        additional_attributes: {
+          'client_language' => 'kk',
+          'client_language_source' => 'ai',
+          'client_language_breakdown' => [{ 'code' => 'kk', 'percentage' => 70 }, { 'code' => 'ru', 'percentage' => 30 }]
+        }
+      )
+
+      patch "/api/v1/accounts/#{account.id}/contacts/#{existing.id}",
+            headers: agent.create_new_auth_token,
+            params: { additional_attributes: { description: 'VIP patient', client_language: 'en', client_language_breakdown: [] } },
+            as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(existing.reload.additional_attributes['description']).to eq('VIP patient')
+      expect(existing.client_language).to eq('kk')
+      expect(existing.client_language_breakdown).to eq([{ 'code' => 'kk', 'percentage' => 70 }, { 'code' => 'ru', 'percentage' => 30 }])
+    end
+  end
+
   describe 'DELETE /api/v1/accounts/{account.id}/contacts/:id/avatar' do
     let(:contact) { create(:contact, account: account) }
     let(:agent) { create(:user, account: account, role: :agent) }

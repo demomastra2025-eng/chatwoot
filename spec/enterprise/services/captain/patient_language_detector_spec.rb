@@ -308,7 +308,7 @@ RSpec.describe Captain::PatientLanguageDetector do
   end
 
   describe 'syncing detected language to contact' do
-    it 'saves client_language and confidence on conversation.contact without overwriting a manual choice' do
+    it 'automatically updates client_language and percentage breakdown on conversation.contact' do
       patient_says('Сәлеметсіз бе, ертеңге дәрігерге жазылғым келеді')
 
       expect(detector.call).to eq('kk')
@@ -316,19 +316,12 @@ RSpec.describe Captain::PatientLanguageDetector do
       expect(contact.client_language).to eq('kk')
       expect(contact.client_language_source).to eq('ai')
       expect(contact.client_language_confidence).to eq(100)
+      expect(contact.client_language_breakdown).to eq([{ 'code' => 'kk', 'percentage' => 100 }])
 
-      contact.update!(
-        additional_attributes: contact.additional_attributes.merge(
-          'client_language' => 'ru',
-          'client_language_source' => 'manual',
-          'client_language_confidence' => 100
-        )
-      )
-
-      patient_says('Қай уақыт бос екенін айтыңызшы?')
-      expect(described_class.new(conversation: conversation).call).to eq('kk')
-      expect(contact.reload.client_language).to eq('ru')
-      expect(contact.client_language_source).to eq('manual')
+      patient_says('Здравствуйте, запишите меня пожалуйста на завтра к терапевту на утро')
+      contact.reload
+      expect(contact.client_language_breakdown.map { |item| item['code'] }).to contain_exactly('ru', 'kk')
+      expect(contact.client_language_breakdown.sum { |item| item['percentage'] }).to eq(100)
     end
 
     it 'detects patient language from call transcript items on incoming call messages' do

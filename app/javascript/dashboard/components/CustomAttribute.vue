@@ -3,7 +3,7 @@ import { format, parseISO } from 'date-fns';
 import { required, url } from '@vuelidate/validators';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import MultiselectDropdown from 'shared/components/ui/MultiselectDropdown.vue';
-import HelperTextPopup from 'dashboard/components/ui/HelperTextPopup.vue';
+import CrmCustomFieldDescriptionHint from 'dashboard/components-next/CRM/CrmCustomFieldDescriptionHint.vue';
 import { isValidURL } from '../helper/URLHelper';
 import { getRegexp } from 'shared/helpers/Validators';
 import { useVuelidate } from '@vuelidate/core';
@@ -17,7 +17,7 @@ const DATE_FORMAT = 'yyyy-MM-dd';
 export default {
   components: {
     MultiselectDropdown,
-    HelperTextPopup,
+    CrmCustomFieldDescriptionHint,
     NextButton,
     Checkbox,
   },
@@ -108,6 +108,20 @@ export default {
     },
     inputType() {
       return this.isAttributeTypeLink ? 'url' : this.attributeType;
+    },
+    tooltipDescription() {
+      const rawDesc = String(this.description || '').trim();
+      const readOnlyDesc = this.readOnly
+        ? String(this.readOnlyHint || '').trim()
+        : '';
+      const parts = [];
+      if (rawDesc) parts.push(rawDesc);
+      if (readOnlyDesc && readOnlyDesc !== rawDesc) parts.push(readOnlyDesc);
+      return parts
+        .map((part, idx) =>
+          idx < parts.length - 1 && !/[.!?…]$/.test(part) ? `${part}.` : part
+        )
+        .join(' ');
     },
     shouldShowErrorMessage() {
       return this.v$.editedValue.$error;
@@ -229,16 +243,16 @@ export default {
         </div>
         <div class="flex items-center justify-between w-full">
           <span
-            class="w-full inline-flex gap-1.5 items-start font-medium whitespace-nowrap text-sm mb-0"
+            class="w-full inline-flex gap-1 items-center font-medium min-w-0 text-sm mb-0"
             :class="
               v$.editedValue.$error ? 'text-n-ruby-11' : 'text-n-slate-12'
             "
           >
-            {{ label }}
-            <HelperTextPopup
-              v-if="description"
-              :message="description"
-              class="mt-0.5"
+            <span class="truncate">{{ label }}</span>
+            <CrmCustomFieldDescriptionHint
+              v-if="tooltipDescription"
+              :description="tooltipDescription"
+              :label="label"
             />
           </span>
           <NextButton
@@ -329,14 +343,6 @@ export default {
           />
         </div>
       </div>
-      <p
-        v-if="readOnly && readOnlyHint"
-        class="flex items-center gap-1 px-1 mt-0.5 mb-0 text-xs text-n-slate-11"
-        data-testid="custom-attribute-read-only-hint"
-      >
-        <span class="i-lucide-lock size-3 shrink-0" aria-hidden="true" />
-        {{ readOnlyHint }}
-      </p>
     </div>
     <div v-if="isAttributeTypeList && !readOnly">
       <MultiselectDropdown

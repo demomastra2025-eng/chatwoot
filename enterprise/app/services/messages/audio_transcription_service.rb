@@ -168,12 +168,20 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     return if transcribed_text.blank?
 
     attachment.update!(meta: attachment.meta.to_h.merge('transcribed_text' => transcribed_text))
+    refresh_contact_language_stats
     message.reload.send_update_event
     message.account.increment_response_usage
 
     return unless ChatwootApp.advanced_search_allowed?
 
     message.reindex
+  end
+
+  def refresh_contact_language_stats
+    return if message.private? || !message.incoming?
+
+    target_contact = message.conversation&.contact || (message.sender if message.sender.is_a?(Contact))
+    Contacts::LanguageStatsService.refresh!(target_contact)
   end
 
   def supported_attachment_format?

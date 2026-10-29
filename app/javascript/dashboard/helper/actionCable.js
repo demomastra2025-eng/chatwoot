@@ -244,8 +244,41 @@ class ActionCableConnector extends BaseActionCableConnector {
     emitter.emit(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, { event, ...data });
   };
 
+  syncContactLanguageFromMessage = data => {
+    const sender = data?.sender;
+    if (sender?.type !== 'contact' || !sender?.id) return;
+    const senderAttrs = sender.additional_attributes;
+    if (!senderAttrs || typeof senderAttrs !== 'object') return;
+    const getContact = this.app.$store.getters?.['contacts/getContact'];
+    const existing =
+      typeof getContact === 'function' ? getContact(sender.id) : null;
+    if (!existing?.id) return;
+
+    const currentAttrs = existing.additional_attributes || {};
+    if (
+      currentAttrs.client_language === senderAttrs.client_language &&
+      JSON.stringify(currentAttrs.client_language_breakdown || null) ===
+        JSON.stringify(senderAttrs.client_language_breakdown || null)
+    ) {
+      return;
+    }
+
+    this.app.$store.dispatch('contacts/setContact', {
+      ...existing,
+      additional_attributes: {
+        ...currentAttrs,
+        client_language: senderAttrs.client_language,
+        client_language_source: senderAttrs.client_language_source,
+        client_language_confidence: senderAttrs.client_language_confidence,
+        client_language_counts: senderAttrs.client_language_counts,
+        client_language_breakdown: senderAttrs.client_language_breakdown,
+      },
+    });
+  };
+
   onMessageUpdated = data => {
     this.app.$store.dispatch('updateMessage', data);
+    this.syncContactLanguageFromMessage(data);
   };
 
   onPresenceUpdate = data => {
@@ -298,6 +331,7 @@ class ActionCableConnector extends BaseActionCableConnector {
     } = data;
     notifyAudioOnNewMessage(data);
     this.app.$store.dispatch('addMessage', data);
+    this.syncContactLanguageFromMessage(data);
     this.app.$store.dispatch('updateConversationLastActivity', {
       lastActivityAt,
       conversationId,

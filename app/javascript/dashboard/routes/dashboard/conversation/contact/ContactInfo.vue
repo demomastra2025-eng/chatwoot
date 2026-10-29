@@ -12,6 +12,7 @@ import EditContact from './EditContact.vue';
 import ContactMergeModal from 'dashboard/modules/contact/ContactMergeModal.vue';
 import InlineInput from 'dashboard/components-next/inline-input/InlineInput.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import CrmCustomFieldDescriptionHint from 'dashboard/components-next/CRM/CrmCustomFieldDescriptionHint.vue';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
 import {
   maskedPatientIin,
@@ -19,8 +20,7 @@ import {
   patientAgeLabel,
 } from 'dashboard/stores/scheduling/patientContext';
 import {
-  WHATSAPP_SUPPORTED_CLIENT_LANGUAGES,
-  getClientLanguageNativeName,
+  formatClientLanguageSummary,
   normalizeClientLanguageCode,
 } from 'dashboard/helper/appointmentTemplatePresets';
 
@@ -47,6 +47,7 @@ const DOSSIER_EXCLUDED_CUSTOM_ATTRIBUTE_KEYS = new Set([
 export default {
   components: {
     ContactInfoRow,
+    CrmCustomFieldDescriptionHint,
     EditContact,
     Avatar,
     SocialIcons,
@@ -82,9 +83,6 @@ export default {
     };
   },
   computed: {
-    supportedClientLanguages() {
-      return WHATSAPP_SUPPORTED_CLIENT_LANGUAGES;
-    },
     contactClientLanguage() {
       const direct = normalizeClientLanguageCode(
         this.additionalAttributes.client_language ||
@@ -101,22 +99,14 @@ export default {
         .find(Boolean);
       return convLang || '';
     },
-    contactClientLanguageConfidence() {
-      const raw = this.additionalAttributes.client_language_confidence;
-      if (raw === undefined || raw === null || raw === '') return null;
-      const num = Number(raw);
-      return Number.isFinite(num) && num > 0 ? Math.round(num) : null;
-    },
     contactClientLanguageDisplay() {
-      if (!this.contactClientLanguage) return 'Не определён';
-      const name = getClientLanguageNativeName(this.contactClientLanguage);
-      if (
-        this.additionalAttributes.client_language_source !== 'manual' &&
-        this.contactClientLanguageConfidence
-      ) {
-        return `${name} (${this.contactClientLanguageConfidence}%)`;
-      }
-      return name;
+      return (
+        formatClientLanguageSummary(
+          this.additionalAttributes,
+          this.contactClientLanguage,
+          'ru'
+        ) || '—'
+      );
     },
     contactProfileLink() {
       return `/app/accounts/${this.$route.params.accountId}/contacts/${this.contact.id}`;
@@ -140,9 +130,6 @@ export default {
       return (
         this.contact.custom_attributes || this.contact.customAttributes || {}
       );
-    },
-    preferredLanguageValue() {
-      return this.contactClientLanguage;
     },
     dossierBirthDateDisplay() {
       const raw =
@@ -224,8 +211,22 @@ export default {
       if (raw === undefined || raw === null) return '';
       return String(raw).trim();
     },
+    contactAttributeDefinitionsByKey() {
+      const getter = this.$store?.getters?.['attributes/getAttributesByModel'];
+      const definitions =
+        typeof getter === 'function' ? getter('contact_attribute') : [];
+      return (Array.isArray(definitions) ? definitions : []).reduce(
+        (acc, item) => {
+          const attrKey = item?.attribute_key || item?.attributeKey;
+          if (attrKey) acc[attrKey] = item;
+          return acc;
+        },
+        {}
+      );
+    },
     extraCustomAttributes() {
       const attrs = this.customAttributes || {};
+      const defs = this.contactAttributeDefinitionsByKey;
       return Object.entries(attrs)
         .filter(([key, value]) => {
           if (
@@ -239,11 +240,20 @@ export default {
           if (typeof value === 'object') return false;
           return String(value).trim() !== '';
         })
-        .map(([key, value]) => ({
-          key,
-          label: key,
-          value: Array.isArray(value) ? value.join(', ') : String(value).trim(),
-        }));
+        .map(([key, value]) => {
+          const def = defs[key];
+          return {
+            key,
+            label:
+              def?.attribute_display_name || def?.attributeDisplayName || key,
+            description: String(
+              def?.attribute_description || def?.attributeDescription || ''
+            ).trim(),
+            value: Array.isArray(value)
+              ? value.join(', ')
+              : String(value).trim(),
+          };
+        });
     },
     socialProfiles() {
       const {
@@ -430,24 +440,7 @@ export default {
       await copyTextToClipboard(this.dossierIin);
       useAlert(this.$t('CONTACT_PANEL.COPY_SUCCESSFUL'));
     },
-    savePreferredLanguage(event) {
-      return this.onClientLanguageChange(event);
-    },
-    onClientLanguageChange(event) {
-      const nextLang = normalizeClientLanguageCode(event.target.value);
-      const nextAttrs = {
-        ...this.additionalAttributes,
-        client_language: nextLang || null,
-        client_language_source: nextLang ? 'manual' : null,
-      };
-      if (nextLang) {
-        nextAttrs.client_language_confidence = 100;
-      }
-      this.updateContactField({
-        client_language: nextLang || '',
-        additional_attributes: nextAttrs,
-      });
-    },
+
     async updateContactField(attrs) {
       const contactId = this.contact.id;
       try {
@@ -694,43 +687,33 @@ export default {
             :data-testid="`contact-dossier-attr-${attr.key}`"
             class="flex items-center justify-between gap-2 py-1 text-xs"
           >
-            <span class="text-n-slate-11">{{ attr.label }}</span>
+            <span
+              class="inline-flex min-w-0 items-center gap-1 text-n-slate-11"
+            >
+              <span class="truncate">{{ attr.label }}</span>
+              <CrmCustomFieldDescriptionHint
+                v-if="attr.description"
+                :description="attr.description"
+                :label="attr.label"
+              />
+            </span>
             <span class="text-right font-medium text-n-slate-12">{{
               attr.value
             }}</span>
           </div>
           <div
-            class="flex w-full items-center justify-between gap-2 py-1 text-xs text-n-slate-11"
+            class="flex items-center justify-between gap-2 py-1 text-xs"
             data-test="contact-client-language-row"
             data-testid="contact-client-language-row"
           >
-            <span class="inline-flex items-center gap-1.5">
-              <span class="i-lucide-languages size-3.5 text-n-slate-10" />
-              <span>{{ 'Язык клиента:' }}</span>
-              <strong
-                class="font-medium text-n-slate-12"
-                data-test="contact-client-language-badge"
-                data-testid="contact-client-language-badge"
-              >
-                {{ contactClientLanguageDisplay }}
-              </strong>
-            </span>
-            <select
-              data-test="contact-client-language-select"
-              data-testid="contact-preferred-language-select"
-              :value="preferredLanguageValue"
-              class="rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-xs text-n-slate-12"
-              @change="savePreferredLanguage"
+            <span class="shrink-0 text-n-slate-11">{{ 'Язык' }}</span>
+            <span
+              class="text-right font-medium text-n-slate-12"
+              data-test="contact-client-language-badge"
+              data-testid="contact-client-language-badge"
             >
-              <option value="">{{ 'Авто' }}</option>
-              <option
-                v-for="lang in supportedClientLanguages"
-                :key="lang.code"
-                :value="lang.code"
-              >
-                {{ lang.name }} ({{ lang.code }})
-              </option>
-            </select>
+              {{ contactClientLanguageDisplay }}
+            </span>
           </div>
         </div>
         <slot />

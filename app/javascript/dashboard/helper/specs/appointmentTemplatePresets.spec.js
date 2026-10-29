@@ -5,8 +5,10 @@ import {
   buildAppointmentTemplatePackDrafts,
   buildPresetMarker,
   extractPresetKeyFromRule,
+  formatClientLanguageSummary,
   normalizeClientLanguageCode,
   normalizeClientLanguagesList,
+  resolveClientLanguageBreakdown,
   serializeSemanticTemplateText,
   validateUtilityTemplateDraft,
 } from '../appointmentTemplatePresets';
@@ -254,6 +256,42 @@ describe('appointmentTemplatePresets', () => {
         });
         expect(validation.valid).toBe(true);
       });
+    });
+  });
+
+  describe('client language percentage breakdown formatting', () => {
+    it('formats multi-language breakdown compactly in Russian', () => {
+      const attrs = {
+        client_language: 'ru',
+        client_language_breakdown: [
+          { code: 'ru', percentage: 70 },
+          { code: 'kk', percentage: 30 },
+        ],
+      };
+
+      expect(resolveClientLanguageBreakdown(attrs)).toEqual([
+        { code: 'ru', label: 'Русский', percentage: 70 },
+        { code: 'kk', label: 'Казахский', percentage: 30 },
+      ]);
+      expect(formatClientLanguageSummary(attrs)).toBe(
+        'Русский 70% · Казахский 30%'
+      );
+    });
+
+    it('derives percentages summing to 100% from legacy counts or single language', () => {
+      expect(
+        formatClientLanguageSummary({
+          client_language_counts: { kk: 3, ru: 1 },
+        })
+      ).toBe('Казахский 75% · Русский 25%');
+
+      expect(
+        formatClientLanguageSummary({
+          client_language: 'kk',
+        })
+      ).toBe('Казахский 100%');
+
+      expect(formatClientLanguageSummary({})).toBe('');
     });
   });
 });

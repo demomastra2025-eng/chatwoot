@@ -6,6 +6,7 @@ import { useStore } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import { serverErrorMessage } from 'dashboard/helper/providerOwnedAttributes';
 
+import CrmCustomFieldDescriptionHint from 'dashboard/components-next/CRM/CrmCustomFieldDescriptionHint.vue';
 import ListAttribute from 'dashboard/components-next/CustomAttributes/ListAttribute.vue';
 import CheckboxAttribute from 'dashboard/components-next/CustomAttributes/CheckboxAttribute.vue';
 import DateAttribute from 'dashboard/components-next/CustomAttributes/DateAttribute.vue';
@@ -20,8 +21,6 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
-  // A value another system owns (MedElement): shown with the reason instead
-  // of an editor that the server would refuse.
   readOnly: {
     type: Boolean,
     default: false,
@@ -81,6 +80,27 @@ const readOnlyValue = computed(() => {
     : String(value);
 });
 
+const tooltipDescription = computed(() => {
+  const rawDescription = String(
+    props.attribute.attributeDescription ||
+      props.attribute.attribute_description ||
+      ''
+  ).trim();
+  const readOnlyReason = props.readOnly
+    ? String(t('CUSTOM_ATTRIBUTES.READ_ONLY.PROVIDER_OWNED') || '').trim()
+    : '';
+  const parts = [];
+  if (rawDescription) parts.push(rawDescription);
+  if (readOnlyReason && readOnlyReason !== rawDescription) {
+    parts.push(readOnlyReason);
+  }
+  return parts
+    .map((part, idx) =>
+      idx < parts.length - 1 && !/[.!?…]$/.test(part) ? `${part}.` : part
+    )
+    .join(' ');
+});
+
 const CurrentAttributeComponent = computed(() => {
   return (
     componentMap[props.attribute.attributeDisplayType] || componentMap.default
@@ -93,23 +113,30 @@ const CurrentAttributeComponent = computed(() => {
     class="grid grid-cols-[140px,1fr] group/attribute items-center w-full gap-2"
     :class="isEditingView ? 'min-h-10' : 'min-h-11'"
   >
-    <div class="flex items-center justify-between truncate">
+    <div class="flex items-center min-w-0 gap-1">
       <span class="text-sm font-medium truncate text-n-slate-12">
         {{ attribute.attributeDisplayName }}
       </span>
+      <CrmCustomFieldDescriptionHint
+        v-if="tooltipDescription"
+        :description="tooltipDescription"
+        :label="attribute.attributeDisplayName"
+      />
     </div>
 
     <div
       v-if="readOnly"
-      class="flex flex-col min-w-0 gap-0.5"
+      class="flex items-center w-full min-w-0"
+      :class="isEditingView ? 'justify-start' : 'justify-end'"
       data-testid="contact-attribute-read-only"
     >
-      <span class="text-sm break-words text-n-slate-12">
+      <span
+        class="min-w-0 text-sm break-words"
+        :class="
+          isEditingView ? 'text-n-slate-12' : 'text-n-slate-11 font-medium py-2'
+        "
+      >
         {{ readOnlyValue }}
-      </span>
-      <span class="flex items-center gap-1 text-xs text-n-slate-11">
-        <span class="i-lucide-lock size-3 shrink-0" aria-hidden="true" />
-        {{ t('CUSTOM_ATTRIBUTES.READ_ONLY.PROVIDER_OWNED') }}
       </span>
     </div>
     <component

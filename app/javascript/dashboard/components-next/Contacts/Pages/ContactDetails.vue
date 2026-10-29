@@ -19,6 +19,7 @@ import {
   getContactSourceIconClass,
   sourceValue,
 } from 'dashboard/helper/contactIdentity';
+import { formatClientLanguageSummary } from 'dashboard/helper/appointmentTemplatePresets';
 
 const props = defineProps({
   selectedContact: {
@@ -29,7 +30,7 @@ const props = defineProps({
 
 const emit = defineEmits(['goToContactsList']);
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const store = useStore();
 
 const confirmDeleteContactDialogRef = ref(null);
@@ -38,6 +39,14 @@ const { openPersonDialog } = useOpenPersonDialog();
 const avatarFile = ref(null);
 const avatarUrl = ref('');
 const metadataSeparator = '•';
+
+const contactLanguageSummary = computed(() => {
+  const attrs =
+    props.selectedContact?.additionalAttributes ||
+    props.selectedContact?.additional_attributes ||
+    {};
+  return formatClientLanguageSummary(attrs, '', locale.value || 'ru');
+});
 
 const contactsFormRef = ref(null);
 
@@ -360,6 +369,14 @@ const openChannelConversation = channelIdentity => {
                     date: lastActivityAt,
                   })
                 }}
+              </span>
+              <span
+                v-if="contactLanguageSummary"
+                data-testid="contact-details-language-summary"
+                class="inline-flex items-center gap-1 text-sm text-n-slate-11"
+              >
+                <span class="i-lucide-languages text-n-slate-10 size-4" />
+                {{ contactLanguageSummary }}
               </span>
             </div>
           </div>

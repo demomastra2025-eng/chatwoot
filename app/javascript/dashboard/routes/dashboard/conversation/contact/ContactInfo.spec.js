@@ -29,9 +29,14 @@ vi.mock('dashboard/components-next/Contacts/VoiceCallButton.vue', () => ({
   },
 }));
 
-const createStore = (conversations, showActions = false) => ({
+const createStore = (
+  conversations,
+  showActions = false,
+  contactAttributes = []
+) => ({
   getters: {
     getCurrentAccountId: 1,
+    'attributes/getAttributesByModel': () => contactAttributes,
     getCurrentUser: {
       accounts: [
         {
@@ -65,6 +70,7 @@ const buildWrapper = ({
   contact = {},
   showActions = false,
   canAddFamilyMember = false,
+  contactAttributes = [],
 } = {}) =>
   shallowMount(ContactInfo, {
     props: {
@@ -88,7 +94,7 @@ const buildWrapper = ({
         $router: {
           push: routerPushMock,
         },
-        $store: createStore(conversations, showActions),
+        $store: createStore(conversations, showActions, contactAttributes),
         $t: key => key,
       },
       stubs: {
@@ -290,38 +296,42 @@ describe('ContactInfo', () => {
       undefined
     );
   });
-  it('renders client language with AI confidence badge and dispatches update on manual selection', async () => {
-    const wrapper = buildWrapper({
+  it('renders automatic read-only client language percentage breakdown without manual dropdown', () => {
+    const bilingualWrapper = buildWrapper({
       contact: {
         additional_attributes: {
-          client_language: 'kk',
+          client_language: 'ru',
           client_language_source: 'ai',
-          client_language_confidence: 96,
+          client_language_confidence: 70,
+          client_language_breakdown: [
+            { code: 'ru', percentage: 70 },
+            { code: 'kk', percentage: 30 },
+          ],
         },
       },
     });
 
-    const row = wrapper.get('[data-test="contact-client-language-row"]');
-    expect(row.text()).toContain('96%');
-
-    const select = wrapper.get(
-      '[data-testid="contact-preferred-language-select"]'
+    const row = bilingualWrapper.get(
+      '[data-test="contact-client-language-row"]'
     );
-    expect(select.element.value).toBe('kk');
+    expect(row.text()).toContain('Язык');
+    expect(
+      bilingualWrapper
+        .get('[data-testid="contact-client-language-badge"]')
+        .text()
+    ).toBe('Русский 70% · Казахский 30%');
+    expect(
+      bilingualWrapper
+        .find('[data-testid="contact-preferred-language-select"]')
+        .exists()
+    ).toBe(false);
 
-    await select.setValue('ru');
-    expect(dispatchMock).toHaveBeenCalledWith(
-      'contacts/update',
-      expect.objectContaining({
-        id: 154,
-        client_language: 'ru',
-        additional_attributes: expect.objectContaining({
-          client_language: 'ru',
-          client_language_source: 'manual',
-          client_language_confidence: 100,
-        }),
-      })
-    );
+    const emptyWrapper = buildWrapper({
+      contact: { additional_attributes: {} },
+    });
+    expect(
+      emptyWrapper.get('[data-testid="contact-client-language-badge"]').text()
+    ).toBe('—');
   });
 
   it('renders always-open Contact Dossier with formatted birth date, IIN, gender, secondary phones, address, extra custom attributes, and filters out MedElement sync keys', async () => {
@@ -372,6 +382,28 @@ describe('ContactInfo', () => {
       dossier.get('[data-testid="contact-dossier-attr-allergies"]').text()
     ).toContain('Пенициллин');
 
+    const wrapperWithAttrMeta = buildWrapper({
+      contact: { custom_attributes: { allergies: 'Пенициллин' } },
+      contactAttributes: [
+        {
+          attribute_key: 'allergies',
+          attribute_display_name: 'Аллергии',
+          attribute_description: 'Укажите лекарственную аллергию пациента',
+        },
+      ],
+    });
+    const attrRow = wrapperWithAttrMeta.get(
+      '[data-testid="contact-dossier-attr-allergies"]'
+    );
+    expect(attrRow.text()).toContain('Аллергии');
+    const hintStub = attrRow.findComponent({
+      name: 'CrmCustomFieldDescriptionHint',
+    });
+    expect(hintStub.exists()).toBe(true);
+    expect(hintStub.props('description')).toBe(
+      'Укажите лекарственную аллергию пациента'
+    );
+
     expect(dossier.text()).not.toContain('ME-991');
     expect(dossier.text()).not.toContain('medelement_patient_code');
     expect(dossier.text()).not.toContain('medelement_last_synced_at');
@@ -380,6 +412,6 @@ describe('ContactInfo', () => {
     expect(dossier.text()).not.toContain('phone_conflict_comment');
     expect(
       dossier.find('[data-testid="contact-preferred-language-select"]').exists()
-    ).toBe(true);
+    ).toBe(false);
   });
 });

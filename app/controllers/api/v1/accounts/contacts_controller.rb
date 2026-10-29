@@ -97,7 +97,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   def create
     validate_custom_attributes!(current: {})
     ActiveRecord::Base.transaction do
-      @contact = Current.account.contacts.new(permitted_params.except(:avatar_url))
+      @contact = Current.account.contacts.new(contact_create_params)
       @contact.save!
       @contact_inbox = build_contact_inbox
       process_avatar_from_url
@@ -202,52 +202,34 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   def contact_additional_attributes
     current_attributes = (@contact.additional_attributes || {}).deep_stringify_keys
-    incoming_attributes = permitted_params[:additional_attributes].to_h.deep_stringify_keys
+    incoming_attributes = permitted_params[:additional_attributes].to_h
+                                                                  .deep_stringify_keys
+                                                                  .except(*Contact::SERVER_OWNED_CLIENT_LANGUAGE_KEYS)
     merged_attributes = current_attributes.merge(incoming_attributes)
-
-    display_preferences = (merged_attributes[Contact::DISPLAY_PREFERENCES_KEY] || {}).deep_stringify_keys
-
-    if resolved_update_name.present? && resolved_update_name != @contact.name &&
-       display_preferences[Contact::PRIMARY_NAME_SOURCE_KEY].blank?
-      display_preferences[Contact::PRIMARY_NAME_SOURCE_KEY] = {
-        'kind' => Contact::DISPLAY_SOURCE_KIND_MANUAL
-      }
-    end
-
-    if (permitted_params[:avatar].present? || params[:avatar_url].present?) &&
-       display_preferences[Contact::PRIMARY_AVATAR_SOURCE_KEY].blank?
-      display_preferences[Contact::PRIMARY_AVATAR_SOURCE_KEY] = {
-        'kind' => Contact::DISPLAY_SOURCE_KIND_CONTACT_AVATAR
-      }
-    end
-
-    if incoming_attributes.key?(Contact::CLIENT_LANGUAGE_KEY)
-      normalized_lang = Whatsapp::SupportedLanguages.normalize_code(incoming_attributes[Contact::CLIENT_LANGUAGE_KEY])
-      if normalized_lang.present?
-        merged_attributes[Contact::CLIENT_LANGUAGE_KEY] = normalized_lang
-        unless incoming_attributes[Contact::CLIENT_LANGUAGE_SOURCE_KEY] == Contact::CLIENT_LANGUAGE_SOURCE_AI
-          merged_attributes[Contact::CLIENT_LANGUAGE_SOURCE_KEY] = Contact::CLIENT_LANGUAGE_SOURCE_MANUAL
-          merged_attributes.delete(Contact::CLIENT_LANGUAGE_CONFIDENCE_KEY)
-        end
-      else
-        counts = merged_attributes[Contact::CLIENT_LANGUAGE_COUNTS_KEY]
-        if counts.is_a?(Hash) && counts.any?
-          dominant_lang, dominant_count = counts.max_by { |_code, count| count.to_i }
-          total_count = counts.values.sum(&:to_i)
-          confidence = total_count.positive? ? ((dominant_count.to_f / total_count) * 100).round.clamp(1, 100) : 100
-          merged_attributes[Contact::CLIENT_LANGUAGE_KEY] = dominant_lang
-          merged_attributes[Contact::CLIENT_LANGUAGE_SOURCE_KEY] = Contact::CLIENT_LANGUAGE_SOURCE_AI
-          merged_attributes[Contact::CLIENT_LANGUAGE_CONFIDENCE_KEY] = confidence
-        else
-          merged_attributes.delete(Contact::CLIENT_LANGUAGE_KEY)
-          merged_attributes.delete(Contact::CLIENT_LANGUAGE_SOURCE_KEY)
-          merged_attributes.delete(Contact::CLIENT_LANGUAGE_CONFIDENCE_KEY)
-        end
-      end
-    end
-
+    display_preferences = resolve_updated_display_preferences(merged_attributes)
     merged_attributes[Contact::DISPLAY_PREFERENCES_KEY] = display_preferences if display_preferences.present?
     merged_attributes
+  end
+
+  def resolve_updated_display_preferences(merged_attributes)
+    prefs = (merged_attributes[Contact::DISPLAY_PREFERENCES_KEY] || {}).deep_stringify_keys
+    if resolved_update_name.present? && resolved_update_name != @contact.name && prefs[Contact::PRIMARY_NAME_SOURCE_KEY].blank?
+      prefs[Contact::PRIMARY_NAME_SOURCE_KEY] = { 'kind' => Contact::DISPLAY_SOURCE_KIND_MANUAL }
+    end
+    if (permitted_params[:avatar].present? || params[:avatar_url].present?) && prefs[Contact::PRIMARY_AVATAR_SOURCE_KEY].blank?
+      prefs[Contact::PRIMARY_AVATAR_SOURCE_KEY] = { 'kind' => Contact::DISPLAY_SOURCE_KIND_CONTACT_AVATAR }
+    end
+    prefs
+  end
+
+  def contact_create_params
+    attrs = permitted_params.except(:avatar_url)
+    if attrs[:additional_attributes].present?
+      attrs[:additional_attributes] = attrs[:additional_attributes].to_h
+                                                                   .deep_stringify_keys
+                                                                   .except(*Contact::SERVER_OWNED_CLIENT_LANGUAGE_KEYS)
+    end
+    attrs
   end
 
   def contact_update_params

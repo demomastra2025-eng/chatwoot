@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils';
 import CustomAttribute from './CustomAttribute.vue';
+import CrmCustomFieldDescriptionHint from 'dashboard/components-next/CRM/CrmCustomFieldDescriptionHint.vue';
 
 const HINT = 'Filled in automatically from MedElement.';
 
@@ -15,7 +16,6 @@ const mountAttribute = (props = {}) =>
     global: {
       directives: { 'on-clickaway': {} },
       stubs: {
-        HelperTextPopup: true,
         MultiselectDropdown: true,
         NextButton: {
           props: ['icon'],
@@ -29,25 +29,26 @@ const hasButton = (wrapper, icon) =>
   wrapper.find(`[data-icon="${icon}"]`).exists();
 
 describe('CustomAttribute', () => {
-  it('offers edit, copy and delete for an ordinary value', () => {
+  it('offers edit, copy and delete for an ordinary value without (?) hint when description is blank', () => {
     const wrapper = mountAttribute();
 
     expect(hasButton(wrapper, 'i-lucide-pen')).toBe(true);
     expect(hasButton(wrapper, 'i-lucide-trash-2')).toBe(true);
     expect(hasButton(wrapper, 'i-lucide-clipboard')).toBe(true);
-    expect(
-      wrapper.find('[data-testid="custom-attribute-read-only-hint"]').exists()
-    ).toBe(false);
+    expect(wrapper.findComponent(CrmCustomFieldDescriptionHint).exists()).toBe(
+      false
+    );
   });
 
   describe('when another system owns the value', () => {
-    it('shows the value and the reason, keeps copy, drops edit and delete', () => {
+    it('shows the value cleanly, places the MedElement reason in the (?) tooltip, keeps copy, drops edit and delete', () => {
       const wrapper = mountAttribute({ readOnly: true, readOnlyHint: HINT });
 
       expect(wrapper.text()).toContain('Almaty');
-      expect(
-        wrapper.get('[data-testid="custom-attribute-read-only-hint"]').text()
-      ).toBe(HINT);
+      expect(wrapper.text()).not.toContain(HINT);
+      const hint = wrapper.findComponent(CrmCustomFieldDescriptionHint);
+      expect(hint.exists()).toBe(true);
+      expect(hint.props('description')).toBe(HINT);
       expect(hasButton(wrapper, 'i-lucide-clipboard')).toBe(true);
       expect(hasButton(wrapper, 'i-lucide-pen')).toBe(false);
       expect(hasButton(wrapper, 'i-lucide-trash-2')).toBe(false);
