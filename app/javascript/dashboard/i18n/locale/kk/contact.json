@@ -458,7 +458,11 @@
       "ACTIVE_FILTERS": {
         "MORE_FILTERS": "+ {count} more filters",
         "CLEAR_FILTERS": "Clear filters"
-      }
+      },
+      "META_AD_REFERRAL": "Жарнама бойынша өтініш (Meta Ads)",
+      "META_AD_REFERRAL_TRUE": "Иә",
+      "META_AD_REFERRAL_FALSE": "Жоқ",
+      "META_AD_SOURCE_ID": "Жарнамалық хабарландыру (ID / тақырып)"
     },
     "CARD": {
       "OF": "of",

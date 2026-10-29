@@ -2,6 +2,11 @@
 
 class Meta::AdReferralRecorder
   SUMMARY_ATTRIBUTE_KEY = 'meta_ad_referral'
+  PAYLOAD_ATTRIBUTE_KEYS = %i[
+    attribution_type source source_type source_id source_url ad_id ctwa_clid ref
+    referral_type headline body media_type image_url video_url thumbnail_url
+    post_id product_id flow_id
+  ].freeze
 
   attr_reader :message, :payload
 
@@ -18,6 +23,7 @@ class Meta::AdReferralRecorder
     summary = referral.summary
     persist_message_summary!(summary)
     persist_additional_attribute!(message.conversation, SUMMARY_ATTRIBUTE_KEY, summary)
+    apply_auto_labels!(referral)
     referral
   end
 
@@ -47,6 +53,13 @@ class Meta::AdReferralRecorder
   end
 
   def record_attributes
+    record_relation_attributes.merge(payload_attributes).merge(
+      raw_referral: payload[:raw_referral].presence || {},
+      received_at: received_at
+    )
+  end
+
+  def record_relation_attributes
     {
       account_id: message.account_id,
       inbox_id: message.inbox_id,
@@ -55,28 +68,12 @@ class Meta::AdReferralRecorder
       communication_thread_id: communication_thread&.id,
       message_id: message.id,
       provider: payload[:provider],
-      provider_message_id: provider_message_id,
-      attribution_type: payload[:attribution_type],
-      source: payload[:source],
-      source_type: payload[:source_type],
-      source_id: payload[:source_id],
-      source_url: payload[:source_url],
-      ad_id: payload[:ad_id],
-      ctwa_clid: payload[:ctwa_clid],
-      ref: payload[:ref],
-      referral_type: payload[:referral_type],
-      headline: payload[:headline],
-      body: payload[:body],
-      media_type: payload[:media_type],
-      image_url: payload[:image_url],
-      video_url: payload[:video_url],
-      thumbnail_url: payload[:thumbnail_url],
-      post_id: payload[:post_id],
-      product_id: payload[:product_id],
-      flow_id: payload[:flow_id],
-      raw_referral: payload[:raw_referral].presence || {},
-      received_at: received_at
+      provider_message_id: provider_message_id
     }
+  end
+
+  def payload_attributes
+    PAYLOAD_ATTRIBUTE_KEYS.index_with { |key| payload[key] }
   end
 
   def provider_message_id
@@ -111,7 +108,9 @@ class Meta::AdReferralRecorder
     attributes[:meta_ad_referral_id] = summary[:id]
     attributes[:meta_referral] = payload.merge(meta_ad_referral_id: summary[:id]).compact_blank
     message.content_attributes = attributes
+    # rubocop:disable Rails/SkipsModelValidations
     message.update_columns(content_attributes: attributes, updated_at: Time.current)
+    # rubocop:enable Rails/SkipsModelValidations
   end
 
   def persist_additional_attribute!(record, key, summary)
@@ -120,6 +119,12 @@ class Meta::AdReferralRecorder
 
     attributes = record.additional_attributes.to_h.deep_dup
     attributes[key] = summary.deep_stringify_keys
+    # rubocop:disable Rails/SkipsModelValidations
     record.update_columns(additional_attributes: attributes, updated_at: Time.current)
+    # rubocop:enable Rails/SkipsModelValidations
+  end
+
+  def apply_auto_labels!(referral)
+    Meta::AdReferralAutoTagger.new(referral: referral, message: message).perform
   end
 end

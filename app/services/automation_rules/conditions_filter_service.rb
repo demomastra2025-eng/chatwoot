@@ -140,6 +140,10 @@ class AutomationRules::ConditionsFilterService < FilterService
 
   # This will be used in future for contact automation rule
   def contact_query_string(current_filter, query_hash, current_index)
+    if current_filter['attribute_type'] == 'meta_ad_referral'
+      return " #{meta_ad_referral_filter_query(query_hash, current_index, table_name: 'contacts')} "
+    end
+
     attribute_key = query_hash['attribute_key']
     query_operator = query_hash['query_operator']
 
@@ -154,6 +158,10 @@ class AutomationRules::ConditionsFilterService < FilterService
   end
 
   def conversation_query_string(table_name, current_filter, query_hash, current_index)
+    if current_filter['attribute_type'] == 'meta_ad_referral'
+      return " #{meta_ad_referral_filter_query(query_hash, current_index, table_name: table_name)} "
+    end
+
     attribute_key = query_hash['attribute_key']
     query_operator = query_hash['query_operator']
     filter_operator_value = filter_operation(query_hash, current_index)

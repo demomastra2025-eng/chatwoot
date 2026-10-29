@@ -43,8 +43,12 @@ const formatFilterValue = value => {
   }
 
   // Case 3: object with a "name" property → return name
+  if (typeof value === 'object') {
+    return value.name ?? '';
+  }
+
   // Case 4: primitive (string, number, etc.) → return as is
-  return value?.name ?? value;
+  return value;
 };
 </script>
 
@@ -68,7 +72,11 @@ const formatFilterValue = value => {
             {{ formatOperatorLabel(filter.filterOperator) }}
           </span>
           <span
-            v-if="filter.values"
+            v-if="
+              !['is_present', 'is_not_present'].includes(
+                filter.filterOperator
+              ) && formatFilterValue(filter.values)
+            "
             :title="formatFilterValue(filter.values)"
             class="lowercase truncate text-n-slate-12"
             :class="{

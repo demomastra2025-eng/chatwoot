@@ -28,6 +28,8 @@ module Filters::FilterHelper
   end
 
   def build_condition_query_string(current_filter, query_hash, current_index)
+    return meta_ad_referral_filter_query(query_hash, current_index) if current_filter&.dig('attribute_type') == 'meta_ad_referral'
+
     filter_operator_value = filter_operation(query_hash, current_index)
 
     return handle_nil_filter(query_hash, current_index) if current_filter.nil?

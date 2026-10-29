@@ -126,6 +126,10 @@ export const getValuesForFilter = (filter, params) => {
 
 export const generateValuesForEditCustomViews = (filter, params) => {
   const { attribute_key, filter_operator, values } = filter;
+  if (['is_present', 'is_not_present'].includes(filter_operator)) {
+    return [];
+  }
+
   const { filterTypes, allCustomAttributes } = params;
   const inputType = getInputType(attribute_key, filter_operator, filterTypes);
 
@@ -135,7 +139,7 @@ export const generateValuesForEditCustomViews = (filter, params) => {
       allCustomAttributes
     );
     return filterInputTypes === 'string'
-      ? values[0].toString()
+      ? (values[0]?.toString() ?? '')
       : { id: values[0], name: values[0] };
   }
 
@@ -146,5 +150,5 @@ export const generateValuesForEditCustomViews = (filter, params) => {
     'searchSelect',
   ].includes(inputType)
     ? getValuesForFilter(filter, params)
-    : values[0].toString();
+    : (values[0]?.toString() ?? '');
 };

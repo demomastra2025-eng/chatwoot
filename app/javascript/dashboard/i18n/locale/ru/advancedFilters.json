@@ -42,7 +42,9 @@
     },
     "ATTRIBUTE_LABELS": {
       "TRUE": "Истина",
-      "FALSE": "Ложь"
+      "FALSE": "Ложь",
+      "YES": "Да",
+      "NO": "Нет"
     },
     "ATTRIBUTES": {
       "STATUS": "Статус",
@@ -64,7 +66,9 @@
       "CUSTOM_ATTRIBUTE_LINK": "Ссылка",
       "CUSTOM_ATTRIBUTE_CHECKBOX": "Флажок",
       "CREATED_AT": "Дата создания",
-      "LAST_ACTIVITY": "Последние действия"
+      "LAST_ACTIVITY": "Последние действия",
+      "META_AD_REFERRAL": "Обращение по рекламе (Meta Ads)",
+      "META_AD_SOURCE_ID": "Рекламное объявление (ID / заголовок)"
     },
     "ERRORS": {
       "VALUE_REQUIRED": "Необходимо указать значение",

@@ -91,4 +91,38 @@ describe('useConversationFilterContext', () => {
       { id: 12, name: 'Qualified' },
     ]);
   });
+
+  it('exposes meta_ad_referral and meta_ad_source_id filters for conversations and dialogs', () => {
+    const { filterTypes } = useConversationFilterContext();
+    const referralFilter = filterTypes.value.find(
+      filter => filter.attributeKey === 'meta_ad_referral'
+    );
+    const sourceFilter = filterTypes.value.find(
+      filter => filter.attributeKey === 'meta_ad_source_id'
+    );
+
+    expect(referralFilter).toBeDefined();
+    expect(referralFilter.inputType).toBe('searchSelect');
+    expect(referralFilter.options).toEqual([
+      { id: 'true', name: 'FILTER.ATTRIBUTE_LABELS.YES' },
+      { id: 'false', name: 'FILTER.ATTRIBUTE_LABELS.NO' },
+    ]);
+    expect(referralFilter.filterOperators.map(op => op.value)).toEqual([
+      'equal_to',
+      'not_equal_to',
+      'is_present',
+      'is_not_present',
+    ]);
+
+    expect(sourceFilter).toBeDefined();
+    expect(sourceFilter.inputType).toBe('plainText');
+    expect(sourceFilter.filterOperators.map(op => op.value)).toEqual([
+      'equal_to',
+      'not_equal_to',
+      'contains',
+      'does_not_contain',
+      'is_present',
+      'is_not_present',
+    ]);
+  });
 });

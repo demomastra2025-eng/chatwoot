@@ -115,6 +115,7 @@ class AutomationRule < ApplicationRecord
   CONVERSATION_CONDITION_ATTRIBUTES = %w[
     content email country_code status message_type browser_language assignee_id team_id referer city company inbox_id
     mail_subject phone_number priority conversation_language labels private_note contact_id
+    meta_ad_referral meta_ad_source_id
   ].freeze
   APPOINTMENT_CONDITION_ATTRIBUTES = %w[
     status payment_status appointment_type source appointment_source lead_time_minutes starts_at_weekday starts_at_time service_id
