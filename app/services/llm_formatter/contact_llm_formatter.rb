@@ -11,7 +11,7 @@ class LlmFormatter::ContactLlmFormatter < LlmFormatter::DefaultLlmFormatter
                   'No notes for this contact'
                 end
 
-    sections.join("\n")
+    Scheduling::IinValidator.redact_text(sections.join("\n"))
   end
 
   private
@@ -28,6 +28,8 @@ class LlmFormatter::ContactLlmFormatter < LlmFormatter::DefaultLlmFormatter
     attributes << "Location: #{@record.location}"
     attributes << "Country Code: #{@record.country_code}"
     @record.account.custom_attribute_definitions.with_attribute_model('contact_attribute').each do |attribute|
+      next if Scheduling::IinValidator.sensitive_attribute_key?(attribute.attribute_key)
+
       attributes << "#{attribute.attribute_display_name}: #{@record.custom_attributes[attribute.attribute_key]}"
     end
     attributes.join("\n")

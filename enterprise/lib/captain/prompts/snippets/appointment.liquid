@@ -53,8 +53,8 @@
 {% if appointment_visible_fields contains 'client_phone' -%}
 - Client Phone: {{ appointment.client_phone | default: "None" }}
 {% endif -%}
-{% if appointment_visible_fields contains 'client_identifier' -%}
-- Client Identifier: {{ appointment.client_identifier | default: "None" }}
+{% if appointment_visible_fields contains 'client_identifier' and appointment.client_identifier != blank -%}
+- Client Identifier: {{ appointment.client_identifier }}
 {% endif -%}
 {% if appointment_visible_fields contains 'client_birth_date' -%}
 - Client Birth Date: {{ appointment.client_birth_date | default: "None" }}
@@ -74,7 +74,10 @@
 {% if appointment.custom_attributes -%}
 {% for attribute in appointment.custom_attributes -%}
 {% assign attribute_key = attribute[0] | append: '' -%}
+{% assign attribute_key_down = attribute_key | downcase -%}
+{% unless attribute_key_down == 'iin' or attribute_key_down == 'medelement_iin' -%}
 {% assign attribute_label = appointment_custom_attribute_labels[attribute_key] | default: attribute[0] -%}
 - {{ attribute_label }} ({{ attribute[0] }}): {{ attribute[1] }}
+{% endunless -%}
 {% endfor -%}
 {% endif -%}

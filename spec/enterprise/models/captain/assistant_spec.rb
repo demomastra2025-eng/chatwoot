@@ -1350,13 +1350,14 @@ RSpec.describe Captain::Assistant, type: :model do
         expect(assistant.agent_instructions).not_to match(/^# Clinic$/)
       end
 
-      it 'writes its contact field as the value, though the clinic instructions link no field' do
-        state = { prompt_context: { contact: { 'name' => 'Aigerim', 'identifier' => '900101300123' } } }
+      it 'writes a non-IIN contact field as the value while hiding a 12-digit IIN from the model prompt' do
+        non_iin_state = { prompt_context: { contact: { 'name' => 'Aigerim', 'identifier' => 'CARD-42' } } }
+        iin_state = { prompt_context: { contact: { 'name' => 'Aigerim', 'identifier' => '900101300123' } } }
 
-        rendered = assistant.agent_instructions(run_context(state))
-
-        expect(rendered).to include('- ИИН пациента в карточке: 900101300123')
-        expect(rendered).not_to include('field://')
+        expect(assistant.agent_instructions(run_context(non_iin_state))).to include('- ИИН пациента в карточке: CARD-42')
+        rendered_iin = assistant.agent_instructions(run_context(iin_state))
+        expect(rendered_iin).to include('- ИИН пациента в карточке: not specified')
+        expect(rendered_iin).not_to include('900101300123', 'field://')
       end
 
       it 'is absent for an internal assistant' do

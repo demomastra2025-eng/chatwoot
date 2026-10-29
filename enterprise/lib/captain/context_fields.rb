@@ -427,7 +427,7 @@ class Captain::ContextFields
       end
     end
 
-    def prompt_state_for(assistant:, runtime_state:, field_ids: nil)
+    def prompt_state_for(assistant:, runtime_state:, field_ids: nil, mode: :prompt)
       definitions = definitions_for(assistant.account)
       definitions = definitions.select { |field| patient_appointment_definition?(field) } if assistant.usage_mode == 'external_agent'
       explicit_field_ids = sanitize_field_ids(field_ids, definitions)
@@ -449,7 +449,8 @@ class Captain::ContextFields
 
         scoped_prompt_state = build_scoped_prompt_state(
           raw_scope_state: runtime_state[scope],
-          allowed_field_ids: effective_field_ids
+          allowed_field_ids: effective_field_ids,
+          redact_pii: mode != :customer
         )
         next if scoped_prompt_state.blank?
 
@@ -934,7 +935,7 @@ class Captain::ContextFields
       tokens.include?('administrator') || permissions.any? { |token| tokens.include?(token) }
     end
 
-    def build_scoped_prompt_state(raw_scope_state:, allowed_field_ids:)
+    def build_scoped_prompt_state(raw_scope_state:, allowed_field_ids:, redact_pii: true)
       return {} if raw_scope_state.blank? || allowed_field_ids.blank?
 
       scope_state = raw_scope_state.with_indifferent_access
@@ -947,26 +948,34 @@ class Captain::ContextFields
 
         case path.first
         when 'custom_attributes'
-          add_selected_custom_attribute(prompt_state, scope_state, path.last)
+          add_selected_custom_attribute(prompt_state, scope_state, path.last, redact_pii: redact_pii)
         when 'additional_attributes'
           # Additional attributes remain available to tools in the raw runtime state,
           # but are intentionally excluded from the prompt-facing field whitelist.
           next
+        when 'identifier', 'client_identifier'
+          raw_val = scope_state[path.first]
+          prompt_state[path.first] = redact_pii ? Scheduling::IinValidator.sanitize_identifier(raw_val) : raw_val
         else
-          prompt_state[path.first] = scope_state[path.first]
+          raw_val = scope_state[path.first]
+          prompt_state[path.first] = redact_pii && raw_val.is_a?(String) ? Scheduling::IinValidator.redact_text(raw_val) : raw_val
         end
       end
 
       prompt_state
     end
 
-    def add_selected_custom_attribute(prompt_state, scope_state, attribute_key)
+    def add_selected_custom_attribute(prompt_state, scope_state, attribute_key, redact_pii: true)
+      return if redact_pii && Scheduling::IinValidator.sensitive_attribute_key?(attribute_key)
+
       custom_attributes = scope_state[:custom_attributes]
       prompt_state[:custom_attributes] ||= {}
 
       if custom_attributes.is_a?(Hash)
         custom_attributes = custom_attributes.with_indifferent_access
-        prompt_state[:custom_attributes][attribute_key] = custom_attributes[attribute_key]
+        raw_val = custom_attributes[attribute_key]
+        prompt_state[:custom_attributes][attribute_key] =
+          redact_pii && raw_val.is_a?(String) ? Scheduling::IinValidator.redact_text(raw_val) : raw_val
       else
         prompt_state[:custom_attributes][attribute_key] = nil
       end
@@ -998,18 +1007,35 @@ class Captain::ContextFields
 
     def reference_text(value, field_id, mode:, time_zone:, bound_tool_ids:)
       customer = mode == :customer
+      unless customer
+        return NOT_SPECIFIED if prompt_hidden_field_id?(field_id)
+
+        value = Scheduling::IinValidator.sanitize_identifier(value) if field_id == 'contact.identifier'
+      end
+
       if field_id.match?(APPOINTMENT_BLOCK_FIELD_ID)
-        return customer ? '' : appointment_block_text(value, field_id, time_zone: time_zone, bound_tool_ids: bound_tool_ids)
+        return customer ? '' : Scheduling::IinValidator.redact_text(
+          appointment_block_text(value, field_id, time_zone: time_zone, bound_tool_ids: bound_tool_ids)
+        )
       end
 
       if value.is_a?(Hash) && summary_field_id?(field_id)
         return '' if customer
 
         summary = Captain::PromptSummaryText.render(value, time_zone: time_zone, bound_tool_ids: bound_tool_ids)
-        return summary if summary.present?
+        return Scheduling::IinValidator.redact_text(summary) if summary.present?
       end
 
-      plain_value(value, time_zone, json: !customer).presence || (customer ? '' : NOT_SPECIFIED)
+      rendered = plain_value(value, time_zone, json: !customer).presence
+      return customer ? '' : NOT_SPECIFIED if rendered.blank?
+
+      customer ? rendered : Scheduling::IinValidator.redact_text(rendered)
+    end
+
+    def prompt_hidden_field_id?(field_id)
+      return true if field_id == 'appointment.client_identifier'
+
+      Scheduling::IinValidator.sensitive_attribute_key?(field_id.split('.').last)
     end
 
     # A legacy appointment block (nearest, last_past, last_cancelled, all) holds the JSON of Captain::AppointmentContext#block, with

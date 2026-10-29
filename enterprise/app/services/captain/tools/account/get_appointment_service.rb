@@ -29,7 +29,7 @@ class Captain::Tools::Account::GetAppointmentService < Captain::Tools::Account::
 
     return formatted_payload(Captain::Tools::Agent::AppointmentResult.success(appointment)) if patient_scope
 
-    formatted_payload(appointment: ::Scheduling::PayloadBuilder.appointment(appointment))
+    formatted_payload(appointment: ::Scheduling::ToolPayloadBuilder.sanitized_appointment(appointment))
   rescue StandardError => e
     raise unless patient_scope
 

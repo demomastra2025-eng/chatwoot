@@ -144,12 +144,17 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     end
   end
 
-  # Suggestion eval 27.10 (c74-1245386): a payment phone number the patient sent was read as the ID number.
-  it 'says that the IIN is 12 digits with the check digit and never a phone number, for the identifier and the iin of the card' do
-    expect(described_class.for_tool('update_contact').params['identifier'])
-      .to include('IIN: 12 digits with the check digit', 'Never a phone number or any other number the patient sent for another purpose')
-    expect(described_class.for_tool('update_my_contact').params['iin'])
-      .to include('IIN: 12 digits with the check digit', 'Never a phone number or any other number the patient sent for another purpose')
+  it 'hides IIN parameters from patient-facing agent tool schemas and never mentions IIN in tool texts' do
+    expect(described_class.for_tool('search_appointments').hidden_params).to include('client_identifier')
+    expect(described_class.for_tool('update_contact').hidden_params).to include('identifier')
+    expect(described_class.for_tool('update_my_contact').hidden_params).to include('iin')
+
+    described_class.tool_ids.each do |tool_id|
+      entry = described_class.for_tool(tool_id)
+      ([['description', entry.description]] + entry.params.to_a).each do |name, text|
+        expect(text).not_to match(/\bIIN\b/i), "#{tool_id}.#{name} mentions IIN: #{text}"
+      end
+    end
   end
 
   # Suggestion eval 27.10 (c74-1245884): a search for earlier or later times started from tomorrow and skipped the free times of today.
@@ -166,7 +171,7 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
 
     expect(entry.params['patient']).to eq(
       'The patient the appointment is for when it is not the person in this conversation (a child, a relative): ' \
-      'first and last name, birth date YYYY-MM-DD; middle name, IIN, gender, phone if known.'
+      'first and last name, birth date YYYY-MM-DD; middle name, gender, phone if known.'
     )
     expect(entry.description).to include('For a child or another person pass patient')
   end

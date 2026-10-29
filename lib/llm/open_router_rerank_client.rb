@@ -42,8 +42,8 @@ class Llm::OpenRouterRerankClient
         request.body = JSON.generate(
           {
             model: options[:model],
-            query: query,
-            documents: documents,
+            query: Llm::OutboundIinRedactor.redact_payload(query),
+            documents: Llm::OutboundIinRedactor.redact_payload(documents),
             top_n: options[:top_n],
             return_documents: options.fetch(:return_documents, true),
             provider: options[:provider].presence

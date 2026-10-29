@@ -23,7 +23,7 @@ class Captain::Tools::Account::CreateAppointmentService < Captain::Tools::Accoun
   param :crm_deal_id, type: :number, desc: 'Optional verified existing deal ID for this communication contact', required: false
   param :crm_pipeline_id, type: :number, desc: 'Optional pipeline ID when creating a deal according to its appointment settings', required: false
   param :patient, type: :object, required: false,
-                  desc: 'Optional explicitly named patient: first_name and last_name required; middle_name, iin, birth_date (YYYY-MM-DD), ' \
+                  desc: 'Optional explicitly named patient: first_name and last_name required; middle_name, birth_date (YYYY-MM-DD), ' \
                         'gender and phone optional. Ask for missing details; do not copy the caller identity to another patient.'
   param :custom_attributes,
         type: :object,

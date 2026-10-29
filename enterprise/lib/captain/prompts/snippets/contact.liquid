@@ -20,8 +20,11 @@
 {% if contact.custom_attributes -%}
 {% for attribute in contact.custom_attributes -%}
 {% assign attribute_key = attribute[0] | append: '' -%}
+{% assign attribute_key_down = attribute_key | downcase -%}
+{% unless attribute_key_down == 'iin' or attribute_key_down == 'medelement_iin' -%}
 {% assign attribute_label = contact_custom_attribute_labels[attribute_key] | default: attribute[0] -%}
 - {{ attribute_label }} ({{ attribute[0] }}): {{ attribute[1] }}
+{% endunless -%}
 {% endfor -%}
 {% endif -%}
 {% if contact.additional_attributes -%}

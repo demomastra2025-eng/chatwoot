@@ -17,7 +17,7 @@ class Captain::Tools::Account::MergeContactsService < Captain::Tools::Account::B
         name: contact.name,
         email: contact.email,
         phone_number: contact.phone_number,
-        identifier: contact.identifier,
+        identifier: Scheduling::IinValidator.sanitize_identifier(contact.identifier),
         company_id: contact.company_id,
         updated_at: contact.updated_at&.iso8601
       }
