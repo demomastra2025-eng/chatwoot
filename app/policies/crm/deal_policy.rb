@@ -11,6 +11,10 @@ class Crm::DealPolicy < Crm::BasePolicy
     deal_view_access?
   end
 
+  def export?
+    deal_view_access?
+  end
+
   def create?
     deal_manage_access?
   end

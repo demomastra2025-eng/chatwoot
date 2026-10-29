@@ -51,7 +51,7 @@ module Scheduling::PayloadBuilder
       client_middle_name: appointment.client_middle_name,
       client_name: appointment.client_name,
       client_phone: appointment.client_phone,
-      client_identifier: appointment.client_identifier,
+      client_identifier: Contacts::IinPrivacy.mask_identifier(appointment.client_identifier),
       client_birth_date: appointment.client_birth_date&.iso8601,
       client_gender: appointment.client_gender,
       client_comment: appointment.client_comment,
@@ -59,7 +59,7 @@ module Scheduling::PayloadBuilder
       external_ref: appointment.external_ref,
       idempotency_key: appointment.idempotency_key,
       service_amount: appointment.service_amount,
-      custom_attributes: appointment.custom_attributes,
+      custom_attributes: Contacts::IinPrivacy.mask_attributes_hash(appointment.custom_attributes),
       created_at: appointment.created_at&.iso8601,
       updated_at: appointment.updated_at&.iso8601
     }.merge(appointment_compatibility_fields)
@@ -184,11 +184,15 @@ module Scheduling::PayloadBuilder
       last_name: contact.last_name,
       middle_name: contact.middle_name,
       phone: contact.phone_number,
-      identifier: contact.identifier.presence || contact.custom_attributes['iin'],
+      identifier: if contact.identifier.present?
+                    Contacts::IinPrivacy.mask_identifier(contact.identifier)
+                  else
+                    Contacts::IinPrivacy.mask_explicit_iin_value(contact.custom_attributes['iin'])
+                  end,
       birth_date: contact.custom_attributes['birth_date'],
       gender: contact.custom_attributes['gender'],
       notifications_muted: contact.notifications_muted,
-      custom_attributes: contact.custom_attributes,
+      custom_attributes: Contacts::IinPrivacy.mask_attributes_hash(contact.custom_attributes),
       created_at: contact.created_at&.iso8601,
       updated_at: contact.updated_at&.iso8601
     }

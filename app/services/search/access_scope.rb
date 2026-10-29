@@ -24,6 +24,12 @@ class Search::AccessScope
     account_user.present? && account_user.agent? && account_user.custom_role_id.present?
   end
 
+  def account_user
+    return @account_user if defined?(@account_user)
+
+    @account_user = @account.account_users.find_by(user_id: @user.id)
+  end
+
   private
 
   def unrestricted_inbox_access?
@@ -32,11 +38,5 @@ class Search::AccessScope
     @unrestricted_inbox_access = !@account.inboxes.where.not(
       id: InboxMember.where(user_id: @user.id).select(:inbox_id)
     ).exists?
-  end
-
-  def account_user
-    return @account_user if defined?(@account_user)
-
-    @account_user = @account.account_users.find_by(user_id: @user.id)
   end
 end

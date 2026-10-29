@@ -26,6 +26,8 @@ class RoomChannel < ApplicationCable::Channel
     ActionCable.server.broadcast(pubsub_token, { event: 'presence.update', data: data })
   end
 
+  ACCOUNT_USER_CACHE_TTL = 5.seconds
+
   def ensure_stream
     if @impersonation_context
       callback = ->(payload) { transmit_support_payload(payload) }
@@ -34,9 +36,23 @@ class RoomChannel < ApplicationCable::Channel
       return
     end
 
-    stream_from pubsub_token
-    stream_from "account_#{@current_account.id}" if @current_account.present? && @current_user.is_a?(User)
+    stream_primary_channels
     stream_from @current_user.auth_session_stream_name(auth_client_id) if @current_user.is_a?(User)
+  end
+
+  def stream_primary_channels
+    if @current_user.is_a?(User)
+      callback = ->(payload) { transmit_user_payload(payload) }
+      stream_from pubsub_token, coder: ActiveSupport::JSON, &callback
+      stream_from "account_#{@current_account.id}", coder: ActiveSupport::JSON, &callback if @current_account.present?
+      return
+    end
+
+    stream_from pubsub_token
+  end
+
+  def transmit_user_payload(payload)
+    transmit(mask_payload_for_recipient(payload))
   end
 
   def transmit_support_payload(payload)
@@ -47,7 +63,36 @@ class RoomChannel < ApplicationCable::Channel
     return unless data.respond_to?(:[])
     return unless data[:account_id].to_s == @current_account.id.to_s
 
-    transmit(payload)
+    transmit(mask_payload_for_recipient(payload, target_account_id: @current_account.id))
+  end
+
+  def mask_payload_for_recipient(payload, target_account_id: extract_payload_account_id(payload))
+    membership = account_user_for(target_account_id)
+    return payload if membership.present? && Contacts::IinPrivacy.can_view_iin?(account_user: membership)
+
+    Contacts::IinPrivacy.mask_realtime_payload(payload, account_user: membership, force_mask: true)
+  end
+
+  def extract_payload_account_id(payload)
+    return @current_account&.id unless payload.is_a?(Hash)
+
+    data = payload['data'] || payload[:data]
+    account_id = data['account_id'] || data[:account_id] if data.is_a?(Hash)
+    account_id.presence || @current_account&.id
+  end
+
+  def account_user_for(target_account_id)
+    return nil if target_account_id.blank? || !@current_user.is_a?(User)
+
+    cache_key = target_account_id.to_i
+    now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    @account_user_cache ||= {}
+    cached = @account_user_cache[cache_key]
+    return cached[:membership] if cached && cached[:expires_at] > now
+
+    membership = AccountUser.includes(:custom_role).find_by(account_id: cache_key, user_id: @current_user.id)
+    @account_user_cache[cache_key] = { membership: membership, expires_at: now + ACCOUNT_USER_CACHE_TTL }
+    membership
   end
 
   def refresh_impersonation_context!

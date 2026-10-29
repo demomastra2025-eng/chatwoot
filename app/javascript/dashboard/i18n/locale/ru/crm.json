@@ -481,7 +481,13 @@
         "STAGE_FALLBACK": "этап",
         "TITLE": "Причина перехода: {stage}"
       },
-      "BULK_ACTIONS": "Массовые действия"
+      "BULK_ACTIONS": "Массовые действия",
+      "EXPORT": {
+        "BUTTON": "Экспорт",
+        "XLSX": "Скачать Excel (.xlsx)",
+        "CSV": "Скачать CSV (.csv)",
+        "ERROR": "Не удалось выгрузить сделки"
+      }
     },
     "TASKS": {
       "PANEL_TITLE": "Задачи",

@@ -1,10 +1,10 @@
-json.additional_attributes(
+raw_additional_attributes =
   if defined?(excluded_additional_attribute_keys) && excluded_additional_attribute_keys.present?
     resource.additional_attributes.to_h.except(*Array(excluded_additional_attribute_keys).map(&:to_s))
   else
     resource.additional_attributes
   end
-)
+json.additional_attributes Contacts::IinPrivacy.mask_attributes_hash(raw_additional_attributes)
 json.availability_status resource.availability_status
 json.email resource.email
 json.id resource.id
@@ -22,10 +22,10 @@ end
 json.phone_number resource.phone_number
 json.blocked resource.blocked
 json.notifications_muted resource.notifications_muted
-json.identifier resource.identifier
+json.identifier Contacts::IinPrivacy.mask_identifier(resource.identifier)
 json.thumbnail resource.resolved_avatar_url
 json.contact_avatar_url resource.contact_avatar_url
-json.custom_attributes resource.custom_attributes
+json.custom_attributes Contacts::IinPrivacy.mask_attributes_hash(resource.custom_attributes)
 json.primary_name_source resource.resolved_primary_name_source
 json.primary_avatar_source resource.resolved_primary_avatar_source
 json.last_activity_at resource.last_activity_at.to_i if resource[:last_activity_at].present?

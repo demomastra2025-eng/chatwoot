@@ -40,7 +40,7 @@ class SearchService
   end
 
   def contact_query
-    @contact_query ||= Search::ContactQuery.new(search_query)
+    @contact_query ||= Search::ContactQuery.new(search_query, account_user: account_user)
   end
 
   def access_scope
@@ -154,10 +154,12 @@ class SearchService
 
   def filter_contacts
     contacts_query = current_account.contacts
-    contacts_query = contacts_query.none unless ContactPolicy.new(
-      { user: current_user, account: current_account, account_user: account_user }, Contact
-    ).search?
-    contacts_query = contact_query.apply(contacts_query)
+    if !ContactPolicy.new({ user: current_user, account: current_account, account_user: account_user }, Contact).search? ||
+       (!Contacts::IinPrivacy.can_view_iin?(account_user: account_user) && Contacts::IinPrivacy.iin_search_query?(search_query))
+      contacts_query = contacts_query.none
+    else
+      contacts_query = contact_query.apply(contacts_query)
+    end
 
     contacts_query = apply_time_filter(contacts_query, 'last_activity_at') if current_account.feature_enabled?('advanced_search')
 
@@ -201,7 +203,10 @@ class SearchService
   # user may open, see Search::ConversationLookup).
   def conversation_search_condition
     display_id = Arel::Nodes::NamedFunction.new('CAST', [Conversation.arel_table[:display_id].as('text')])
-    conditions = [display_id.matches(Search::QueryText.like_pattern(search_query), nil, false), contact_query.condition]
+    conditions = [display_id.matches(Search::QueryText.like_pattern(search_query), nil, false)]
+    if Contacts::IinPrivacy.can_view_iin?(account_user: account_user) || !Contacts::IinPrivacy.iin_search_query?(search_query)
+      conditions << contact_query.condition
+    end
     message_conversation_ids = conversation_lookup.message_conversation_ids
     conditions << Conversation.arel_table[:id].in(message_conversation_ids) if message_conversation_ids.any?
     conditions.reduce { |combined, condition| combined.or(condition) }

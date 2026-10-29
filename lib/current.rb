@@ -17,6 +17,14 @@ module Current
     Current.suppress_runtime_events = previous_value
   end
 
+  def self.without_account_user
+    previous_value = Current.account_user
+    Current.account_user = nil
+    yield
+  ensure
+    Current.account_user = previous_value
+  end
+
   # A past MedElement visit whose status is being corrected from the provider (StaleStatusReconciler). While it is set,
   # Dispatcher holds back appointment events and Reminders::SyncEnrollmentService only closes touches, never refreshes
   # them: no automation rule, CRM re-evaluation or reminder reacts. It only holds inside the block, so a normal sync is

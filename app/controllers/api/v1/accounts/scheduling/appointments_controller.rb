@@ -98,7 +98,30 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   private
 
   def appointment_params
-    params.permit(*APPOINTMENT_PARAM_KEYS, service_ids: [], custom_attributes: {})
+    permitted = params.permit(*APPOINTMENT_PARAM_KEYS, service_ids: [], custom_attributes: {})
+    sanitize_appointment_iin_params!(permitted)
+    permitted
+  end
+
+  def sanitize_appointment_iin_params!(permitted)
+    if permitted.key?(:client_identifier) && Contacts::IinPrivacy.masked_placeholder?(permitted[:client_identifier])
+      permitted.delete(:client_identifier)
+    end
+    permitted[:custom_attributes] = Contacts::IinPrivacy.strip_masked_iin_entries(permitted[:custom_attributes]) if permitted[:custom_attributes].present?
+    return if Contacts::IinPrivacy.can_view_iin?
+
+    if permitted.key?(:client_identifier) && protected_client_identifier_write?(permitted[:client_identifier])
+      permitted.delete(:client_identifier)
+    end
+    return if permitted[:custom_attributes].blank?
+
+    permitted[:custom_attributes] = permitted[:custom_attributes].except(*Contacts::IinPrivacy::EXPLICIT_IIN_KEYS)
+  end
+
+  def protected_client_identifier_write?(incoming)
+    Contacts::IinPrivacy.masked_placeholder?(incoming) ||
+      Contacts::IinPrivacy.iin_like?(incoming) ||
+      Contacts::IinPrivacy.iin_like?(@appointment&.client_identifier)
   end
 
   def filter_by_range(scope)

@@ -5,6 +5,7 @@ class Account::ContactsExportJob < ApplicationJob
     @account = Account.find(account_id)
     @params = params
     @account_user = @account.users.find(user_id)
+    @membership = @account.account_users.find_by!(user_id: user_id)
 
     headers = valid_headers(column_names)
     generate_csv(headers)
@@ -17,11 +18,23 @@ class Account::ContactsExportJob < ApplicationJob
     csv_data = CSV.generate do |csv|
       csv << headers
       contacts.each do |contact|
-        csv << headers.map { |header| contact.send(header) }
+        csv << headers.map { |header| exported_contact_field(contact, header) }
       end
     end
 
     attach_export_file(csv_data)
+  end
+
+  def exported_contact_field(contact, header)
+    value = contact.public_send(header)
+    case header.to_s
+    when 'identifier'
+      Contacts::IinPrivacy.mask_identifier(value, account_user: @membership)
+    when 'custom_attributes', 'additional_attributes'
+      Contacts::IinPrivacy.mask_attributes_hash(value, account_user: @membership)
+    else
+      value
+    end
   end
 
   def contacts

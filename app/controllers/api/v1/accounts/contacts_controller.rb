@@ -28,7 +28,11 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
     # The text in the name, e-mail, phone or identifier as before, plus a phone number typed in any format (found by its
     # digits) and "е"/"ё" interchangeable in names; see Search::ContactQuery.
-    contacts = Search::ContactQuery.new(params[:q], identifier_case_sensitive: true).apply(Current.account.contacts)
+    contacts = if !Contacts::IinPrivacy.can_view_iin? && Contacts::IinPrivacy.iin_search_query?(params[:q])
+                 Current.account.contacts.none
+               else
+                 Search::ContactQuery.new(params[:q], identifier_case_sensitive: true).apply(Current.account.contacts)
+               end
     @contacts = fetch_contacts_with_has_more(contacts)
   end
 
@@ -82,7 +86,8 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   # TODO : refactor this method into dedicated contacts/custom_attributes controller class and routes
   def destroy_custom_attributes
-    attributes_to_destroy = params.permit(custom_attributes: [])[:custom_attributes]
+    attributes_to_destroy = Array(params.permit(custom_attributes: [])[:custom_attributes])
+    attributes_to_destroy -= Contacts::IinPrivacy::EXPLICIT_IIN_KEYS unless Contacts::IinPrivacy.can_view_iin?
     Integrations::Medelement::ProviderOwnedAttributesGuard.validate!(
       incoming: Array(attributes_to_destroy).index_with(nil),
       current: @contact.custom_attributes
@@ -185,11 +190,36 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def permitted_params
-    params.permit(
+    raw = params.permit(
       :name, :last_name, :middle_name, :identifier, :email, :phone_number, :avatar, :blocked, :notifications_muted, :avatar_url,
       :owner_id,
       additional_attributes: {}, custom_attributes: {}
     )
+    sanitize_iin_write_params(raw)
+  end
+
+  def sanitize_iin_write_params(raw)
+    raw.delete(:identifier) if raw.key?(:identifier) && Contacts::IinPrivacy.masked_placeholder?(raw[:identifier])
+    raw[:custom_attributes] = Contacts::IinPrivacy.strip_masked_iin_entries(raw[:custom_attributes]) if raw[:custom_attributes].present?
+    if raw[:additional_attributes].present?
+      raw[:additional_attributes] = Contacts::IinPrivacy.strip_masked_iin_entries(raw[:additional_attributes])
+    end
+    return raw if Contacts::IinPrivacy.can_view_iin?
+
+    raw.delete(:identifier) if raw.key?(:identifier) && protected_identifier_write?(raw[:identifier])
+    raw[:custom_attributes] = strip_iin_keys(raw[:custom_attributes]) if raw[:custom_attributes].present?
+    raw[:additional_attributes] = strip_iin_keys(raw[:additional_attributes]) if raw[:additional_attributes].present?
+    raw
+  end
+
+  def protected_identifier_write?(incoming_identifier)
+    Contacts::IinPrivacy.masked_placeholder?(incoming_identifier) ||
+      Contacts::IinPrivacy.iin_like?(incoming_identifier) ||
+      Contacts::IinPrivacy.iin_like?(@contact&.identifier)
+  end
+
+  def strip_iin_keys(attrs)
+    attrs.except(*Contacts::IinPrivacy::EXPLICIT_IIN_KEYS)
   end
 
   def contact_custom_attributes

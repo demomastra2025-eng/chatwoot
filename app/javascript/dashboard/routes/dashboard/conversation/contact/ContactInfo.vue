@@ -221,11 +221,16 @@ export default {
         .filter(Boolean);
       const twelveDigit = candidates.find(val => /^\d{12}$/.test(val));
       if (twelveDigit) return twelveDigit;
+      const maskedCandidate = candidates.find(val => /^[•*]{6,}$/.test(val));
+      if (maskedCandidate) return maskedCandidate;
       return String(
         this.customAttributes?.iin ||
           this.customAttributes?.medelement_iin ||
           ''
       ).trim();
+    },
+    isDossierIinMasked() {
+      return /^[•*]+$/.test(this.dossierIin);
     },
     dossierGender() {
       const raw =
@@ -741,6 +746,7 @@ export default {
             >
               <span>{{ dossierIin }}</span>
               <button
+                v-if="!isDossierIinMasked"
                 type="button"
                 data-testid="contact-dossier-iin-copy"
                 data-test="contact-dossier-iin-copy"

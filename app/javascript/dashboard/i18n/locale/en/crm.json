@@ -481,7 +481,13 @@
         "STAGE_FALLBACK": "stage",
         "TITLE": "Transition reason: {stage}"
       },
-      "BULK_ACTIONS": "Bulk actions"
+      "BULK_ACTIONS": "Bulk actions",
+      "EXPORT": {
+        "BUTTON": "Export",
+        "XLSX": "Download Excel (.xlsx)",
+        "CSV": "Download CSV (.csv)",
+        "ERROR": "Failed to export deals"
+      }
     },
     "TASKS": {
       "PANEL_TITLE": "Задачи",

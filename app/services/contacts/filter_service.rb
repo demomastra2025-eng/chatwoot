@@ -9,6 +9,12 @@ class Contacts::FilterService < FilterService
   end
 
   def perform
+    membership = resolve_account_membership
+    return { contacts: @account.contacts.none, count: 0 } if @user.present? && membership.nil?
+
+    payload = @params[:payload] || @params['payload']
+    return { contacts: @account.contacts.none, count: 0 } if Contacts::IinPrivacy.restricted_filter?(payload, account_user: membership)
+
     validate_query_operator
     @contacts = query_builder(@filters['contacts'])
 
@@ -41,6 +47,13 @@ class Contacts::FilterService < FilterService
   end
 
   private
+
+  def resolve_account_membership
+    return @user if @user.is_a?(AccountUser)
+    return @account.account_users.find_by(user_id: @user.id) if @user.present?
+
+    Current.account_user
+  end
 
   def equals_to_filter_string(filter_operator, current_index)
     return "= :value_#{current_index}" if filter_operator == 'equal_to'
