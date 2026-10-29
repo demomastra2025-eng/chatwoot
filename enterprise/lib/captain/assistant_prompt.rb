@@ -45,10 +45,9 @@ class Captain::AssistantPrompt
 
   private
 
-  # The rules about the IIN of a patient (ask for it, 12 digits) are written only where the account identifies patients by it: its
-  # contact attributes hold an IIN (Scheduling::IinValidator.in_use?).
+  # Patient IINs are masked server-side before reaching external LLM providers and are never requested by AI agents.
   def iin_enabled?
-    Scheduling::IinValidator.in_use?(@assistant.account)
+    false
   end
 
   # The line the history shows for a voice note of staff without a transcript (Captain::ReplySuggestion::HistoryBuilder).
@@ -184,7 +183,8 @@ class Captain::AssistantPrompt
     SUMMARY_LABELS.filter_map do |scope, label|
       next if placed.include?("#{scope}.summary")
 
-      text = Captain::PromptSummaryText.render(summaries[scope] || summaries[scope.to_s], time_zone: time_zone, bound_tool_ids: bound_tool_ids)
+      rendered = Captain::PromptSummaryText.render(summaries[scope] || summaries[scope.to_s], time_zone: time_zone, bound_tool_ids: bound_tool_ids)
+      text = Scheduling::IinValidator.redact_text(rendered)
       "#{label}: #{text}." if text.present?
     end
   end

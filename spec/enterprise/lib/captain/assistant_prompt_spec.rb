@@ -26,14 +26,13 @@ RSpec.describe Captain::AssistantPrompt do
     )
   end
 
-  # Review of quality-fixes-1 (M5): the rules about an IIN are written for the accounts whose contact attributes hold an IIN only.
-  it 'says whether the account identifies its patients by an IIN, and gives a suggestion the line of a voice note of staff' do
+  it 'keeps iin_enabled false even when the account holds an iin contact attribute, and gives a suggestion the line of a voice note of staff' do
     expect(variables[:iin_enabled]).to be(false)
     expect(variables).not_to have_key(:staff_voice_note)
 
     create(:custom_attribute_definition, account: account, attribute_key: 'iin', attribute_model: :contact_attribute)
 
-    expect(variables[:iin_enabled]).to be(true)
+    expect(variables[:iin_enabled]).to be(false)
     suggestion = described_class.new(assistant: assistant, context: context, state: {}, prompt_state: {}, suggestion: true).variables
     expect(suggestion[:staff_voice_note]).to eq(Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE)
     expect(suggestion[:operator_language]).to be_present
@@ -48,21 +47,23 @@ RSpec.describe Captain::AssistantPrompt do
     expect(variables(staff_reply_signature: 'Clinic Test, operator Ana')).not_to have_key(:staff_reply_signature)
   end
 
-  it 'resolves the contact field of the clinic context, which the clinic instruction does not link' do
-    account.update!(captain_clinic_context: 'ИИН пациента: [ИИН](field://contact.identifier).')
-    state = { prompt_context: { contact: contact.merge('identifier' => '900101300123') } }
+  it 'resolves non-IIN contact fields of the clinic context while masking 12-digit IIN identifiers' do
+    account.update!(captain_clinic_context: 'Код карты: [Код](field://contact.identifier).')
+    card_state = { prompt_context: { contact: contact.merge('identifier' => 'CARD-42') } }
+    iin_state = { prompt_context: { contact: contact.merge('identifier' => '900101300123') } }
 
-    expect(variables(state: state, clinic_context: assistant.prompt_clinic_context)[:clinic_context]).to eq('ИИН пациента: 900101300123.')
+    expect(variables(state: card_state, clinic_context: assistant.prompt_clinic_context)[:clinic_context]).to eq('Код карты: CARD-42.')
+    expect(variables(state: iin_state, clinic_context: assistant.prompt_clinic_context)[:clinic_context]).to eq('Код карты: not specified.')
   end
 
-  it 'gives the clinic context and the send time line of an earlier day together' do
+  it 'gives the clinic context and the send time line of an earlier day together without leaking an IIN' do
     account.update!(captain_clinic_context: 'ИИН пациента: [ИИН](field://contact.identifier).')
     monday = { now_utc: '2026-10-26T04:00:00Z', timezone: 'Asia/Almaty', message_sent_at: '2026-10-24T04:50:00Z' }
     state = { runtime_clock: monday, prompt_context: { contact: contact.merge('identifier' => '900101300123') } }
 
     result = variables(state: state, clinic_context: assistant.prompt_clinic_context)
 
-    expect(result[:clinic_context]).to eq('ИИН пациента: 900101300123.')
+    expect(result[:clinic_context]).to eq('ИИН пациента: not specified.')
     expect(result[:now_text].lines.second).to start_with("Patient's last message was sent Saturday, 24 October 2026")
   end
 

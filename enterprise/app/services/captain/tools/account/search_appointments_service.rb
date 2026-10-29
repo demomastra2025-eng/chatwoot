@@ -115,7 +115,7 @@ class Captain::Tools::Account::SearchAppointmentsService < Captain::Tools::Accou
   end
 
   def appointment_payload(appointment, include_client_name:)
-    payload = Scheduling::PayloadBuilder.appointment(appointment)
+    payload = Scheduling::ToolPayloadBuilder.sanitized_appointment(appointment)
     client_keys = payload.keys.select { |key| key.to_s.start_with?('client_') }
     payload = payload.except(*client_keys)
     payload[:client_name] = appointment.client_name if include_client_name

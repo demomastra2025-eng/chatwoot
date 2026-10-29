@@ -32,10 +32,21 @@ module Scheduling::ToolPayloadBuilder
   end
 
   def appointment_data_for(appointment, provider_write_acknowledged)
-    data = Scheduling::PayloadBuilder.appointment(appointment)
+    data = sanitized_appointment(appointment)
     return data unless provider_write_acknowledged
 
     data.merge(provider_confirmation_status: 'acknowledged', provider_confirmed: true)
+  end
+
+  def sanitized_appointment(appointment)
+    sanitize_appointment_payload(Scheduling::PayloadBuilder.appointment(appointment))
+  end
+
+  def sanitize_appointment_payload(data)
+    data.merge(
+      client_identifier: Scheduling::IinValidator.sanitize_identifier(data[:client_identifier]),
+      custom_attributes: Scheduling::IinValidator.sanitize_custom_attributes(data[:custom_attributes])
+    )
   end
 
   def provider_confirmation_required?(appointment)

@@ -33,11 +33,15 @@ RSpec.describe Captain::Tools::Account::GetMyContactService do
 
     expect(payload).to include('success' => true)
     expect(payload.fetch('contact')).to include(
-      'first_name' => 'Aigul', 'last_name' => 'B', 'middle_name' => 'C', 'iin' => '940720300129',
+      'first_name' => 'Aigul', 'last_name' => 'B', 'middle_name' => 'C',
       'birth_date' => '1994-07-20', 'gender' => 'female', 'phone_number' => '+77001234567',
       'email' => 'aigul@example.test'
     )
-    expect(contact.reload.custom_attributes).to include('source' => 'chat', 'medelement_patient_code' => 'provider-owned')
+    expect(payload.fetch('contact')).not_to have_key('iin')
+    expect(contact.reload.identifier).to eq('940720300129')
+    expect(contact.reload.custom_attributes).to include(
+      'iin' => '940720300129', 'source' => 'chat', 'medelement_patient_code' => 'provider-owned'
+    )
     expect(other.reload.name).to eq('Other')
   end
 

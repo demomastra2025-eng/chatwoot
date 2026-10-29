@@ -20,7 +20,7 @@ class LlmFormatter::ConversationLlmFormatter < LlmFormatter::DefaultLlmFormatter
       sections << attributes
     end
 
-    sections.join("\n")
+    Scheduling::IinValidator.redact_text(sections.join("\n"))
   end
 
   private
@@ -165,7 +165,9 @@ class LlmFormatter::ConversationLlmFormatter < LlmFormatter::DefaultLlmFormatter
   end
 
   def build_attributes
-    attributes = @record.account.custom_attribute_definitions.with_attribute_model('conversation_attribute').map do |attribute|
+    attributes = @record.account.custom_attribute_definitions.with_attribute_model('conversation_attribute').filter_map do |attribute|
+      next if Scheduling::IinValidator.sensitive_attribute_key?(attribute.attribute_key)
+
       "#{attribute.attribute_display_name}: #{@record.custom_attributes[attribute.attribute_key]}"
     end
     attributes.join("\n")

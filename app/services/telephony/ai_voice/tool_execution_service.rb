@@ -92,7 +92,7 @@ class Telephony::AiVoice::ToolExecutionService
     end
     raise dispatch_error if dispatch_error
 
-    result = normalize_result(raw_result)
+    result = Llm::OutboundIinRedactor.redact_payload(normalize_result(raw_result))
     @dispatch_started = false
     result
   end

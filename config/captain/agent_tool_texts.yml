@@ -32,17 +32,17 @@ tools:
     hidden_params: []
 
   search_appointments:
-    description: "Get the access token of an appointment: changing or cancelling the appointment of another patient needs it. Without IIN or name it lists the appointments booked from this chat, each with its token (the same ones list_my_appointments shows). For a patient that list does not show (a child or a relative booked by someone else or on another phone) pass the IIN, or the full name + specialist ID + appointment day. An empty result does not prove that there is no appointment: follow its note."
+    description: "Get the access token of an appointment: changing or cancelling the appointment of another patient needs it. Without a name it lists the appointments booked from this chat, each with its token (the same ones list_my_appointments shows). For a patient that list does not show (a child or a relative booked by someone else or on another phone) pass the full name + specialist ID + appointment day. An empty result does not prove that there is no appointment: follow its note."
     params:
       client_name: "Another patient's full name in the order first, last, middle name (middle if they have one)."
-      client_identifier: "Exact IIN, 12 digits; alone it finds upcoming appointments (90 days)."
       status: "completed, cancelled or no_show; omit for scheduled ones."
       contact_id: "Omit: the current patient is used."
       resource_id: "Specialist ID from search_scheduling_resources; needed with a name."
-      from: "Appointment day, YYYY-MM-DD; needed with a name, narrows an IIN search."
+      from: "Appointment day, YYYY-MM-DD; needed with a name."
       to: "Range end, exclusive; omit for a one-day range."
       limit: "Max appointments to return."
-    hidden_params: []
+    hidden_params:
+      - client_identifier
 
   list_appointment_custom_fields:
     description: "List the clinic's extra appointment fields (key, label, type, required, select options). Call it when the clinic instructions or an error from create_appointment ask for them; pass values in custom_attributes by key, select fields as option.value."
@@ -129,7 +129,7 @@ tools:
       service_id: "Service ID from search_scheduling_services, when the patient named a service; a missing service link never blocks booking. A service that is not linked to the clinic system is refused: book without service_id then, staff choose the service."
       appointment_type: "primary, secondary or other."
       client_comment: "Patient's own comment for the appointment."
-      patient: "The patient the appointment is for when it is not the person in this conversation (a child, a relative): first and last name, birth date YYYY-MM-DD; middle name, IIN, gender, phone if known."
+      patient: "The patient the appointment is for when it is not the person in this conversation (a child, a relative): first and last name, birth date YYYY-MM-DD; middle name, gender, phone if known."
       custom_attributes: "Extra appointment fields by key, as the clinic instructions or an error of this tool name them."
     hidden_params:
       - crm_deal_id
@@ -160,13 +160,13 @@ tools:
     hidden_params: []
 
   get_contact:
-    description: "Show the current patient's card: name, phone, email, IIN, company and custom fields."
+    description: "Show the current patient's card: name, phone, email, company and custom fields."
     params:
       contact_id: "Patient ID from the Patient block."
     hidden_params: []
 
   get_my_contact:
-    description: "Show the current patient's card: first, last and middle name, IIN, birth date, gender, phone, email. Call it to see what is on file before asking the patient for a detail, unless the Patient block already has the card."
+    description: "Show the current patient's card: first, last and middle name, birth date, gender, phone, email. Call it to see what is on file before asking the patient for a detail, unless the Patient block already has the card."
     params: {}
     hidden_params: []
 
@@ -180,27 +180,27 @@ tools:
     hidden_params: []
 
   update_contact:
-    description: "Update the current patient's name, email, phone, IIN or custom fields; only passed fields change."
+    description: "Update the current patient's name, email, phone or custom fields; only passed fields change."
     params:
       name: "New name."
       email: "New email address."
       phone_number: "New phone with country code, e.g. +77011234567."
-      identifier: "IIN: 12 digits with the check digit, as the patient wrote it. Never a phone number or any other number the patient sent for another purpose."
       custom_attributes: "Fields to set; merged with the existing custom fields."
-    hidden_params: []
+    hidden_params:
+      - identifier
 
   update_my_contact:
-    description: "Update the current patient's first, last or middle name, IIN, birth date, gender, phone or email; only passed fields change. Call it when the patient gives or corrects their own detail. On validation_error ask the patient to recheck the details you passed."
+    description: "Update the current patient's first, last or middle name, birth date, gender, phone or email; only passed fields change. Call it when the patient gives or corrects their own detail. On validation_error ask the patient to recheck the details you passed."
     params:
       first_name: "First name."
       last_name: "Last name (surname)."
       middle_name: "Middle name (patronymic)."
-      iin: "IIN: 12 digits with the check digit. Never a phone number or any other number the patient sent for another purpose."
       birth_date: "Birth date, YYYY-MM-DD."
       gender: "male or female."
       phone_number: "Phone with country code, e.g. +77011234567."
       email: "Email address."
-    hidden_params: []
+    hidden_params:
+      - iin
 
   merge_contacts:
     description: "Merge a duplicate patient card into the card that stays; the duplicate is deleted for good. Call it when staff ask to merge two cards."

@@ -294,7 +294,7 @@ class Telephony::AiVoice::ToolDispatchService
       {
         name: tool_id,
         title: tool[:title].presence || tool_id.humanize,
-        description: captain_tool_description(tool_id, tool[:description]),
+        description: captain_tool_description(tool_id, agent_tool_text_override(tool)&.description.presence || tool[:description]),
         source: 'captain',
         scope: Captain::ToolAccess::SCOPE_AGENT,
         enabled: true,
@@ -356,6 +356,17 @@ class Telephony::AiVoice::ToolDispatchService
     { type: 'object', properties: properties, required: required.presence }.compact
   end
 
+  def self.agent_tool_text_override(tool)
+    return nil unless defined?(Captain::Runtime::AgentToolTexts)
+
+    entry = tool.to_h.with_indifferent_access
+    tool_id = entry[:id].to_s
+    return nil if tool_id == 'faq_lookup' || ActiveModel::Type::Boolean.new.cast(entry[:custom])
+    return nil if %w[mcp skill_script].include?(entry[:provider].to_s)
+
+    Captain::Runtime::AgentToolTexts.for_tool(tool_id)
+  end
+
   def self.captain_parameter_definitions(captain_assistant, tool)
     runtime_tool = Captain::ToolCatalog.build_tool(
       tool,
@@ -364,11 +375,18 @@ class Telephony::AiVoice::ToolDispatchService
     )
     return [] unless runtime_tool.respond_to?(:parameters)
 
-    runtime_tool.parameters.values.map do |parameter|
+    override = agent_tool_text_override(tool)
+    hidden = Array(override&.hidden_params).map(&:to_s)
+    param_texts = override&.params || {}
+
+    runtime_tool.parameters.values.filter_map do |parameter|
+      name = parameter.name.to_s
+      next if hidden.include?(name)
+
       {
-        'name' => parameter.name.to_s,
+        'name' => name,
         'type' => parameter.type.to_s,
-        'description' => parameter.description.to_s,
+        'description' => (param_texts[name].presence || parameter.description).to_s,
         'required' => parameter.required
       }
     end
@@ -913,9 +931,11 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def captain_tool_execution_arguments
-    return captain_tool_arguments unless tool_name == 'faq_lookup'
+    hidden = Array(self.class.agent_tool_text_override(captain_tool_definition)&.hidden_params).map(&:to_sym)
+    args = hidden.present? ? captain_tool_arguments.except(*hidden) : captain_tool_arguments
+    return args unless tool_name == 'faq_lookup'
 
-    captain_tool_arguments.merge(semantic: false, voice_realtime: true)
+    args.merge(semantic: false, voice_realtime: true)
   end
 
   def terminate_transport_call

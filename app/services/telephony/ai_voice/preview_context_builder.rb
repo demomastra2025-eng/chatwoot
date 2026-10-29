@@ -38,7 +38,7 @@ class Telephony::AiVoice::PreviewContextBuilder
       voice_character_prompt,
       Telephony::AiVoice::ContextBuilder::DEFAULT_SYSTEM_PROMPT,
       Telephony::AiVoice::ContextBuilder::VOICE_RESPONSE_CONTRACT
-    ].compact_blank.join("\n\n")
+    ].compact_blank.join("\n\n").then { |prompt| Scheduling::IinValidator.redact_text(prompt) }
   end
 
   def compiled_prompt

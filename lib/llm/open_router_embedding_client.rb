@@ -37,7 +37,7 @@ class Llm::OpenRouterEmbeddingClient
         request.body = JSON.generate(
           {
             model: options[:model],
-            input: input,
+            input: Llm::OutboundIinRedactor.redact_payload(input),
             dimensions: options[:dimensions],
             input_type: options[:input_type],
             provider: options[:provider].presence

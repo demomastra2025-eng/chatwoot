@@ -41,7 +41,7 @@ class Captain::Tools::Account::SearchContactsService < Captain::Tools::Account::
       name: contact.name,
       email: contact.email,
       phone_number: contact.phone_number,
-      identifier: contact.identifier,
+      identifier: Scheduling::IinValidator.sanitize_identifier(contact.identifier),
       company_id: contact.company_id,
       created_at: contact.created_at&.iso8601,
       updated_at: contact.updated_at&.iso8601

@@ -42,8 +42,9 @@ RSpec.describe Captain::Playground::CustomerProfileTools, 'through the Playgroun
       result = invoke(trial, 'get_my_contact')
 
       expect(result).to include(success: true, simulated: true)
-      expect(result[:contact]).to include(id: caller['id'], iin: '900101400013', birth_date: '1990-01-01',
+      expect(result[:contact]).to include(id: caller['id'], birth_date: '1990-01-01',
                                           phone_number: caller['phone_number'], email: caller['email'])
+      expect(result[:contact]).not_to have_key(:iin)
       expect(invoke(trial, 'get_my_contact', contact_id: 102)[:success]).to be(false)
     end
   end

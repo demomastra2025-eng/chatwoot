@@ -647,13 +647,14 @@ class Captain::Assistant < ApplicationRecord
     select_tools_by_ids(available_assistant_tools, allowed_assistant_tool_ids)
   end
 
-  def prompt_context_state(runtime_state = {}, field_ids: nil)
+  def prompt_context_state(runtime_state = {}, field_ids: nil, mode: :prompt)
     effective_field_ids = effective_context_field_ids(field_ids || referenced_field_ids_for_texts(prompt_field_texts))
 
     Captain::ContextFields.prompt_state_for(
       assistant: self,
       runtime_state: runtime_state,
-      field_ids: effective_field_ids
+      field_ids: effective_field_ids,
+      mode: mode
     )
   end
 
@@ -662,7 +663,7 @@ class Captain::Assistant < ApplicationRecord
   def render_runtime_text(text, conversation: nil)
     runtime_state = runtime_state_for(conversation)
     field_ids = referenced_field_ids_for_texts(prompt_field_texts + [text])
-    prompt_state = prompt_context_state(runtime_state, field_ids: field_ids)
+    prompt_state = prompt_context_state(runtime_state, field_ids: field_ids, mode: :customer)
 
     resolve_runtime_value(
       text, prompt_state, field_ids: field_ids, mode: :customer, bound_tool_ids: [],

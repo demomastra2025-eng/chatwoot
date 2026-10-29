@@ -56,7 +56,7 @@ class Llm::OpenRouterTranscriptionClient
       prompt = options[:prompt].presence
       slug = provider_slug(options[:model])
       provider[:options] = provider[:options].to_h.deep_merge(slug.to_sym => { prompt: prompt }) if prompt && slug
-      provider.presence
+      Llm::OutboundIinRedactor.redact_payload(provider.presence)
     end
 
     # The vendor part of the model id (openai/gpt-4o-transcribe -> openai). It is the slug of the endpoint for the OpenAI
