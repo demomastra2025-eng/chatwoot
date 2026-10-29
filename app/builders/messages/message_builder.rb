@@ -239,7 +239,14 @@ class Messages::MessageBuilder
   def resolved_message_content
     return @params[:content] if @params[:content].present?
 
-    whatsapp_template_renderer&.render_text || @params[:content]
+    whatsapp_template_renderer&.render_text || whatsapp_rich_payload_text || @params[:content]
+  end
+
+  def whatsapp_rich_payload_text
+    payload = whatsapp_rich_payload
+    return if payload.blank?
+
+    payload.dig(:flow, :body).presence || payload.dig(:cta_url, :body).presence
   end
 
   def whatsapp_template_renderer

@@ -510,6 +510,23 @@ export const getters = {
     $getters
       .getFilteredWhatsAppTemplates(inboxId)
       .filter(template => template.visible_in_conversation_picker !== false),
+  getWhatsAppFlowsConfig: $state => inboxId => {
+    const [inbox] = $state.records.filter(
+      record => record.id === Number(inboxId)
+    );
+    return (
+      inbox?.provider_config?.whatsapp_flows || inbox?.whatsapp_flows || {}
+    );
+  },
+  getWhatsAppFlows: $state => inboxId => {
+    const [inbox] = $state.records.filter(
+      record => record.id === Number(inboxId)
+    );
+    const flows =
+      inbox?.provider_config?.whatsapp_flows?.flows ??
+      inbox?.whatsapp_flows?.flows;
+    return Array.isArray(flows) ? flows : [];
+  },
   getNewConversationInboxes($state) {
     return visibleInboxRecords($state.records).filter(inbox => {
       const { channel_type: channelType, phone_number: phoneNumber = '' } =
@@ -1343,6 +1360,95 @@ export const actions = {
       template
     );
     return response.data;
+  },
+  getWhatsAppFlows: async (_, inboxId) => {
+    try {
+      const response = await InboxesAPI.getWhatsAppFlows(inboxId);
+      return response.data?.whatsapp_flows || {};
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  setupWhatsAppFlowsEncryption: async (
+    { commit },
+    { inboxId, rotateKeys = false }
+  ) => {
+    try {
+      const response = await InboxesAPI.setupWhatsAppFlowsEncryption(
+        inboxId,
+        rotateKeys ? { rotate_keys: true } : {}
+      );
+      if (response.data?.id) {
+        commit(types.default.EDIT_INBOXES, response.data);
+      }
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  syncWhatsAppFlows: async ({ commit }, inboxId) => {
+    try {
+      const response = await InboxesAPI.syncWhatsAppFlows(inboxId);
+      if (response.data?.id) {
+        commit(types.default.EDIT_INBOXES, response.data);
+      }
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  provisionWhatsAppBookingFlow: async (
+    { commit },
+    { inboxId, whatsappFlow = {} }
+  ) => {
+    try {
+      const response = await InboxesAPI.provisionWhatsAppBookingFlow(
+        inboxId,
+        whatsappFlow
+      );
+      if (response.data?.id) {
+        commit(types.default.EDIT_INBOXES, response.data);
+      }
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  createWhatsAppFlow: async ({ commit }, { inboxId, whatsappFlow }) => {
+    try {
+      const response = await InboxesAPI.createWhatsAppFlow(
+        inboxId,
+        whatsappFlow
+      );
+      if (response.data?.id) {
+        commit(types.default.EDIT_INBOXES, response.data);
+      }
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  publishWhatsAppFlow: async ({ commit }, { inboxId, flowId }) => {
+    try {
+      const response = await InboxesAPI.publishWhatsAppFlow(inboxId, flowId);
+      if (response.data?.id) {
+        commit(types.default.EDIT_INBOXES, response.data);
+      }
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  deleteWhatsAppFlow: async ({ commit }, { inboxId, flowId }) => {
+    try {
+      const response = await InboxesAPI.deleteWhatsAppFlow(inboxId, flowId);
+      if (response.data?.id) {
+        commit(types.default.EDIT_INBOXES, response.data);
+      }
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
   },
   resetSecret: async ({ commit }, inboxId) => {
     try {

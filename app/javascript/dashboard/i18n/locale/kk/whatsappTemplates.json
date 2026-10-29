@@ -218,6 +218,10 @@
         "FLOW_ACTION_INVALID": "{index} Flow түймесінде қолдау көрсетілмейтін әрекет көрсетілген.",
         "FLOW_REFERENCE_XOR": "{index} Flow түймесіне тек бір дереккөз қажет: Flow ID немесе кірістірілген Flow JSON.",
         "FLOW_JSON_INVALID": "{index} Flow түймесінде жарамсыз JSON бар.",
+        "FLOW_ID_REQUIRED": "{index} Flow түймесіне Flow ID қажет.",
+        "FLOW_ID_INVALID": "{index} Flow түймесіндегі Flow ID форматы қате.",
+        "FLOW_BUTTON_TEXT_LENGTH": "{index} Flow түймесінің мәтіні 25 таңбаға дейін болуы мүмкін.",
+        "FLOW_SINGLE_BUTTON": "Бір үлгіде тек бір Flow түймесі рұқсат етіледі.",
         "FLOW_SCREEN_REQUIRED": "Өту әрекеті үшін {index} Flow түймесіне бастапқы экран ID қажет."
       }
     }

@@ -30,6 +30,7 @@ class Whatsapp::IncomingMessageWhatsappCloudService < Whatsapp::IncomingMessageB
 
   def perform
     super
+    process_inbound_flow_response
   ensure
     @fallback_prepared_attachment&.close
   end
@@ -66,6 +67,20 @@ class Whatsapp::IncomingMessageWhatsappCloudService < Whatsapp::IncomingMessageB
     ).perform
   rescue StandardError => e
     Rails.logger.warn("[WhatsApp Cloud] Confirmation reply resolution failed: #{e.class}: #{e.message}")
+  end
+
+  def process_inbound_flow_response
+    return if skip_inbound_flow_processing?
+
+    Whatsapp::Flows::InboundResponseProcessor.new(inbox: inbox, message: @message).perform
+  rescue StandardError => e
+    Rails.logger.warn("[WhatsApp Cloud] Inbound Flow response processing failed: #{e.class}: #{e.message}")
+  end
+
+  def skip_inbound_flow_processing?
+    return true if @history_import || Current.suppress_runtime_events || outgoing_echo
+
+    @message.blank? || !@message.incoming? || @message.content_attributes.to_h['whatsapp_flow_response'].blank?
   end
 
   def processed_params

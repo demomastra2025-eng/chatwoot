@@ -1709,6 +1709,7 @@
       "WIDGET_BUILDER": "Конструктор виджетов",
       "BOT_CONFIGURATION": "Подключить AI-агента",
       "WHATSAPP_TEMPLATES": "Шаблоны",
+      "WHATSAPP_FLOWS": "Flows",
       "ACCOUNT_HEALTH": "Здоровье аккаунта",
       "VOICE_CALLS": "Звонки и сотрудники",
       "CSAT": "CSAT"
@@ -2343,6 +2344,71 @@
       "STATUS": {
         "ENABLED": "Включён",
         "DISABLED": "Выключен"
+      }
+    },
+    "WHATSAPP_FLOWS": {
+      "PAGE_TITLE": "WhatsApp Flows",
+      "PAGE_DESCRIPTION": "Управляйте интерактивными формами WhatsApp Cloud, шифрованием Data Endpoint и формой онлайн-записи, подключённой к расписанию OneLink.",
+      "NOT_SYNCED_YET": "Ещё не синхронизировано",
+      "LAST_SYNC": "Синхронизация: {timestamp}",
+      "SEARCH_PLACEHOLDER": "Поиск Flow по названию, ID, статусу или категории",
+      "SYNC_BUTTON": "Синхронизировать",
+      "SYNC_SUCCESS": "Список WhatsApp Flows обновлён.",
+      "EMPTY_TITLE": "Форм WhatsApp Flows пока нет",
+      "EMPTY_DESCRIPTION": "Создайте форму онлайн-записи выше или синхронизируйте существующие формы из Meta.",
+      "NO_RESULTS_TITLE": "Ничего не найдено",
+      "NO_RESULTS_DESCRIPTION": "Попробуйте изменить название, ID или статус в поиске.",
+      "BOOKING_BADGE": "Онлайн-запись",
+      "FLOW_ID_LABEL": "Flow ID: {id}",
+      "PUBLISH_ACTION": "Опубликовать",
+      "PUBLISH_SUCCESS": "Форма опубликована.",
+      "DELETE_TITLE": "Удалить черновик Flow",
+      "DELETE_DESCRIPTION": "Удалить черновик «{flowName}» из WhatsApp Cloud? Это действие нельзя отменить.",
+      "DELETE_ACTION": "Удалить черновик",
+      "DELETE_SUCCESS": "Черновик Flow удалён.",
+      "DEPRECATE_TITLE": "Вывести Flow из обращения",
+      "DEPRECATE_DESCRIPTION": "Вывести форму «{flowName}» из обращения? Опубликованные формы в Meta нельзя удалить, но можно перевести в архив (Deprecated), чтобы по ним не открывались новые сессии.",
+      "DEPRECATE_ACTION": "Вывести из обращения",
+      "DEPRECATE_SUCCESS": "Форма переведена в статус Deprecated.",
+      "STATUSES": {
+        "PUBLISHED": "Опубликован",
+        "DRAFT": "Черновик",
+        "DEPRECATED": "Выведен",
+        "BLOCKED": "Заблокирован",
+        "THROTTLED": "Ограничен"
+      },
+      "ENCRYPTION": {
+        "TITLE": "Шифрование Data Endpoint",
+        "DESCRIPTION": "Создаёт пару ключей RSA-2048 и загружает публичный ключ в Meta, чтобы интерактивные формы могли безопасно подгружать свободные слоты.",
+        "STATUS_CONFIGURED": "Настроено",
+        "STATUS_PENDING": "Ожидает загрузки",
+        "STATUS_ERROR": "Ошибка",
+        "STATUS_NOT_CONFIGURED": "Не настроено",
+        "UPLOADED_AT": "Ключ загружен: {timestamp}",
+        "SETUP_BUTTON": "Настроить шифрование",
+        "REUPLOAD_BUTTON": "Обновить ключ в Meta",
+        "ROTATE_BUTTON": "Перевыпустить ключи",
+        "SETUP_SUCCESS": "Шифрование WhatsApp Flows успешно настроено."
+      },
+      "BOOKING": {
+        "TITLE": "Форма онлайн-записи в 1 клик",
+        "DESCRIPTION": "Создаёт готовую интерактивную форму записи внутри WhatsApp, связанную с вашим расписанием (услуги, специалисты, свободное время и данные клиента).",
+        "PROVISION_BUTTON": "Создать форму записи",
+        "PROVISION_SUCCESS": "Форма онлайн-записи успешно создана.",
+        "PROVISION_DRAFT_WARNING": "Форма создана как черновик, но не опубликована автоматически: {reason}",
+        "PROVISION_DRAFT_FALLBACK": "Форма создана как черновик. Проверьте замечания ниже и нажмите «Опубликовать».",
+        "FIELD_LABEL_MAX_LENGTH": "Подписи полей в WhatsApp Flows не могут превышать 20 символов.",
+        "CTA_MAX_LENGTH": "Текст кнопки подтверждения в WhatsApp Flows не может превышать 35 символов.",
+        "LOCALE_LABEL": "Язык формы",
+        "NAME_LABEL": "Название Flow (необязательно)",
+        "NAME_PLACEHOLDER": "Онлайн-запись OneLink",
+        "CTA_LABEL": "Текст кнопки подтверждения (необязательно)",
+        "CTA_PLACEHOLDER": "Записаться",
+        "SPECIALIST_LABEL": "Подпись поля специалиста (необязательно)",
+        "SPECIALIST_PLACEHOLDER": "Специалист",
+        "SERVICE_LABEL": "Подпись поля услуги (необязательно)",
+        "SERVICE_PLACEHOLDER": "Услуга",
+        "PUBLISH_LABEL": "Опубликовать сразу после создания"
       }
     }
   }

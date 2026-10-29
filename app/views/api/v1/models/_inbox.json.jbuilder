@@ -207,6 +207,10 @@ if resource.whatsapp? && !channel_missing
     end
     json.provider_config provider_config
   end
+  if resource.channel.is_a?(Channel::Whatsapp)
+    wa_flows = Whatsapp::ProviderConfigPresenter.new(resource.channel).agent_whatsapp_flows
+    json.whatsapp_flows wa_flows if wa_flows.present?
+  end
   wa_call_routing = resource.channel.try(:provider_config)&.to_h&.[]('call_routing')
   json.call_routing wa_call_routing if wa_call_routing.present?
   json.reauthorization_required resource.channel.try(:reauthorization_required?)

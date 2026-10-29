@@ -15,19 +15,11 @@ class Whatsapp::PopulateTemplateParametersService
 
     case button['type']
     when 'quick_reply'
-      payload = button['parameter'].to_s
-      raise ArgumentError, 'Quick reply payload cannot be empty' if payload.blank?
-
-      { type: 'payload', payload: payload }
+      build_quick_reply_button_parameter(button)
     when 'copy_code'
-      coupon_code = button['parameter'].to_s.strip
-      raise ArgumentError, 'Coupon code cannot be empty' if coupon_code.blank?
-      raise ArgumentError, 'Coupon code cannot exceed 15 characters' if coupon_code.length > 15
-
-      {
-        type: 'coupon_code',
-        coupon_code: coupon_code
-      }
+      build_copy_code_button_parameter(button)
+    when 'flow'
+      build_flow_button_parameter(button)
     else
       # For URL buttons and other button types, treat parameter as text
       # If parameter is blank, use empty string (required for URL buttons)
@@ -50,6 +42,30 @@ class Whatsapp::PopulateTemplateParametersService
   end
 
   private
+
+  def build_quick_reply_button_parameter(button)
+    payload = button['parameter'].to_s
+    raise ArgumentError, 'Quick reply payload cannot be empty' if payload.blank?
+
+    { type: 'payload', payload: payload }
+  end
+
+  def build_copy_code_button_parameter(button)
+    coupon_code = button['parameter'].to_s.strip
+    raise ArgumentError, 'Coupon code cannot be empty' if coupon_code.blank?
+    raise ArgumentError, 'Coupon code cannot exceed 15 characters' if coupon_code.length > 15
+
+    { type: 'coupon_code', coupon_code: coupon_code }
+  end
+
+  def build_flow_button_parameter(button)
+    action_payload = button['action'].is_a?(Hash) ? button['action'].deep_symbolize_keys : {}
+    token = action_payload[:flow_token].presence ||
+            button['flow_token'].to_s.strip.presence ||
+            button['parameter'].to_s.strip.presence ||
+            'unused'
+    { type: 'action', action: action_payload.merge(flow_token: token) }
+  end
 
   def build_string_parameter(value)
     sanitized_value = sanitize_parameter(value)

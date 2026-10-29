@@ -36,6 +36,7 @@ export const TEMPLATE_BUTTON_TYPE_OPTIONS = [
   { label: 'Copy code', value: 'COPY_CODE' },
   { label: 'Phone number', value: 'PHONE_NUMBER' },
   { label: 'View catalog', value: 'CATALOG' },
+  { label: 'Open Flow', value: 'FLOW' },
 ];
 
 export const createEmptyTemplateButton = () => ({
@@ -44,6 +45,9 @@ export const createEmptyTemplateButton = () => ({
   url: '',
   example: '',
   phoneNumber: '',
+  flowId: '',
+  flowAction: 'data_exchange',
+  navigateScreen: '',
 });
 
 let carouselCardSequence = 0;
@@ -204,6 +208,16 @@ const normalizeTemplateButton = button => {
     example: compactString(button.example),
     phone_number: compactString(button.phoneNumber),
   };
+
+  if (button.type === 'FLOW') {
+    const flowAction =
+      compactString(button.flowAction).toLowerCase() || 'data_exchange';
+    payload.flow_id = compactString(button.flowId);
+    payload.flow_action = flowAction;
+    if (flowAction === 'navigate') {
+      payload.navigate_screen = compactString(button.navigateScreen);
+    }
+  }
 
   return payload;
 };

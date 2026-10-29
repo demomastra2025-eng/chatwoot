@@ -2,8 +2,16 @@ class Whatsapp::ProviderConfigPresenter
   PUBLIC_PROVIDER_CONFIG_KEYS = %w[
     ai_voice_enabled authorization_expires_at authorization_status business_account_id business_id call_routing
     calling_capable calling_enabled connection_state coexistence_sync embedded_signup_flow meta_webhook_lifecycle
-    phone_number_id phone_registration source status token_health webhook_callback_recovery
+    phone_number_id phone_registration source status token_health webhook_callback_recovery whatsapp_flows
   ].freeze
+  PUBLIC_WHATSAPP_FLOWS_KEYS = %w[
+    encryption_status public_key_uploaded_at flows_synced_at booking_flow_id booking_locale flows
+  ].freeze
+  PUBLIC_WHATSAPP_FLOW_ITEM_KEYS = %w[
+    id name status categories json_version data_api_version validation_errors last_publish_error kind locale
+  ].freeze
+  AGENT_WHATSAPP_FLOWS_KEYS = %w[booking_flow_id booking_locale flows].freeze
+  AGENT_WHATSAPP_FLOW_ITEM_KEYS = %w[id name status categories kind locale].freeze
   PUBLIC_COEXISTENCE_SYNC_KEYS = %w[
     state deadline_at request_started_at requested_at failed_at last_error recovery_required_at completed_at
     smb_app_state_sync_request_state smb_app_state_sync_request_started_at smb_app_state_sync_requested_at
@@ -35,9 +43,27 @@ class Whatsapp::ProviderConfigPresenter
     project_lifecycle!(config)
     project_phone_registration!(config)
     project_token_health!(config)
+    project_whatsapp_flows!(config)
 
     Meta::CredentialDataSanitizer.sanitize(
       config,
+      secrets: Meta::CredentialDataSanitizer.channel_secrets(@channel)
+    )
+  end
+
+  def agent_whatsapp_flows
+    raw_flows = @channel.provider_config.to_h['whatsapp_flows']
+    return {} if raw_flows.blank?
+
+    flows_cfg = raw_flows.to_h.slice(*AGENT_WHATSAPP_FLOWS_KEYS)
+    if flows_cfg.key?('flows')
+      flows_cfg['flows'] = Array(flows_cfg['flows']).map do |item|
+        item.to_h.slice(*AGENT_WHATSAPP_FLOW_ITEM_KEYS)
+      end
+    end
+
+    Meta::CredentialDataSanitizer.sanitize(
+      flows_cfg,
       secrets: Meta::CredentialDataSanitizer.channel_secrets(@channel)
     )
   end
@@ -90,5 +116,17 @@ class Whatsapp::ProviderConfigPresenter
     else
       config.delete('token_health')
     end
+  end
+
+  def project_whatsapp_flows!(config)
+    return if config['whatsapp_flows'].blank?
+
+    flows_cfg = config['whatsapp_flows'].to_h.slice(*PUBLIC_WHATSAPP_FLOWS_KEYS)
+    if flows_cfg.key?('flows')
+      flows_cfg['flows'] = Array(flows_cfg['flows']).map do |item|
+        item.to_h.slice(*PUBLIC_WHATSAPP_FLOW_ITEM_KEYS)
+      end
+    end
+    config['whatsapp_flows'] = flows_cfg
   end
 end

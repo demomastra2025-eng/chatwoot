@@ -150,7 +150,7 @@ class Whatsapp::TemplateProcessorService
     button_params = processed_params['buttons'].filter_map.with_index do |button, index|
       next if button.blank?
 
-      if button['type'] == 'url' || button['parameter'].present?
+      if %w[url flow].include?(button['type']) || button['parameter'].present?
         {
           type: 'button',
           sub_type: button['type'] || 'url',

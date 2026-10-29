@@ -109,6 +109,116 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     )
   end
 
+  def upload_business_public_key(public_key_pem)
+    response = HTTParty.post(
+      "#{phone_id_path}/whatsapp_business_encryption",
+      headers: {
+        'Authorization' => "Bearer #{whatsapp_channel.provider_config['api_key']}",
+        'Content-Type' => 'application/x-www-form-urlencoded'
+      },
+      query: graph_api_query,
+      body: URI.encode_www_form(business_public_key: public_key_pem.to_s),
+      timeout: request_timeout
+    )
+    record_provider_authorization_error(response) unless response.success?
+    response
+  end
+
+  def business_encryption_status
+    response = HTTParty.get(
+      "#{phone_id_path}/whatsapp_business_encryption",
+      headers: api_headers,
+      query: graph_api_query,
+      timeout: request_timeout
+    )
+    record_provider_authorization_error(response) unless response.success?
+    response
+  end
+
+  FLOW_LIST_FIELDS = 'id,name,status,categories,validation_errors,json_version,data_api_version,endpoint_uri'.freeze
+
+  def list_flows(url = nil)
+    query = url.present? ? graph_api_query : graph_api_query(fields: FLOW_LIST_FIELDS, limit: 100)
+    response = HTTParty.get(
+      url.presence || "#{business_account_path}/flows",
+      headers: api_headers,
+      query: query,
+      timeout: request_timeout
+    )
+    record_provider_authorization_error(response) unless response.success?
+    response
+  end
+
+  def fetch_all_flows(max_pages: 20)
+    items = []
+    current_url = nil
+    max_pages.times do
+      response = list_flows(current_url)
+      return { success: false, response: response } unless response.success?
+
+      items.concat(Array(response.parsed_response.to_h['data']))
+      current_url = next_url(response)
+      break if current_url.blank?
+    end
+    { success: true, data: items }
+  end
+
+  def create_flow(name:, categories:, endpoint_uri: nil)
+    body = { name: name, categories: Array(categories) }
+    body[:endpoint_uri] = endpoint_uri if endpoint_uri.present?
+    response = HTTParty.post(
+      "#{business_account_path}/flows",
+      headers: api_headers,
+      query: graph_api_query,
+      body: body.to_json,
+      timeout: request_timeout
+    )
+    record_provider_authorization_error(response) unless response.success?
+    response
+  end
+
+  def upload_flow_json(flow_id, flow_json_string)
+    Tempfile.create(['flow', '.json']) do |file|
+      file.write(flow_json_string.to_s)
+      file.flush
+      file.rewind
+      post_flow_json_asset(flow_id, file)
+    end
+  end
+
+  def publish_flow(flow_id)
+    response = HTTParty.post(
+      "#{api_base_path}/#{api_version}/#{flow_id}/publish",
+      headers: api_headers,
+      query: graph_api_query,
+      timeout: request_timeout
+    )
+    record_provider_authorization_error(response) unless response.success?
+    response
+  end
+
+  def deprecate_flow(flow_id)
+    response = HTTParty.post(
+      "#{api_base_path}/#{api_version}/#{flow_id}/deprecate",
+      headers: api_headers,
+      query: graph_api_query,
+      timeout: request_timeout
+    )
+    record_provider_authorization_error(response) unless response.success?
+    response
+  end
+
+  def delete_flow(flow_id)
+    response = HTTParty.delete(
+      "#{api_base_path}/#{api_version}/#{flow_id}",
+      headers: api_headers,
+      query: graph_api_query,
+      timeout: request_timeout
+    )
+    record_provider_authorization_error(response) unless response.success?
+    response
+  end
+
   def fetch_whatsapp_templates(url)
     response = HTTParty.get(
       url,
@@ -225,9 +335,7 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
       timeout: request_timeout
     )
     parsed = response.parsed_response.to_h
-    if response.success? && parsed['error'].blank?
-      return Array(parsed['messages']).first.to_h['id'].presence
-    end
+    return Array(parsed['messages']).first.to_h['id'].presence if response.success? && parsed['error'].blank?
 
     record_provider_authorization_error(response)
     raise StandardError, error_message(response).presence || 'WhatsApp reaction request failed'
@@ -327,7 +435,7 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
 
   def send_rich_message(phone_number, message)
     built_payload = Whatsapp::OutboundRichMessageBuilder.new(
-      payload: rich_message_payload,
+      payload: enriched_rich_message_payload(message),
       conversation: message.conversation
     ).build
     body = outbound_message_body(
@@ -342,6 +450,45 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
 
   def rich_message_payload
     @message.content_attributes.to_h.with_indifferent_access[:whatsapp_payload]
+  end
+
+  def post_flow_json_asset(flow_id, file)
+    response = HTTParty.post(
+      "#{api_base_path}/#{api_version}/#{flow_id}/assets",
+      headers: { 'Authorization' => "Bearer #{whatsapp_channel.provider_config['api_key']}" },
+      query: graph_api_query,
+      multipart: true,
+      stream_body: false,
+      body: { name: 'flow.json', asset_type: 'FLOW_JSON', file: file },
+      timeout: request_timeout
+    )
+    record_provider_authorization_error(response) unless response.success?
+    response
+  end
+
+  def enriched_rich_message_payload(message)
+    payload = rich_message_payload.to_h.deep_dup.with_indifferent_access
+    return payload unless payload[:type].to_s == 'flow'
+
+    flow = payload[:flow].to_h.with_indifferent_access
+    return payload if flow[:flow_token].present? && flow[:flow_token].to_s != 'unused'
+
+    flow[:flow_token] = generate_outbound_flow_token(flow[:flow_id], message)
+    payload[:flow] = flow
+    payload
+  end
+
+  def generate_outbound_flow_token(flow_id, message)
+    cached_flow = Array(whatsapp_channel.provider_config.to_h.dig('whatsapp_flows', 'flows')).find do |item|
+      item['id'].to_s == flow_id.to_s
+    end.to_h
+    Whatsapp::Flows::TokenService.generate_flow_token(
+      channel: whatsapp_channel,
+      kind: cached_flow['kind'].presence || 'booking',
+      conversation_id: message.conversation_id,
+      contact_id: message.conversation&.contact_id,
+      locale: cached_flow['locale']
+    )
   end
 
   def send_text_message(phone_number, message)

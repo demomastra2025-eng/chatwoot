@@ -32,7 +32,7 @@ class Scheduling::Appointments::UpsertService
     begin
       @provider_receipt_service&.perform
     rescue StandardError
-      mark_provider_result_unknown!(persisted_booking_updated_at) if defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant)
+      mark_provider_result_unknown!(persisted_booking_updated_at) if automated_outbound_actor?
       raise
     end
     appointment
@@ -500,6 +500,7 @@ class Scheduling::Appointments::UpsertService
 
   def appointment_source
     return 'captain' if appointment.new_record? && defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant)
+    return 'whatsapp_flow' if appointment.new_record? && actor.is_a?(Channel::Whatsapp)
 
     appointment.source.presence || 'manual'
   end
@@ -843,8 +844,12 @@ class Scheduling::Appointments::UpsertService
   end
 
   def medelement_outbound_actor?
-    actor.is_a?(User) ||
-      (defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant) && actor.account_id == account.id)
+    actor.is_a?(User) || automated_outbound_actor?
+  end
+
+  def automated_outbound_actor?
+    (defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant) && actor.account_id == account.id) ||
+      (actor.is_a?(Channel::Whatsapp) && actor.account_id == account.id)
   end
 
   def writable_medelement_hook?

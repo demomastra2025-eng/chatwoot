@@ -236,6 +236,7 @@
       "COPILOT_MSG_INPUT": "Give copilot additional prompts, or ask anything else... Press enter to send follow-up",
       "CLICK_HERE": "Click here to update",
       "WHATSAPP_TEMPLATES": "Whatsapp Templates",
+      "WHATSAPP_FLOWS": "WhatsApp Flows формалары",
       "TEMPLATE_BUTTON": "Шаблон",
       "WHATSAPP_TEMPLATE_ONLY": "Бұл диалогта клиент соңғы 24 сағатта жазбаған — WhatsApp тек шаблонмен бастауға рұқсат береді."
     },
@@ -474,6 +475,52 @@
       "ADD": "Реакция қосу",
       "MORE": "Басқа реакциялар",
       "ERROR": "Реакцияны жіберу мүмкін болмады"
+    },
+    "WHATSAPP_FLOWS": {
+      "BOOKING_CONFIRMED": "Жазылу WhatsApp Flow арқылы рәсімделді",
+      "BOOKING_FAILED": "Жазылуды автоматты түрде рәсімдеу мүмкін болмады",
+      "FIELDS": {
+        "CLIENT_LAST_NAME": "Тегі",
+        "CLIENT_FIRST_NAME": "Аты",
+        "CLIENT_MIDDLE_NAME": "Әкесінің аты",
+        "CLIENT_PHONE": "Телефон",
+        "CLIENT_BIRTH_DATE": "Туған күні",
+        "CLIENT_IIN": "ЖСН",
+        "CABINET": "Кабинет",
+        "NOTES": "Түсініктеме",
+        "SERVICE": "Қызмет",
+        "SPECIALIST": "Маман",
+        "SLOT": "Күні мен уақыты"
+      },
+      "MODAL": {
+        "TITLE": "WhatsApp Flow формасын жіберу",
+        "SUBTITLE": "Ашық 24 сағаттық WhatsApp терезесінде клиентке интерактивті форма жіберіңіз.",
+        "EMPTY_PUBLISHED": "Бұл арнада әлі жарияланған формалар жоқ. Арна баптаулары → Flows бөлімінде форманы жасап, жариялаңыз.",
+        "FLOW_LABEL": "Flow формасы",
+        "FLOW_PLACEHOLDER": "Жарияланған форманы таңдаңыз",
+        "BODY_LABEL": "Хабарлама мәтіні",
+        "BODY_PLACEHOLDER": "Форманы ашу түймесінің үстіндегі қысқаша шақыру мәтіні",
+        "CTA_LABEL": "Түйме мәтіні (20 таңбаға дейін)",
+        "CTA_PLACEHOLDER": "Жазылу",
+        "ACTION_LABEL": "Іске қосу режимі",
+        "ACTION_DATA_EXCHANGE": "Динамикалық деректер алмасу",
+        "ACTION_NAVIGATE": "Экранға өту",
+        "SCREEN_LABEL": "Бастапқы экран ID",
+        "SCREEN_PLACEHOLDER": "BOOKING_STEP",
+        "DEFAULT_BODY": "Ыңғайлы күн мен уақытты таңдау үшін төмендегі түймені басыңыз.",
+        "DEFAULT_CTA": "Жазылу",
+        "CANCEL": "Болдырмау",
+        "SEND": "Форманы жіберу",
+        "ERRORS": {
+          "FLOW_REQUIRED": "Жарияланған Flow формасын таңдаңыз.",
+          "BODY_REQUIRED": "Хабарлама мәтінін енгізіңіз.",
+          "BODY_MAX_LENGTH": "Хабарлама мәтіні 1024 таңбадан аспауы керек.",
+          "CTA_REQUIRED": "Түйме мәтінін енгізіңіз.",
+          "CTA_MAX_LENGTH": "Түйме мәтіні 20 таңбаға дейін болуы мүмкін.",
+          "CTA_NO_EMOJI": "Түйме мәтінінде эмодзи болмауы керек.",
+          "SCREEN_REQUIRED": "Экранға өту үшін бастапқы экран ID көрсетіңіз."
+        }
+      }
     }
   },
   "EMAIL_TRANSCRIPT": {

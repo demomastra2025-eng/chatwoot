@@ -263,6 +263,7 @@
       "MESSAGE_SIGNATURE_NOT_CONFIGURED": "Подпись сообщения не настроена, пожалуйста настройте её в настройках профиля.",
       "CLICK_HERE": "Нажмите здесь, чтобы обновить",
       "WHATSAPP_TEMPLATES": "Шаблоны Whatsapp",
+      "WHATSAPP_FLOWS": "Формы WhatsApp Flows",
       "TEMPLATE_BUTTON": "Шаблон",
       "WHATSAPP_TEMPLATE_ONLY": "В этом диалоге клиент не писал последние 24 часа — WhatsApp разрешает начать только шаблоном.",
       "MESSAGING_RESTRICTED": "Вы не можете ответить в этот диалог",
@@ -542,6 +543,52 @@
       "ADD": "Добавить реакцию",
       "MORE": "Ещё реакции",
       "ERROR": "Не удалось отправить реакцию"
+    },
+    "WHATSAPP_FLOWS": {
+      "BOOKING_CONFIRMED": "Запись оформлена через WhatsApp Flow",
+      "BOOKING_FAILED": "Не удалось автоматически оформить запись",
+      "FIELDS": {
+        "CLIENT_LAST_NAME": "Фамилия",
+        "CLIENT_FIRST_NAME": "Имя",
+        "CLIENT_MIDDLE_NAME": "Отчество",
+        "CLIENT_PHONE": "Телефон",
+        "CLIENT_BIRTH_DATE": "Дата рождения",
+        "CLIENT_IIN": "ИИН",
+        "CABINET": "Кабинет",
+        "NOTES": "Комментарий",
+        "SERVICE": "Услуга",
+        "SPECIALIST": "Специалист",
+        "SLOT": "Дата и время"
+      },
+      "MODAL": {
+        "TITLE": "Отправить форму WhatsApp Flow",
+        "SUBTITLE": "Отправьте интерактивную форму клиенту в рамках открытого 24-часового окна WhatsApp.",
+        "EMPTY_PUBLISHED": "В этом канале пока нет опубликованных форм. Создайте и опубликуйте форму в настройках канала → Flows.",
+        "FLOW_LABEL": "Форма Flow",
+        "FLOW_PLACEHOLDER": "Выберите опубликованную форму",
+        "BODY_LABEL": "Текст сообщения",
+        "BODY_PLACEHOLDER": "Короткий текст приглашения над кнопкой открытия формы",
+        "CTA_LABEL": "Текст кнопки (до 20 символов)",
+        "CTA_PLACEHOLDER": "Записаться",
+        "ACTION_LABEL": "Режим запуска",
+        "ACTION_DATA_EXCHANGE": "Динамический обмен данными",
+        "ACTION_NAVIGATE": "Переход на экран",
+        "SCREEN_LABEL": "ID первого экрана",
+        "SCREEN_PLACEHOLDER": "BOOKING_STEP",
+        "DEFAULT_BODY": "Нажмите кнопку ниже, чтобы выбрать удобную дату и время записи.",
+        "DEFAULT_CTA": "Записаться",
+        "CANCEL": "Отмена",
+        "SEND": "Отправить форму",
+        "ERRORS": {
+          "FLOW_REQUIRED": "Выберите опубликованную форму Flow.",
+          "BODY_REQUIRED": "Введите текст сообщения.",
+          "BODY_MAX_LENGTH": "Текст сообщения не должен превышать 1024 символа.",
+          "CTA_REQUIRED": "Введите текст кнопки.",
+          "CTA_MAX_LENGTH": "Текст кнопки может содержать до 20 символов.",
+          "CTA_NO_EMOJI": "Текст кнопки не должен содержать эмодзи.",
+          "SCREEN_REQUIRED": "Для перехода на экран укажите ID первого экрана."
+        }
+      }
     }
   },
   "EMAIL_TRANSCRIPT": {

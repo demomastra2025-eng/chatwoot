@@ -93,13 +93,91 @@ RSpec.describe Whatsapp::OutboundRichMessageBuilder do
       )
     end
 
+    it 'builds an exact WhatsApp Flow data_exchange interactive payload' do
+      payload = {
+        type: 'flow',
+        flow: {
+          flow_id: 'flow_booking_1',
+          flow_token: 'olf1.claims.sig',
+          body: 'Выберите удобное время записи.',
+          flow_cta: 'Записаться',
+          header: { type: 'text', text: 'Онлайн-запись' },
+          footer: 'Занимает 30 секунд'
+        }
+      }
+
+      expect(described_class.new(payload: payload).build).to eq(
+        type: 'interactive',
+        content: {
+          type: 'flow',
+          header: { type: 'text', text: 'Онлайн-запись' },
+          body: { text: 'Выберите удобное время записи.' },
+          action: {
+            name: 'flow',
+            parameters: {
+              flow_message_version: '3',
+              flow_token: 'olf1.claims.sig',
+              flow_id: 'flow_booking_1',
+              flow_cta: 'Записаться',
+              flow_action: 'data_exchange'
+            }
+          },
+          footer: { text: 'Занимает 30 секунд' }
+        }
+      )
+    end
+
+    it 'builds a WhatsApp Flow navigate interactive payload with screen and draft mode' do
+      payload = {
+        type: 'flow',
+        flow: {
+          flow_id: 'flow_survey_2',
+          body: 'Оцените качество приёма.',
+          flow_cta: 'Открыть',
+          flow_action: 'navigate',
+          mode: 'draft',
+          flow_action_payload: {
+            screen: 'WELCOME_SCREEN',
+            data: { clinic_name: 'OneLink' }
+          }
+        }
+      }
+
+      expect(described_class.new(payload: payload).build).to eq(
+        type: 'interactive',
+        content: {
+          type: 'flow',
+          body: { text: 'Оцените качество приёма.' },
+          action: {
+            name: 'flow',
+            parameters: {
+              flow_message_version: '3',
+              flow_token: 'unused',
+              flow_id: 'flow_survey_2',
+              flow_cta: 'Открыть',
+              flow_action: 'navigate',
+              mode: 'draft',
+              flow_action_payload: {
+                screen: 'WELCOME_SCREEN',
+                data: { 'clinic_name' => 'OneLink' }
+              }
+            }
+          }
+        }
+      )
+    end
+
     it 'rejects malformed rich payloads' do
       malformed_payloads = [
         { type: 'location', location: { latitude: 91, longitude: 71 } },
         { type: 'contacts', contacts: [{ name: {} }] },
         { type: 'reaction', reaction: { message_id: 'wamid.1', emoji: '👍👍' } },
         { type: 'reaction', reaction: { message_id: 'wamid.1', emoji: 'a' } },
-        { type: 'cta_url', cta_url: { body: 'Body', display_text: 'Open', url: 'javascript:alert(1)' } }
+        { type: 'cta_url', cta_url: { body: 'Body', display_text: 'Open', url: 'javascript:alert(1)' } },
+        { type: 'flow', flow: { flow_id: '', body: 'Body', flow_cta: 'Open' } },
+        { type: 'flow', flow: { flow_id: 'bad id!', body: 'Body', flow_cta: 'Open' } },
+        { type: 'flow', flow: { flow_id: 'flow_1', body: 'Body', flow_cta: 'Open 📅' } },
+        { type: 'flow', flow: { flow_id: 'flow_1', body: 'Body', flow_cta: 'Open', flow_action: 'navigate' } }
       ]
 
       malformed_payloads.each do |payload|

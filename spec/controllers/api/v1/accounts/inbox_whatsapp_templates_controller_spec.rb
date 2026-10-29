@@ -227,9 +227,17 @@ RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :reque
       expect(response).to have_http_status(:created)
     end
 
-    it 'strips unverified Flow creation fields at the API boundary' do
+    it 'permits verified Flow button fields while stripping inline Flow creation fields at the API boundary' do
       expect(management_service).to receive(:create_template) do |template_config|
-        expect(template_config['buttons']).to eq([{ 'type' => 'FLOW', 'text' => 'Sign up' }])
+        expect(template_config['buttons']).to eq([
+                                                   {
+                                                     'type' => 'FLOW',
+                                                     'text' => 'Sign up',
+                                                     'flow_id' => '123456789',
+                                                     'flow_action' => 'navigate',
+                                                     'navigate_screen' => 'WELCOME_SCREEN'
+                                                   }
+                                                 ])
         { success: true, template: {} }
       end
 
@@ -247,7 +255,9 @@ RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :reque
                    text: 'Sign up',
                    flow_id: '123456789',
                    flow_action: 'navigate',
-                   navigate_screen: 'WELCOME_SCREEN'
+                   navigate_screen: 'WELCOME_SCREEN',
+                   flow_json: '{"version":"6.0"}',
+                   flow_name: 'inline_flow'
                  }
                ]
              }

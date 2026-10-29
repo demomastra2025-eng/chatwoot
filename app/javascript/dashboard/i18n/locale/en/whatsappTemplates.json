@@ -240,6 +240,10 @@
         "FLOW_REFERENCE_XOR": "Flow button {index} needs exactly one source: Flow ID or inline Flow JSON.",
         "FLOW_JSON_INVALID": "Flow button {index} contains invalid JSON.",
         "FLOW_ACTION_INVALID": "Flow button {index} has an unsupported action.",
+        "FLOW_ID_REQUIRED": "Flow button {index} requires a Flow ID.",
+        "FLOW_ID_INVALID": "Flow button {index} has an invalid Flow ID format.",
+        "FLOW_BUTTON_TEXT_LENGTH": "Flow button {index} text can be up to 25 characters.",
+        "FLOW_SINGLE_BUTTON": "Only one Flow button is allowed per template.",
         "FLOW_SCREEN_REQUIRED": "Flow button {index} needs an initial screen ID for navigate actions."
       }
     }

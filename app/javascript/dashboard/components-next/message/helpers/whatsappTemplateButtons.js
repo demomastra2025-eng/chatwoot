@@ -107,6 +107,8 @@ export const whatsappTemplateButtonIcon = type => {
       return 'i-lucide-phone';
     case 'COPY_CODE':
       return 'i-lucide-copy';
+    case 'FLOW':
+      return 'i-lucide-workflow';
     default:
       return 'i-lucide-corner-up-left';
   }

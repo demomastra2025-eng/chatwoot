@@ -55,12 +55,13 @@ describe('whatsappTemplateButtons', () => {
     ]);
   });
 
-  it('maps WhatsApp button types to icons', () => {
+  it('maps WhatsApp button types to icons including FLOW', () => {
     expect(whatsappTemplateButtonIcon('QUICK_REPLY')).toBe(
       'i-lucide-corner-up-left'
     );
     expect(whatsappTemplateButtonIcon('URL')).toBe('i-lucide-external-link');
     expect(whatsappTemplateButtonIcon('PHONE_NUMBER')).toBe('i-lucide-phone');
     expect(whatsappTemplateButtonIcon('COPY_CODE')).toBe('i-lucide-copy');
+    expect(whatsappTemplateButtonIcon('FLOW')).toBe('i-lucide-workflow');
   });
 });

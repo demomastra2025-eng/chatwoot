@@ -1,6 +1,9 @@
-class Whatsapp::OutboundRichMessageBuilder
-  SUPPORTED_TYPES = %w[location contacts reaction cta_url].freeze
+class Whatsapp::OutboundRichMessageBuilder # rubocop:disable Metrics/ClassLength
+  SUPPORTED_TYPES = %w[location contacts reaction cta_url flow].freeze
   CTA_HEADER_TYPES = %w[text image video document].freeze
+  FLOW_ACTIONS = %w[data_exchange navigate].freeze
+  FLOW_MODES = %w[published draft].freeze
+  FLOW_ID_FORMAT = /\A[A-Za-z0-9_-]{1,64}\z/
   CONTACT_LIMIT = 257
   CTA_BODY_LIMIT = 1024
   CTA_HEADER_LIMIT = 60
@@ -151,6 +154,70 @@ class Whatsapp::OutboundRichMessageBuilder
     return if footer.blank?
 
     { text: required_limited_text(footer, 'CTA footer', CTA_FOOTER_LIMIT) }
+  end
+
+  def build_flow
+    flow = payload[:flow].to_h.with_indifferent_access
+    body = required_limited_text(flow[:body], 'Flow body', CTA_BODY_LIMIT)
+
+    {
+      type: 'interactive',
+      content: {
+        type: 'flow',
+        header: build_cta_header(flow[:header]),
+        body: { text: body },
+        action: { name: 'flow', parameters: build_flow_parameters(flow) },
+        footer: build_cta_footer(flow[:footer])
+      }.compact
+    }
+  end
+
+  def build_flow_parameters(flow)
+    flow_action = validate_flow_option!(flow[:flow_action], 'data_exchange', FLOW_ACTIONS, 'flow_action')
+    mode = validate_flow_option!(flow[:mode], 'published', FLOW_MODES, 'mode')
+    parameters = {
+      flow_message_version: '3',
+      flow_token: flow[:flow_token].to_s.strip.presence || 'unused',
+      flow_id: validate_flow_id!(flow[:flow_id]),
+      flow_cta: validate_flow_cta!(flow[:flow_cta]),
+      flow_action: flow_action
+    }
+    parameters[:mode] = 'draft' if mode == 'draft'
+    parameters[:flow_action_payload] = build_flow_action_payload(flow[:flow_action_payload]) if flow_action == 'navigate'
+    parameters
+  end
+
+  def validate_flow_cta!(raw_cta)
+    cta = required_limited_text(raw_cta, 'Flow button label', CTA_BUTTON_LABEL_LIMIT)
+    raise ArgumentError, 'WhatsApp Flow button label cannot contain emoji' if cta.match?(/\p{Emoji_Presentation}|\p{Extended_Pictographic}/)
+
+    cta
+  end
+
+  def validate_flow_id!(raw_id)
+    flow_id = raw_id.to_s.strip
+    raise ArgumentError, 'WhatsApp Flow ID is required' if flow_id.blank?
+    raise ArgumentError, 'WhatsApp Flow ID is invalid' unless flow_id.match?(FLOW_ID_FORMAT)
+
+    flow_id
+  end
+
+  def validate_flow_option!(raw_value, default_value, allowed, label)
+    value = raw_value.to_s.strip.presence || default_value
+    raise ArgumentError, "Unsupported WhatsApp Flow #{label}: #{value}" unless allowed.include?(value)
+
+    value
+  end
+
+  def build_flow_action_payload(raw_action_payload)
+    action_payload = raw_action_payload.to_h.with_indifferent_access
+    screen = action_payload[:screen].to_s.strip
+    raise ArgumentError, 'WhatsApp Flow navigate screen is required' if screen.blank?
+
+    result = { screen: screen }
+    data = action_payload[:data]
+    result[:data] = data if data.is_a?(Hash) && data.present?
+    result
   end
 
   def numeric_coordinate(value, name, range)
