@@ -21,6 +21,7 @@ else
 end
 json.phone_number resource.phone_number
 json.blocked resource.blocked
+json.notifications_muted resource.notifications_muted
 json.identifier resource.identifier
 json.thumbnail resource.resolved_avatar_url
 json.contact_avatar_url resource.contact_avatar_url

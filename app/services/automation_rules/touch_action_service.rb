@@ -32,25 +32,15 @@ class AutomationRules::TouchActionService
   # Legacy action retained for automation rules saved before plan removal.
   def apply_touch_plan(action_params)
     reminder_group = load_touch_plan!(action_params)
-    if @permanent_dedup
-      existing = account.reminders.where(remindable: record, reminder_group: reminder_group)
-                        .where('metadata @> ?', { 'automation_rule_id' => rule.id }.to_json)
-      return existing.to_a if existing.exists?
-    end
+    return [] if record_notifications_suppressed?
 
-    result = Reminders::PlanApplicationService.new(
-      account: account,
-      reminder_group: reminder_group,
-      remindable: record,
-      actor: rule,
-      source: 'automation'
-    ).perform
-    reminders = result.touches
+    existing = existing_dedup_plan_touches(reminder_group)
+    return existing if existing
 
-    reminders.each do |reminder|
-      Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict!
-    end
-
+    reminders = Reminders::PlanApplicationService.new(
+      account: account, reminder_group: reminder_group, remindable: record, actor: rule, source: 'automation'
+    ).perform.touches
+    reminders.each { |reminder| Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict! }
     reminders
   rescue StandardError => e
     Reminders::OperationDiagnostics.report(operation: 'apply_plan', error: e, record: record)
@@ -60,6 +50,7 @@ class AutomationRules::TouchActionService
   def create_touch(action_params = nil, action_id: nil, action_key: nil, **keyword_params)
     action_params = keyword_params if action_params.nil? && keyword_params.present?
     params = normalize_touch_params(action_params)
+    return if record_notifications_suppressed?
     return create_deferred_touch(params, action_id) if deferred_action?(params, action_id)
 
     action_key = action_key.presence || action_id.presence || 'create_touch'
@@ -107,6 +98,18 @@ class AutomationRules::TouchActionService
   end
 
   private
+
+  def existing_dedup_plan_touches(reminder_group)
+    return unless @permanent_dedup
+
+    existing = account.reminders.where(remindable: record, reminder_group: reminder_group)
+                      .where('metadata @> ?', { 'automation_rule_id' => rule.id }.to_json)
+    existing.to_a if existing.exists?
+  end
+
+  def record_notifications_suppressed?
+    Contact.automation_notifications_suppressed_for?(record, account_id: account.id)
+  end
 
   def find_or_create_event_touch(params, action_key, action_signature)
     Reminder.transaction do

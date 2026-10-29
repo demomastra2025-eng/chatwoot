@@ -187,6 +187,7 @@ module Scheduling::PayloadBuilder
       identifier: contact.identifier.presence || contact.custom_attributes['iin'],
       birth_date: contact.custom_attributes['birth_date'],
       gender: contact.custom_attributes['gender'],
+      notifications_muted: contact.notifications_muted,
       custom_attributes: contact.custom_attributes,
       created_at: contact.created_at&.iso8601,
       updated_at: contact.updated_at&.iso8601

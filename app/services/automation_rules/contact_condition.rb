@@ -68,6 +68,7 @@ class AutomationRules::ContactCondition
   # card of an appointment; every contact linked to a deal, and the contacts of the deal a task belongs to.
   def self.contact_ids_of(record)
     ids = case record
+          when ::Contact then [record.id]
           when ::Crm::Deal then deal_contact_ids(record)
           when ::Crm::Task then record.deal.present? ? deal_contact_ids(record.deal) : []
           else [record.try(:contact_id), record.try(:patient_contact_id)]

@@ -161,13 +161,29 @@ class Reminders::MaterializeEnrollmentStepService
     reminder.mark_automation_provenance!(rule) if rule.present?
   end
 
-  # The live source still exists and its rule (if it is a rule) does not exclude a contact of the enrollment's record.
+  # The live source still exists, its rule does not exclude a contact of the record, and no contact of the record is muted/blocked.
   def source_usable?
-    definition_resolver.source_available? && !Reminders::ExcludedContactPolicy.enrollment_excluded?(enrollment)
+    definition_resolver.source_available? &&
+      !Reminders::ExcludedContactPolicy.enrollment_excluded?(enrollment) &&
+      !contact_notifications_suppressed?
   end
 
   def cancel_unusable_source!
-    definition_resolver.source_available? ? cancel_excluded_contact! : cancel_unavailable_source!
+    return cancel_unavailable_source! unless definition_resolver.source_available?
+    return cancel_excluded_contact! if Reminders::ExcludedContactPolicy.enrollment_excluded?(enrollment)
+
+    cancel_suppressed_contact!
+  end
+
+  def contact_notifications_suppressed?
+    Contact.automation_notifications_suppressed_for?(enrollment.remindable, account_id: enrollment.account_id)
+  end
+
+  def cancel_suppressed_contact!
+    Reminders::SuppressedContactPolicy.cancel_enrollment_if_suppressed!(
+      enrollment,
+      extra_metadata: { 'evaluated_at' => now.iso8601 }
+    )
   end
 
   def cancel_unavailable_source!

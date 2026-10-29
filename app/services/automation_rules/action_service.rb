@@ -29,7 +29,7 @@ class AutomationRules::ActionService < ActionService
   private
 
   def send_attachment(blob_ids)
-    return if conversation_a_tweet?
+    return if conversation_a_tweet? || conversation_notifications_suppressed?
 
     return unless @rule.files.attached?
 
@@ -47,7 +47,7 @@ class AutomationRules::ActionService < ActionService
   end
 
   def send_message(message)
-    return if conversation_a_tweet?
+    return if conversation_a_tweet? || conversation_notifications_suppressed?
 
     params = { content: message[0], private: false, content_attributes: { automation_rule_id: @rule.id } }
     Messages::MessageBuilder.new(nil, @conversation, params).perform
@@ -85,6 +85,10 @@ class AutomationRules::ActionService < ActionService
       TeamNotifications::AutomationNotificationMailer.conversation_creation(@conversation, team, params[0][:message])&.deliver_now
       @account.increment_email_sent_count
     end
+  end
+
+  def conversation_notifications_suppressed?
+    Contact.automation_notifications_suppressed_for?(@conversation, account_id: @account.id)
   end
 
   def touch_action_service

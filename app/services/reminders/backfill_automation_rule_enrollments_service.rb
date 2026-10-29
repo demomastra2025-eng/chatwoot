@@ -71,7 +71,9 @@ class Reminders::BackfillAutomationRuleEnrollmentsService
   end
 
   def appointment_eligible?(appointment)
-    appointment.starts_at.future? && TERMINAL_APPOINTMENT_STATUSES.exclude?(appointment.status)
+    appointment.starts_at.future? &&
+      TERMINAL_APPOINTMENT_STATUSES.exclude?(appointment.status) &&
+      !Contact.automation_notifications_suppressed_for?(appointment, account_id: rule.account_id)
   end
 
   def plan_action(appointment, action)

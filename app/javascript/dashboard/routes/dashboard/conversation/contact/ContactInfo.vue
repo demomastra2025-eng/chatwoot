@@ -12,12 +12,14 @@ import EditContact from './EditContact.vue';
 import ContactMergeModal from 'dashboard/modules/contact/ContactMergeModal.vue';
 import InlineInput from 'dashboard/components-next/inline-input/InlineInput.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import ToggleSwitch from 'dashboard/components-next/switch/Switch.vue';
 import CrmCustomFieldDescriptionHint from 'dashboard/components-next/CRM/CrmCustomFieldDescriptionHint.vue';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
 import {
   maskedPatientIin,
   normalizePatientBirthDate,
   patientAgeLabel,
+  patientDisplayName,
 } from 'dashboard/stores/scheduling/patientContext';
 import {
   formatClientLanguageSummary,
@@ -54,6 +56,7 @@ export default {
     ContactMergeModal,
     InlineInput,
     NextButton,
+    ToggleSwitch,
   },
   props: {
     contact: {
@@ -80,9 +83,58 @@ export default {
       showDeleteModal: false,
       isEditingName: false,
       editName: '',
+      isSavingContactMute: false,
+      isSavingPatientMute: false,
+      localPatientMutedOverrides: {},
     };
   },
   computed: {
+    isContactNotificationsMuted() {
+      return Boolean(
+        this.contact?.notifications_muted ?? this.contact?.notificationsMuted
+      );
+    },
+    hasSeparateSelectedPatient() {
+      return Boolean(
+        this.patientContextEnabled &&
+          this.selectedPatient?.id &&
+          Number(this.selectedPatient.id) !== Number(this.contact?.id)
+      );
+    },
+    selectedPatientStoreContact() {
+      if (!this.hasSeparateSelectedPatient) return null;
+      const getter = this.$store?.getters?.['contacts/getContact'];
+      return typeof getter === 'function'
+        ? getter(this.selectedPatient.id)
+        : null;
+    },
+    selectedPatientName() {
+      return (
+        patientDisplayName(this.selectedPatient) ||
+        this.selectedPatientStoreContact?.name ||
+        ''
+      );
+    },
+    isSelectedPatientNotificationsMuted() {
+      if (!this.hasSeparateSelectedPatient) return false;
+      const patientId = Number(this.selectedPatient.id);
+      if (
+        Object.prototype.hasOwnProperty.call(
+          this.localPatientMutedOverrides,
+          patientId
+        )
+      ) {
+        return Boolean(this.localPatientMutedOverrides[patientId]);
+      }
+      const storeVal =
+        this.selectedPatientStoreContact?.notifications_muted ??
+        this.selectedPatientStoreContact?.notificationsMuted;
+      if (storeVal !== undefined) return Boolean(storeVal);
+      return Boolean(
+        this.selectedPatient?.notifications_muted ??
+          this.selectedPatient?.notificationsMuted
+      );
+    },
     contactClientLanguage() {
       const direct = normalizeClientLanguageCode(
         this.additionalAttributes.client_language ||
@@ -440,6 +492,53 @@ export default {
       await copyTextToClipboard(this.dossierIin);
       useAlert(this.$t('CONTACT_PANEL.COPY_SUCCESSFUL'));
     },
+    async toggleContactNotificationsMuted(nextValue) {
+      if (!this.contact?.id || this.isSavingContactMute) return;
+      const muted = Boolean(nextValue);
+      this.isSavingContactMute = true;
+      try {
+        await this.$store.dispatch('contacts/update', {
+          id: this.contact.id,
+          notifications_muted: muted,
+        });
+        useAlert(
+          muted
+            ? this.$t('CONTACT_PANEL.NOTIFICATIONS_MUTED_SAVED')
+            : this.$t('CONTACT_PANEL.NOTIFICATIONS_UNMUTED_SAVED')
+        );
+      } catch (error) {
+        useAlert(error?.message || this.$t('CONTACT_FORM.ERROR_MESSAGE'));
+      } finally {
+        this.isSavingContactMute = false;
+      }
+    },
+    async toggleSelectedPatientNotificationsMuted(nextValue) {
+      if (!this.hasSeparateSelectedPatient || this.isSavingPatientMute) return;
+      const patientId = Number(this.selectedPatient.id);
+      const muted = Boolean(nextValue);
+      this.isSavingPatientMute = true;
+      try {
+        const updated = await this.$store.dispatch('contacts/update', {
+          id: patientId,
+          notifications_muted: muted,
+        });
+        this.localPatientMutedOverrides = {
+          ...this.localPatientMutedOverrides,
+          [patientId]: Boolean(
+            updated?.notifications_muted ?? updated?.notificationsMuted ?? muted
+          ),
+        };
+        useAlert(
+          muted
+            ? this.$t('CONTACT_PANEL.NOTIFICATIONS_MUTED_SAVED')
+            : this.$t('CONTACT_PANEL.NOTIFICATIONS_UNMUTED_SAVED')
+        );
+      } catch (error) {
+        useAlert(error?.message || this.$t('CONTACT_FORM.ERROR_MESSAGE'));
+      } finally {
+        this.isSavingPatientMute = false;
+      }
+    },
 
     async updateContactField(attrs) {
       const contactId = this.contact.id;
@@ -714,6 +813,79 @@ export default {
             >
               {{ contactClientLanguageDisplay }}
             </span>
+          </div>
+          <div
+            class="mt-1 flex items-center justify-between gap-2 border-t border-n-weak pt-2 text-xs"
+            data-test="contact-notifications-muted-row"
+            data-testid="contact-notifications-muted-row"
+          >
+            <div class="flex min-w-0 flex-col gap-0.5">
+              <span
+                v-tooltip.top="$t('CONTACT_PANEL.NOTIFICATIONS_MUTED_HINT')"
+                class="inline-flex min-w-0 items-center gap-1 text-n-slate-11"
+              >
+                <span class="truncate">{{
+                  $t('CONTACT_PANEL.NOTIFICATIONS_MUTED_LABEL')
+                }}</span>
+                <span
+                  class="i-lucide-info size-3 shrink-0 text-n-slate-10"
+                  aria-hidden="true"
+                />
+              </span>
+              <span
+                v-if="isContactNotificationsMuted"
+                data-testid="contact-notifications-muted-status"
+                class="text-[11px] font-medium text-n-amber-11"
+              >
+                {{ $t('CONTACT_PANEL.NOTIFICATIONS_MUTED_STATUS') }}
+              </span>
+            </div>
+            <ToggleSwitch
+              data-testid="contact-notifications-muted-toggle"
+              data-test="contact-notifications-muted-toggle"
+              :model-value="isContactNotificationsMuted"
+              :disabled="isSavingContactMute"
+              :aria-label="$t('CONTACT_PANEL.NOTIFICATIONS_MUTED_LABEL')"
+              @change="toggleContactNotificationsMuted"
+            />
+          </div>
+          <div
+            v-if="hasSeparateSelectedPatient"
+            class="flex items-center justify-between gap-2 pt-1 text-xs"
+            data-test="patient-notifications-muted-row"
+            data-testid="patient-notifications-muted-row"
+          >
+            <div class="flex min-w-0 flex-col gap-0.5">
+              <span
+                v-tooltip.top="$t('CONTACT_PANEL.NOTIFICATIONS_MUTED_HINT')"
+                class="inline-flex min-w-0 items-center gap-1 text-n-slate-11"
+              >
+                <span class="truncate">{{
+                  $t('CONTACT_PANEL.NOTIFICATIONS_MUTED_PATIENT_LABEL', {
+                    name: selectedPatientName,
+                  })
+                }}</span>
+              </span>
+              <span
+                v-if="isSelectedPatientNotificationsMuted"
+                data-testid="patient-notifications-muted-status"
+                class="text-[11px] font-medium text-n-amber-11"
+              >
+                {{ $t('CONTACT_PANEL.NOTIFICATIONS_MUTED_STATUS') }}
+              </span>
+            </div>
+            <ToggleSwitch
+              data-testid="patient-notifications-muted-toggle"
+              data-test="patient-notifications-muted-toggle"
+              :model-value="isSelectedPatientNotificationsMuted"
+              :disabled="isSavingPatientMute"
+              :aria-label="
+                $t('CONTACT_PANEL.NOTIFICATIONS_MUTED_PATIENT_LABEL', {
+                  name: selectedPatientName,
+                })
+              "
+              @change="toggleSelectedPatientNotificationsMuted"
+            />
           </div>
         </div>
         <slot />

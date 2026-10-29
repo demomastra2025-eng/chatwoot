@@ -2,6 +2,7 @@
 # rubocop:disable Metrics/ClassLength
 class Reminders::ExecuteService
   PROVIDER_GUARD_BLOCKED = Object.new.freeze
+  SUPPRESSED_CONTACT_CANCELLED = Object.new.freeze
   NOTIFICATION_ROUTE_CHANGED = Object.new.freeze
   ROUTE_CHANGE_FAILED = 'Touch could not be moved to the current notification contact'.freeze
   TRANSIENT_DATABASE_ERRORS = [
@@ -66,7 +67,8 @@ class Reminders::ExecuteService
   def automation_touch_cancelled?
     Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).cancel_if_missed! ||
       Reminders::StaleAppointmentNoticePolicy.new(reminder: reminder, processing_claim: @processing_claim).cancel_if_stale! ||
-      excluded_contact_cancelled?
+      excluded_contact_cancelled? ||
+      suppressed_contact_cancelled?
   end
 
   # An automation touch goes only to contacts its rule still lets through: the "Contact is not" list is read again here
@@ -75,10 +77,14 @@ class Reminders::ExecuteService
     Reminders::ExcludedContactPolicy.new(reminder: reminder, processing_claim: @processing_claim).cancel_if_excluded!
   end
 
+  def suppressed_contact_cancelled?
+    Reminders::SuppressedContactPolicy.new(reminder: reminder, processing_claim: @processing_claim).cancel_if_suppressed!
+  end
+
   def execute_action
     ensure_routable_patient_route!
     realign_notification_route!
-    return reminder if excluded_contact_cancelled?
+    return reminder if excluded_contact_cancelled? || suppressed_contact_cancelled?
 
     case reminder.action_type
     when 'send_message'
@@ -136,7 +142,7 @@ class Reminders::ExecuteService
     payload = send_message_payload(conversation)
     delivery_policy = send_message_delivery_policy(conversation, template_params: payload[:template_params])
     message = finalize_send_message(conversation, payload, delivery_policy)
-    return reminder if message.equal?(PROVIDER_GUARD_BLOCKED) || message.equal?(NOTIFICATION_ROUTE_CHANGED)
+    return reminder if execution_sentinel?(message)
 
     finish_execution(message)
   end
@@ -254,7 +260,7 @@ class Reminders::ExecuteService
     delivery_policy = ensure_delivery_allowed!(conversation, content_kind: 'free_text', template_params: {}, attachments: [])
     generated_payload = generate_captain_message(conversation, mode: :wakeup)
     message = finalize_ai_agent_wakeup(conversation, generated_payload, delivery_policy)
-    return reminder if message.equal?(PROVIDER_GUARD_BLOCKED) || message.equal?(NOTIFICATION_ROUTE_CHANGED)
+    return reminder if execution_sentinel?(message)
 
     finish_execution(message)
   end
@@ -267,6 +273,7 @@ class Reminders::ExecuteService
     context = captain_follow_up_context(conversation)
     outcome = run_captain_follow_up(context)
     return finish_execution(outcome) if outcome.is_a?(Message)
+    return reminder if reminder.cancelled?
     raise follow_up_in_progress_error if outcome == :in_progress
 
     complete_without_materialized_delivery
@@ -425,9 +432,16 @@ class Reminders::ExecuteService
     ).blocked?
   end
 
+  def execution_sentinel?(value)
+    value.equal?(PROVIDER_GUARD_BLOCKED) ||
+      value.equal?(SUPPRESSED_CONTACT_CANCELLED) ||
+      value.equal?(NOTIFICATION_ROUTE_CHANGED)
+  end
+
   def with_execution_lock(conversation: nil, captain_control_lock: false, &)
     guarded_execution = lambda do
       next PROVIDER_GUARD_BLOCKED if appointment_provider_blocked?(:materialization)
+      next SUPPRESSED_CONTACT_CANCELLED if suppressed_contact_cancelled?
 
       yield
     end

@@ -1,5 +1,11 @@
 {
   "CONTACT_PANEL": {
+    "NOTIFICATIONS_MUTED_LABEL": "Автохабарламаларды жібермеу",
+    "NOTIFICATIONS_MUTED_HINT": "Осы карточка үшін жазбалар туралы автоматты еске салғыштар мен хабарламаларды өшіреді",
+    "NOTIFICATIONS_MUTED_STATUS": "Автохабарламалар өшірілген",
+    "NOTIFICATIONS_MUTED_PATIENT_LABEL": "Автохабарламаларды жібермеу ({name})",
+    "NOTIFICATIONS_MUTED_SAVED": "Карточка үшін автохабарламалар өшірілді",
+    "NOTIFICATIONS_UNMUTED_SAVED": "Карточка үшін автохабарламалар қосылды",
     "ADD_PHONE": "+ Телефон қосу",
     "OPEN_PROFILE": "Байланыс бетін ашу",
     "ACTION_DEAL": "Мәміле",
