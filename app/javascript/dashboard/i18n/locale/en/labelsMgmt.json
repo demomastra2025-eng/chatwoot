@@ -95,6 +95,20 @@
         "YES": "Yes, Delete ",
         "NO": "No, Keep "
       }
+    },
+    "META_ADS": {
+      "TITLE": "Meta Ads auto-tagging",
+      "DESCRIPTION": "Automatically assign the blue system Meta Ads tag to leads from Instagram, Facebook, and WhatsApp ads",
+      "SYSTEM_BADGE": "System",
+      "RULES_BUTTON": "Ad creative rules ({count})",
+      "RULES_HINT": "Assign extra tags by ad ID (source_id / ad_id), for example for a specific promo or checkup.",
+      "RULES_EMPTY": "No per-ad rules configured yet — the default Meta Ads tag is active.",
+      "RECENT_ADS": "Recent ads:",
+      "SOURCE_ID_PLACEHOLDER": "Ad ID (source_id)",
+      "SELECT_LABEL_PLACEHOLDER": "Select tag...",
+      "ADD_RULE": "Add rule",
+      "SAVED_MESSAGE": "Meta Ads auto-tagging settings saved",
+      "ERROR_MESSAGE": "Could not save Meta Ads settings"
     }
   }
 }

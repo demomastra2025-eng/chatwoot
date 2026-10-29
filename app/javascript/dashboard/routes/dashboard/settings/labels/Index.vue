@@ -7,6 +7,7 @@ import { picoSearch } from '@scmmishra/pico-search';
 
 import AddLabel from './AddLabel.vue';
 import EditLabel from './EditLabel.vue';
+import MetaAdsAutoTagSettings from './MetaAdsAutoTagSettings.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -16,6 +17,7 @@ import {
   BaseTableCell,
 } from 'dashboard/components-next/table';
 import {
+  isSystemMetaAdsLabel,
   labelDisplayTitle,
   labelDisplayTitleWithoutMarker,
   labelMarkerColor,
@@ -50,6 +52,16 @@ const uiFlags = computed(() => getters['labels/getUIFlags'].value);
 const deleteMessage = computed(
   () => ` ${labelDisplayTitle(selectedLabel.value)}?`
 );
+
+const hasLoadedOnce = ref(false);
+
+const refreshLabels = async () => {
+  try {
+    await store.dispatch('labels/get');
+  } finally {
+    hasLoadedOnce.value = true;
+  }
+};
 
 const openAddPopup = () => {
   showAddPopup.value = true;
@@ -103,15 +115,15 @@ const tableHeaders = computed(() => {
 });
 
 onBeforeMount(() => {
-  store.dispatch('labels/get');
+  refreshLabels();
 });
 </script>
 
 <template>
   <SettingsLayout
-    :is-loading="uiFlags.isFetching"
+    :is-loading="uiFlags.isFetching && !hasLoadedOnce"
     :loading-message="$t('LABEL_MGMT.LOADING')"
-    :no-records-found="!filteredRecords.length"
+    :no-records-found="false"
     :no-records-message="$t('LABEL_MGMT.LIST.404')"
   >
     <template #header>
@@ -137,6 +149,11 @@ onBeforeMount(() => {
         </template>
       </BaseSettingsHeader>
     </template>
+
+    <template #preBody>
+      <MetaAdsAutoTagSettings @updated="refreshLabels" />
+    </template>
+
     <template #body>
       <BaseTable
         :headers="tableHeaders"
@@ -149,7 +166,24 @@ onBeforeMount(() => {
           <BaseTableRow v-for="label in items" :key="label.title" :item="label">
             <template #default>
               <BaseTableCell>
-                <span class="text-body-main text-n-slate-12">
+                <div
+                  v-if="isSystemMetaAdsLabel(label)"
+                  class="inline-flex items-center gap-2"
+                >
+                  <span
+                    class="inline-flex h-6 items-center gap-1 rounded-full border border-n-blue-4 bg-n-blue-3 px-2.5 text-xs font-medium text-n-blue-11 dark:border-n-blue-6 dark:bg-n-blue-4/30"
+                  >
+                    <span
+                      class="i-lucide-megaphone size-3"
+                      aria-hidden="true"
+                    />
+                    <span>{{ labelDisplayTitleWithoutMarker(label) }}</span>
+                  </span>
+                  <span class="text-xs text-n-slate-10">
+                    {{ $t('LABEL_MGMT.META_ADS.SYSTEM_BADGE') }}
+                  </span>
+                </div>
+                <span v-else class="text-body-main text-n-slate-12">
                   {{ labelDisplayTitleWithoutMarker(label) }}
                 </span>
               </BaseTableCell>

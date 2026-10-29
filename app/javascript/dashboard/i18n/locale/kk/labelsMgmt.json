@@ -92,6 +92,20 @@
         "YES": "Yes, Delete ",
         "NO": "No, Keep "
       }
+    },
+    "META_ADS": {
+      "TITLE": "Meta жарнамасын автотегтеу",
+      "DESCRIPTION": "Instagram, Facebook және WhatsApp жарнамасынан келген өтініштерге көк жүйелік Meta Ads тегін автоматты түрде қою",
+      "SYSTEM_BADGE": "Жүйелік",
+      "RULES_BUTTON": "Жарнама ережелері ({count})",
+      "RULES_HINT": "Жарнама ID-і (source_id / ad_id) бойынша қосымша тегтер тағайындау — мысалы, нақты акция немесе чекап үшін.",
+      "RULES_EMPTY": "Жарнама бойынша қосымша ережелер әлі жоқ — базалық Meta Ads тегі жұмыс істейді.",
+      "RECENT_ADS": "Соңғы жарнамалар:",
+      "SOURCE_ID_PLACEHOLDER": "Жарнама ID-і (source_id)",
+      "SELECT_LABEL_PLACEHOLDER": "Тегті таңдаңыз...",
+      "ADD_RULE": "Ереже қосу",
+      "SAVED_MESSAGE": "Meta Ads автотегтеу баптаулары сақталды",
+      "ERROR_MESSAGE": "Meta Ads баптауларын сақтау мүмкін болмады"
     }
   }
 }

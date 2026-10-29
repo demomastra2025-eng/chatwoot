@@ -132,37 +132,47 @@ RSpec.describe Meta::AdReferralRecorder do
   end
 
   describe 'idempotent Meta Ads auto-tagging' do
-    it 'auto-tags conversation and contact with existing Реклама and mapped offer labels while preserving existing tags' do
-      base_label = account.labels.create!(title: nil, display_title: 'Реклама')
-      offer_label = account.labels.create!(title: nil, display_title: 'Реклама: МРТ + невролог')
+    it 'creates and assigns the blue system Meta Ads label by default and applies mapped offer labels' do
+      offer_label = account.labels.create!(title: nil, display_title: 'Чекап -30%')
       account.update!(custom_attributes: { 'meta_ads_source_label_map' => { '23877210000123456' => offer_label.id } })
       Labels::UnifiedAssignmentService.add(contact: conversation.contact, labels: ['vip'], conversation: conversation)
 
       2.times { described_class.new(message: message, payload: payload).perform }
 
-      expected = ['vip', base_label.title, offer_label.title]
+      system_label = account.labels.find_by(title: 'meta_ads')
+      expect(system_label).to be_present
+      expect(system_label.display_title).to eq('Meta Ads')
+      expect(system_label.color).to eq('#1F93FF')
+
+      expected = ['vip', 'meta_ads', offer_label.title]
       expect(conversation.reload.label_list).to match_array(expected)
       expect(conversation.contact.reload.label_list).to match_array(expected)
     end
 
-    it 'creates the default Реклама label when meta_ads_auto_tag is enabled in account custom_attributes' do
-      account.update!(custom_attributes: { 'meta_ads_auto_tag' => true })
+    it 'does not create or assign the base Meta Ads label when meta_ads_auto_tag is explicitly false' do
+      account.update!(custom_attributes: { 'meta_ads_auto_tag' => false })
 
-      described_class.new(message: message, payload: payload).perform
-
-      created_label = account.labels.find_by(title: 'реклама')
-      expect(created_label).to be_present
-      expect(created_label.display_title).to eq('Реклама')
-      expect(conversation.reload.label_list).to include('реклама')
-      expect(conversation.contact.reload.label_list).to include('реклама')
-    end
-
-    it 'does not create unrequested labels when meta_ads_auto_tag is not enabled and no Реклама label exists' do
       described_class.new(message: message, payload: payload).perform
 
       expect(account.labels.count).to eq(0)
       expect(conversation.reload.label_list).to be_empty
       expect(conversation.contact.reload.label_list).to be_empty
+    end
+
+    it 'still applies explicit source_id label rules even when base Meta Ads auto-tag is turned off' do
+      offer_label = account.labels.create!(title: 'mrt_promo', display_title: 'МРТ Акция')
+      account.update!(
+        custom_attributes: {
+          'meta_ads_auto_tag' => false,
+          'meta_ads_source_label_map' => { '23877210000123456' => [offer_label.id] }
+        }
+      )
+
+      described_class.new(message: message, payload: payload).perform
+
+      expect(account.labels.find_by(title: 'meta_ads')).to be_nil
+      expect(conversation.reload.label_list).to eq(['mrt_promo'])
+      expect(conversation.contact.reload.label_list).to eq(['mrt_promo'])
     end
 
     it 'ignores deleted mapped label IDs and keeps outer transactions healthy if auto-tagging raises' do
@@ -175,7 +185,6 @@ RSpec.describe Meta::AdReferralRecorder do
       end
 
       allow(Labels::UnifiedAssignmentService).to receive(:add).and_raise(StandardError, 'boom')
-      account.labels.create!(title: 'реклама', display_title: 'Реклама')
 
       ActiveRecord::Base.transaction do
         referral = described_class.new(message: message, payload: payload).perform
@@ -185,13 +194,8 @@ RSpec.describe Meta::AdReferralRecorder do
     end
 
     it 'does not poison an outer PG transaction on concurrent label UniqueViolation' do
-      account.update!(custom_attributes: account.custom_attributes.to_h.merge('meta_ads_auto_tag' => true))
-      existing_label = account.labels.create!(title: 'реклама', display_title: 'Реклама')
-      allow(Meta::AdReferralAutoTagger).to receive(:new).and_wrap_original do |orig, **kwargs|
-        orig.call(**kwargs).tap do |tagger|
-          allow(tagger).to receive(:find_default_ad_label).and_return(nil, existing_label)
-        end
-      end
+      existing_label = account.labels.create!(title: 'meta_ads', display_title: 'Meta Ads', color: '#1F93FF')
+      allow(Meta::AdReferralAutoTagger).to receive(:find_system_label).and_return(nil, existing_label)
 
       ActiveRecord::Base.transaction do
         described_class.new(message: message, payload: payload).perform
@@ -199,8 +203,8 @@ RSpec.describe Meta::AdReferralRecorder do
         expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
       end
 
-      expect(conversation.contact.reload.label_list).to include(existing_label.title)
-      expect(conversation.reload.label_list).to include(existing_label.title)
+      expect(conversation.contact.reload.label_list).to include('meta_ads')
+      expect(conversation.reload.label_list).to include('meta_ads')
     end
   end
 end

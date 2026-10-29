@@ -1,5 +1,6 @@
 <script>
 import { getContrastingTextColor } from '@chatwoot/utils';
+import { isSystemMetaAdsLabel } from 'dashboard/helper/labels';
 
 export default {
   props: {
@@ -50,18 +51,28 @@ export default {
   },
   emits: ['remove'],
   computed: {
+    isMetaAdsSystem() {
+      return isSystemMetaAdsLabel(this.title);
+    },
     textColor() {
+      if (this.isMetaAdsSystem) return '';
       if (this.variant === 'smooth') return '';
       if (this.variant === 'dashed') return '';
       return this.color || getContrastingTextColor(this.bgColor);
     },
     labelClass() {
-      return `label ${this.colorScheme} ${this.variant} ${
-        this.small ? 'small' : ''
-      }`;
+      return [
+        'label',
+        this.colorScheme,
+        this.variant,
+        this.small ? 'small' : '',
+        this.isMetaAdsSystem ? 'meta-ads-system' : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
     },
     labelStyle() {
-      if (this.bgColor) {
+      if (this.bgColor && !this.isMetaAdsSystem) {
         return {
           background: this.bgColor,
           color: this.textColor,
@@ -71,7 +82,7 @@ export default {
       return {};
     },
     anchorStyle() {
-      if (this.bgColor) {
+      if (this.bgColor && !this.isMetaAdsSystem) {
         return { color: this.textColor };
       }
       return {};
@@ -98,6 +109,11 @@ export default {
     <span v-if="emoji && !icon" class="label-emoji flex-shrink-0">
       {{ emoji }}
     </span>
+    <span
+      v-else-if="isMetaAdsSystem && !icon"
+      class="i-lucide-megaphone size-3 flex-shrink-0 text-n-blue-11"
+      aria-hidden="true"
+    />
     <span
       v-else-if="['smooth', 'dashed'].includes(variant) && title && !icon"
       :style="{ background: color }"
@@ -196,6 +212,18 @@ export default {
 
   &.dashed {
     @apply bg-transparent text-n-slate-11 dark:text-n-slate-12 border border-dashed border-n-strong;
+  }
+
+  &.meta-ads-system {
+    @apply rounded-full px-2 bg-n-blue-3 text-n-blue-11 border border-solid border-n-blue-4 dark:bg-n-blue-4/30 dark:border-n-blue-6 dark:text-n-blue-11;
+
+    .label-close--button {
+      @apply text-n-blue-11 hover:bg-n-blue-4/60;
+
+      svg {
+        @apply text-n-blue-11;
+      }
+    }
   }
 }
 

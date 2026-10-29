@@ -40,7 +40,7 @@ vi.mock('dashboard/composables/useTranslations', () => ({
 }));
 
 describe('TextBubble WhatsApp template buttons', () => {
-  it('renders WhatsApp template buttons below the message content', () => {
+  it('renders vertically centered WhatsApp template buttons flush with the bubble footer', () => {
     const wrapper = mount(TextBubble, {
       global: {
         mocks: {
@@ -63,9 +63,23 @@ describe('TextBubble WhatsApp template buttons', () => {
       '[data-testid="whatsapp-template-buttons"]'
     );
     expect(buttonsContainer.exists()).toBe(true);
+    expect(buttonsContainer.classes()).toEqual(
+      expect.arrayContaining(['-mx-4', '-mb-3', 'mt-3', 'border-t'])
+    );
 
     const buttons = wrapper.findAll('[data-testid="whatsapp-template-button"]');
     expect(buttons).toHaveLength(2);
+    buttons.forEach(buttonRow => {
+      expect(buttonRow.classes()).toEqual(
+        expect.arrayContaining([
+          'flex',
+          'h-9',
+          'items-center',
+          'justify-center',
+          'leading-4',
+        ])
+      );
+    });
     expect(buttons[0].text()).toBe('Растаймын | Подтверждаю');
     expect(buttons[0].find('.i-lucide-corner-up-left').exists()).toBe(true);
     expect(buttons[1].text()).toBe('Открыть 2ГИС');

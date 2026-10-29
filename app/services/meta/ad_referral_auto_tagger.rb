@@ -1,11 +1,45 @@
 # frozen_string_literal: true
 
 class Meta::AdReferralAutoTagger
-  DEFAULT_AD_LABEL_TITLE = 'реклама'
-  DEFAULT_AD_DISPLAY_TITLE = 'Реклама'
-  FALLBACK_AD_LABEL_NAMES = %w[реклама meta_ads].freeze
+  DEFAULT_AD_LABEL_TITLE = 'meta_ads'
+  DEFAULT_AD_DISPLAY_TITLE = 'Meta Ads'
+  DEFAULT_AD_COLOR = '#1F93FF'
+  DEFAULT_AD_DESCRIPTION = 'Обращения с рекламы Meta (Instagram / Facebook / WhatsApp)'
+  SYSTEM_AD_LABEL_NAMES = ['meta_ads', 'meta ads'].freeze
 
   attr_reader :referral, :message
+
+  def self.auto_tag_enabled?(account)
+    return false if account.blank?
+
+    raw = account.custom_attributes.to_h.with_indifferent_access[:meta_ads_auto_tag]
+    raw.nil? || ActiveModel::Type::Boolean.new.cast(raw) == true
+  end
+
+  def self.find_system_label(account)
+    return nil if account.blank?
+
+    account.labels
+           .reorder(:id)
+           .where('LOWER(title) IN (:names) OR LOWER(display_title) IN (:names)', names: SYSTEM_AD_LABEL_NAMES)
+           .first
+  end
+
+  def self.ensure_system_label!(account)
+    existing = find_system_label(account)
+    return existing if existing.present?
+
+    Label.transaction(requires_new: true) do
+      account.labels.find_or_create_by!(title: DEFAULT_AD_LABEL_TITLE) do |label|
+        label.display_title = DEFAULT_AD_DISPLAY_TITLE
+        label.color = DEFAULT_AD_COLOR
+        label.description = DEFAULT_AD_DESCRIPTION
+        label.show_on_sidebar = true
+      end
+    end
+  rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
+    find_system_label(account)
+  end
 
   def initialize(referral:, message: nil)
     @referral = referral
@@ -56,56 +90,37 @@ class Meta::AdReferralAutoTagger
   end
 
   def resolve_base_label
-    return nil if auto_tag_explicitly_disabled?
+    return nil unless self.class.auto_tag_enabled?(account)
 
     configured = account_custom_attributes[:meta_ads_auto_label].presence
     return find_or_build_configured_base_label(configured) if configured.present?
 
-    existing = find_default_ad_label
-    return existing if existing.present?
-
-    ensure_default_ad_label if auto_tag_explicitly_enabled?
-  end
-
-  def auto_tag_explicitly_disabled?
-    raw = account_custom_attributes[:meta_ads_auto_tag]
-    !raw.nil? && !ActiveModel::Type::Boolean.new.cast(raw)
-  end
-
-  def auto_tag_explicitly_enabled?
-    ActiveModel::Type::Boolean.new.cast(account_custom_attributes[:meta_ads_auto_tag]) == true
+    ensure_default_ad_label
   end
 
   def find_or_build_configured_base_label(identifier)
     found = find_account_label(identifier)
-    return found if found.present? || !auto_tag_explicitly_enabled?
+    return found if found.present?
     return nil if identifier.to_s.match?(/\A\d+\z/)
 
     create_account_label(identifier.to_s.strip)
   end
 
   def find_default_ad_label
-    FALLBACK_AD_LABEL_NAMES.each do |candidate|
-      label = find_account_label_by_name(candidate)
-      return label if label.present?
-    end
-    nil
+    self.class.find_system_label(account)
   end
 
   def ensure_default_ad_label
-    Label.transaction(requires_new: true) do
-      account.labels.find_or_create_by!(title: DEFAULT_AD_LABEL_TITLE) do |label|
-        label.display_title = DEFAULT_AD_DISPLAY_TITLE
-      end
-    end
-  rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
-    find_default_ad_label
+    existing = find_default_ad_label
+    return existing if existing.present?
+
+    self.class.ensure_system_label!(account)
   end
 
   def create_account_label(name)
     return nil if name.blank?
 
-    attrs = { display_title: name }
+    attrs = { display_title: name, color: DEFAULT_AD_COLOR }
     attrs[:title] = name.downcase if name.downcase.match?(RegexHelper::UNICODE_CHARACTER_NUMBER_HYPHEN_UNDERSCORE)
     Label.transaction(requires_new: true) do
       account.labels.create!(attrs)
@@ -126,11 +141,16 @@ class Meta::AdReferralAutoTagger
   def source_label_mapping
     raw = account_custom_attributes[:meta_ads_source_label_map].presence ||
           account_custom_attributes[:meta_ads_source_labels]
-    raw.is_a?(Hash) ? raw.stringify_keys : {}
+    return {} unless raw.is_a?(Hash)
+
+    raw.each_with_object({}) do |(key, val), acc|
+      stripped = key.to_s.strip
+      acc[stripped] = Array(acc[stripped]) + Array(val) if stripped.present?
+    end
   end
 
   def source_keys
-    [referral.source_id, referral.ad_id].compact_blank.map(&:to_s).uniq
+    [referral.source_id, referral.ad_id].map { |val| val.to_s.strip }.reject(&:blank?).uniq
   end
 
   def find_account_label(identifier)

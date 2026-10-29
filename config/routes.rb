@@ -575,6 +575,7 @@ Rails.application.routes.draw do
             end
           end
           resources :labels, only: [:index, :show, :create, :update, :destroy]
+          resource :meta_ads_settings, only: [:show, :update]
           resources :lead_forms, only: [:index, :show, :create, :update, :destroy]
           resources :lead_submissions, only: [:index, :show]
           resources :reports, only: [] do

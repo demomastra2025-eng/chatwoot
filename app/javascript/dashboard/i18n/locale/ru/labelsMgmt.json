@@ -95,6 +95,20 @@
         "YES": "Да, удалить ",
         "NO": "Нет, не удалять "
       }
+    },
+    "META_ADS": {
+      "TITLE": "Автотегирование рекламы Meta",
+      "DESCRIPTION": "Автоматически ставить синий системный тег Meta Ads на обращения с рекламы Instagram, Facebook и WhatsApp",
+      "SYSTEM_BADGE": "Системный",
+      "RULES_BUTTON": "Правила по объявлениям ({count})",
+      "RULES_HINT": "Дополнительные теги по ID объявления (source_id / ad_id) — например, под конкретную акцию или чекап.",
+      "RULES_EMPTY": "Дополнительных правил по объявлениям пока нет — работает базовый тег Meta Ads.",
+      "RECENT_ADS": "Недавние объявления:",
+      "SOURCE_ID_PLACEHOLDER": "ID объявления (source_id)",
+      "SELECT_LABEL_PLACEHOLDER": "Выберите тег...",
+      "ADD_RULE": "Добавить правило",
+      "SAVED_MESSAGE": "Настройки автотегирования Meta Ads сохранены",
+      "ERROR_MESSAGE": "Не удалось сохранить настройки Meta Ads"
     }
   }
 }

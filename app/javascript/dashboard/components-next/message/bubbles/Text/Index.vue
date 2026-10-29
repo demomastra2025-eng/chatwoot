@@ -120,24 +120,6 @@ const handleSeeOriginal = () => {
         @toggle="handleSeeOriginal"
       />
       <AttachmentChips :attachments="attachments" class="gap-2" />
-      <div
-        v-if="resolvedTemplateButtons.length"
-        data-testid="whatsapp-template-buttons"
-        class="-mx-2 pt-2 border-t border-n-alpha-3 flex flex-col divide-y divide-n-alpha-3"
-      >
-        <div
-          v-for="(btn, idx) in resolvedTemplateButtons"
-          :key="`${btn.type}-${idx}-${btn.text}`"
-          data-testid="whatsapp-template-button"
-          class="flex items-center justify-center gap-1.5 py-1.5 px-2 text-xs font-medium text-n-blue-11 select-text"
-        >
-          <span
-            :class="whatsappTemplateButtonIcon(btn.type)"
-            class="size-3.5 shrink-0"
-          />
-          <span class="truncate">{{ btn.text }}</span>
-        </div>
-      </div>
       <template v-if="isTemplate">
         <div
           v-if="contentAttributes.submittedEmail"
@@ -149,6 +131,32 @@ const handleSeeOriginal = () => {
       <CaptainToolExecutionGroup
         :additional-attributes="additionalAttributes"
       />
+    </div>
+    <div
+      v-if="resolvedTemplateButtons.length"
+      data-testid="whatsapp-template-buttons"
+      class="-mx-4 -mb-3 flex flex-col divide-y divide-n-alpha-3"
+      :class="
+        renderContent ||
+        attachments?.length ||
+        telegramForwardedFrom ||
+        (isTemplate && contentAttributes?.submittedEmail)
+          ? 'mt-3 border-t border-n-alpha-3'
+          : '-mt-3'
+      "
+    >
+      <div
+        v-for="(btn, idx) in resolvedTemplateButtons"
+        :key="`${btn.type}-${idx}-${btn.text}`"
+        data-testid="whatsapp-template-button"
+        class="flex h-9 items-center justify-center gap-1.5 px-3 text-xs font-medium leading-4 text-n-blue-11 select-text"
+      >
+        <span
+          :class="whatsappTemplateButtonIcon(btn.type)"
+          class="size-3.5 shrink-0"
+        />
+        <span class="truncate leading-4">{{ btn.text }}</span>
+      </div>
     </div>
   </BaseBubble>
 </template>
