@@ -4,7 +4,7 @@ class Captain::Playground::RealToolExecutor
   READ_TOOLS = %w[
     get_contact search_contacts get_company search_companies get_deal search_deals list_deal_pipelines list_deal_stages get_deal_timeline get_task search_tasks get_task_timeline
     get_appointment search_appointments list_my_appointments search_scheduling_resources list_scheduling_resources
-    get_scheduling_resource search_scheduling_services search_available_slots
+    get_scheduling_resource search_scheduling_services search_available_slots search_booking_options
     get_scheduling_resource_schedule get_scheduling_resource_availability
     list_deal_custom_fields list_task_custom_fields list_appointment_custom_fields
     get_conversation search_conversations get_confirmation_request list_channel_templates
@@ -52,8 +52,13 @@ class Captain::Playground::RealToolExecutor
            Captain::ToolPolicy.execution_allowed?(definition.to_h, assistant: @session.assistant, scope_name: Captain::ToolAccess::SCOPE_AGENT)
       raise Pundit::NotAuthorizedError, 'Tool is not selected in this agent profile'
     end
+    operator_scope = if definition.supports_scope?(Captain::ToolAccess::SCOPE_ASSISTANT)
+                       Captain::ToolAccess::SCOPE_ASSISTANT
+                     else
+                       Captain::ToolAccess::SCOPE_AGENT
+                     end
     unless Captain::ToolPolicy.execution_allowed?(definition.to_h, assistant: @session.assistant,
-                                                  scope_name: Captain::ToolAccess::SCOPE_ASSISTANT, user: @session.user)
+                                                  scope_name: operator_scope, user: @session.user)
       raise Pundit::NotAuthorizedError, 'Tool permission is not available for the current operator'
     end
     arguments = arguments.to_h.deep_symbolize_keys.compact
@@ -64,6 +69,7 @@ class Captain::Playground::RealToolExecutor
     authorize_records!(records, mutation: !read?(tool_id))
     arguments = exact_appointment_arguments(tool_id, arguments, records)
     delegate = definition.assistant_tool_class.new(@session.assistant, user: @session.user, conversation: conversation)
+    delegate.agent_scope = true if delegate.respond_to?(:agent_scope=)
     # Explicit target operations may have an old active? implementation requiring
     # a conversation. Record policies and the operation itself are authoritative.
     if read?(tool_id) && !delegate.active?

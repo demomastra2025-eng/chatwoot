@@ -367,15 +367,27 @@ module Onelink
       def rack_env_for(relative_path, method:, body_payload:, idempotency_key: nil)
         body_json = body_payload.nil? ? '' : JSON.generate(body_payload)
         Rack::MockRequest.env_for(
-          relative_path,
+          internal_https_url(relative_path),
           :method => method,
           :input => body_json,
+          'HTTPS' => 'on',
+          'HTTP_X_FORWARDED_PROTO' => 'https',
+          'HTTP_X_FORWARDED_SSL' => 'on',
           'HTTP_API_ACCESS_TOKEN' => auth_context.token_value,
           'HTTP_ACCEPT' => 'application/json',
           'CONTENT_TYPE' => 'application/json'
         ).tap do |env|
           env['HTTP_IDEMPOTENCY_KEY'] = idempotency_key.to_s if idempotency_key.present?
         end
+      end
+
+      def internal_https_url(relative_path)
+        host = URI.parse(ENV.fetch('FRONTEND_URL', 'https://localhost')).host.presence || 'localhost'
+        path = relative_path.to_s.start_with?('/') ? relative_path : "/#{relative_path}"
+        "https://#{host}#{path}"
+      rescue URI::InvalidURIError
+        path = relative_path.to_s.start_with?('/') ? relative_path : "/#{relative_path}"
+        "https://localhost#{path}"
       end
 
       def preserve_mini_profiler_current
@@ -441,7 +453,7 @@ module Onelink
       end
 
       def redact_value(value)
-        Captain::ToolTraceRedactor.call(value)
+        Onelink::Mcp::ResponseRedactor.call(value)
       rescue StandardError
         '[FILTERED]'
       end

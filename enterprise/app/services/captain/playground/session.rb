@@ -9,13 +9,17 @@ class Captain::Playground::Session
   # AI of the workspace, or of the channel the user picked: it has no start agent.
   attr_reader :assistant, :account, :user, :data, :scenario, :namespace, :store
 
-  def initialize(account:, user:, mode: 'workspace', session_id: nil)
+  def initialize(account:, user:, mode: 'workspace', session_id: nil, isolated: false)
     raise ArgumentError, 'Legacy Live Playground is unavailable; reset the session' if mode.to_s == 'live'
 
     @account = account
     @user = user
+    @fresh_isolated = isolated && session_id.blank?
+    @initial_id = "#{Captain::Playground::SessionStore::ISOLATED_PREFIX}#{SecureRandom.uuid}" if @fresh_isolated
     @requested_id = session_id.presence
-    @store = Captain::Playground::SessionStore.new(account: account, user: user, mode: mode)
+    @store = Captain::Playground::SessionStore.new(
+      account: account, user: user, mode: mode, session_id: @initial_id || @requested_id
+    )
   end
 
   def mode = 'workspace'
@@ -174,9 +178,12 @@ class Captain::Playground::Session
   private
 
   def load_data!(reset:, scenario_input:)
-    @data = store.read(session_id: reset ? nil : @requested_id)
+    @data = @fresh_isolated || reset ? nil : store.read(session_id: @requested_id)
     fresh = reset || @data.nil?
-    @data = new_data if fresh
+    if fresh
+      store.delete_isolated(@requested_id) if reset && @requested_id.present?
+      @data = new_data(id: reset ? reset_session_id : (@initial_id || SecureRandom.uuid))
+    end
     @namespace = Captain::Playground::SyntheticNamespace.new(id)
     @scenario = Captain::Playground::Scenario.new(data['scenario'])
     @assistant = account.captain_assistants.find_by(id: data['active_assistant_id'].to_i) if data['active_assistant_id'].present?
@@ -191,12 +198,20 @@ class Captain::Playground::Session
     store.set_permissions(session_id: id, read: false, write: false)
   end
 
-  def new_data
+  def reset_session_id
+    return "#{Captain::Playground::SessionStore::ISOLATED_PREFIX}#{SecureRandom.uuid}" if @requested_id.to_s.start_with?(
+      Captain::Playground::SessionStore::ISOLATED_PREFIX
+    )
+
+    SecureRandom.uuid
+  end
+
+  def new_data(id: SecureRandom.uuid)
     configuration = account.crm_field_definitions.active.ordered.map do |definition|
       definition.attributes.slice('entity_kind', 'key', 'label', 'field_type', 'required', 'default_value', 'description', 'options', 'rules',
                                   'active', 'position')
     end
-    { 'id' => SecureRandom.uuid, 'version' => 2, 'mode' => mode,
+    { 'id' => id, 'version' => 2, 'mode' => mode,
       'scenario' => Captain::Playground::Scenario.default(timezone: account.reporting_timezone).merge('custom_fields' => configuration),
       'history' => [], 'action_previews' => [] }
   end

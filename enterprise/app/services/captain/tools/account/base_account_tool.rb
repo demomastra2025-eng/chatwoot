@@ -1,6 +1,7 @@
 class Captain::Tools::Account::BaseAccountTool < Captain::Tools::BaseTool
   MAX_RESULTS = 50
   attr_accessor :patient_scope, :response_fence
+  attr_writer :agent_scope, :exclude_past_slots
 
   private
 
@@ -8,9 +9,13 @@ class Captain::Tools::Account::BaseAccountTool < Captain::Tools::BaseTool
     assistant.account
   end
 
-  # True in a patient conversation of the AI agent (the runtime hands the tool a patient scope), false for staff and Copilot.
+  # True in a patient conversation of the AI agent (or Playground real_data_read), false for staff and Copilot.
   def agent_scope?
-    patient_scope.present?
+    @agent_scope == true || patient_scope.present?
+  end
+
+  def exclude_past_slots?
+    @exclude_past_slots == true
   end
 
   def current_conversation

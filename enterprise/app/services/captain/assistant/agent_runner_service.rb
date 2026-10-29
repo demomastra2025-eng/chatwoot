@@ -117,6 +117,8 @@ class Captain::Assistant::AgentRunnerService
     return response if response['response_suppressed'] || response['response_cancelled']
     return response if ['conversation_handoff', PROVIDER_ERROR_RESPONSE, 'response_cancelled'].include?(response['response'])
 
+    response['response'] = Scheduling::IinValidator.redact_text(response['response'])
+
     Captain::Safety::CustomRulesRuntime.check_output!(
       account: account, agent_id: acting_agent_id, context: @custom_guardrail_context.to_h, response: response
     )
@@ -197,6 +199,7 @@ class Captain::Assistant::AgentRunnerService
     # the run waits for it at its first agent call.
     start_patient_language_detection
     message_to_process, context = time_phase('run_payload') { run_payload(message_history) }
+    @current_patient_text = latest_patient_text(message_to_process, context)
     Llm::EventBus.with_context(request_event_context(context)) do
       start_faq_preload(message_to_process, context)
       time_phase('routing_start') { start_routing(context) }
@@ -560,7 +563,7 @@ class Captain::Assistant::AgentRunnerService
       return provider_refusal_output_response(result, handoff_tool_called: handoff_tool_called)
     end
 
-    semantic_error = semantic_output_error(response)
+    semantic_error = semantic_output_error(response, result.context, handoff_tool_called: handoff_tool_called)
     return semantic_output_error_response(semantic_error, response, result.context, handoff_tool_called: handoff_tool_called) if semantic_error
 
     return suppressed_response(response) if response_suppressed?(response)
@@ -571,6 +574,7 @@ class Captain::Assistant::AgentRunnerService
       return final_error_response(error, result.context, handoff_tool_called: handoff_tool_called)
     end
 
+    response['response'] = Scheduling::IinValidator.redact_text(response['response']) if response['response'].is_a?(String)
     flag_draft!(response, result.context) if suggestion_run? && !council_turn?
     publish_tool_omission_event(response, result.context)
     moderate_output!(response, result.context&.dig(:state, :captain_runtime))
@@ -884,14 +888,48 @@ class Captain::Assistant::AgentRunnerService
     final_error_response(error, context, handoff_tool_called: handoff_tool_called)
   end
 
-  def semantic_output_error(response)
+  def semantic_output_error(response, context = nil, handoff_tool_called: false)
     return invalid_response_mode_error(response) unless response_mode_valid?(response)
     return invalid_public_response_error(response) if invalid_public_response?(response)
     return reserved_runtime_action_error(response) if reserved_runtime_action?(response)
     return provider_error_literal_error if provider_error_literal?(response)
     return invalid_handoff_output_error if invalid_handoff_output?(response)
+    return unsafe_suppressed_response_error if unsafe_suppressed_response?(response, context, handoff_tool_called: handoff_tool_called)
 
     nil
+  end
+
+  def unsafe_suppressed_response?(response, context, handoff_tool_called: false)
+    return false if suppression_allowed_for_turn?(response, context, handoff_tool_called)
+
+    suppressed_actionable_or_transfer_claim?(response, context)
+  end
+
+  def suppression_allowed_for_turn?(response, context, handoff_tool_called)
+    return true if suggestion_run? || !response_suppressed?(response)
+    return true if handoff_tool_called || ActiveModel::Type::Boolean.new.cast(response['resolve_tool_called'])
+
+    provider_booking_notification_deferred?(context) || response['council_handoff'].present?
+  end
+
+  def suppressed_actionable_or_transfer_claim?(response, context)
+    patient_text = @current_patient_text.presence || patient_text_from_context(context)
+    Captain::PatientIntent.actionable_request?(patient_text) ||
+      Captain::PatientIntent.claims_staff_transfer?(response['reasoning']) ||
+      Captain::PatientIntent.claims_staff_transfer?(response['operator_note'])
+  end
+
+  def patient_text_from_context(context)
+    unanswered_user_texts(context.to_h).map { |text| Captain::PromptClock.unstamped(text).squish }.reject(&:blank?).join("\n")
+  rescue StandardError
+    ''
+  end
+
+  def unsafe_suppressed_response_error
+    SemanticOutputError.new(
+      'unsafe_suppressed_response',
+      'Model output suppressed reply to an actionable patient request without handoff'
+    )
   end
 
   # `human` (a staff member must answer) exists in a reply suggestion only: in a live conversation the handoff tool does that.

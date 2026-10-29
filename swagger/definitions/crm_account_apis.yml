@@ -436,6 +436,9 @@ captain_custom_safety_rule:
         action: { type: string, enum: [handoff, block, rewrite] }
   additionalProperties: false
 
+captain_playground_request:
+  $ref: '#/components/schemas/captain_assistant_playground_parameters'
+
 captain_assistant_playground_request:
   type: object
   required: [assistant]
@@ -445,10 +448,13 @@ captain_assistant_playground_request:
 captain_assistant_playground_parameters:
   type: object
   properties:
-    message_content: { type: string, maxLength: 12000, description: Required for the default message action. }
-    playground_mode: { type: string, enum: [workspace, trial], default: workspace, description: Workspace uses a synthetic caller and server-owned history. The trial compatibility value also opens a workspace session; legacy live mode is rejected. }
+    message_content: { type: string, maxLength: 12000, description: "Required for the default message action." }
+    playground_mode: { type: string, enum: [workspace, trial], default: workspace, description: "Workspace uses a synthetic caller and server-owned history. The trial compatibility value also opens a workspace session; legacy live mode is rejected." }
     playground_action: { type: string, enum: [message, session, reset, permissions, confirm], default: message }
-    playground_session_id: { type: string, description: Server-owned session identifier scoped to this account, user and entry assistant. Required for permissions; use the same session for confirming a preview. }
+    playground_session_id: { type: string, description: "Server-owned session identifier scoped to this account and user. Omit to start a fresh isolated session; pass to continue a multi-turn session, change permissions, or confirm a preview." }
+    restore_session: { type: boolean, default: false, description: "Restore the operator's saved workspace browser session when playground_session_id is omitted." }
+    inbox_id: { type: integer, description: "Optional channel inbox ID to scope routing to the agents of that text or voice channel." }
+    live_inbox_id: { type: integer, description: "Compatibility alias for inbox_id." }
     scenario: { type: object, additionalProperties: true, description: Synthetic business data. Changing the scenario revokes pending real-action previews. }
     real_data_read: { type: boolean, default: false, description: Applied by the permissions action. Enables selected tools to read real account data under the current operator's permissions. }
     real_data_write: { type: boolean, default: false, description: Applied by the permissions action; requires real_data_read. Each real change still needs an explicit preview confirmation. }

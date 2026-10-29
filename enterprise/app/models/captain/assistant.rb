@@ -665,10 +665,11 @@ class Captain::Assistant < ApplicationRecord
     field_ids = referenced_field_ids_for_texts(prompt_field_texts + [text])
     prompt_state = prompt_context_state(runtime_state, field_ids: field_ids, mode: :customer)
 
-    resolve_runtime_value(
+    rendered = resolve_runtime_value(
       text, prompt_state, field_ids: field_ids, mode: :customer, bound_tool_ids: [],
                           time_zone: Captain::PromptClock.zone_for(conversation&.inbox&.timezone, account&.reporting_timezone)
     )
+    rendered.is_a?(String) ? Scheduling::IinValidator.redact_text(rendered) : rendered
   end
 
   def resolve_runtime_prompt_context(context, prompt_state, field_ids: nil)

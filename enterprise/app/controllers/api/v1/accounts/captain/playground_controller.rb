@@ -21,13 +21,24 @@ class Api::V1::Accounts::Captain::PlaygroundController < Api::V1::Accounts::Base
     render json: { error: 'playground_live_forbidden' }, status: :forbidden
   rescue ArgumentError, ActiveRecord::RecordInvalid => e
     render json: { error: 'invalid_playground_scenario', message: e.message }, status: :unprocessable_entity
-  rescue Rack::Timeout::RequestTimeoutException, Rack::Timeout::RequestTimeoutError => e
-    Rails.logger.warn("#{self.class.name} playground timed out for account #{Current.account.id}: #{e.class} - #{e.message}")
-
-    render json: { response: nil, timed_out: true }
+  rescue Rack::Timeout::RequestTimeoutException, Rack::Timeout::RequestTimeoutError, Timeout::Error => e
+    render_timeout_response(e)
   end
 
   private
+
+  def render_timeout_response(error)
+    Rails.logger.warn("#{self.class.name} playground timed out for account #{Current.account.id}: #{error.class} - #{error.message}")
+    render json: {
+      response: nil,
+      timed_out: true,
+      status: 'timed_out',
+      response_mode: 'human',
+      human_needed: true,
+      error_class: error.class.name,
+      operator_note: 'Request timed out; human follow-up required.'
+    }
+  end
 
   def playground_params
     params.permit(
@@ -39,6 +50,7 @@ class Api::V1::Accounts::Captain::PlaygroundController < Api::V1::Accounts::Base
       :playground_mode,
       :playground_session_id,
       :playground_action,
+      :restore_session,
       :real_data_read, :real_data_write, :approval_id, :approval_digest,
       :inbox_id,
       :live_inbox_id,
@@ -61,7 +73,7 @@ class Api::V1::Accounts::Captain::PlaygroundController < Api::V1::Accounts::Base
     raise ArgumentError, 'The Playground caller always stays synthetic' if attributes[:conversation_id].present?
     raise ArgumentError, 'External delivery is unavailable in Playground' if delivery_requested?
 
-    session = playground_session(attributes)
+    session = playground_session(action, attributes)
     return permissions_response(session, attributes) if action == 'permissions'
 
     session.with_lock(**lock_options(action, attributes)) do
@@ -84,10 +96,12 @@ class Api::V1::Accounts::Captain::PlaygroundController < Api::V1::Accounts::Base
     ActiveModel::Type::Boolean.new.cast(playground_params[:external_delivery_enabled])
   end
 
-  def playground_session(attributes)
+  def playground_session(action, attributes)
+    isolated = attributes[:playground_session_id].blank? && action != 'reset' &&
+               !ActiveModel::Type::Boolean.new.cast(attributes[:restore_session])
     Captain::Playground::Session.new(
       account: Current.account, user: Current.user, mode: attributes[:playground_mode].presence || 'workspace',
-      session_id: attributes[:playground_session_id]
+      session_id: attributes[:playground_session_id], isolated: isolated
     )
   end
 
@@ -110,6 +124,23 @@ class Api::V1::Accounts::Captain::PlaygroundController < Api::V1::Accounts::Base
     history = session.history_with(message_content)
     response = Captain::Assistant::AgentRunnerService.new(**options).generate_response(message_history: history)
     session.record_turn(message_content, response)
-    response.merge('playground' => session.payload, 'delivery' => Captain::Playground::ReplyDelivery.new(session).perform(response))
+    enrich_handoff_status(response).merge(
+      'playground' => session.payload,
+      'delivery' => Captain::Playground::ReplyDelivery.new(session).perform(response)
+    )
+  end
+
+  def enrich_handoff_status(response)
+    return response unless response.is_a?(Hash)
+
+    indifferent = response.with_indifferent_access
+    handoff_triggered = ActiveModel::Type::Boolean.new.cast(indifferent[:handoff_tool_called]) ||
+                        ActiveModel::Type::Boolean.new.cast(indifferent[:routing_handoff]) ||
+                        ['conversation_handoff', Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE].include?(
+                          indifferent[:response].to_s
+                        )
+    return response unless handoff_triggered
+
+    response.merge('human_needed' => true, 'status' => 'handoff_required')
   end
 end

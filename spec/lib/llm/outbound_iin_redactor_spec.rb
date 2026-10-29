@@ -251,7 +251,7 @@ RSpec.describe Llm::OutboundIinRedactor do
       expect(appt_text).to include('[ИИН СКРЫТ]')
     end
 
-    it 'hides IINs in Captain::ContextFields prompt mode while keeping deterministic customer notice mode intact' do
+    it 'hides IINs in both Captain::ContextFields prompt mode and outgoing customer runtime text while preserving non-IIN fields' do
       account = create(:account)
       account.enable_features!('scheduling')
       create(:custom_attribute_definition, account: account, attribute_key: 'iin', attribute_display_name: 'ИИН', attribute_model: :contact_attribute)
@@ -260,7 +260,7 @@ RSpec.describe Llm::OutboundIinRedactor do
         account: account,
         description: 'ID: [$ID](field://contact.identifier), IIN: [$IIN](field://contact.custom_attributes.iin)'
       )
-      contact = create(:contact, account: account, name: 'Айгуль', identifier: '940720300129', custom_attributes: { 'iin' => '940720300129' })
+      contact = create(:contact, account: account, name: 'Айгуль', identifier: '940720300129', custom_attributes: { 'iin' => '900101300123' })
       conversation = create(:conversation, account: account, contact: contact)
 
       runtime_state = Captain::ContextFields.runtime_state_for(account: account, conversation: conversation, assistant: assistant)
@@ -272,7 +272,15 @@ RSpec.describe Llm::OutboundIinRedactor do
 
       expect(prompt_rendered).to include('ID: not specified, IIN: not specified')
       expect(prompt_rendered).not_to include('940720300129')
-      expect(customer_rendered).to eq('ID: 940720300129, IIN: 940720300129')
+      expect(customer_rendered).to eq('ID: [ИИН СКРЫТ], IIN: [ИИН СКРЫТ]')
+
+      crm_contact = create(:contact, account: account, name: 'Айгуль', identifier: 'CRM-004219')
+      crm_conversation = create(:conversation, account: account, contact: crm_contact)
+      non_iin_rendered = assistant.render_runtime_text(
+        'ID: [$ID](field://contact.identifier), Имя: [$Name](field://contact.name)',
+        conversation: crm_conversation
+      )
+      expect(non_iin_rendered).to eq('ID: CRM-004219, Имя: Айгуль')
     end
 
     it 'hides IIN parameters and descriptions from Telephony::AiVoice::ToolDispatchService catalog and execution args' do

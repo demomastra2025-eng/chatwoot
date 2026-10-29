@@ -279,7 +279,11 @@ module Onelink
         idempotent = idempotent_for(tool_definition, risk_level: risk_level)
         destructive = risk_level != 'low'
         requires_confirmation = confirmation_required_for(tool_definition, metadata: metadata)
-        schema = normalize_input_schema(schema, requires_confirmation: requires_confirmation)
+        schema = normalize_input_schema(
+          schema,
+          requires_confirmation: requires_confirmation,
+          tool_id: tool_definition[:id].to_s
+        )
 
         {
           name: tool_definition[:id].to_s,
@@ -359,22 +363,31 @@ module Onelink
         build_tool(tool_definition)&.params_schema
       end
 
-      def normalize_input_schema(schema, requires_confirmation: false)
+      def normalize_input_schema(schema, requires_confirmation: false, tool_id: nil)
         normalized = schema.respond_to?(:as_json) ? schema.as_json : schema
         normalized = normalized.deep_stringify_keys if normalized.respond_to?(:deep_stringify_keys)
         normalized = {} unless normalized.is_a?(Hash)
         normalized['type'] ||= 'object'
         normalized['properties'] = {} unless normalized['properties'].is_a?(Hash)
         normalized['required'] = Array(normalized['required']).map(&:to_s)
-        if requires_confirmation
-          normalized['properties'][CONFIRM_ARGUMENT] = {
-            'type' => 'boolean',
-            'description' => 'Required true to execute this mutating OneLink Captain tool through MCP.'
-          }
-          normalized['required'] << CONFIRM_ARGUMENT
-          normalized['required'].uniq!
-        end
+        apply_tool_schema_extensions!(normalized, tool_id: tool_id, requires_confirmation: requires_confirmation)
         normalized
+      end
+
+      def apply_tool_schema_extensions!(normalized, tool_id:, requires_confirmation:)
+        if tool_id.to_s == 'search_available_slots'
+          normalized['properties']['include_past'] ||= {
+            'type' => 'boolean',
+            'description' => 'Include past slots earlier than current time for staff/audit queries (default false).'
+          }
+        end
+        return unless requires_confirmation
+
+        normalized['properties'][CONFIRM_ARGUMENT] = {
+          'type' => 'boolean',
+          'description' => 'Required true to execute this mutating OneLink Captain tool through MCP.'
+        }
+        normalized['required'] = (normalized['required'] + [CONFIRM_ARGUMENT]).uniq
       end
 
       def build_tool(tool_definition, arguments: {}, meta: {})
@@ -385,7 +398,9 @@ module Onelink
           user: auth_context.user,
           conversation: conversation_for(arguments, meta),
           copilot_thread: copilot_thread_for(meta)
-        )
+        )&.tap do |tool|
+          tool.exclude_past_slots = true if tool.respond_to?(:exclude_past_slots=)
+        end
       end
 
       def conversation_for(arguments, meta)
@@ -446,7 +461,7 @@ module Onelink
       end
 
       def redact_value(value)
-        Captain::ToolTraceRedactor.call(value)
+        Onelink::Mcp::ResponseRedactor.call(value)
       rescue StandardError
         '[FILTERED]'
       end

@@ -73,6 +73,10 @@ class Captain::Tools::Account::SearchBookingOptionsService < Captain::Tools::Acc
 
   private
 
+  def tool_scope_name
+    Captain::ToolAccess::SCOPE_AGENT
+  end
+
   # The answer, or the failure text of the first of the tools that failed.
   def booking_options(services, doctor)
     catalog = service_search(services)
@@ -118,6 +122,7 @@ class Captain::Tools::Account::SearchBookingOptionsService < Captain::Tools::Acc
   def read(tool_class, **arguments)
     tool = tool_class.new(assistant, user: @user, conversation: @conversation)
     tool.patient_scope = patient_scope
+    tool.agent_scope = true if agent_scope? && tool.respond_to?(:agent_scope=)
     tool.response_fence = response_fence
     execute_method = tool.method(:execute)
     execute_method = execute_method.super_method if execute_method.owner == Captain::Tools::Instrumentation && execute_method.super_method

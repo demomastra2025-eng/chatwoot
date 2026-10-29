@@ -353,6 +353,8 @@ captain_outcome_reason_option:
   $ref: ./crm_account_apis.yml#/captain_outcome_reason_option
 captain_removed_rules_error:
   $ref: ./crm_account_apis.yml#/captain_removed_rules_error
+captain_playground_request:
+  $ref: ./crm_account_apis.yml#/captain_playground_request
 captain_assistant_playground_request:
   $ref: ./crm_account_apis.yml#/captain_assistant_playground_request
 captain_assistant_playground_response:

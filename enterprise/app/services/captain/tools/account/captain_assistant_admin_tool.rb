@@ -15,7 +15,7 @@ class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Accou
   ]).freeze
   SENSITIVE_KEY_PATTERN = /(otp|token|secret|password|credential|authorization|process_?id|session|api_?key|access_?key|refresh|url|webhook)/i
   SENSITIVE_VALUE_PATTERN = %r{
-    https?://|
+    https?://[^\s"']*(?:webhook|token|secret|api[_-]?key|password|credential|callback)|
     bearer\s+|
     authorization\s*[:=]|
     (?:token|api[_\s-]?key|secret|password|credential|session|webhook)\s*[:=]

@@ -29,12 +29,23 @@ module Captain::Playground::AvailabilityTools
   end
 
   def available_slots
-    from = parse_time(@args.fetch('from'))
+    raw_from = parse_time(@args.fetch('from'))
     to = parse_time(@args.fetch('to'))
-    Scheduling::AvailableSlotSearchService.new(
+    now = Time.current.to_time.localtime(raw_from.utc_offset)
+    if to <= now
+      return {
+        total_slots: 0, slots: [], range: { from: raw_from.iso8601, to: to.iso8601 },
+        requested_range_status: 'range_passed', simulated: true
+      }
+    end
+
+    from = [raw_from, now].max
+    payload = Scheduling::AvailableSlotSearchService.new(
       account: @session.account, from: from, to: to, snapshots: scheduling_snapshots,
       **@args.slice('resource_ids', 'service_id', 'duration_min', 'limit').symbolize_keys
-    ).perform.merge(simulated: true)
+    ).perform
+    filtered = Array(payload[:slots]).select { |slot| Time.iso8601(slot[:starts_at].to_s) >= now }
+    payload.merge(total_slots: filtered.size, slots: filtered, simulated: true)
   end
 
   def resource_schedule
@@ -50,11 +61,26 @@ module Captain::Playground::AvailabilityTools
     if service && !scheduling_snapshots.linked_resource_ids(service.id).include?(resource.id)
       raise ArgumentError, 'No recorded service-price link for this resource; provider eligibility is unverified'
     end
-    scheduling_snapshots.availability(resource: resource, from: parse_time(@args.fetch('from')), to: parse_time(@args.fetch('to')), service: service,
-                                     **@args.slice('duration_min', 'limit').symbolize_keys).merge(
-                                       simulated: true, availability_source: 'local_rules', provider_checked: false, provider_required: false,
-                                       service_link_status: service ? 'local_configured' : 'not_requested'
-                                     )
+    raw_from = parse_time(@args.fetch('from'))
+    to = parse_time(@args.fetch('to'))
+    now = Time.current.to_time.localtime(raw_from.utc_offset)
+    if to <= now
+      return {
+        resource: Scheduling::PayloadBuilder.resource(resource), timezone: resource.timezone,
+        total_slots: 0, slots: [], requested_range_status: 'range_passed', simulated: true
+      }
+    end
+
+    payload = scheduling_snapshots.availability(
+      resource: resource, from: [raw_from, now].max, to: to, service: service,
+      **@args.slice('duration_min', 'limit').symbolize_keys
+    )
+    filtered = Array(payload[:slots]).select { |slot| Time.iso8601(slot[:starts_at].to_s) >= now }
+    payload.merge(
+      total_slots: filtered.size, slots: filtered,
+      simulated: true, availability_source: 'local_rules', provider_checked: false, provider_required: false,
+      service_link_status: service ? 'local_configured' : 'not_requested'
+    )
   end
 
   def scheduling_snapshots

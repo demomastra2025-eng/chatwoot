@@ -1007,11 +1007,12 @@ class Captain::ContextFields
 
     def reference_text(value, field_id, mode:, time_zone:, bound_tool_ids:)
       customer = mode == :customer
-      unless customer
-        return NOT_SPECIFIED if prompt_hidden_field_id?(field_id)
+      if prompt_hidden_field_id?(field_id)
+        return NOT_SPECIFIED unless customer
 
-        value = Scheduling::IinValidator.sanitize_identifier(value) if field_id == 'contact.identifier'
+        return value.to_s.strip.present? ? Scheduling::IinValidator::REDACTED_PLACEHOLDER : ''
       end
+      value = Scheduling::IinValidator.sanitize_identifier(value) if !customer && field_id == 'contact.identifier'
 
       if field_id.match?(APPOINTMENT_BLOCK_FIELD_ID)
         return customer ? '' : Scheduling::IinValidator.redact_text(
@@ -1029,7 +1030,7 @@ class Captain::ContextFields
       rendered = plain_value(value, time_zone, json: !customer).presence
       return customer ? '' : NOT_SPECIFIED if rendered.blank?
 
-      customer ? rendered : Scheduling::IinValidator.redact_text(rendered)
+      Scheduling::IinValidator.redact_text(rendered)
     end
 
     def prompt_hidden_field_id?(field_id)

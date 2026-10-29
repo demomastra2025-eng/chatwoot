@@ -3853,13 +3853,47 @@ x-scheduling-time-off-schema: &scheduling_time_off_schema
     summary: Delete an account Captain assistant
     security: [{ userApiKey: [] }]
     responses: { '204': { description: Deleted }, '404': { description: Assistant not found } }
+/api/v1/accounts/{account_id}/captain/playground:
+  parameters: [{ $ref: '#/components/parameters/account_id' }]
+  post:
+    tags: [Captain Assistants]
+    operationId: test-captain-workspace-playground
+    summary: Run one workspace Captain playground request
+    description: Tests the workspace AI with account-scoped routing (or a specific channel via inbox_id) using a synthetic caller and isolated server-owned sessions. When playground_session_id is omitted (and restore_session is not true), a fresh isolated session is created so sequential or concurrent API/MCP test cases never bleed history. Pass playground_session_id from the response to continue a multi-turn conversation, toggle real_data_read/real_data_write permissions, or confirm an action preview.
+    security: [{ userApiKey: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/captain_playground_request' }
+    responses:
+      '200':
+        description: Message response, session state, confirmed action result or timeout response
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/captain_assistant_playground_response' }
+      '422':
+        description: Invalid scenario, action, expired preview, legacy live mode or unsupported per-request override
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      '403':
+        description: Workspace, acting agent, tool or real-record access is not authorized
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      '409':
+        description: Session is already running, expired or changed
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
 /api/v1/accounts/{account_id}/captain/assistants/{id}/playground:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
     tags: [Captain Assistants]
     operationId: test-captain-assistant-playground
-    summary: Run one assistant playground request
-    description: External agents use server-owned workspace sessions with a synthetic caller and account-scoped routing. Real-data permissions start disabled; the permissions action enables reads or previews of real changes under the current operator's access. Every real change requires a confirm request bound to the unchanged preview, session and acting agent. External delivery is unavailable. Session, reset and permissions actions do not generate a message. Message responses expose the acting agent and any task queue results. Per-request model, temperature and reasoning controls are validated and never saved; the internal assistant playground is feature-gated and rejects those overrides. Latency is measured; reasoning tokens are returned only when reported by the provider.
+    summary: Run one internal Copilot assistant playground request
+    description: Internal-assistant (Copilot) playground endpoint; returns 404 for external patient-facing agents (use POST /api/v1/accounts/{account_id}/captain/playground to test external agents and workspace routing).
     security: [{ userApiKey: [] }]
     requestBody:
       required: true

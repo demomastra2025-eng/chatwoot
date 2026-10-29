@@ -200,6 +200,7 @@ const loadSession = async ({
     const { data } = await CaptainPlayground.session({
       sessionId: session.value?.session_id,
       reset,
+      restoreSession: restoreHistory && !reset,
       scenario,
     });
     if (
@@ -314,6 +315,7 @@ const sendMessage = async () => {
     )
       return;
     const replyContent =
+      data.timed_out ||
       data.error_class ||
       data.error_message ||
       data.response === 'conversation_handoff_due_to_provider_error'

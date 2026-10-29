@@ -70,7 +70,8 @@ class Captain::ReplySuggestionService < Captain::BaseTaskService
   end
 
   def legacy_draft(result)
-    claim_check = Captain::ReplySuggestion::DraftClaims.check(draft: result[:message], context: {}, account: account)
+    redacted_message = Scheduling::IinValidator.redact_text(result[:message].to_s)
+    claim_check = Captain::ReplySuggestion::DraftClaims.check(draft: redacted_message, context: {}, account: account)
     if claim_check == :unavailable
       return Captain::ReplySuggestion::Outcome.human_needed(
         reason: I18n.t('captain.reply_suggestion.reasons.claim_check_unavailable'),
@@ -79,13 +80,13 @@ class Captain::ReplySuggestionService < Captain::BaseTaskService
     end
     if claim_check == :done
       return Captain::ReplySuggestion::Outcome.human_needed(
-        reason: I18n.t('captain.reply_suggestion.reasons.unsupported_claims', claims: result[:message].to_s.squish.truncate(120)),
+        reason: I18n.t('captain.reply_suggestion.reasons.unsupported_claims', claims: redacted_message.squish.truncate(120)),
         reason_source: 'safety', engine: LEGACY_ENGINE
       )
     end
 
     Captain::ReplySuggestion::Outcome.draft(
-      message: result[:message].to_s.strip, engine: LEGACY_ENGINE, usage: result[:usage], follow_up_context: result[:follow_up_context],
+      message: redacted_message.strip, engine: LEGACY_ENGINE, usage: result[:usage], follow_up_context: result[:follow_up_context],
       agent: nil, captain_trace: nil, suggestion_meta: nil
     )
   end

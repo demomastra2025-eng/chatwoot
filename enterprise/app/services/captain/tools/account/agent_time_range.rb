@@ -14,7 +14,7 @@ module Captain::Tools::Account::AgentTimeRange
 
   # [from, to] of the range the tool reads: from is never before now in the agent scope. nil when the whole range is before now.
   def present_range(range_from, range_to)
-    return [range_from, range_to] unless agent_scope?
+    return [range_from, range_to] unless agent_scope? || exclude_past_slots?
 
     now = Time.current.in_time_zone(range_from.time_zone)
     return if range_to <= now

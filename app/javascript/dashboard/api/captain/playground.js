@@ -28,10 +28,19 @@ class CaptainPlayground extends ApiClient {
   }
 
   // A reset starts a new session, so the channel is sent again with it.
-  session({ sessionId, reset = false, scenario, inboxId } = {}) {
+  session({
+    sessionId,
+    reset = false,
+    restoreSession = false,
+    scenario,
+    inboxId,
+  } = {}) {
     return axios.post(this.url, {
       playground_mode: 'workspace',
       playground_action: reset ? 'reset' : 'session',
+      ...(restoreSession && !reset && !sessionId
+        ? { restore_session: true }
+        : {}),
       ...(sessionId ? { playground_session_id: sessionId } : {}),
       ...(inboxId ? { inbox_id: inboxId } : {}),
       ...(scenario ? { scenario } : {}),

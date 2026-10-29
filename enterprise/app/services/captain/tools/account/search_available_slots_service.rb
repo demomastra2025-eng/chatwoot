@@ -2,6 +2,7 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
   include Captain::Tools::Account::SchedulingQueryValidation
   include Captain::Tools::Account::AgentTimeRange
   NEXT_AVAILABLE_LOOKAHEAD_DAYS = 7
+  CLOCK_DRIFT_WINDOW = 5.minutes
   # The note of an empty range on a day without reception: the agent says so and offers the days of next_available.
   NO_RECEPTION_NOTE = 'There is no reception on the requested day by the schedule (it is not a working day). Tell the patient ' \
                       'that there is no reception then and offer the nearest working days from next_available.'.freeze
@@ -33,11 +34,15 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
   # Staff and Copilot get the full payload with the slots one by one, cut at limit. The patient agent gets the compact answer of
   # Captain::Tools::Agent::SlotsPayload: every free start of the range grouped by specialist and day, where limit is the number of
   # specialist-days listed and a day is never cut short.
-  def execute(from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil) # rubocop:disable Metrics/ParameterLists
+  def execute(from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil, include_past: false) # rubocop:disable Metrics/ParameterLists
+    @include_past = ActiveModel::Type::Boolean.new.cast(include_past) == true
+    @filter_staff_past_slots = false
     search_params = build_search_params(from, to, resource_ids, service_id, duration_min)
     return agent_answer(search_params, limit) if agent_scope?
+    return staff_passed_range_answer(search_params) if staff_range_passed?(search_params)
 
     payload = Scheduling::AvailableSlotSearchService.new(**search_params, limit: limit).perform
+    payload = filter_past_staff_slots(payload) if @filter_staff_past_slots
     publish_service_match(payload)
     formatted_payload(prioritize_slot_keys(payload))
   rescue Scheduling::AvailableSlotSearchService::ResourceSelectionRequiredError
@@ -67,13 +72,61 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
     range_from = scheduling_datetime(from, field_name: 'from')
     range_to = scheduling_datetime(to, field_name: 'to')
     scheduling_range!(range_from, range_to, allow_equal: true)
-    # The patient is never offered a time that has passed: a range that began earlier starts now. A range that ended before now
-    # keeps its bounds and is not searched (see #passed_range_answer).
-    present_range(range_from, range_to) || [range_from, range_to]
+    @requested_time_of_day = explicit_afternoon_request(from, range_from)
+    return present_range(range_from, range_to) || [range_from, range_to] if agent_scope?
+
+    clamp_staff_present_range(range_from, range_to)
+  end
+
+  def explicit_afternoon_request(raw_from, parsed_from)
+    return if raw_from.to_s.strip.match?(/\A\d{4}-\d{2}-\d{2}\z/)
+    return if parsed_from.hour < 12
+
+    now = Time.current.in_time_zone(parsed_from.time_zone)
+    return if parsed_from.to_date == now.to_date && (parsed_from - now).abs <= CLOCK_DRIFT_WINDOW
+
+    parsed_from
+  end
+
+  def clamp_staff_present_range(range_from, range_to)
+    return [range_from, range_to] if @include_past
+
+    now = Time.current.in_time_zone(range_from.time_zone)
+    if exclude_past_slots? || (range_from < now && range_to > now)
+      @filter_staff_past_slots = true
+      range_from = [range_from, now].max if range_to > now
+    end
+    [range_from, range_to]
   end
 
   def range_passed?(search_params)
     agent_scope? && search_params[:to] <= Time.current
+  end
+
+  def staff_range_passed?(search_params)
+    !@include_past && exclude_past_slots? && search_params[:to] <= Time.current
+  end
+
+  def staff_passed_range_answer(search_params)
+    formatted_payload(
+      total_slots: 0,
+      slots: [],
+      range: { from: search_params[:from].iso8601, to: search_params[:to].iso8601 },
+      requested_service_id: search_params[:service_id],
+      requested_range_status: RANGE_PASSED_STATUS,
+      requested_range_note: range_passed_note('Pass a future range or include_past: true.')
+    )
+  end
+
+  def filter_past_staff_slots(payload)
+    now = Time.current
+    filtered = Array(payload[:slots]).select do |slot|
+      starts_at = slot[:starts_at] || slot['starts_at']
+      starts_at.present? && Time.iso8601(starts_at.to_s) >= now
+    rescue ArgumentError
+      true
+    end
+    payload.merge(total_slots: filtered.size, slots: filtered)
   end
 
   # Retryable: the same search with resource_ids of a chosen specialist answers it.
@@ -137,7 +190,7 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
     lookahead = Scheduling::CompleteSlotSearchService.new(
       **search_params, from: next_from, to: next_from + NEXT_AVAILABLE_LOOKAHEAD_DAYS.days
     ).perform
-    days = Captain::Tools::Agent::SlotsPayload.next_available(Array(lookahead[:slots]), requested_from: search_params[:from])
+    days = Captain::Tools::Agent::SlotsPayload.next_available(Array(lookahead[:slots]), requested_from: @requested_time_of_day)
     days.present? ? { next_available: days } : {}
   rescue StandardError
     {}

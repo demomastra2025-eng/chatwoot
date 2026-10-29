@@ -740,6 +740,28 @@ describe('one Playground workspace', () => {
     wrapper.unmount();
   });
 
+  it('requests restoreSession on initial mount and renders timed_out responses as provider error instead of empty message', async () => {
+    mocks.playground.mockResolvedValueOnce({
+      data: {
+        response: null,
+        timed_out: true,
+        status: 'timed_out',
+        response_mode: 'human',
+        human_needed: true,
+        playground: payload(),
+      },
+    });
+    const wrapper = mountPlayground({ realMessages: true });
+    await flushPromises();
+    expect(mocks.playgroundSession).toHaveBeenCalledWith(
+      expect.objectContaining({ restoreSession: true, reset: false })
+    );
+    await send(wrapper, 'Slow request');
+    expect(wrapper.text()).toContain('CAPTAIN.PLAYGROUND.PROVIDER_ERROR');
+    expect(wrapper.text()).not.toContain('CAPTAIN.COPILOT.EMPTY_MESSAGE');
+    wrapper.unmount();
+  });
+
   it('disables messaging and clears session state when metadata fetch fails', async () => {
     const delayedSession = deferred();
     mocks.playgroundSession.mockReturnValueOnce(delayedSession.promise);

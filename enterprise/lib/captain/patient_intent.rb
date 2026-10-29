@@ -133,8 +133,24 @@ module Captain::PatientIntent
   WHOLE_WORD_HUMAN = /(?<![[:alpha:]])(?:суд|иск|сот)(?:у|а|е|ы|ом|ка|ке|ты|ти|тан|тен|пен)?(?![[:alpha:]])/
   ACCEPT = pattern(ACCEPT_STEMS)
   COMING = pattern(COMING_STEMS)
+  CLINIC_INQUIRY_STEMS = [
+    'стоим', 'цен(?:а|ы|у|е|ой)(?![[:alpha:]])', 'прайс', 'свободн', 'окошк', 'окн(?:а|о)(?![[:alpha:]])',
+    'расписани', 'график', 'адрес', 'прием', 'врем\p{L}* работ', 'режим работ', 'консультаци',
+    'бага', 'бос уакыт', 'кесте', 'мекенжай', 'price', 'schedule', 'available', 'slot'
+  ].freeze
+  STAFF_TRANSFER_STEMS = [
+    '(?:переда|перевед|перевож|перевод|перевел|перенаправ|переключ)\p{L}* ' \
+    '(?:диалог |запрос |обращени\p{L}* |чат |клиент\p{L}* |пациент\p{L}* |вас )?(?:на |к )?(?:живо\p{L}* )?' \
+    '(?:сотрудник|оператор|админ|менеджер|специалист|коллег|человек)',
+    'кызметкерге (?:бер|тапсыр|багытта)',
+    'transfer\p{L}* to (?:(?:a|an|the) )?(?:live |human )?(?:staff|human|operator|agent|admin|manager)',
+    'hand\p{L}* off to (?:(?:a|an|the) )?(?:live |human )?(?:staff|human|operator|agent|admin|manager)'
+  ].freeze
+
   QUESTION = pattern(QUESTION_STEMS)
   TIME_OR_DATE = pattern(TIME_STEMS)
+  CLINIC_INQUIRY = pattern(CLINIC_INQUIRY_STEMS)
+  STAFF_TRANSFER_CLAIM = pattern(STAFF_TRANSFER_STEMS)
 
   module_function
 
@@ -177,6 +193,26 @@ module Captain::PatientIntent
   # The patient puts a question in words, with or without a question mark («Спасибо, буду. Адрес какой», «қашан келемін»).
   def question?(text)
     folded(text).match?(QUESTION)
+  end
+
+  def clinic_inquiry?(text)
+    folded_text = folded(text)
+    return false if folded_text.match?(THANKS) && !folded_text.match?(QUESTION) && !text.to_s.match?(/[?？]/)
+
+    folded_text.match?(CLINIC_INQUIRY)
+  end
+
+  def actionable_request?(text)
+    return false if text.to_s.squish.blank?
+
+    booking_change?(text) || human_request?(text) || question?(text) || text.to_s.match?(/[?？]/) ||
+      greeting?(text) || clinic_inquiry?(text) || (names_time?(text) && !thanks?(text) && !confirms_visit?(text))
+  end
+
+  def claims_staff_transfer?(text)
+    return false if text.to_s.squish.blank?
+
+    folded(text).match?(STAFF_TRANSFER_CLAIM)
   end
 
   # The text names a time or a date: 10:00, 24.10, «завтра», «в четверг», «ертең».

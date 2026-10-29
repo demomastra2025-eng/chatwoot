@@ -29,8 +29,7 @@ class Captain::Tools::Account::GetSchedulingResourceAvailabilityService < Captai
     return formatted_payload(passed_range_payload(resource)) unless present
 
     range_from, range_to = present
-    payload = availability_payload(resource, service_record, service_id, range_from, range_to, duration_min, limit)
-    payload = named_slots(payload, resource) if agent_scope?
+    payload = post_process_slots(availability_payload(resource, service_record, service_id, range_from, range_to, duration_min, limit), resource)
     absences = Scheduling::TimeOffPayload.for(account: account, resource_ids: [resource.id], from: range_from, to: range_to)
     payload[:absences] = absences if absences.any?
 
@@ -47,6 +46,24 @@ class Captain::Tools::Account::GetSchedulingResourceAvailabilityService < Captai
 
   # In a patient conversation every slot carries the name of its specialist, as a day of search_available_slots does: a time is never
   # read without whose it is (the eval of 27.10: the times of one specialist were given under the name of another).
+  def post_process_slots(payload, resource)
+    result = agent_scope? || exclude_past_slots? ? filter_past_slots(payload) : payload
+    agent_scope? ? named_slots(result, resource) : result
+  end
+
+  def filter_past_slots(payload)
+    return payload unless payload[:slots].is_a?(Array)
+
+    now = Time.current
+    filtered = payload[:slots].select do |slot|
+      starts_at = slot.is_a?(Hash) ? (slot[:starts_at] || slot['starts_at']) : nil
+      starts_at.present? && Time.iso8601(starts_at.to_s) >= now
+    rescue ArgumentError
+      true
+    end
+    payload.merge(total_slots: filtered.size, slots: filtered)
+  end
+
   def named_slots(payload, resource)
     return payload unless payload[:slots].is_a?(Array)
 

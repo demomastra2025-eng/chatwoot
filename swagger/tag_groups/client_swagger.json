@@ -1372,8 +1372,20 @@
           },
           "playground_session_id": {
             "type": "string",
-            "description": "Server-owned session identifier scoped to this account",
-            "user and entry assistant. Required for permissions; use the same session for confirming a preview.": null
+            "description": "Server-owned session identifier scoped to this account and user. Omit to start a fresh isolated session; pass to continue a multi-turn session, change permissions, or confirm a preview."
+          },
+          "restore_session": {
+            "type": "boolean",
+            "default": false,
+            "description": "Restore the operator's saved workspace browser session when playground_session_id is omitted."
+          },
+          "inbox_id": {
+            "type": "integer",
+            "description": "Optional channel inbox ID to scope routing to the agents of that text or voice channel."
+          },
+          "live_inbox_id": {
+            "type": "integer",
+            "description": "Compatibility alias for inbox_id."
           },
           "scenario": {
             "type": "object",
@@ -8693,6 +8705,9 @@
           }
         },
         "additionalProperties": false
+      },
+      "captain_playground_request": {
+        "$ref": "#/components/schemas/captain_assistant_playground_parameters"
       },
       "captain_assistant_playground_request": {
         "type": "object",

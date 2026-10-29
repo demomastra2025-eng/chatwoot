@@ -82,12 +82,8 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     render json: copilot_playground_response
   rescue ArgumentError, ActiveRecord::RecordInvalid => e
     render json: { error: 'invalid_playground_scenario', message: e.message }, status: :unprocessable_entity
-  rescue Rack::Timeout::RequestTimeoutException, Rack::Timeout::RequestTimeoutError => e
-    Rails.logger.warn(
-      "#{self.class.name} playground timed out for assistant #{@assistant.id}: #{e.class} - #{e.message}"
-    )
-
-    render json: { response: nil, timed_out: true }
+  rescue Rack::Timeout::RequestTimeoutException, Rack::Timeout::RequestTimeoutError, Timeout::Error => e
+    render_playground_timeout_response(e)
   end
 
   def tools
@@ -286,6 +282,19 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
 
   def avatar_params
     params.permit(:avatar)
+  end
+
+  def render_playground_timeout_response(error)
+    Rails.logger.warn("#{self.class.name} playground timed out for assistant #{@assistant.id}: #{error.class} - #{error.message}")
+    render json: {
+      response: nil,
+      timed_out: true,
+      status: 'timed_out',
+      response_mode: 'human',
+      human_needed: true,
+      error_class: error.class.name,
+      operator_note: 'Request timed out; human follow-up required.'
+    }
   end
 
   def playground_params
