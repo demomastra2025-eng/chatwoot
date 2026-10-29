@@ -42,7 +42,9 @@
     },
     "ATTRIBUTE_LABELS": {
       "TRUE": "True",
-      "FALSE": "False"
+      "FALSE": "False",
+      "YES": "Yes",
+      "NO": "No"
     },
     "ATTRIBUTES": {
       "STATUS": "Status",
@@ -64,7 +66,9 @@
       "CUSTOM_ATTRIBUTE_LINK": "Link",
       "CUSTOM_ATTRIBUTE_CHECKBOX": "Checkbox",
       "CREATED_AT": "Created at",
-      "LAST_ACTIVITY": "Last activity"
+      "LAST_ACTIVITY": "Last activity",
+      "META_AD_REFERRAL": "Ad referral (Meta Ads)",
+      "META_AD_SOURCE_ID": "Ad (ID / headline)"
     },
     "ERRORS": {
       "VALUE_REQUIRED": "Value is required",

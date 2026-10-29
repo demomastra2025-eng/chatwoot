@@ -3,6 +3,7 @@ import {
   OPERATOR_TYPES_2,
   OPERATOR_TYPES_3,
   OPERATOR_TYPES_5,
+  OPERATOR_TYPES_6,
 } from 'dashboard/components/widgets/FilterInput/FilterOperatorTypes.js';
 const filterTypes = [
   {
@@ -93,6 +94,22 @@ const filterTypes = [
     filterOperators: OPERATOR_TYPES_2,
     attributeModel: 'standard',
   },
+  {
+    attributeKey: 'meta_ad_referral',
+    attributeI18nKey: 'META_AD_REFERRAL',
+    inputType: 'search_select',
+    dataType: 'text',
+    filterOperators: OPERATOR_TYPES_2,
+    attributeModel: 'standard',
+  },
+  {
+    attributeKey: 'meta_ad_source_id',
+    attributeI18nKey: 'META_AD_SOURCE_ID',
+    inputType: 'plain_text',
+    dataType: 'text',
+    filterOperators: OPERATOR_TYPES_6,
+    attributeModel: 'standard',
+  },
 ];
 
 export const filterAttributeGroups = [
@@ -139,6 +156,14 @@ export const filterAttributeGroups = [
       {
         key: 'labels',
         i18nKey: 'LABELS',
+      },
+      {
+        key: 'meta_ad_referral',
+        i18nKey: 'META_AD_REFERRAL',
+      },
+      {
+        key: 'meta_ad_source_id',
+        i18nKey: 'META_AD_SOURCE_ID',
       },
     ],
   },

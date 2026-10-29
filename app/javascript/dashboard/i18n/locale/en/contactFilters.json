@@ -49,7 +49,9 @@
       "LAST_ACTIVITY": "Last Activity",
       "REFERER_LINK": "Referrer link",
       "BLOCKED": "Blocked",
-      "LABELS": "Tags"
+      "LABELS": "Tags",
+      "META_AD_REFERRAL": "Ad referral (Meta Ads)",
+      "META_AD_SOURCE_ID": "Ad (ID / headline)"
     },
     "GROUPS": {
       "STANDARD_FILTERS": "Standard Filters",

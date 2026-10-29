@@ -65,7 +65,6 @@ export function useConversationFilterContext() {
   const labels = useMapGetter('labels/getLabels');
   const agents = useMapGetter('agents/getAgents');
   const inboxes = useMapGetter('inboxes/getInboxes');
-  const teams = useMapGetter('teams/getTeams');
   const campaigns = useMapGetter('campaigns/getAllCampaigns');
   const crmReferencesStore = useCrmReferencesStore();
 
@@ -73,6 +72,7 @@ export function useConversationFilterContext() {
     equalityOperators,
     presenceOperators,
     containmentOperators,
+    textPresenceOperators,
     dateOperators,
     getOperatorTypes,
   } = useOperators();
@@ -244,6 +244,36 @@ export function useConversationFilterContext() {
     ...(defaultPipelineStageFilter.value
       ? [defaultPipelineStageFilter.value]
       : []),
+    {
+      attributeKey: CONVERSATION_ATTRIBUTES.META_AD_REFERRAL,
+      value: CONVERSATION_ATTRIBUTES.META_AD_REFERRAL,
+      attributeName: t('FILTER.ATTRIBUTES.META_AD_REFERRAL'),
+      label: t('FILTER.ATTRIBUTES.META_AD_REFERRAL'),
+      inputType: 'searchSelect',
+      options: [
+        {
+          id: 'true',
+          name: t('FILTER.ATTRIBUTE_LABELS.YES'),
+        },
+        {
+          id: 'false',
+          name: t('FILTER.ATTRIBUTE_LABELS.NO'),
+        },
+      ],
+      dataType: 'text',
+      filterOperators: presenceOperators.value,
+      attributeModel: 'standard',
+    },
+    {
+      attributeKey: CONVERSATION_ATTRIBUTES.META_AD_SOURCE_ID,
+      value: CONVERSATION_ATTRIBUTES.META_AD_SOURCE_ID,
+      attributeName: t('FILTER.ATTRIBUTES.META_AD_SOURCE_ID'),
+      label: t('FILTER.ATTRIBUTES.META_AD_SOURCE_ID'),
+      inputType: 'plainText',
+      dataType: 'text',
+      filterOperators: textPresenceOperators.value,
+      attributeModel: 'standard',
+    },
     {
       attributeKey: CONVERSATION_ATTRIBUTES.BROWSER_LANGUAGE,
       value: CONVERSATION_ATTRIBUTES.BROWSER_LANGUAGE,

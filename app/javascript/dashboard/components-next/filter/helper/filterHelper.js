@@ -10,6 +10,8 @@ export const CONVERSATION_ATTRIBUTES = {
   CAMPAIGN_ID: 'campaign_id',
   LABELS: 'labels',
   CRM_STAGE_ID: 'crm_stage_id',
+  META_AD_REFERRAL: 'meta_ad_referral',
+  META_AD_SOURCE_ID: 'meta_ad_source_id',
   BROWSER_LANGUAGE: 'browser_language',
   REFERER: 'referer',
   CREATED_AT: 'created_at',
@@ -28,6 +30,8 @@ export const CONTACT_ATTRIBUTES = {
   REFERER: 'referer',
   BLOCKED: 'blocked',
   LABELS: 'labels',
+  META_AD_REFERRAL: 'meta_ad_referral',
+  META_AD_SOURCE_ID: 'meta_ad_source_id',
 };
 
 /**

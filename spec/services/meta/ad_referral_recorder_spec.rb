@@ -130,4 +130,58 @@ RSpec.describe Meta::AdReferralRecorder do
     expect(referral).to be_persisted
     expect(referral.communication_thread_id).to be_nil
   end
+
+  describe 'idempotent Meta Ads auto-tagging' do
+    it 'auto-tags conversation and contact with existing Реклама and mapped offer labels while preserving existing tags' do
+      base_label = account.labels.create!(title: nil, display_title: 'Реклама')
+      offer_label = account.labels.create!(title: nil, display_title: 'Реклама: МРТ + невролог')
+      account.update!(custom_attributes: { 'meta_ads_source_label_map' => { '23877210000123456' => offer_label.id } })
+      Labels::UnifiedAssignmentService.add(contact: conversation.contact, labels: ['vip'], conversation: conversation)
+
+      2.times { described_class.new(message: message, payload: payload).perform }
+
+      expected = ['vip', base_label.title, offer_label.title]
+      expect(conversation.reload.label_list).to match_array(expected)
+      expect(conversation.contact.reload.label_list).to match_array(expected)
+    end
+
+    it 'creates the default Реклама label when meta_ads_auto_tag is enabled in account custom_attributes' do
+      account.update!(custom_attributes: { 'meta_ads_auto_tag' => true })
+
+      described_class.new(message: message, payload: payload).perform
+
+      created_label = account.labels.find_by(title: 'реклама')
+      expect(created_label).to be_present
+      expect(created_label.display_title).to eq('Реклама')
+      expect(conversation.reload.label_list).to include('реклама')
+      expect(conversation.contact.reload.label_list).to include('реклама')
+    end
+
+    it 'does not create unrequested labels when meta_ads_auto_tag is not enabled and no Реклама label exists' do
+      described_class.new(message: message, payload: payload).perform
+
+      expect(account.labels.count).to eq(0)
+      expect(conversation.reload.label_list).to be_empty
+      expect(conversation.contact.reload.label_list).to be_empty
+    end
+
+    it 'ignores deleted mapped label IDs and keeps outer transactions healthy if auto-tagging raises' do
+      account.update!(custom_attributes: { 'meta_ads_source_label_map' => { '23877210000123456' => 999_999_999 } })
+
+      ActiveRecord::Base.transaction do
+        referral = described_class.new(message: message, payload: payload).perform
+        expect(referral).to be_persisted
+        expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
+      end
+
+      allow(Labels::UnifiedAssignmentService).to receive(:add).and_raise(StandardError, 'boom')
+      account.labels.create!(title: 'реклама', display_title: 'Реклама')
+
+      ActiveRecord::Base.transaction do
+        referral = described_class.new(message: message, payload: payload).perform
+        expect(referral).to be_persisted
+        expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
+      end
+    end
+  end
 end

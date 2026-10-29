@@ -12,6 +12,9 @@ export const normalizeFilterQueryOperator = operator => {
 };
 
 const generateValues = item => {
+  if (['is_present', 'is_not_present'].includes(item.filter_operator)) {
+    return [];
+  }
   if (item.attribute_key === 'content') {
     const values = item.values || '';
     return values.split(',');
@@ -19,8 +22,8 @@ const generateValues = item => {
   if (Array.isArray(item.values)) {
     return setArrayValues(item);
   }
-  if (typeof item.values === 'object') {
-    return [item.values.id];
+  if (item.values && typeof item.values === 'object') {
+    return item.values.id !== undefined ? [item.values.id] : [];
   }
   if (!item.values) {
     return [];

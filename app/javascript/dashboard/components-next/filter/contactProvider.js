@@ -55,7 +55,9 @@ export function useContactFilterContext() {
 
   const {
     equalityOperators,
+    presenceOperators,
     containmentOperators,
+    textPresenceOperators,
     dateOperators,
     getOperatorTypes,
   } = useOperators();
@@ -198,6 +200,36 @@ export function useContactFilterContext() {
       })),
       dataType: 'text',
       filterOperators: equalityOperators.value,
+      attributeModel: 'standard',
+    },
+    {
+      attributeKey: CONTACT_ATTRIBUTES.META_AD_REFERRAL,
+      value: CONTACT_ATTRIBUTES.META_AD_REFERRAL,
+      attributeName: t('CONTACTS_LAYOUT.FILTER.META_AD_REFERRAL'),
+      label: t('CONTACTS_LAYOUT.FILTER.META_AD_REFERRAL'),
+      inputType: 'searchSelect',
+      options: [
+        {
+          id: 'true',
+          name: t('CONTACTS_LAYOUT.FILTER.META_AD_REFERRAL_TRUE'),
+        },
+        {
+          id: 'false',
+          name: t('CONTACTS_LAYOUT.FILTER.META_AD_REFERRAL_FALSE'),
+        },
+      ],
+      dataType: 'text',
+      filterOperators: presenceOperators.value,
+      attributeModel: 'standard',
+    },
+    {
+      attributeKey: CONTACT_ATTRIBUTES.META_AD_SOURCE_ID,
+      value: CONTACT_ATTRIBUTES.META_AD_SOURCE_ID,
+      attributeName: t('CONTACTS_LAYOUT.FILTER.META_AD_SOURCE_ID'),
+      label: t('CONTACTS_LAYOUT.FILTER.META_AD_SOURCE_ID'),
+      inputType: 'plainText',
+      dataType: 'text',
+      filterOperators: textPresenceOperators.value,
       attributeModel: 'standard',
     },
     ...customFilterTypes.value,

@@ -3,6 +3,7 @@ import {
   OPERATOR_TYPES_2,
   OPERATOR_TYPES_3,
   OPERATOR_TYPES_5,
+  OPERATOR_TYPES_6,
 } from '../../FilterInput/FilterOperatorTypes';
 
 const filterTypes = [
@@ -76,6 +77,22 @@ const filterTypes = [
     inputType: 'multi_select',
     dataType: 'number',
     filterOperators: OPERATOR_TYPES_1,
+    attributeModel: 'standard',
+  },
+  {
+    attributeKey: 'meta_ad_referral',
+    attributeI18nKey: 'META_AD_REFERRAL',
+    inputType: 'search_select',
+    dataType: 'text',
+    filterOperators: OPERATOR_TYPES_2,
+    attributeModel: 'standard',
+  },
+  {
+    attributeKey: 'meta_ad_source_id',
+    attributeI18nKey: 'META_AD_SOURCE_ID',
+    inputType: 'plain_text',
+    dataType: 'text',
+    filterOperators: OPERATOR_TYPES_6,
     attributeModel: 'standard',
   },
   {
@@ -156,6 +173,14 @@ export const filterAttributeGroups = [
       {
         key: 'crm_stage_id',
         i18nKey: 'CRM_STAGE',
+      },
+      {
+        key: 'meta_ad_referral',
+        i18nKey: 'META_AD_REFERRAL',
+      },
+      {
+        key: 'meta_ad_source_id',
+        i18nKey: 'META_AD_SOURCE_ID',
       },
       {
         key: 'created_at',

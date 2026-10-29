@@ -4,6 +4,7 @@ class FilterService
   include Filters::FilterHelper
   include Filters::CustomAttributeFilterHelper
   include Filters::CrmDealContextFilter
+  include Filters::MetaAdReferralFilter
   include CustomExceptions::CustomFilter
 
   ATTRIBUTE_MODEL = 'conversation_attribute'.freeze

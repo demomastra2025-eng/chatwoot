@@ -464,7 +464,11 @@
       "ACTIVE_FILTERS": {
         "MORE_FILTERS": "+ еще {count} фильтров",
         "CLEAR_FILTERS": "Очистить фильтры"
-      }
+      },
+      "META_AD_REFERRAL": "Обращение по рекламе (Meta Ads)",
+      "META_AD_REFERRAL_TRUE": "Да",
+      "META_AD_REFERRAL_FALSE": "Нет",
+      "META_AD_SOURCE_ID": "Рекламное объявление (ID / заголовок)"
     },
     "CARD": {
       "OF": "из",

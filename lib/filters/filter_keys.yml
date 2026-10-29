@@ -122,6 +122,24 @@ conversations:
       - "not_equal_to"
       - "contains"
       - "does_not_contain"
+  meta_ad_referral:
+    attribute_type: "meta_ad_referral"
+    data_type: "boolean"
+    filter_operators:
+      - "equal_to"
+      - "not_equal_to"
+      - "is_present"
+      - "is_not_present"
+  meta_ad_source_id:
+    attribute_type: "meta_ad_referral"
+    data_type: "text"
+    filter_operators:
+      - "equal_to"
+      - "not_equal_to"
+      - "contains"
+      - "does_not_contain"
+      - "is_present"
+      - "is_not_present"
 
 ### ----- End of Conversation Filters ----- ###
 
@@ -209,6 +227,24 @@ contacts:
     filter_operators:
       - "equal_to"
       - "not_equal_to"
+  meta_ad_referral:
+    attribute_type: "meta_ad_referral"
+    data_type: "boolean"
+    filter_operators:
+      - "equal_to"
+      - "not_equal_to"
+      - "is_present"
+      - "is_not_present"
+  meta_ad_source_id:
+    attribute_type: "meta_ad_referral"
+    data_type: "text"
+    filter_operators:
+      - "equal_to"
+      - "not_equal_to"
+      - "contains"
+      - "does_not_contain"
+      - "is_present"
+      - "is_not_present"
 
 ### ----- End of Contact Filters ----- ###
 

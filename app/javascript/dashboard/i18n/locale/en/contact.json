@@ -464,7 +464,11 @@
       "ACTIVE_FILTERS": {
         "MORE_FILTERS": "+ {count} more filters",
         "CLEAR_FILTERS": "Clear filters"
-      }
+      },
+      "META_AD_REFERRAL": "Ad referral (Meta Ads)",
+      "META_AD_REFERRAL_TRUE": "Yes",
+      "META_AD_REFERRAL_FALSE": "No",
+      "META_AD_SOURCE_ID": "Ad (ID / headline)"
     },
     "CARD": {
       "OF": "of",

@@ -120,7 +120,10 @@ class CommunicationThreads::FilterService < FilterService
   end
 
   def conversations_waiting_for_callback(scope)
-    scope.where("COALESCE(conversations.additional_attributes ->> 'waiting_for_callback', conversations.custom_attributes ->> 'waiting_for_callback') = 'true'")
+    scope.where(
+      "COALESCE(conversations.additional_attributes ->> 'waiting_for_callback', " \
+      "conversations.custom_attributes ->> 'waiting_for_callback') = 'true'"
+    )
   end
 
   def apply_thread_scopes(scope, include_unread: true)
@@ -164,6 +167,10 @@ class CommunicationThreads::FilterService < FilterService
 
   # A label condition of the advanced filter also matches the labels of the conversation's contact, see FilterService#tag_filter_query.
   def match_contact_labels?
+    true
+  end
+
+  def match_thread_meta_ad_referrals?
     true
   end
 
