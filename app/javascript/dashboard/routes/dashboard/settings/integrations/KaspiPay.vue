@@ -14,6 +14,7 @@ import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 
 const { t } = useI18n();
 const store = useStore();
+const KASPI_PAY_LOGO_URL = '/dashboard/images/integrations/kaspi_pay.png';
 
 const isLoading = ref(true);
 const status = ref({
@@ -368,7 +369,7 @@ onMounted(() => {
                 class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-n-weak bg-n-solid-1 p-2"
               >
                 <img
-                  src="/dashboard/images/integrations/kaspi_pay.png"
+                  :src="KASPI_PAY_LOGO_URL"
                   alt="Kaspi Pay"
                   class="max-h-full max-w-full rounded-md"
                 />
