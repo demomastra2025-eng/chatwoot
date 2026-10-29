@@ -81,8 +81,10 @@ class Captain::Assistant::AgentRunnerService
              else
                Outbound::PlaygroundDeliveryPolicy.policy_for(conversation: @conversation)
              end
-    response = Outbound::PlaygroundDeliveryPolicy.with(policy) do
-      guard_public_response(generate_response_in_runtime_cache(message_history))
+    response = with_iin_token_vault do
+      Outbound::PlaygroundDeliveryPolicy.with(policy) do
+        guard_public_response(generate_response_in_runtime_cache(message_history))
+      end
     end
     add_playground_latency(with_agent_identity(with_outcome_facts(response)), started_at)
   rescue Captain::Conversation::ControlGenerationStaleError
@@ -117,7 +119,7 @@ class Captain::Assistant::AgentRunnerService
     return response if response['response_suppressed'] || response['response_cancelled']
     return response if ['conversation_handoff', PROVIDER_ERROR_RESPONSE, 'response_cancelled'].include?(response['response'])
 
-    response['response'] = Scheduling::IinValidator.redact_text(response['response'])
+    response['response'] = Scheduling::IinValidator.redact_customer_text(response['response'])
 
     Captain::Safety::CustomRulesRuntime.check_output!(
       account: account, agent_id: acting_agent_id, context: @custom_guardrail_context.to_h, response: response
@@ -130,7 +132,19 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def account
-    @scope ? @scope.account : @assistant.account
+    @scope ? @scope.account : @assistant&.account
+  end
+
+  def with_iin_token_vault(&)
+    Llm::IinTokenVault.with_scope(account_id: account&.id, scope_id: iin_vault_scope_id, &)
+  end
+
+  def iin_vault_scope_id
+    return "pg:#{@playground_session.id}" if @playground_session
+    return Llm::IinTokenVault.conversation_scope_id(@conversation) if @conversation
+    return "deal:#{@event_deal.id}" if @event_deal
+
+    "run:#{@request_id || object_id}"
   end
 
   # A run in a channel (the router picks the agent); a run of one given agent has no graph, router or session.
@@ -574,7 +588,7 @@ class Captain::Assistant::AgentRunnerService
       return final_error_response(error, result.context, handoff_tool_called: handoff_tool_called)
     end
 
-    response['response'] = Scheduling::IinValidator.redact_text(response['response']) if response['response'].is_a?(String)
+    response['response'] = Scheduling::IinValidator.redact_customer_text(response['response']) if response['response'].is_a?(String)
     flag_draft!(response, result.context) if suggestion_run? && !council_turn?
     publish_tool_omission_event(response, result.context)
     moderate_output!(response, result.context&.dig(:state, :captain_runtime))

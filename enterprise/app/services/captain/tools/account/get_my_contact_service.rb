@@ -18,11 +18,14 @@ class Captain::Tools::Account::GetMyContactService < Captain::Tools::Account::Ba
 
   def self.payload(contact)
     custom = contact.custom_attributes.to_h
-    {
+    raw_iin = [contact.identifier, custom['iin'], custom['medelement_iin']].find { |value| Scheduling::IinValidator.valid?(value) }
+    result = {
       id: contact.id, first_name: contact.name, last_name: contact.last_name,
       middle_name: contact.middle_name,
       birth_date: custom['birth_date'], gender: custom['gender'],
       phone_number: contact.phone_number, email: contact.email
     }
+    result[:iin] = Llm::IinTokenVault.tokenize(raw_iin) if raw_iin.present? && defined?(Llm::IinTokenVault) && Llm::IinTokenVault.active?
+    result
   end
 end

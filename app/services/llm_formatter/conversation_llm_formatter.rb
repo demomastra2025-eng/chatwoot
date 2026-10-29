@@ -20,7 +20,7 @@ class LlmFormatter::ConversationLlmFormatter < LlmFormatter::DefaultLlmFormatter
       sections << attributes
     end
 
-    Scheduling::IinValidator.redact_text(sections.join("\n"))
+    Scheduling::IinValidator.tokenize_or_redact_text(sections.join("\n"))
   end
 
   private

@@ -173,7 +173,7 @@ module Enterprise::Captain::ReplySuggestionService
     end
 
     def sanitize_text(value)
-      text = value.to_s.strip
+      text = Llm::IinTokenVault.strip_tokens(value.to_s).strip
       return if text.blank?
 
       sanitized = Captain::ToolTraceBuilder.sanitize_payload(text)

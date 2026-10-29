@@ -17,7 +17,8 @@ class Captain::Runtime::Council::ThreadScope
     new(
       current: CURRENT_ATTRIBUTES.index_with { |name| copy(Current.public_send(name)) },
       locale: I18n.locale, time_zone: Time.zone, event_context: Llm::EventBus.snapshot_context,
-      run_control: Captain::ReplySuggestion::RunControl.current
+      run_control: Captain::ReplySuggestion::RunControl.current,
+      iin_vault_scope: Llm::IinTokenVault.current_scope&.slice(:account_id, :scope_id)
     )
   end
 
@@ -25,12 +26,13 @@ class Captain::Runtime::Council::ThreadScope
     value.respond_to?(:deep_dup) && !value.is_a?(ActiveRecord::Base) ? value.deep_dup : value
   end
 
-  def initialize(current:, locale:, time_zone:, event_context:, run_control: nil)
+  def initialize(current:, locale:, time_zone:, event_context:, run_control: nil, iin_vault_scope: nil) # rubocop:disable Metrics/ParameterLists
     @current = current
     @locale = locale
     @time_zone = time_zone
     @event_context = event_context
     @run_control = run_control
+    @iin_vault_scope = iin_vault_scope
   end
 
   # Runs the block on the current thread, which must be a thread of its own: Current is reset when the block ends. The executor
@@ -38,8 +40,10 @@ class Captain::Runtime::Council::ThreadScope
   def run(executed_by: nil, &)
     Rails.application.executor.wrap do
       restore(executed_by)
-      Captain::ReplySuggestion::RunControl.adopt(@run_control) do
-        ActiveRecord::Base.uncached { Llm::EventBus.with_context(@event_context, &) }
+      with_iin_vault do
+        Captain::ReplySuggestion::RunControl.adopt(@run_control) do
+          ActiveRecord::Base.uncached { Llm::EventBus.with_context(@event_context, &) }
+        end
       end
     end
   ensure
@@ -47,6 +51,12 @@ class Captain::Runtime::Council::ThreadScope
   end
 
   private
+
+  def with_iin_vault(&)
+    return yield if @iin_vault_scope.blank?
+
+    Llm::IinTokenVault.with_scope(**@iin_vault_scope, &)
+  end
 
   def restore(executed_by)
     @current.each { |name, value| Current.public_send("#{name}=", value) }

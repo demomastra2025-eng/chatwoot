@@ -22,7 +22,12 @@ class Captain::ReplySuggestionService < Captain::BaseTaskService
 
   # Returns an outcome (see Captain::ReplySuggestion::Outcome), never a bare text.
   def perform
-    perform_reply_suggestion
+    Llm::IinTokenVault.with_scope(
+      account_id: account&.id,
+      scope_id: Llm::IinTokenVault.conversation_scope_id(conversation)
+    ) do
+      perform_reply_suggestion
+    end
   end
 
   # The engine of this request, fixed when it starts and never changed afterwards. Without an agent the old one-shot prompt is the
@@ -70,7 +75,7 @@ class Captain::ReplySuggestionService < Captain::BaseTaskService
   end
 
   def legacy_draft(result)
-    redacted_message = Scheduling::IinValidator.redact_text(result[:message].to_s)
+    redacted_message = Scheduling::IinValidator.redact_customer_text(result[:message].to_s)
     claim_check = Captain::ReplySuggestion::DraftClaims.check(draft: redacted_message, context: {}, account: account)
     if claim_check == :unavailable
       return Captain::ReplySuggestion::Outcome.human_needed(

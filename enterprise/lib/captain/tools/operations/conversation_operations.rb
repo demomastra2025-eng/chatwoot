@@ -91,6 +91,10 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     normalized_template_params = parsed_hash(template_params, field_name: 'template_params')
     normalized_content_kind = normalized_content_kind(content_kind, template_params: normalized_template_params)
     private_message = ActiveModel::Type::Boolean.new.cast(private_note)
+    unless private_message
+      sanitized_content = Scheduling::IinValidator.redact_customer_text(sanitized_content)
+      normalized_template_params = Scheduling::IinValidator.redact_customer_payload(normalized_template_params)
+    end
 
     validate_message_payload!(
       content: sanitized_content,
@@ -140,6 +144,7 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
   def edit_message(message_id:, content:)
     message = find_permissible_message!(message_id)
     sanitized_content = content.to_s.strip
+    sanitized_content = Scheduling::IinValidator.redact_customer_text(sanitized_content) unless message.private?
     raise ArgumentError, 'Message content is required' if sanitized_content.blank?
 
     ::Messages::UpdateContentService.new(message: message, content: sanitized_content).perform
@@ -275,6 +280,10 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     normalized_template_params = parsed_hash(template_params, field_name: 'template_params')
     normalized_content_kind = normalized_content_kind(content_kind, template_params: normalized_template_params)
     private_message = ActiveModel::Type::Boolean.new.cast(private_note)
+    unless private_message
+      sanitized_content = Scheduling::IinValidator.redact_customer_text(sanitized_content)
+      normalized_template_params = Scheduling::IinValidator.redact_customer_payload(normalized_template_params)
+    end
 
     validate_message_payload!(
       content: sanitized_content,

@@ -669,7 +669,7 @@ class Captain::Assistant < ApplicationRecord
       text, prompt_state, field_ids: field_ids, mode: :customer, bound_tool_ids: [],
                           time_zone: Captain::PromptClock.zone_for(conversation&.inbox&.timezone, account&.reporting_timezone)
     )
-    rendered.is_a?(String) ? Scheduling::IinValidator.redact_text(rendered) : rendered
+    rendered.is_a?(String) ? Scheduling::IinValidator.redact_customer_text(rendered) : rendered
   end
 
   def resolve_runtime_prompt_context(context, prompt_state, field_ids: nil)

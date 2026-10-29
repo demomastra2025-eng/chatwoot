@@ -62,7 +62,7 @@ class Captain::Playground::ToolExecutor
     @session.assert_context!(context.state)
     @context = Struct.new(:state, :context).new(@session.namespace.decode(context.state), context.context)
     @tool_id = tool_id.to_s
-    @args = @session.namespace.decode(arguments.to_h).deep_stringify_keys.compact
+    @args = Llm::IinTokenVault.detokenize_deep(@session.namespace.decode(arguments.to_h)).deep_stringify_keys.compact
     authorize_tool!
     @original_data = @data.deep_dup
     result = dispatch
@@ -73,10 +73,11 @@ class Captain::Playground::ToolExecutor
     # Domain payloads may contain message/success keys that are not ToolResult
     # envelope fields. Preserve the entire payload and Rails' native JSON time
     # serialization through the actual wrapper; normalized failures stay intact.
-    domain_payload = encoded.is_a?(Hash) && (encoded.keys.map(&:to_sym) - Captain::ToolResult::NORMALIZED_KEYS).any?
-    return JSON.generate(encoded.as_json) if domain_payload
+    sanitized = Llm::OutboundIinRedactor.redact_payload(encoded)
+    domain_payload = sanitized.is_a?(Hash) && (sanitized.keys.map(&:to_sym) - Captain::ToolResult::NORMALIZED_KEYS).any?
+    return JSON.generate(sanitized.as_json) if domain_payload
 
-    encoded
+    sanitized
   rescue ArgumentError, KeyError, TypeError, Crm::Error, Scheduling::Error, ActiveRecord::RecordNotFound => e
     @data.replace(@original_data) if @original_data
     if APPOINTMENT_TOOLS.include?(tool_id.to_s)
@@ -119,5 +120,4 @@ class Captain::Playground::ToolExecutor
   def resource_details
     { resource: resource!(@args.fetch('resource_id')).deep_dup, simulated: true }
   end
-
 end

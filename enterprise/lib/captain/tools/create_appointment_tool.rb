@@ -10,8 +10,9 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
               'a staff member takes over. Report the local_date and local_time returned by the tool, never substitute the requested time.'
   param :resource_id, type: 'number', desc: 'Specialist resource ID', required: true
   param :starts_at, type: 'string', desc: 'Use the exact requested local calendar clock as YYYY-MM-DDTHH:MM without a timezone; the server resolves the specialist timezone. ' \
-              'Do not convert it to UTC yourself. Alternatively copy an ISO 8601 datetime returned by a slot tool unchanged.', required: true
-  param :ends_at, type: 'string', desc: 'Optional local calendar end YYYY-MM-DDTHH:MM without timezone, or exact returned slot datetime. Prefer duration_min; do not calculate timezone offsets.', required: false
+                                          'Do not convert it to UTC yourself. Alternatively copy an ISO 8601 datetime returned by a slot tool unchanged.', required: true
+  param :ends_at, type: 'string',
+                  desc: 'Optional local calendar end YYYY-MM-DDTHH:MM without timezone, or exact returned slot datetime. Prefer duration_min; do not calculate timezone offsets.', required: false
   param :duration_min, type: 'number', desc: 'Optional appointment duration in minutes when ends_at is not provided', required: false
   param :service_id, type: 'number', desc: 'Optional local service ID returned by search_scheduling_services', required: false
   param :appointment_type,
@@ -20,9 +21,10 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
         required: false
   param :client_comment, type: 'string', desc: 'Client comment', required: false
   param :crm_deal_id, type: 'number', desc: 'Optional existing deal ID returned by search_deals for this conversation contact', required: false
-  param :crm_pipeline_id, type: 'number', desc: 'Optional pipeline ID when a new deal should be created according to its appointment settings', required: false
+  param :crm_pipeline_id, type: 'number', desc: 'Optional pipeline ID when a new deal should be created according to its appointment settings',
+                          required: false
   param :patient, type: 'object', required: false,
-                  desc: 'Optional explicitly named patient: first_name and last_name required; middle_name, birth_date (YYYY-MM-DD), ' \
+                  desc: 'Optional explicitly named patient: first_name and last_name required; middle_name, iin ([IIN_TOKEN_...]), birth_date (YYYY-MM-DD), ' \
                         'gender and phone optional. Ask for missing details; do not copy the caller identity to another patient.'
   param :custom_attributes,
         type: 'object',

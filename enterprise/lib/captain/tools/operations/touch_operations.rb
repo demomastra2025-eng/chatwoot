@@ -20,7 +20,10 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     attachment_ids: [],
     artifact_ids: []
   )
-    normalized_template_params = parsed_hash(template_params, field_name: 'template_params')
+    body = Scheduling::IinValidator.redact_customer_text(body) if body.is_a?(String)
+    normalized_template_params = Scheduling::IinValidator.redact_customer_payload(
+      parsed_hash(template_params, field_name: 'template_params')
+    )
     normalized_kind = normalized_content_kind(content_kind, template_params: normalized_template_params)
     validate_touch_content!(
       body: body,

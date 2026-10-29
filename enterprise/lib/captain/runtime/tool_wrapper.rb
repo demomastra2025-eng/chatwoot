@@ -938,9 +938,12 @@ class Captain::Runtime::ToolWrapper
   # specialist or service is a card of its own, and an identical booking reuses its card.
   def intercept_for_approval(tool_context, normalized_args)
     @replaced_card_ids = card_replacing_tool? ? suggestion_cards(mutating_tool_executions[mutation_claim_key]).pluck(:action_id).map(&:to_s) : []
-    Captain::ReplySuggestion::ActionApprovalService.intercept(
-      tool: @tool, tool_context: tool_context, arguments: normalized_args, replaces: @replaced_card_ids
+    can_detokenize = built_in_registry_tool? && Llm::IinTokenVault.detokenizable_tool?(@tool)
+    approval_args = can_detokenize ? Llm::IinTokenVault.detokenize_deep(normalized_args) : normalized_args
+    raw_card = Captain::ReplySuggestion::ActionApprovalService.intercept(
+      tool: @tool, tool_context: tool_context, arguments: approval_args, replaces: @replaced_card_ids
     )
+    Llm::OutboundIinRedactor.redact_payload(raw_card)
   end
 
   # A change or a cancellation of an appointment: one appointment takes one change, so its new card replaces the claim's cards.

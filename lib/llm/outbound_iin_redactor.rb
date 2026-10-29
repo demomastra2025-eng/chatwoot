@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative 'iin_token_vault'
+
 module Llm; end
 
 # Server-side pre-LLM redaction gateway guaranteeing that Kazakhstan 12-digit personal IINs
@@ -21,12 +23,12 @@ module Llm::OutboundIinRedactor
   module_function
 
   def redact_text(text)
-    Scheduling::IinValidator.redact_text(text)
+    Scheduling::IinValidator.tokenize_or_redact_text(text)
   end
 
   def redact_payload(value)
     case value
-    when String then Scheduling::IinValidator.redact_text(value)
+    when String then Scheduling::IinValidator.tokenize_or_redact_text(value)
     when Array then value.map { |item| redact_payload(item) }
     when Hash then redact_hash(value)
     else value
@@ -43,7 +45,9 @@ module Llm::OutboundIinRedactor
   def redact_hash_entry(key, item, binary_media: false)
     key_str = key.to_s
     return item if skip_entry?(key_str, item, binary_media)
-    return Scheduling::IinValidator::REDACTED_PLACEHOLDER if sensitive_iin_entry?(key_str, item)
+    if sensitive_iin_entry?(key_str, item)
+      return Llm::IinTokenVault.active? ? Llm::IinTokenVault.tokenize(item) : Scheduling::IinValidator::REDACTED_PLACEHOLDER
+    end
 
     redact_payload(item)
   end

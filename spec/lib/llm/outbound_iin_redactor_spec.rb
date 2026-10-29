@@ -283,7 +283,7 @@ RSpec.describe Llm::OutboundIinRedactor do
       expect(non_iin_rendered).to eq('ID: CRM-004219, Имя: Айгуль')
     end
 
-    it 'hides IIN parameters and descriptions from Telephony::AiVoice::ToolDispatchService catalog and execution args' do
+    it 'exposes tokenized [IIN_TOKEN_...] parameter descriptions in Telephony::AiVoice::ToolDispatchService catalog' do
       account = create(:account)
       account.enable_features!('scheduling')
       assistant = create(:captain_assistant, account: account)
@@ -294,13 +294,14 @@ RSpec.describe Llm::OutboundIinRedactor do
       catalog = Telephony::AiVoice::ToolDispatchService.captain_tool_catalog(assistant)
       by_name = catalog.index_by { |entry| entry['name'] }
 
-      expect(by_name.dig('search_appointments', 'description')).not_to match(/\bIIN\b/i)
-      expect(by_name.dig('search_appointments', 'parameters', 'properties')).not_to have_key('client_identifier')
-      expect(by_name.dig('update_my_contact', 'parameters', 'properties')).not_to have_key('iin')
-      expect(by_name.dig('update_contact', 'parameters', 'properties')).not_to have_key('identifier')
+      expect(by_name.dig('search_appointments', 'description')).to include('[IIN_TOKEN_...]')
+      %w[client_identifier iin identifier].zip(%w[search_appointments update_my_contact update_contact]).each do |param, tname|
+        desc = by_name.dig(tname, 'parameters', 'properties', param, 'description')
+        expect(desc).to include('[IIN_TOKEN_...]', 'never ask the caller to dictate a 12-digit IIN on a voice call')
+      end
 
       override = Telephony::AiVoice::ToolDispatchService.agent_tool_text_override(id: 'update_my_contact')
-      expect(override.hidden_params).to include('iin')
+      expect(override.hidden_params).not_to include('iin')
     end
   end
 end

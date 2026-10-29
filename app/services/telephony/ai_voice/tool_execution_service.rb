@@ -25,7 +25,12 @@ class Telephony::AiVoice::ToolExecutionService
     @owned_event = event
     raise_call_session_terminal! if call_session.terminal?
     mark_execution_started!(event)
-    result = dispatch_with_current_capability!
+    result = Llm::IinTokenVault.with_scope(
+      account_id: call_session.account_id,
+      scope_id: Llm::IinTokenVault.voice_scope_id(call_session)
+    ) do
+      dispatch_with_current_capability!
+    end
     if business_failure_result?(result)
       complete_business_failure_event!(event, result)
     else
@@ -85,8 +90,8 @@ class Telephony::AiVoice::ToolExecutionService
       rescue ActiveRecord::StatementInvalid, ActiveRecord::Deadlocked, ActiveRecord::LockWaitTimeout,
              ActiveRecord::SerializationFailure, ActiveRecord::QueryCanceled
         raise
-      rescue StandardError => error
-        dispatch_error = error
+      rescue StandardError => e
+        dispatch_error = e
         nil
       end
     end

@@ -13,8 +13,8 @@ module LlmFormatter::Scheduling
       sections << "Service: #{@record.service_name_snapshot.presence || @record.service&.name || 'Not set'}"
       sections << "Service Amount: #{@record.service_amount}"
       sections << "Company: #{@record.company&.name || 'Not set'}"
-      sections << "Custom Attributes: #{Scheduling::IinValidator.sanitize_custom_attributes(@record.custom_attributes).to_json}"
-      Scheduling::IinValidator.redact_text(sections.join("\n"))
+      sections << "Custom Attributes: #{Scheduling::IinValidator.tokenize_or_sanitize_custom_attributes(@record.custom_attributes).to_json}"
+      Scheduling::IinValidator.tokenize_or_redact_text(sections.join("\n"))
     end
   end
 end

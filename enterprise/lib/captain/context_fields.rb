@@ -42,7 +42,8 @@ class Captain::ContextFields
   APPOINTMENT_BLOCK_FIELD_ID = /\Aappointment\.(?:nearest|last_past|last_cancelled|all)\z/
   SUMMARY_FIELD_DEFINITIONS = {
     deal: { key: 'summary', title: 'Сводка', description: 'До 8 активных и 4 закрытых/архивных сделок. Показано X из Y в каждой группе.' },
-    appointment: { key: 'summary', title: 'Сводка', description: 'До 6 будущих/текущих, 3 прошлых и 3 отменённых записей. Показано X из Y в каждой группе.' }
+    appointment: { key: 'summary', title: 'Сводка',
+                   description: 'До 6 будущих/текущих, 3 прошлых и 3 отменённых записей. Показано X из Y в каждой группе.' }
   }.freeze
   PATIENT_APPOINTMENT_SYSTEM_KEY = Regexp.union(
     /\Amedelement_/,
@@ -585,9 +586,11 @@ class Captain::ContextFields
       warnings = definitions.select { |field| field[:deprecated] && field_ids.include?(field[:id]) }.map do |field|
         {
           field_id: field[:id], replacement_field_id: field[:replacement_field_id],
-          message: field[:table_name] == 'deal' ?
-            'Legacy scalar deal field requires an explicit deal or CRM event. No deal is selected from the summary.' :
-            'Legacy appointment field is preserved. Select appointment.summary to adopt the grouped summary explicitly.'
+          message: if field[:table_name] == 'deal'
+                     'Legacy scalar deal field requires an explicit deal or CRM event. No deal is selected from the summary.'
+                   else
+                     'Legacy appointment field is preserved. Select appointment.summary to adopt the grouped summary explicitly.'
+                   end
         }
       end
       prompt_state[:context_warnings] = warnings if warnings.present?
@@ -955,10 +958,10 @@ class Captain::ContextFields
           next
         when 'identifier', 'client_identifier'
           raw_val = scope_state[path.first]
-          prompt_state[path.first] = redact_pii ? Scheduling::IinValidator.sanitize_identifier(raw_val) : raw_val
+          prompt_state[path.first] = redact_pii ? Scheduling::IinValidator.tokenize_or_sanitize_identifier(raw_val) : raw_val
         else
           raw_val = scope_state[path.first]
-          prompt_state[path.first] = redact_pii && raw_val.is_a?(String) ? Scheduling::IinValidator.redact_text(raw_val) : raw_val
+          prompt_state[path.first] = redact_pii && raw_val.is_a?(String) ? Scheduling::IinValidator.tokenize_or_redact_text(raw_val) : raw_val
         end
       end
 
@@ -966,7 +969,16 @@ class Captain::ContextFields
     end
 
     def add_selected_custom_attribute(prompt_state, scope_state, attribute_key, redact_pii: true)
-      return if redact_pii && Scheduling::IinValidator.sensitive_attribute_key?(attribute_key)
+      if redact_pii && Scheduling::IinValidator.sensitive_attribute_key?(attribute_key)
+        return unless defined?(Llm::IinTokenVault) && Llm::IinTokenVault.active?
+
+        raw_sensitive = scope_state[:custom_attributes].is_a?(Hash) ? scope_state[:custom_attributes].with_indifferent_access[attribute_key] : nil
+        return unless Scheduling::IinValidator.iin_like?(raw_sensitive)
+
+        prompt_state[:custom_attributes] ||= {}
+        prompt_state[:custom_attributes][attribute_key] = Llm::IinTokenVault.tokenize(raw_sensitive)
+        return
+      end
 
       custom_attributes = scope_state[:custom_attributes]
       prompt_state[:custom_attributes] ||= {}
@@ -975,7 +987,7 @@ class Captain::ContextFields
         custom_attributes = custom_attributes.with_indifferent_access
         raw_val = custom_attributes[attribute_key]
         prompt_state[:custom_attributes][attribute_key] =
-          redact_pii && raw_val.is_a?(String) ? Scheduling::IinValidator.redact_text(raw_val) : raw_val
+          redact_pii && raw_val.is_a?(String) ? Scheduling::IinValidator.tokenize_or_redact_text(raw_val) : raw_val
       else
         prompt_state[:custom_attributes][attribute_key] = nil
       end
@@ -1008,14 +1020,19 @@ class Captain::ContextFields
     def reference_text(value, field_id, mode:, time_zone:, bound_tool_ids:)
       customer = mode == :customer
       if prompt_hidden_field_id?(field_id)
-        return NOT_SPECIFIED unless customer
+        if customer
+          return value.to_s.strip.present? ? Scheduling::IinValidator::REDACTED_PLACEHOLDER : ''
+        end
+        if defined?(Llm::IinTokenVault) && Llm::IinTokenVault.active? && Scheduling::IinValidator.iin_like?(value)
+          return Llm::IinTokenVault.tokenize(value)
+        end
 
-        return value.to_s.strip.present? ? Scheduling::IinValidator::REDACTED_PLACEHOLDER : ''
+        return NOT_SPECIFIED
       end
-      value = Scheduling::IinValidator.sanitize_identifier(value) if !customer && field_id == 'contact.identifier'
+      value = Scheduling::IinValidator.tokenize_or_sanitize_identifier(value) if !customer && field_id == 'contact.identifier'
 
       if field_id.match?(APPOINTMENT_BLOCK_FIELD_ID)
-        return customer ? '' : Scheduling::IinValidator.redact_text(
+        return customer ? '' : Scheduling::IinValidator.tokenize_or_redact_text(
           appointment_block_text(value, field_id, time_zone: time_zone, bound_tool_ids: bound_tool_ids)
         )
       end
@@ -1024,13 +1041,13 @@ class Captain::ContextFields
         return '' if customer
 
         summary = Captain::PromptSummaryText.render(value, time_zone: time_zone, bound_tool_ids: bound_tool_ids)
-        return Scheduling::IinValidator.redact_text(summary) if summary.present?
+        return Scheduling::IinValidator.tokenize_or_redact_text(summary) if summary.present?
       end
 
       rendered = plain_value(value, time_zone, json: !customer).presence
       return customer ? '' : NOT_SPECIFIED if rendered.blank?
 
-      Scheduling::IinValidator.redact_text(rendered)
+      customer ? Scheduling::IinValidator.redact_customer_text(rendered) : Scheduling::IinValidator.tokenize_or_redact_text(rendered)
     end
 
     def prompt_hidden_field_id?(field_id)

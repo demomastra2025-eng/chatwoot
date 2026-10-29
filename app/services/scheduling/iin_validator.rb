@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+# rubocop:disable Metrics/ModuleLength
 module Scheduling::IinValidator
   module_function
 
@@ -51,13 +52,28 @@ module Scheduling::IinValidator
   end
 
   def redact_text(text)
-    return text if !text.is_a?(String) || text.match?(DATA_URI_BASE64_PREFIX)
+    transform_iin_text(text, tokenize: false)
+  end
 
-    safe = text.valid_encoding? ? text : text.scrub
-    return text if safe.count('0-9') < 12
+  def tokenize_or_redact_text(text)
+    vault_active = defined?(Llm::IinTokenVault) && Llm::IinTokenVault.active?
+    transform_iin_text(text, tokenize: vault_active)
+  end
 
-    redacted = apply_iin_redactions(safe)
-    redacted == safe ? text : redacted
+  def redact_customer_text(text)
+    return text unless text.is_a?(String)
+
+    stripped = defined?(Llm::IinTokenVault) ? Llm::IinTokenVault.strip_tokens(text, REDACTED_PLACEHOLDER) : text
+    redact_text(stripped)
+  end
+
+  def redact_customer_payload(value)
+    case value
+    when String then redact_customer_text(value)
+    when Array then value.map { |item| redact_customer_payload(item) }
+    when Hash then value.transform_values { |item| redact_customer_payload(item) }
+    else value
+    end
   end
 
   def sanitize_identifier(value)
@@ -67,11 +83,35 @@ module Scheduling::IinValidator
     text.strip.match?(/\A[\d -]+\z/) && iin_like?(text) ? nil : redact_text(text)
   end
 
+  def tokenize_or_sanitize_identifier(value)
+    return nil if value.nil?
+
+    text = value.to_s
+    if text.strip.match?(/\A[\d -]+\z/) && iin_like?(text)
+      return defined?(Llm::IinTokenVault) && Llm::IinTokenVault.active? ? Llm::IinTokenVault.tokenize(text) : nil
+    end
+
+    tokenize_or_redact_text(text)
+  end
+
   def sanitize_custom_attributes(attributes)
     return attributes unless attributes.is_a?(Hash)
 
     attributes.each_with_object({}) do |(key, val), result|
-      result[key] = sanitize_value(val) unless sensitive_attribute_key?(key)
+      result[key] = sanitize_value(val, tokenize: false) unless sensitive_attribute_key?(key)
+    end
+  end
+
+  def tokenize_or_sanitize_custom_attributes(attributes)
+    return attributes unless attributes.is_a?(Hash)
+    return sanitize_custom_attributes(attributes) unless defined?(Llm::IinTokenVault) && Llm::IinTokenVault.active?
+
+    attributes.each_with_object({}) do |(key, val), result|
+      if sensitive_attribute_key?(key)
+        result[key] = Llm::IinTokenVault.tokenize(val) if iin_like?(val)
+      else
+        result[key] = sanitize_value(val, tokenize: true)
+      end
     end
   end
 
@@ -98,19 +138,39 @@ module Scheduling::IinValidator
     require_valid!(identifier)
   end
 
-  def apply_iin_redactions(safe)
-    labeled = safe.gsub(LABELED_IIN_PATTERN) { "#{Regexp.last_match(1)}#{REDACTED_PLACEHOLDER}" }
-    labeled.gsub(PROTECTED_OR_CANDIDATE_PATTERN) do |match|
-      candidate = Regexp.last_match[:iin]
-      candidate && personal_iin?(candidate) ? REDACTED_PLACEHOLDER : match
-    end
+  def transform_iin_text(text, tokenize:)
+    return text if !text.is_a?(String) || text.match?(DATA_URI_BASE64_PREFIX)
+
+    safe = text.valid_encoding? ? text : text.scrub
+    return text if safe.count('0-9') < 12
+
+    redacted = apply_iin_redactions(safe, tokenize: tokenize)
+    redacted == safe ? text : redacted
   end
 
-  def sanitize_value(val)
+  def apply_iin_redactions(safe, tokenize: false)
+    labeled = safe.gsub(LABELED_IIN_PATTERN) do
+      prefix = Regexp.last_match(1)
+      digits = Regexp.last_match(2)
+      replacement = tokenize ? Llm::IinTokenVault.tokenize(digits) : REDACTED_PLACEHOLDER
+      "#{prefix}#{replacement}"
+    end
+    result = labeled.gsub(PROTECTED_OR_CANDIDATE_PATTERN) do |match|
+      candidate = Regexp.last_match[:iin]
+      if candidate && personal_iin?(candidate)
+        tokenize ? Llm::IinTokenVault.tokenize(candidate) : REDACTED_PLACEHOLDER
+      else
+        match
+      end
+    end
+    tokenize && defined?(Llm::IinTokenVault) ? Llm::IinTokenVault.retokenize_known_digits(result) : result
+  end
+
+  def sanitize_value(val, tokenize: false)
     case val
-    when String then redact_text(val)
-    when Hash then sanitize_custom_attributes(val)
-    when Array then val.map { |item| sanitize_value(item) }
+    when String then tokenize ? tokenize_or_redact_text(val) : redact_text(val)
+    when Hash then tokenize ? tokenize_or_sanitize_custom_attributes(val) : sanitize_custom_attributes(val)
+    when Array then val.map { |item| sanitize_value(item, tokenize: tokenize) }
     else val
     end
   end
@@ -123,5 +183,6 @@ module Scheduling::IinValidator
   end
 
   def weighted_checksum(digits, weights) = weights.each_with_index.sum { |weight, index| digits[index] * weight } % 11
-  private_class_method :apply_iin_redactions, :weighted_checksum, :parsed_attributes, :sanitize_value
+  private_class_method :transform_iin_text, :apply_iin_redactions, :weighted_checksum, :parsed_attributes, :sanitize_value
 end
+# rubocop:enable Metrics/ModuleLength

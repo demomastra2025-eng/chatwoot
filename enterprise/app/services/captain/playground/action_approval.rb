@@ -11,12 +11,19 @@ class Captain::Playground::ActionApproval
   end
 
   def preview(tool_id, arguments)
+    Llm::IinTokenVault.with_scope(account_id: @session.account.id, scope_id: "pg:#{@session.id}") do
+      preview_in_vault(tool_id, arguments)
+    end
+  end
+
+  def preview_in_vault(tool_id, arguments)
     @session.validate_active_agent!
     raise ArgumentError, 'Changing real data is disabled' unless @session.write_enabled?
 
     prepared = @executor.prepare(tool_id, arguments)
     current = @session.permissions
     raise ArgumentError, 'Changing real data is disabled' unless current['read'] == true && current['write'] == true
+
     # actor_id: the agent whose profile the action belongs to. It is the owner of a council part, which is not always the session's
     # active agent, so the confirmation runs the action as that agent and not as the one that holds the conversation.
     action = {
@@ -42,6 +49,12 @@ class Captain::Playground::ActionApproval
   end
 
   def confirm(id:, digest:)
+    Llm::IinTokenVault.with_scope(account_id: @session.account.id, scope_id: "pg:#{@session.id}") do
+      confirm_in_vault(id: id, digest: digest)
+    end
+  end
+
+  def confirm_in_vault(id:, digest:)
     current = @session.permissions
     action = Array(@session.data['action_previews']).find { |item| item['id'] == id }
     unless action && action['digest'] == digest && action['status'] == 'pending' && action['expires_at'] > Time.current.to_i &&
@@ -49,6 +62,7 @@ class Captain::Playground::ActionApproval
            action['binding'] == @session.context_reference.stringify_keys
       raise ArgumentError, 'The real-action preview expired, changed, or was revoked'
     end
+
     @session.validate_active_agent!
     executor = executor_for(action['actor_id'])
     prepared = executor.prepare(action['tool'], action['arguments'])
@@ -66,9 +80,8 @@ class Captain::Playground::ActionApproval
     action['confirmed_at'] = Time.current.iso8601
     @session.save!
     @session.validate_active_agent!
-    unless action['binding'] == @session.context_reference.stringify_keys
-      raise ArgumentError, 'The acting agent changed; review a new preview'
-    end
+    raise ArgumentError, 'The acting agent changed; review a new preview' unless action['binding'] == @session.context_reference.stringify_keys
+
     policy = Outbound::PlaygroundDeliveryPolicy.issue(
       @session.context_reference.merge(mode: 'workspace', run_id: SecureRandom.uuid, delivery_enabled: false,
                                        action_id: action['id'], action_digest: digest, generation: action['generation'],

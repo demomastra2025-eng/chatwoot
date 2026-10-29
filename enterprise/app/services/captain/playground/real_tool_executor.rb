@@ -47,21 +47,25 @@ class Captain::Playground::RealToolExecutor
 
     definition = Captain::ToolRegistry.definition_for(tool_id)
     raise ArgumentError, 'No production service is registered for this tool' unless definition&.assistant_tool_class
+
     @session.assistant.reload
     unless Captain::Playground::ToolSelection.include?(@session.assistant, tool_id) &&
            Captain::ToolPolicy.execution_allowed?(definition.to_h, assistant: @session.assistant, scope_name: Captain::ToolAccess::SCOPE_AGENT)
       raise Pundit::NotAuthorizedError, 'Tool is not selected in this agent profile'
     end
+
     operator_scope = if definition.supports_scope?(Captain::ToolAccess::SCOPE_ASSISTANT)
                        Captain::ToolAccess::SCOPE_ASSISTANT
                      else
                        Captain::ToolAccess::SCOPE_AGENT
                      end
     unless Captain::ToolPolicy.execution_allowed?(definition.to_h, assistant: @session.assistant,
-                                                  scope_name: operator_scope, user: @session.user)
+                                                                   scope_name: operator_scope, user: @session.user)
       raise Pundit::NotAuthorizedError, 'Tool permission is not available for the current operator'
     end
-    arguments = arguments.to_h.deep_symbolize_keys.compact
+
+    raw_args = arguments.to_h.deep_symbolize_keys.compact
+    arguments = Llm::IinTokenVault.detokenizable_tool?(definition.assistant_tool_class) ? Llm::IinTokenVault.detokenize_deep(raw_args) : raw_args
     validate_arguments!(definition, arguments)
     records = resolve_references(arguments)
     records['patient'] = existing_real_patient!(arguments[:patient]) if tool_id == 'create_appointment'
@@ -72,9 +76,8 @@ class Captain::Playground::RealToolExecutor
     delegate.agent_scope = true if delegate.respond_to?(:agent_scope=)
     # Explicit target operations may have an old active? implementation requiring
     # a conversation. Record policies and the operation itself are authoritative.
-    if read?(tool_id) && !delegate.active?
-      raise Pundit::NotAuthorizedError, 'Tool permission is not available for the current operator'
-    end
+    raise Pundit::NotAuthorizedError, 'Tool permission is not available for the current operator' if read?(tool_id) && !delegate.active?
+
     snapshot = records.transform_values do |record|
       target = { id: record.id, type: record.class.name, updated_at: record.updated_at&.utc&.iso8601(6),
                  name: record.try(:name) || record.try(:title), status: record.try(:status) }.compact
@@ -83,7 +86,7 @@ class Captain::Playground::RealToolExecutor
       if record.is_a?(Contact)
         policy = Integrations::Medelement::AppointmentPatientIdentity
         target[:clinical_identity] = policy.contact_names(record).merge('iin' => policy.contact_iin(record),
-          'birth_date' => record.custom_attributes.to_h['medelement_birth_date'].presence || record.custom_attributes.to_h['birth_date'])
+                                                                        'birth_date' => record.custom_attributes.to_h['medelement_birth_date'].presence || record.custom_attributes.to_h['birth_date'])
       elsif record.is_a?(Scheduling::Appointment)
         policy = Integrations::Medelement::AppointmentPatientIdentity
         target[:appointment] = {
@@ -103,8 +106,10 @@ class Captain::Playground::RealToolExecutor
     prepared ||= prepare(tool_id, arguments)
     @session.validate_active_agent!
     raise ArgumentError, 'The acting agent changed; review a new preview' unless prepared[:actor_id] == @session.assistant.id
+
     if read?(tool_id)
       raise ArgumentError, 'Reading real data is disabled' unless @session.read_enabled?
+
       return ActiveRecord::Base.connected_to(role: :writing, prevent_writes: true) { execute_prepared(tool_id, prepared) }
     end
 
@@ -117,6 +122,7 @@ class Captain::Playground::RealToolExecutor
       unless Outbound::PlaygroundMutationPolicy.authorized_action?(Current.playground_run_policy)
         raise ArgumentError, 'The real-action confirmation was revoked'
       end
+
       execute_prepared(tool_id, fresh)
     end
   end
@@ -131,7 +137,7 @@ class Captain::Playground::RealToolExecutor
              else
                execute_delegate(prepared)
              end
-    Captain::Tools::ProviderReceiptProjection.for_agent(result)
+    Llm::OutboundIinRedactor.redact_payload(Captain::Tools::ProviderReceiptProjection.for_agent(result))
   end
 
   def execute_delegate(prepared)
@@ -214,7 +220,7 @@ class Captain::Playground::RealToolExecutor
     record = records['deal_id'] || records['appointment_id'] || records['task_id'] || records['touch_id'] ||
              records['confirmation_request_id'] || records['message_id']
     conversation_id = record.try(:originating_conversation_id) || record.try(:conversation_id)
-    conversation = relation.find_by!(id: conversation_id) if conversation_id
+    conversation = relation.find(conversation_id) if conversation_id
     records['conversation'] = conversation if conversation
     conversation
   end
@@ -240,9 +246,8 @@ class Captain::Playground::RealToolExecutor
   def execute_create_appointment(prepared)
     arguments = prepared.fetch(:arguments)
     contact = existing_real_patient!(arguments[:patient])
-    unless prepared.dig(:target, 'patient', :id) == contact.id
-      raise ArgumentError, 'The confirmed patient card changed'
-    end
+    raise ArgumentError, 'The confirmed patient card changed' unless prepared.dig(:target, 'patient', :id) == contact.id
+
     params = arguments.except(:patient).merge(contact_id: contact.id, patient_contact_id: contact.id)
     appointment = Scheduling::Appointments::UpsertService.new(account: @session.account, params: params, actor: @session.user).perform
     JSON.generate(Scheduling::ToolPayloadBuilder.appointment_payload(action: 'create_appointment', appointment: appointment))
@@ -252,34 +257,38 @@ class Captain::Playground::RealToolExecutor
     arguments = prepared.fetch(:arguments)
     appointment = @session.account.scheduling_appointments.find(arguments.fetch(:appointment_id))
     params = arguments.except(:appointment_id, :appointment_access_token, :patient_confirmed)
-    if appointment.source == Scheduling::Appointments::MutationGuard::PROVIDER_SOURCE
-      appointment = Scheduling::Appointments::ImportedProviderMutationService.new(
-        appointment: appointment, actor: @session.user,
-        operation: tool_id == 'cancel_appointment' ? 'remove_reception' : 'move_reception', appointment_access: {}, params: params
-      ).perform
-    elsif tool_id == 'cancel_appointment'
-      appointment = Scheduling::Appointments::CancelService.new(appointment: appointment, actor: @session.user).perform
-    else
-      appointment = Scheduling::Appointments::UpsertService.new(account: @session.account, appointment: appointment,
-                                                               params: params, actor: @session.user).perform
-    end
+    appointment = if appointment.source == Scheduling::Appointments::MutationGuard::PROVIDER_SOURCE
+                    Scheduling::Appointments::ImportedProviderMutationService.new(
+                      appointment: appointment, actor: @session.user,
+                      operation: tool_id == 'cancel_appointment' ? 'remove_reception' : 'move_reception', appointment_access: {}, params: params
+                    ).perform
+                  elsif tool_id == 'cancel_appointment'
+                    Scheduling::Appointments::CancelService.new(appointment: appointment, actor: @session.user).perform
+                  else
+                    Scheduling::Appointments::UpsertService.new(account: @session.account, appointment: appointment,
+                                                                params: params, actor: @session.user).perform
+                  end
     JSON.generate(Scheduling::ToolPayloadBuilder.appointment_payload(action: tool_id, appointment: appointment))
   end
 
   def existing_real_patient!(details)
     patient = details.to_h.with_indifferent_access
     raise ArgumentError, 'Select an existing real patient by IIN before creating a real appointment' if patient[:iin].blank?
+
     patient[:iin] = Scheduling::IinValidator.normalize(patient[:iin])
     Scheduling::IinValidator.validate!(patient[:iin])
     if @session.scenario.data['contacts'].any? { |item| Scheduling::IinValidator.normalize(item['identifier']) == patient[:iin] }
       raise ArgumentError, 'Synthetic patients cannot be promoted into real data'
     end
+
     contact = Integrations::Medelement::PatientContactBinding.recorded_contact_by_iin(account: @session.account, iin: patient[:iin])
     raise ArgumentError, 'An exact existing real patient is required' unless contact
+
     policy = Integrations::Medelement::AppointmentPatientIdentity
     identity = policy::NAME_KEYS.index_with { |key| patient[key] }.symbolize_keys
     identity[:middle_name] = policy.contact_names(contact)['middle_name'] unless patient.key?(:middle_name)
     raise ArgumentError, 'Real patient name does not match the selected IIN' unless policy.names_match?(identity, contact)
+
     birth_date = contact.custom_attributes.to_h['medelement_birth_date'].presence || contact.custom_attributes.to_h['birth_date']
     if patient[:birth_date].present? && birth_date.present? && Date.iso8601(patient[:birth_date].to_s) != Date.iso8601(birth_date.to_s)
       raise ArgumentError, 'Real patient birth date does not match the selected card'

@@ -367,6 +367,12 @@ class Telephony::AiVoice::ToolDispatchService
     Captain::Runtime::AgentToolTexts.for_tool(tool_id)
   end
 
+  def self.voice_safe_param_description(name, text)
+    return text unless %w[iin identifier client_identifier].include?(name)
+
+    'Existing [IIN_TOKEN_...] placeholder from caller context only; never ask the caller to dictate a 12-digit IIN on a voice call.'
+  end
+
   def self.captain_parameter_definitions(captain_assistant, tool)
     runtime_tool = Captain::ToolCatalog.build_tool(
       tool,
@@ -386,7 +392,7 @@ class Telephony::AiVoice::ToolDispatchService
       {
         'name' => name,
         'type' => parameter.type.to_s,
-        'description' => (param_texts[name].presence || parameter.description).to_s,
+        'description' => voice_safe_param_description(name, (param_texts[name].presence || parameter.description).to_s),
         'required' => parameter.required
       }
     end
@@ -505,7 +511,7 @@ class Telephony::AiVoice::ToolDispatchService
 
   def perform_create_note
     ensure_conversation!
-    content = arguments['content'].to_s.strip
+    content = Llm::IinTokenVault.detokenize_text(arguments['content'].to_s).strip
     raise Telephony::Error.new(code: 'NOTE_CONTENT_REQUIRED', message: 'content is required', status: :unprocessable_content) if content.blank?
 
     message = conversation.messages.create!(

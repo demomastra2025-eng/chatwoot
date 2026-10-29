@@ -44,8 +44,8 @@ module Scheduling::ToolPayloadBuilder
 
   def sanitize_appointment_payload(data)
     data.merge(
-      client_identifier: Scheduling::IinValidator.sanitize_identifier(data[:client_identifier]),
-      custom_attributes: Scheduling::IinValidator.sanitize_custom_attributes(data[:custom_attributes])
+      client_identifier: Scheduling::IinValidator.tokenize_or_sanitize_identifier(data[:client_identifier]),
+      custom_attributes: Scheduling::IinValidator.tokenize_or_sanitize_custom_attributes(data[:custom_attributes])
     )
   end
 

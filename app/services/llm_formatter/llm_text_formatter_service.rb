@@ -5,7 +5,7 @@ class LlmFormatter::LlmTextFormatterService
 
   def format(config = {})
     formatter_class = find_formatter
-    Scheduling::IinValidator.redact_text(formatter_class.new(@record).format(config))
+    Scheduling::IinValidator.tokenize_or_redact_text(formatter_class.new(@record).format(config))
   end
 
   private

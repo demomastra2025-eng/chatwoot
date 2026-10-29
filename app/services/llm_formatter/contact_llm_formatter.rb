@@ -11,7 +11,7 @@ class LlmFormatter::ContactLlmFormatter < LlmFormatter::DefaultLlmFormatter
                   'No notes for this contact'
                 end
 
-    Scheduling::IinValidator.redact_text(sections.join("\n"))
+    Scheduling::IinValidator.tokenize_or_redact_text(sections.join("\n"))
   end
 
   private

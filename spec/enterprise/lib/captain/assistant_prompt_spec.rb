@@ -26,17 +26,20 @@ RSpec.describe Captain::AssistantPrompt do
     )
   end
 
-  it 'keeps iin_enabled false even when the account holds an iin contact attribute, and gives a suggestion the line of a voice note of staff' do
+  it 'enables tokenized IIN guidance when the account holds an iin contact attribute unless ai_disable_iin_collection is set' do
     expect(variables[:iin_enabled]).to be(false)
     expect(variables).not_to have_key(:staff_voice_note)
 
     create(:custom_attribute_definition, account: account, attribute_key: 'iin', attribute_model: :contact_attribute)
 
-    expect(variables[:iin_enabled]).to be(false)
+    expect(variables[:iin_enabled]).to be(true)
     suggestion = described_class.new(assistant: assistant, context: context, state: {}, prompt_state: {}, suggestion: true).variables
     expect(suggestion[:staff_voice_note]).to eq(Captain::ReplySuggestion::HistoryBuilder::STAFF_VOICE_NOTE)
     expect(suggestion[:operator_language]).to be_present
     expect(suggestion[:staff_reply_signature]).to eq('')
+
+    account.update!(custom_attributes: account.custom_attributes.to_h.merge('ai_disable_iin_collection' => true))
+    expect(variables[:iin_enabled]).to eq('disabled')
   end
 
   it 'passes the requesting staff signature only to a suggestion prompt' do
@@ -47,13 +50,19 @@ RSpec.describe Captain::AssistantPrompt do
     expect(variables(staff_reply_signature: 'Clinic Test, operator Ana')).not_to have_key(:staff_reply_signature)
   end
 
-  it 'resolves non-IIN contact fields of the clinic context while masking 12-digit IIN identifiers' do
+  it 'resolves non-IIN contact fields, hides 12-digit IINs outside a vault, and tokenizes 12-digit IINs inside Llm::IinTokenVault' do
     account.update!(captain_clinic_context: 'Код карты: [Код](field://contact.identifier).')
     card_state = { prompt_context: { contact: contact.merge('identifier' => 'CARD-42') } }
     iin_state = { prompt_context: { contact: contact.merge('identifier' => '900101300123') } }
 
     expect(variables(state: card_state, clinic_context: assistant.prompt_clinic_context)[:clinic_context]).to eq('Код карты: CARD-42.')
     expect(variables(state: iin_state, clinic_context: assistant.prompt_clinic_context)[:clinic_context]).to eq('Код карты: not specified.')
+
+    Llm::IinTokenVault.with_scope(account_id: account.id, scope_id: 'conv:42') do
+      tokenized_ctx = variables(state: iin_state, clinic_context: assistant.prompt_clinic_context)[:clinic_context]
+      expect(tokenized_ctx).not_to include('900101300123')
+      expect(tokenized_ctx).to match(/\AКод карты: \[IIN_TOKEN_[0-9A-F]{10}\]\.\z/)
+    end
   end
 
   it 'gives the clinic context and the send time line of an earlier day together without leaking an IIN' do

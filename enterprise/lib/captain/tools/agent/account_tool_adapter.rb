@@ -40,8 +40,10 @@ class Captain::Tools::Agent::AccountToolAdapter < Captain::Runtime::Tool
   def execute(tool_context, **params)
     ensure_tool_execution_allowed!
     scope = patient_scope(tool_context)
-    scope.authorize_adapter_tool!(tool_id, params)
-    result = invoke_delegate(tool_context, params, scope)
+    exec_params = detokenize_iin_arguments? ? Llm::IinTokenVault.detokenize_deep(params) : params
+    scope.authorize_adapter_tool!(tool_id, exec_params)
+    raw_result = invoke_delegate(tool_context, exec_params, scope)
+    result = Llm::OutboundIinRedactor.redact_payload(raw_result)
     audit_tool_execution(arguments: params, result: result, runtime_context: runtime_context(tool_context))
     result
   rescue Captain::Tools::Agent::PatientScope::Denied
@@ -60,6 +62,10 @@ class Captain::Tools::Agent::AccountToolAdapter < Captain::Runtime::Tool
   private
 
   attr_reader :assistant, :tool_id
+
+  def detokenize_iin_arguments?
+    Llm::IinTokenVault.detokenizable_tool?(account_tool_class)
+  end
 
   def definition
     @definition ||= Captain::ToolRegistry.definition_for(tool_id)

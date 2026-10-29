@@ -17,8 +17,10 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
   def execute(tool_context, **params)
     ensure_tool_execution_allowed!
     ensure_captain_control_current!(tool_context)
-    patient_scope_for(tool_context.state).authorize_public_tool!(name, params, tool_context.state)
-    result = super
+    exec_params = detokenize_iin_arguments? ? Llm::IinTokenVault.detokenize_deep(params) : params
+    patient_scope_for(tool_context.state).authorize_public_tool!(name, exec_params, tool_context.state)
+    raw_result = super(tool_context, **exec_params)
+    result = Llm::OutboundIinRedactor.redact_payload(raw_result)
     audit_tool_execution(arguments: params, result: result, runtime_context: runtime_context(tool_context))
     result
   rescue Captain::Tools::Agent::PatientScope::Denied
@@ -43,6 +45,10 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
   private
 
   attr_reader :assistant
+
+  def detokenize_iin_arguments?
+    Llm::IinTokenVault.detokenizable_tool?(self)
+  end
 
   def tool_scope_name
     Captain::ToolAccess::SCOPE_AGENT

@@ -55,6 +55,7 @@ class Captain::ReplySuggestion::AgentOutcomeClassifier
   # check of a silence about an offer or a confirmation (Captain::SilenceCheck); without visit that check is not made.
   def initialize(raw_payload, trace_collector:, patient_text: nil, last_clinic: nil, visit: nil)
     @payload = raw_payload.to_h.with_indifferent_access
+    @payload[:operator_note] = Llm::IinTokenVault.strip_tokens(@payload[:operator_note]) if @payload[:operator_note].is_a?(String)
     @trace_collector = trace_collector
     @patient_text = patient_text.to_s
     @last_clinic = last_clinic

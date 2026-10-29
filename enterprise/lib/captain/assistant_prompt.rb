@@ -35,7 +35,7 @@ class Captain::AssistantPrompt
         clinic_context: @context[:clinic_context] },
       @prompt_state, bound_tool_ids: bound_tool_ids, time_zone: time_zone
     )
-    variables = texts.merge(now_text: now_text, patient_lines: patient_lines, iin_enabled: iin_enabled?)
+    variables = texts.merge(now_text: now_text, patient_lines: patient_lines, iin_enabled: iin_enabled_value)
     return variables unless @suggestion
 
     variables.merge(operator_language: operator_language, staff_voice_note: staff_voice_note,
@@ -45,9 +45,17 @@ class Captain::AssistantPrompt
 
   private
 
-  # Patient IINs are masked server-side before reaching external LLM providers and are never requested by AI agents.
-  def iin_enabled?
-    false
+  # Patient IINs are tokenized server-side as [IIN_TOKEN_...] before reaching external LLM providers,
+  # while clinics whose contact attributes hold an IIN can still collect and pass tokens to built-in tools
+  # unless explicitly disabled via account.custom_attributes['ai_disable_iin_collection'].
+  def iin_enabled_value
+    return 'disabled' if iin_collection_disabled? || ActiveModel::Type::Boolean.new.cast(@state[:voice_realtime])
+
+    Scheduling::IinValidator.in_use?(@assistant.account)
+  end
+
+  def iin_collection_disabled?
+    ActiveModel::Type::Boolean.new.cast(@assistant.account&.custom_attributes.to_h['ai_disable_iin_collection'])
   end
 
   # The line the history shows for a voice note of staff without a transcript (Captain::ReplySuggestion::HistoryBuilder).
@@ -107,8 +115,12 @@ class Captain::AssistantPrompt
       numbered_line(:conversation, 'Conversation ID', conversation[:display_id]),
       *unplaced_summary_lines,
       *preload_lines,
-      *Captain::DoneActions.lines(@done)
+      *done_action_lines
     ].compact
+  end
+
+  def done_action_lines
+    Captain::DoneActions.lines(@done).map { |line| Scheduling::IinValidator.tokenize_or_redact_text(line) }
   end
 
   # The FAQ answers close to the patient's latest message that the suggestion found before the first model call (Captain::ReplySuggestion::
@@ -184,7 +196,7 @@ class Captain::AssistantPrompt
       next if placed.include?("#{scope}.summary")
 
       rendered = Captain::PromptSummaryText.render(summaries[scope] || summaries[scope.to_s], time_zone: time_zone, bound_tool_ids: bound_tool_ids)
-      text = Scheduling::IinValidator.redact_text(rendered)
+      text = Scheduling::IinValidator.tokenize_or_redact_text(rendered)
       "#{label}: #{text}." if text.present?
     end
   end

@@ -43,11 +43,11 @@ class Captain::Tools::Account::UpdateContactService < Captain::Tools::Account::B
       name: contact.name,
       email: contact.email,
       phone_number: contact.phone_number,
-      identifier: Scheduling::IinValidator.sanitize_identifier(contact.identifier),
+      identifier: Scheduling::IinValidator.tokenize_or_sanitize_identifier(contact.identifier),
       company_id: contact.company_id,
       contact_type: contact.contact_type,
-      additional_attributes: Scheduling::IinValidator.sanitize_custom_attributes(contact.additional_attributes),
-      custom_attributes: Scheduling::IinValidator.sanitize_custom_attributes(contact.custom_attributes),
+      additional_attributes: Scheduling::IinValidator.tokenize_or_sanitize_custom_attributes(contact.additional_attributes),
+      custom_attributes: Scheduling::IinValidator.tokenize_or_sanitize_custom_attributes(contact.custom_attributes),
       created_at: contact.created_at&.iso8601,
       updated_at: contact.updated_at&.iso8601
     }

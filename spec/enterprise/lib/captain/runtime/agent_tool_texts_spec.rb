@@ -144,17 +144,21 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
     end
   end
 
-  it 'hides IIN parameters from patient-facing agent tool schemas and never mentions IIN in tool texts' do
-    expect(described_class.for_tool('search_appointments').hidden_params).to include('client_identifier')
-    expect(described_class.for_tool('update_contact').hidden_params).to include('identifier')
-    expect(described_class.for_tool('update_my_contact').hidden_params).to include('iin')
+  # Suggestion eval 27.10 (c74-1245386) + Variant 2 IinTokenVault: IIN parameters accept 12 digits or [IIN_TOKEN_...] and reject phone numbers.
+  it 'exposes tokenized IIN parameters on patient-facing tools and warns never to pass a phone number as an IIN' do
+    expect(described_class.for_tool('search_appointments').hidden_params).not_to include('client_identifier')
+    expect(described_class.for_tool('update_contact').hidden_params).not_to include('identifier')
+    expect(described_class.for_tool('update_my_contact').hidden_params).not_to include('iin')
 
-    described_class.tool_ids.each do |tool_id|
-      entry = described_class.for_tool(tool_id)
-      ([['description', entry.description]] + entry.params.to_a).each do |name, text|
-        expect(text).not_to match(/\bIIN\b/i), "#{tool_id}.#{name} mentions IIN: #{text}"
-      end
-    end
+    expect(described_class.for_tool('search_appointments').params['client_identifier'])
+      .to include('[IIN_TOKEN_...]')
+    expected_fragments = [
+      'IIN: 12 digits with the check digit',
+      '[IIN_TOKEN_...]',
+      'Never a phone number or any other number the patient sent for another purpose'
+    ]
+    expect(described_class.for_tool('update_contact').params['identifier']).to include(*expected_fragments)
+    expect(described_class.for_tool('update_my_contact').params['iin']).to include(*expected_fragments)
   end
 
   # Suggestion eval 27.10 (c74-1245884): a search for earlier or later times started from tomorrow and skipped the free times of today.
@@ -171,7 +175,7 @@ RSpec.describe Captain::Runtime::AgentToolTexts do
 
     expect(entry.params['patient']).to eq(
       'The patient the appointment is for when it is not the person in this conversation (a child, a relative): ' \
-      'first and last name, birth date YYYY-MM-DD; middle name, gender, phone if known.'
+      'first and last name, birth date YYYY-MM-DD; middle name, IIN ([IIN_TOKEN_...]), gender, phone if known.'
     )
     expect(entry.description).to include('For a child or another person pass patient')
   end
