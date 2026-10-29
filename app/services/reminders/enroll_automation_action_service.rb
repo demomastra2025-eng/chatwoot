@@ -13,6 +13,8 @@ class Reminders::EnrollAutomationActionService
   end
 
   def perform(activated_at: Time.current)
+    return if Contact.automation_notifications_suppressed_for?(remindable, account_id: account.id)
+
     existing_enrollment = open_enrollment
     return existing_enrollment if existing_enrollment.present?
 

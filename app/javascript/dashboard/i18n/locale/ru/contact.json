@@ -1,5 +1,11 @@
 {
   "CONTACT_PANEL": {
+    "NOTIFICATIONS_MUTED_LABEL": "Не отправлять автоуведомления",
+    "NOTIFICATIONS_MUTED_HINT": "Отключает автоматические напоминания и уведомления о записях для этой карточки",
+    "NOTIFICATIONS_MUTED_STATUS": "Автоуведомления отключены",
+    "NOTIFICATIONS_MUTED_PATIENT_LABEL": "Не отправлять автоуведомления ({name})",
+    "NOTIFICATIONS_MUTED_SAVED": "Автоуведомления для карточки отключены",
+    "NOTIFICATIONS_UNMUTED_SAVED": "Автоуведомления для карточки включены",
     "ADD_PHONE": "+ Добавить телефон",
     "OPEN_PROFILE": "Открыть страницу контакта",
     "ACTION_DEAL": "Сделка",

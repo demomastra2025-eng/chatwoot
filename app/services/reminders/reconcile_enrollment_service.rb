@@ -17,6 +17,8 @@ class Reminders::ReconcileEnrollmentService
         cancel_unavailable_source!
       elsif Reminders::ExcludedContactPolicy.enrollment_excluded?(enrollment)
         cancel_excluded_contact!
+      elsif Reminders::SuppressedContactPolicy.cancel_enrollment_if_suppressed!(enrollment)
+        nil
       else
         reconcile_materialized_reminders!
         schedule.refresh_next_due!

@@ -89,8 +89,9 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
   end
 
   def contact_attributes
-    attrs = params.permit(:name, :full_name, :first_name, :last_name, :middle_name, :phone, :phone_number, :identifier, :company_id)
-    {
+    attrs = params.permit(:name, :full_name, :first_name, :last_name, :middle_name, :phone, :phone_number, :identifier,
+                          :company_id, :notifications_muted)
+    attributes = {
       name: resolved_contact_name(attrs),
       last_name: attrs[:last_name].to_s.strip.presence,
       middle_name: attrs[:middle_name].to_s.strip.presence,
@@ -98,6 +99,9 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
       identifier: resolved_identifier(attrs),
       company_id: resolve_company_id(attrs[:company_id])
     }.compact.merge(cleared_structured_name_attributes(attrs))
+    return attributes unless params.key?(:notifications_muted)
+
+    attributes.merge(notifications_muted: ActiveModel::Type::Boolean.new.cast(attrs[:notifications_muted]))
   end
 
   def resolved_phone_number(attrs)

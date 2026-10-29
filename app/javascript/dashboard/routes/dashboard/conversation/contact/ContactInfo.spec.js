@@ -32,11 +32,13 @@ vi.mock('dashboard/components-next/Contacts/VoiceCallButton.vue', () => ({
 const createStore = (
   conversations,
   showActions = false,
-  contactAttributes = []
+  contactAttributes = [],
+  contactsById = {}
 ) => ({
   getters: {
     getCurrentAccountId: 1,
     'attributes/getAttributesByModel': () => contactAttributes,
+    'contacts/getContact': id => contactsById[id] || null,
     getCurrentUser: {
       accounts: [
         {
@@ -71,10 +73,15 @@ const buildWrapper = ({
   showActions = false,
   canAddFamilyMember = false,
   contactAttributes = [],
+  selectedPatient = null,
+  patientContextEnabled = false,
+  contactsById = {},
 } = {}) =>
   shallowMount(ContactInfo, {
     props: {
       canAddFamilyMember,
+      selectedPatient,
+      patientContextEnabled,
       contact: {
         id: 154,
         name: 'Jane Doe',
@@ -94,7 +101,12 @@ const buildWrapper = ({
         $router: {
           push: routerPushMock,
         },
-        $store: createStore(conversations, showActions, contactAttributes),
+        $store: createStore(
+          conversations,
+          showActions,
+          contactAttributes,
+          contactsById
+        ),
         $t: key => key,
       },
       stubs: {
@@ -413,5 +425,70 @@ describe('ContactInfo', () => {
     expect(
       dossier.find('[data-testid="contact-preferred-language-select"]').exists()
     ).toBe(false);
+  });
+
+  it('toggles contact notifications_muted in one click and shows muted status when enabled', async () => {
+    dispatchMock.mockResolvedValue({ id: 154, notifications_muted: true });
+    const wrapper = buildWrapper({
+      contact: { notifications_muted: false },
+    });
+
+    const toggle = wrapper.getComponent(
+      '[data-testid="contact-notifications-muted-toggle"]'
+    );
+    expect(toggle.props('modelValue')).toBe(false);
+    expect(
+      wrapper
+        .find('[data-testid="contact-notifications-muted-status"]')
+        .exists()
+    ).toBe(false);
+
+    await toggle.vm.$emit('change', true);
+    expect(dispatchMock).toHaveBeenCalledWith('contacts/update', {
+      id: 154,
+      notifications_muted: true,
+    });
+
+    const mutedWrapper = buildWrapper({
+      contact: { notifications_muted: true },
+    });
+    expect(
+      mutedWrapper
+        .getComponent('[data-testid="contact-notifications-muted-toggle"]')
+        .props('modelValue')
+    ).toBe(true);
+    expect(
+      mutedWrapper
+        .find('[data-testid="contact-notifications-muted-status"]')
+        .exists()
+    ).toBe(true);
+  });
+
+  it('allows muting a separate selected shared-phone patient card without muting the chat owner', async () => {
+    dispatchMock.mockResolvedValue({ id: 999, notifications_muted: true });
+    const wrapper = buildWrapper({
+      contact: { id: 154, name: 'Phone Holder', notifications_muted: false },
+      patientContextEnabled: true,
+      selectedPatient: {
+        id: 999,
+        full_name: 'Пмсп',
+        notifications_muted: false,
+      },
+    });
+
+    const patientRow = wrapper.find(
+      '[data-testid="patient-notifications-muted-row"]'
+    );
+    expect(patientRow.exists()).toBe(true);
+    const patientToggle = wrapper.getComponent(
+      '[data-testid="patient-notifications-muted-toggle"]'
+    );
+    expect(patientToggle.props('modelValue')).toBe(false);
+
+    await patientToggle.vm.$emit('change', true);
+    expect(dispatchMock).toHaveBeenCalledWith('contacts/update', {
+      id: 999,
+      notifications_muted: true,
+    });
   });
 });

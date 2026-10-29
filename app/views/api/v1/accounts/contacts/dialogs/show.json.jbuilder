@@ -9,3 +9,4 @@ json.channels do
 end
 json.shared_phone_holder(@shared_phone_holder && { id: @shared_phone_holder.id, name: @shared_phone_holder.display_full_name })
 json.blocked @contact.blocked
+json.notifications_muted @contact.notifications_muted

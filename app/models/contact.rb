@@ -17,6 +17,7 @@
 #  location              :string           default("")
 #  middle_name           :string           default("")
 #  name                  :string           default("")
+#  notifications_muted   :boolean          default(FALSE), not null
 #  phone_number          :string
 #  created_at            :datetime         not null
 #  updated_at            :datetime         not null
@@ -113,6 +114,7 @@ class Contact < ApplicationRecord
   after_commit :enqueue_shared_phone_release, on: [:update, :destroy]
   after_create_commit :dispatch_create_event, :ip_lookup
   after_update_commit :dispatch_update_event
+  after_update_commit :cancel_suppressed_automation_touches, if: :automation_notifications_newly_suppressed?
   after_destroy_commit :dispatch_destroy_event
 
   enum contact_type: { visitor: 0, lead: 1, customer: 2 }
@@ -239,6 +241,7 @@ class Contact < ApplicationRecord
       phone_number: phone_number,
       thumbnail: resolved_avatar_url,
       blocked: blocked,
+      notifications_muted: notifications_muted,
       type: 'contact'
     }
 
@@ -265,7 +268,8 @@ class Contact < ApplicationRecord
       owner: owner&.webhook_data,
       phone_number: phone_number,
       thumbnail: resolved_avatar_url,
-      blocked: blocked
+      blocked: blocked,
+      notifications_muted: notifications_muted
     }
   end
 
@@ -401,6 +405,37 @@ class Contact < ApplicationRecord
 
   def self.from_email(email)
     find_by(email: email&.downcase)
+  end
+
+  def automation_notifications_suppressed?
+    notifications_muted? || blocked?
+  end
+
+  def self.automation_contact_ids_for(record_or_contacts)
+    Array.wrap(record_or_contacts).flat_map do |item|
+      case item
+      when nil then []
+      when Integer, String then Array(AutomationRules::ContactCondition.normalize_id(item))
+      when Contact then [item.id]
+      when Reminder then reminder_automation_contact_ids(item)
+      else AutomationRules::ContactCondition.contact_ids_of(item)
+      end
+    end.compact.uniq
+  end
+
+  def self.reminder_automation_contact_ids(reminder)
+    ids = [reminder.target_contact_id]
+    ids.concat(AutomationRules::ContactCondition.contact_ids_of(reminder.remindable)) if reminder.remindable.present?
+    if ids.compact.empty?
+      ids << reminder.target_conversation&.contact_id
+      ids << reminder.conversation&.contact_id
+    end
+    ids.compact.uniq
+  end
+  private_class_method :reminder_automation_contact_ids
+
+  def self.automation_notifications_suppressed_for?(record_or_contacts, account_id: nil)
+    Reminders::SuppressedContactPolicy.suppressed_contact_for(record_or_contacts, account_id: account_id).present?
   end
 
   private
@@ -708,6 +743,15 @@ class Contact < ApplicationRecord
     return unless Current.executed_by.is_a?(User)
 
     Integrations::Medelement::OutboundChangeService.contact_event_snapshot(self)
+  end
+
+  def automation_notifications_newly_suppressed?
+    (saved_change_to_notifications_muted? && notifications_muted?) ||
+      (saved_change_to_blocked? && blocked?)
+  end
+
+  def cancel_suppressed_automation_touches
+    Reminders::CancelSuppressedContactTouchesService.new(contact: self).perform
   end
 end
 Contact.include_mod_with('Concerns::Contact')

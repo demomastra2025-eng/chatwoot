@@ -1,5 +1,11 @@
 {
   "CONTACT_PANEL": {
+    "NOTIFICATIONS_MUTED_LABEL": "Mute automated notifications",
+    "NOTIFICATIONS_MUTED_HINT": "Disables automated appointment reminders and notifications for this contact card",
+    "NOTIFICATIONS_MUTED_STATUS": "Automated notifications muted",
+    "NOTIFICATIONS_MUTED_PATIENT_LABEL": "Mute automated notifications ({name})",
+    "NOTIFICATIONS_MUTED_SAVED": "Automated notifications muted for this card",
+    "NOTIFICATIONS_UNMUTED_SAVED": "Automated notifications enabled for this card",
     "ADD_PHONE": "+ Add phone",
     "OPEN_PROFILE": "Open contact page",
     "ACTION_DEAL": "Deal",

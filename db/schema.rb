@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_28_193000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_29_161500) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1462,6 +1462,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_28_193000) do
     t.boolean "blocked", default: false, null: false
     t.bigint "company_id"
     t.bigint "owner_id"
+    t.boolean "notifications_muted", default: false, null: false
     t.index "account_id, ((custom_attributes ->> 'medelement_patient_code'::text))", name: "idx_contacts_account_medelement_patient_code", unique: true, where: "((custom_attributes ->> 'medelement_patient_code'::text) IS NOT NULL)"
     t.index "account_id, \"right\"(regexp_replace((phone_number)::text, '[^0-9]'::text, ''::text, 'g'::text), 10)", name: "index_contacts_on_account_id_and_phone_national"
     t.index "lower((email)::text), account_id", name: "index_contacts_on_lower_email_account_id"

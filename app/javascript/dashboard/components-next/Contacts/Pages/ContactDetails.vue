@@ -9,6 +9,7 @@ import camelcaseKeys from 'camelcase-keys';
 
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 import ContactLabels from 'dashboard/components-next/Contacts/ContactLabels/ContactLabels.vue';
 import ContactsForm from 'dashboard/components-next/Contacts/ContactsForm/ContactsForm.vue';
 import ConfirmContactDeleteDialog from 'dashboard/components-next/Contacts/ContactsForm/ConfirmContactDeleteDialog.vue';
@@ -76,12 +77,56 @@ const applyUpdatedContact = updatedContact => {
   };
 };
 
+const isSavingNotificationsMute = ref(false);
+
+const isNotificationsMuted = computed(() =>
+  Boolean(
+    contactData.value?.notificationsMuted ??
+      contactData.value?.notifications_muted
+  )
+);
+
+const toggleNotificationsMuted = async nextValue => {
+  if (!props.selectedContact?.id || isSavingNotificationsMute.value) return;
+  const muted = Boolean(nextValue);
+  isSavingNotificationsMute.value = true;
+  try {
+    const updatedContact = await store.dispatch('contacts/update', {
+      id: props.selectedContact.id,
+      notifications_muted: muted,
+    });
+    applyUpdatedContact(updatedContact);
+    const resolvedMuted = Boolean(
+      updatedContact?.notifications_muted ??
+        updatedContact?.notificationsMuted ??
+        muted
+    );
+    contactData.value.notificationsMuted = resolvedMuted;
+    if ('notifications_muted' in contactData.value) {
+      contactData.value.notifications_muted = resolvedMuted;
+    }
+    useAlert(
+      resolvedMuted
+        ? t('CONTACT_PANEL.NOTIFICATIONS_MUTED_SAVED')
+        : t('CONTACT_PANEL.NOTIFICATIONS_UNMUTED_SAVED')
+    );
+  } catch (error) {
+    useAlert(error?.message || t('CONTACT_FORM.ERROR_MESSAGE'));
+  } finally {
+    isSavingNotificationsMute.value = false;
+  }
+};
+
 watch(
   () => props.selectedContact?.id,
   () => {
     avatarFile.value = null;
     avatarUrl.value = '';
     Object.assign(contactData.value, getInitialContactData());
+    contactData.value.notificationsMuted = Boolean(
+      props.selectedContact?.notificationsMuted ??
+        props.selectedContact?.notifications_muted
+    );
   },
   { immediate: true }
 );
@@ -383,6 +428,39 @@ const openChannelConversation = channelIdentity => {
         </div>
 
         <ContactLabels :contact-id="selectedContact?.id" />
+        <div
+          data-testid="contact-details-notifications-muted-row"
+          class="flex w-full items-center justify-between gap-3 rounded-xl bg-n-solid-2 px-4 py-3 outline outline-1 outline-n-container"
+        >
+          <div class="flex min-w-0 flex-col gap-0.5">
+            <span
+              v-tooltip.top="t('CONTACT_PANEL.NOTIFICATIONS_MUTED_HINT')"
+              class="inline-flex min-w-0 items-center gap-1.5 text-sm font-medium text-n-slate-12"
+            >
+              <span class="truncate">{{
+                t('CONTACT_PANEL.NOTIFICATIONS_MUTED_LABEL')
+              }}</span>
+              <span
+                class="i-lucide-info size-3.5 shrink-0 text-n-slate-10"
+                aria-hidden="true"
+              />
+            </span>
+            <span
+              v-if="isNotificationsMuted"
+              data-testid="contact-details-notifications-muted-status"
+              class="text-xs font-medium text-n-amber-11"
+            >
+              {{ t('CONTACT_PANEL.NOTIFICATIONS_MUTED_STATUS') }}
+            </span>
+          </div>
+          <Switch
+            data-testid="contact-details-notifications-muted-toggle"
+            :model-value="isNotificationsMuted"
+            :disabled="isSavingNotificationsMute || isUpdating"
+            :aria-label="t('CONTACT_PANEL.NOTIFICATIONS_MUTED_LABEL')"
+            @change="toggleNotificationsMuted"
+          />
+        </div>
         <details
           v-if="hasIdentityAccordion"
           class="identity-accordion w-full overflow-hidden rounded-xl bg-n-solid-2 outline outline-1 outline-n-container"
