@@ -10,7 +10,8 @@ module Filters::MetaAdReferralFilter
   private
 
   def meta_ad_referral_filter_query(query_hash, current_index, table_name: filter_config[:table_name])
-    condition = query_hash.with_indifferent_access
+    raw_hash = query_hash.respond_to?(:to_unsafe_h) ? query_hash.to_unsafe_h : query_hash.to_h
+    condition = raw_hash.with_indifferent_access
     @filter_values["meta_ad_account_id_#{current_index}"] = @account.id
     predicate = if condition[:attribute_key].to_s == 'meta_ad_source_id'
                   meta_ad_source_predicate_sql(condition, current_index, table_name)

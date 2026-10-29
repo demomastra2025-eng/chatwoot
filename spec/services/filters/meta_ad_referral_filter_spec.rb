@@ -220,4 +220,31 @@ RSpec.describe Filters::MetaAdReferralFilter do
       expect(AutomationRules::ConditionsFilterService.new(rule, organic_conversation).perform).to be(false)
     end
   end
+
+  describe 'ActionController::Parameters HTTP controller input' do
+    let!(:ad_conv) { create(:conversation, account: account, inbox: inbox, status: :open) }
+    let!(:plain_conv) { create(:conversation, account: account, inbox: inbox, status: :open) }
+
+    before do
+      create_referral(conversation: ad_conv, source_id: '238777', headline: 'Checkup')
+    end
+
+    it 'handles unpermitted ActionController::Parameters without NoMethodError' do
+      ac_params = ActionController::Parameters.new(
+        payload: [
+          {
+            attribute_key: 'meta_ad_referral',
+            filter_operator: 'equal_to',
+            values: ['true'],
+            query_operator: nil
+          }
+        ],
+        page: 1
+      )
+      result = Conversations::FilterService.new(ac_params, admin, account).perform
+      ids = result[:conversations].map(&:id)
+      expect(ids).to contain_exactly(ad_conv.id)
+      expect(ids).not_to include(plain_conv.id)
+    end
+  end
 end
