@@ -19,6 +19,10 @@ class Captain::ReplySuggestion::DraftStream
   # The agent copies the send stamp of a history message into its reply now and then ("[Sat 24.10 09:50]"); the run removes it
   # (Captain::PromptClock.unstamped). A text that may still turn out to start with one is held until it is clear that it does not.
   STAMP_HEAD_LIMIT = 24
+  REFUSAL_HEAD_LIMIT = 180
+  REFUSAL_HEAD_PREFIXES = "as\\s+an\\s+ai|i'm\\s+sorry|i\\s+am\\s+sorry|sorry\\b|i\\s+apologize|" \
+                          "i\\s+(?:cannot|can't|am\\s+(?:not\\s+)?able|am\\s+unable|won't|will\\s+not)|i'm\\s+(?:unable|not\\s+able)"
+  REFUSAL_HEAD_PATTERN = /\A(?:#{REFUSAL_HEAD_PREFIXES})\b/i
 
   # identity: the fields that tell the dashboard whose preview it is (suggestion_request_id, account_id, conversation_id,
   # conversation_record_id). clock: monotonic seconds.
@@ -120,7 +124,16 @@ class Captain::ReplySuggestion::DraftStream
     text = @reader.text
     return if stamp_may_follow?(text)
 
-    Captain::PromptClock.unstamped(text).strip.presence
+    cleaned = Captain::PromptClock.unstamped(text).strip
+    return if cleaned.empty? || refusal_may_follow?(cleaned)
+    return if Llm::CaptainResponseContentNormalizer.provider_refusal?(cleaned)
+
+    cleaned
+  end
+
+  def refusal_may_follow?(cleaned)
+    !@reader.closed? && cleaned.length < REFUSAL_HEAD_LIMIT &&
+      REFUSAL_HEAD_PATTERN.match?(Llm::CaptainResponseContentNormalizer.normalize_quotes(cleaned))
   end
 
   def stamp_may_follow?(text)

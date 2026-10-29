@@ -7,6 +7,20 @@ class Llm::CaptainResponseContentNormalizer
   DEFAULT_REASONING = 'Response generated from the current conversation and available tool results.'
   INVALID_PUBLIC_RESPONSE_LITERALS = %w[true false null response].freeze
   RETIRED_HANDOFF_KEYS = %w[handoff_message handoff_reason].freeze
+  CURLY_APOSTROPHES = /[\u2018\u2019\u02BC]/
+  CURLY_QUOTES = /[\u201C\u201D]/
+  REFUSAL_LEAD_IN = '(?:as\s+an\s+ai(?:\s+(?:assistant|language\s+model|model))?,?\s*)?' \
+                    "(?:(?:i'm\\s+sorry|i\\s+am\\s+sorry|sorry|i\\s+apologize)(?:,?\\s+but)?\\s*,?\\s*)?"
+  REFUSAL_SUBJECT_VERB = "(?:i\\s+(?:cannot|can't|am\\s+unable\\s+to|am\\s+not\\s+able\\s+to|won't|will\\s+not)|" \
+                         "i'm\\s+(?:unable|not\\s+able)\\s+to)"
+  REFUSAL_ACTION = '(?:assist|help|fulfill|comply|complete|process|answer|respond|provide|generate|continue|engage)'
+  REFUSAL_TARGET = '(?:\s+you)?(?:\s+(?:with|to))?\s+' \
+                   '(?:that|this|it|(?:that|this|your|such)\s+(?:request|requests|query|topic|prompt|conversation|content|matter))'
+  REFUSAL_TRAILER = '(?:[.!]+(?:\s+(?:if\s+you\s+have\s+(?:any\s+)?other\s+questions|feel\s+free\s+to\s+ask|' \
+                    "i(?:'m|\\s+am)\\s+here\\s+to\\s+help)[^.!?]*[.!]?)?|[.!]*)"
+  PROVIDER_REFUSAL_PATTERNS = [
+    /\A#{REFUSAL_LEAD_IN}#{REFUSAL_SUBJECT_VERB}\s+#{REFUSAL_ACTION}#{REFUSAL_TARGET}#{REFUSAL_TRAILER}\z/i
+  ].freeze
 
   class << self
     def apply_defaults(schema, content)
@@ -34,7 +48,7 @@ class Llm::CaptainResponseContentNormalizer
       return unless content.is_a?(String)
 
       text = strip_provider_reasoning(content)
-      return if text.blank? || json_document_like?(text) || Llm::JsonDocumentExtractor.call(text).present?
+      return if unusable_plain_text_fallback?(text)
 
       fallback = {
         patient_language: '',
@@ -54,10 +68,25 @@ class Llm::CaptainResponseContentNormalizer
       Llm::StructuredOutputSchema.name_for(schema) == SUGGESTION_SCHEMA_NAME
     end
 
+    def normalize_quotes(value)
+      value.to_s.gsub(CURLY_APOSTROPHES, "'").gsub(CURLY_QUOTES, '"')
+    end
+
+    def provider_refusal?(value)
+      return false unless value.is_a?(String)
+
+      stripped = strip_provider_reasoning(value)
+      stripped = Captain::PromptClock.unstamped(stripped) if defined?(Captain::PromptClock)
+      cleaned = normalize_quotes(stripped).squish
+      return false if cleaned.blank?
+
+      PROVIDER_REFUSAL_PATTERNS.any? { |pattern| pattern.match?(cleaned) }
+    end
+
     def invalid_public_response?(value)
       return true unless value.is_a?(String)
 
-      INVALID_PUBLIC_RESPONSE_LITERALS.include?(value.strip.downcase)
+      INVALID_PUBLIC_RESPONSE_LITERALS.include?(value.strip.downcase) || provider_refusal?(value)
     end
 
     def invalid_public_response_message(value)
@@ -65,6 +94,10 @@ class Llm::CaptainResponseContentNormalizer
     end
 
     private
+
+    def unusable_plain_text_fallback?(text)
+      text.blank? || invalid_public_response?(text) || json_document_like?(text) || Llm::JsonDocumentExtractor.call(text).present?
+    end
 
     def normalized_response_mode(value)
       value.to_s.strip.presence || 'reply'

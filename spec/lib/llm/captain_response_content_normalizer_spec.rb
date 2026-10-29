@@ -51,5 +51,51 @@ RSpec.describe Llm::CaptainResponseContentNormalizer do
         patient_language: '', response: 'Готово.', response_mode: 'reply', reasoning: described_class::DEFAULT_REASONING, artifact_ids: []
       )
     end
+
+    it 'rejects canned provider safety refusals instead of wrapping them as customer replies' do
+      refusals = [
+        "I'm sorry, but I cannot assist with that request.",
+        "<think>policy check</think>\nI’m sorry, I can’t assist with that.",
+        'I cannot fulfill this request.'
+      ]
+
+      refusals.each do |refusal|
+        expect(described_class.plain_text_fallback(schema, refusal)).to be_nil
+        expect(described_class.plain_text_fallback(Captain::SuggestionResponseSchema, refusal)).to be_nil
+      end
+    end
+  end
+
+  describe '.provider_refusal?' do
+    it 'detects straight-quote, curly-quote and reasoning-prefixed provider safety refusals' do
+      refusals = [
+        "I'm sorry, but I cannot assist with that request.",
+        'I’m sorry, but I can’t assist with that request.',
+        "Sorry, I can't help with that.",
+        'I apologize, but I cannot fulfill this request.',
+        'I cannot comply with this request.',
+        "As an AI assistant, I'm unable to assist with your request.",
+        "[Thu 29.10 16:30] I'm sorry, but I cannot assist with that request.",
+        "<think>safety</think>\nI'm sorry, but I cannot assist with that request. If you have other questions, feel free to ask."
+      ]
+
+      expect(refusals).to all(satisfy { |text| described_class.provider_refusal?(text) })
+      expect(refusals).to all(satisfy { |text| described_class.invalid_public_response?(text) })
+    end
+
+    it 'does not flag normal clinic apologies or domain explanations' do
+      clinic_replies = [
+        "I'm sorry, I cannot book Dr. Ivanov on Sunday.",
+        "I'm sorry, I cannot assist with booking on Sunday because the clinic is closed.",
+        'Sorry, I cannot provide MRI prices without knowing which zone you need.',
+        'Извините, запись к урологу на воскресенье закрыта.',
+        nil,
+        123
+      ]
+
+      clinic_replies.each do |reply|
+        expect(described_class.provider_refusal?(reply)).to be(false)
+      end
+    end
   end
 end

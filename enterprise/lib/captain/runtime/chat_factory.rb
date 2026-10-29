@@ -22,7 +22,9 @@ class Captain::Runtime::ChatFactory
   RULE
 
   class << self
-    def build(agent:, context_wrapper:, llm_context:, runtime_headers:, runtime_params:, account: nil, finalization_only: false)
+    def build(agent:, context_wrapper:, llm_context:, runtime_headers:, runtime_params:, account: nil, finalization_only: false,
+              model_override: nil)
+      resolved_model = model_override.presence || agent.model
       agent.context_preparer&.call(context_wrapper)
       chat = Llm::Runtime.build_chat(**chat_build_kwargs(
         agent: agent,
@@ -30,12 +32,13 @@ class Captain::Runtime::ChatFactory
         llm_context: llm_context,
         runtime_headers: runtime_headers,
         runtime_params: runtime_params,
-        account: account
+        account: account,
+        model: resolved_model
       ))
 
-      configure(chat, agent, context_wrapper, account: account, finalization_only: finalization_only)
+      configure(chat, agent, context_wrapper, account: account, finalization_only: finalization_only, model: resolved_model)
       Captain::Runtime::HistoryRestorer.restore(chat, context_wrapper.context[:conversation_history])
-      context_wrapper.callback_manager.emit_chat_created(chat, agent.name, agent.model, context_wrapper)
+      context_wrapper.callback_manager.emit_chat_created(chat, agent.name, resolved_model, context_wrapper)
       chat
     end
 
@@ -59,16 +62,16 @@ class Captain::Runtime::ChatFactory
 
     private
 
-    def chat_build_kwargs(agent:, context_wrapper:, llm_context:, runtime_headers:, runtime_params:, account: nil)
-      parameters = Llm::ModelParameters.for(agent.model, account: account).compile(
+    def chat_build_kwargs(agent:, context_wrapper:, llm_context:, runtime_headers:, runtime_params:, account: nil, model: agent.model)
+      parameters = Llm::ModelParameters.for(model, account: account).compile(
         temperature: agent.temperature,
         params: merged_params(agent, runtime_params),
-        thinking: thinking_options(agent, context_wrapper, account: account)
+        thinking: thinking_options(agent, context_wrapper, account: account, model: model)
       )
       {
         feature: :captain_agent,
         account: account,
-        model: agent.model,
+        model: model,
         runtime_preferences: (context_wrapper.context.dig(:state, :captain_runtime) || {}).deep_dup,
         options: {
           context: llm_context,
@@ -83,11 +86,13 @@ class Captain::Runtime::ChatFactory
       Captain::Runtime::AnswerStream.enabled?(context_wrapper)
     end
 
-    def configure(chat, agent, context_wrapper, account: nil, finalization_only: false)
+    def configure(chat, agent, context_wrapper, account: nil, **options)
+      finalization_only = options.fetch(:finalization_only, false)
+      model = options[:model].presence || agent.model
       record_bound_agent_tools(agent, context_wrapper, finalization_only: finalization_only)
       agent_tools = finalization_only ? [] : build_agent_tools(agent, context_wrapper)
       Llm::CapabilityPolicy.ensure_chat_features_supported!(
-        model: agent.model,
+        model: model,
         schema: agent.response_schema,
         tools: agent_tools,
         account: account
@@ -277,21 +282,28 @@ class Captain::Runtime::ChatFactory
       Captain::Runtime::HashNormalizer.merge(agent.params, runtime_params)
     end
 
-    def thinking_options(agent, context_wrapper, account: nil)
+    def thinking_options(agent, context_wrapper, account: nil, model: agent.model)
       override = playground_thinking_effort(context_wrapper)
       saved = context_wrapper.context.dig(:state, :assistant_config, 'thinking_effort') ||
               context_wrapper.context.dig(:state, :assistant_config, :thinking_effort)
-      contract = Llm::ModelParameters.for(agent.model, account: account)
-      return contract.thinking(override) || raise(ArgumentError, 'The model does not support the requested reasoning effort.') if override.present?
+      contract = Llm::ModelParameters.for(model, account: account)
+      return resolve_override_thinking(contract, override, strict: model == agent.model) if override.present?
       return contract.thinking(saved) if saved.present?
 
       # The agent has no effort of its own: the workspace's stored choice, else `low` (an agent that talks to
       # customers is the only caller that reasons; the council parts, which are runs of such agents, go through this same factory).
       Llm::RuntimePolicy.conversation_thinking_options(
-        model: agent.model,
+        model: model,
         account: account,
         preferences: context_wrapper.context.dig(:state, :captain_runtime)
       )
+    end
+
+    def resolve_override_thinking(contract, override, strict:)
+      compiled = contract.thinking(override)
+      return compiled if compiled || !strict
+
+      raise ArgumentError, 'The model does not support the requested reasoning effort.'
     end
 
     def playground_thinking_effort(context_wrapper)

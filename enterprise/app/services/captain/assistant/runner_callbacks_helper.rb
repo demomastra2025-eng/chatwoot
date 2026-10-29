@@ -13,6 +13,7 @@ module Captain::Assistant::RunnerCallbacksHelper
   def add_observation_callbacks(runner)
     runner = add_llm_step_callback(runner) if @callbacks[:on_llm_step]
     runner = add_answer_delta_callback(runner) if @callbacks[:on_answer_delta]
+    runner = add_chat_created_callback(runner) if @callbacks[:on_chat_created]
     runner
   end
 
@@ -79,6 +80,14 @@ module Captain::Assistant::RunnerCallbacksHelper
       @callbacks[:on_answer_delta].call(*args)
     rescue StandardError => e
       Rails.logger.warn "[Captain] Callback error for answer_delta: #{e.class}"
+    end
+  end
+
+  def add_chat_created_callback(runner)
+    runner.on_chat_created do |*args|
+      @callbacks[:on_chat_created].call(*args)
+    rescue StandardError => e
+      Rails.logger.warn "[Captain] Callback error for chat_created: #{e.class}"
     end
   end
 end

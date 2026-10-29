@@ -120,6 +120,8 @@ class Captain::Runtime::Runner
       runtime_params: Captain::Runtime::HashNormalizer.normalize(options[:params], label: 'params'),
       finalization_only: ActiveModel::Type::Boolean.new.cast(options[:finalization_only]),
       continue_from_history: ActiveModel::Type::Boolean.new.cast(options[:continue_from_history]),
+      model_override: options[:model_override].presence,
+      provider_refusal_retried: false,
       current_turn: 0
     }.tap do |session|
       initialize_session!(session)
@@ -129,6 +131,7 @@ class Captain::Runtime::Runner
   def initialize_session!(session)
     callback_manager(session).emit_run_start(session[:current_agent].name, session[:input], session[:context_wrapper])
     rebuild_chat!(session)
+    session[:initial_message_count] = chat_message_count(session[:chat])
     session[:input_already_in_history] = session[:continue_from_history] ||
                                          Captain::Runtime::InputComparer.last_message_matches?(session[:chat], session[:input])
   end
@@ -153,23 +156,55 @@ class Captain::Runtime::Runner
 
   def execute_turn(session)
     emit_agent_thinking(session)
-    options = chat_request_options(session)
-    stream = answer_stream(session)
-
-    response = if first_turn?(session) && !session[:input_already_in_history]
-                 Llm::Runtime.ask(session[:chat], session[:input], **options, &stream)
-               else
-                 Llm::Runtime.complete(session[:chat], **options, &stream)
-               end
-
+    response = perform_turn_with_refusal_fallback(session)
     track_usage(response, session[:context_wrapper])
     callback_manager(session).emit_llm_call_complete(
       session[:current_agent].name,
-      session[:current_agent].model,
+      Captain::Runtime::ProviderRefusalFallback.effective_model(session),
       response,
       session[:context_wrapper]
     )
     response
+  end
+
+  def perform_turn_with_refusal_fallback(session)
+    perform_turn_request(session)
+  rescue Llm::StructuredOutputPolicy::ProviderRefusalError => e
+    fallback_model = Captain::Runtime::ProviderRefusalFallback.next_model(session)
+    raise unless fallback_model
+
+    switch_to_refusal_fallback!(session, fallback_model, e)
+    perform_turn_request(session)
+  end
+
+  def perform_turn_request(session)
+    options = chat_request_options(session)
+    stream = answer_stream(session)
+    if first_turn?(session) && !session[:input_already_in_history]
+      Llm::Runtime.ask(session[:chat], session[:input], **options, &stream)
+    else
+      Llm::Runtime.complete(session[:chat], **options, &stream)
+    end
+  end
+
+  def switch_to_refusal_fallback!(session, fallback_model, error)
+    from_model = Captain::Runtime::ProviderRefusalFallback.effective_model(session)
+    preserved = Captain::Runtime::ProviderRefusalFallback.preserve_tool_progress!(
+      session, session[:chat], session[:initial_message_count]
+    )
+    session[:model_override] = fallback_model
+    session[:provider_refusal_retried] = true
+    Captain::Runtime::ProviderRefusalFallback.publish_fallback_event(
+      session: session, from_model: from_model, to_model: fallback_model, error: error
+    )
+    rebuild_chat!(session)
+    session[:initial_message_count] = chat_message_count(session[:chat])
+    session[:input_already_in_history] = preserved || session[:continue_from_history] ||
+                                         Captain::Runtime::InputComparer.last_message_matches?(session[:chat], session[:input])
+  end
+
+  def chat_message_count(chat)
+    chat.respond_to?(:messages) && chat.messages.is_a?(Array) ? chat.messages.length : 0
   end
 
   # The pieces of the answer go to whoever listens (a reply suggestion shows the first words of the draft while the rest is written).
@@ -195,7 +230,7 @@ class Captain::Runtime::Runner
       session_id: context[:session_id]
     }.compact
 
-    { model: session[:current_agent].model, observability: observability }.tap do |options|
+    { model: Captain::Runtime::ProviderRefusalFallback.effective_model(session), observability: observability }.tap do |options|
       options[:account] = session[:account] if session[:account].present?
     end
   end
@@ -264,6 +299,7 @@ class Captain::Runtime::Runner
   end
 
   def rebuild_chat!(session)
+    override_kwargs = session[:model_override].present? ? { model_override: session[:model_override] } : {}
     session[:chat] = Captain::Runtime::ChatFactory.build(
       agent: session[:current_agent],
       context_wrapper: session[:context_wrapper],
@@ -271,7 +307,8 @@ class Captain::Runtime::Runner
       account: session[:account],
       runtime_headers: session[:runtime_headers],
       runtime_params: session[:runtime_params],
-      finalization_only: session[:finalization_only]
+      finalization_only: session[:finalization_only],
+      **override_kwargs
     )
   end
 

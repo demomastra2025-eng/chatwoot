@@ -3014,6 +3014,75 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
   end
 
+  describe 'provider safety refusal degradation' do
+    def build_refusal_error
+      Llm::StructuredOutputPolicy::ProviderRefusalError.new(
+        'Provider returned a plain-text safety refusal for schema Captain::SuggestionResponseSchema'
+      )
+    end
+
+    it 'converts unrecovered ProviderRefusalError in reply suggestion mode into human_needed safety outcome without finalization retry' do
+      pending_cards = [{ 'action_id' => 'act-1', 'tool_name' => 'book_appointment', 'description' => 'Уролог 10:00' }]
+      failed_context = {
+        current_agent: assistant.name,
+        acting_assistant_id: assistant.id,
+        captain_suggestion_pending_actions: pending_cards,
+        captain_v2_completed_tool_names: ['search_available_slots'],
+        captain_v2_completed_tool_results: [{ tool_name: 'search_available_slots', success: true }],
+        conversation_history: [
+          { role: :user, content: 'Запишите к урологу' },
+          { role: :tool, content: '{"slots":["10:00"]}', tool_call_id: 'call_1' }
+        ]
+      }
+      allow(mock_runner).to receive(:run).and_return(
+        Captain::Runtime::Result.new(output: nil, messages: [], usage: nil, error: build_refusal_error, context: failed_context)
+      )
+
+      suggestion_service = described_class.new(scope: scope, conversation: conversation, source: 'reply_suggestion')
+      payload = suggestion_service.generate_response(message_history: message_history)
+
+      expect(mock_runner).to have_received(:run).once
+      expect(payload).to include(
+        'response' => 'conversation_handoff',
+        described_class::MODERATION_BLOCKED_KEY => true,
+        'safety_reason' => 'provider_refusal',
+        'safety_block' => 'moderation',
+        'pending_actions' => pending_cards
+      )
+
+      trace_collector = instance_double(
+        Captain::ReplySuggestionService::TraceCollector,
+        suggestion_meta: { 'agent' => { 'id' => assistant.id, 'name' => assistant.name }, 'pending_actions' => pending_cards }
+      )
+      outcome = Captain::ReplySuggestion::AgentOutcomeClassifier.new(payload, trace_collector: trace_collector).perform
+
+      expect(outcome.with_indifferent_access).to include(
+        'outcome' => 'human_needed',
+        'reason_source' => 'safety',
+        'pending_actions' => pending_cards
+      )
+    end
+
+    it 'preserves completed action tracking on live autonomous double refusal after a mutating tool already succeeded' do
+      live_context = {
+        current_agent: assistant.name,
+        acting_assistant_id: assistant.id
+      }.merge(Captain::Runtime::ToolWrapper::COMPLETED_ACTIONS_KEY => ['book_appointment'])
+      allow(mock_runner).to receive(:run).and_return(
+        Captain::Runtime::Result.new(output: nil, messages: [], usage: nil, error: build_refusal_error, context: live_context)
+      )
+
+      live_service = described_class.new(scope: scope, conversation: conversation)
+      payload = live_service.generate_response(message_history: message_history)
+
+      expect(mock_runner).to have_received(:run).once
+      expect(payload).to include(
+        'response' => described_class::PROVIDER_ERROR_RESPONSE,
+        'technical_failure' => include('completed' => ['book_appointment'])
+      )
+    end
+  end
+
   def agent_result(output:, context:, error: nil)
     instance_double(Captain::Runtime::Result, output: output, context: context, error: error)
   end

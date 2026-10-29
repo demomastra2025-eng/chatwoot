@@ -5,8 +5,11 @@ require 'json_schemer'
 class Llm::StructuredOutputPolicy # rubocop:disable Metrics/ClassLength
   CHAT_SCHEMA_IVAR = :@onelink_structured_output_schema
   DEFAULT_MAX_ATTEMPTS = 3
+  CONTENT_FILTER_FINISH_REASONS = %w[content_filter safety refusal prohibited_content blocklist].freeze
+  PUBLIC_TEXT_KEYS = %w[response customer_text reply].freeze
   StructuredOutputError = Class.new(StandardError)
   InvalidStructuredOutputError = Class.new(StructuredOutputError)
+  ProviderRefusalError = Class.new(StructuredOutputError)
 
   class << self
     def bind!(chat:, schema:)
@@ -47,11 +50,15 @@ class Llm::StructuredOutputPolicy # rubocop:disable Metrics/ClassLength
       schema = schema_for(chat)
       return response unless should_normalize_response?(schema, response)
 
+      ensure_not_raw_provider_refusal!(response)
       normalized_content = normalize_content(response.content, schema: schema)
+      ensure_not_structured_provider_refusal!(normalized_content)
       validate_content!(schema, normalized_content)
       validate_semantic_content!(schema, normalized_content)
       response.content = normalized_content if response.respond_to?(:content=)
       response
+    rescue ProviderRefusalError => e
+      handle_provider_refusal!(chat: chat, response: response, schema: schema, error: e)
     rescue InvalidStructuredOutputError => e
       publish_invalid_event(chat: chat, response: response, error: e)
       raise InvalidStructuredOutputError, "#{e.message} for schema #{Llm::StructuredOutputSchema.name_for(schema)}"
@@ -146,6 +153,60 @@ class Llm::StructuredOutputPolicy # rubocop:disable Metrics/ClassLength
       raise InvalidStructuredOutputError, 'Captain response reasoning must be present'
     end
 
+    def handle_provider_refusal!(chat:, response:, schema:, error:)
+      rollback_failed_response!(chat, response)
+      publish_invalid_event(chat: chat, response: response, error: error, provider_refusal: true)
+      raise ProviderRefusalError, "#{error.message} for schema #{Llm::StructuredOutputSchema.name_for(schema)}"
+    end
+
+    def ensure_not_raw_provider_refusal!(response)
+      finish = response_finish_reasons(response).find { |reason| CONTENT_FILTER_FINISH_REASONS.include?(reason) }
+      raise ProviderRefusalError, "Provider stopped output with finish_reason=#{finish}" if finish.present?
+      raise ProviderRefusalError, 'Provider returned an explicit refusal payload' if raw_provider_refusal_text(response).present?
+      return unless Llm::CaptainResponseContentNormalizer.provider_refusal?(response.content)
+
+      raise ProviderRefusalError, 'Provider returned a plain-text safety refusal'
+    end
+
+    def ensure_not_structured_provider_refusal!(content)
+      return unless content.respond_to?(:[])
+      return unless PUBLIC_TEXT_KEYS.any? { |key| Llm::CaptainResponseContentNormalizer.provider_refusal?(content[key]) }
+
+      raise ProviderRefusalError, 'Provider returned a structured safety refusal'
+    end
+
+    def response_finish_reasons(response)
+      reasons = []
+      reasons << response.finish_reason if response.respond_to?(:finish_reason)
+      stop_info = Llm::OpenRouterServerToolsPatch.provider_stop_info(response)
+      reasons.concat(Array(stop_info[:finish_reasons]))
+      if (choice = raw_choice(response))
+        reasons << choice['finish_reason']
+        reasons << choice['native_finish_reason']
+      end
+      reasons.filter_map { |item| item.to_s.strip.downcase.presence }.uniq
+    rescue StandardError
+      []
+    end
+
+    def raw_provider_refusal_text(response)
+      stop_info = Llm::OpenRouterServerToolsPatch.provider_stop_info(response)
+      return stop_info[:refusal] if stop_info[:refusal].present?
+
+      raw_choice(response)&.dig('message', 'refusal').to_s.strip.presence
+    rescue StandardError
+      nil
+    end
+
+    def raw_choice(response)
+      body = response.respond_to?(:raw) ? response.raw&.body : nil
+      body = JSON.parse(body) if body.is_a?(String) && body.present?
+      return unless body.is_a?(Hash)
+
+      choice = Array(body['choices']).first
+      choice if choice.is_a?(Hash)
+    end
+
     def fallback_invalid_captain_response!(chat:, response:)
       schema = schema_for(chat)
       return unless response.respond_to?(:content)
@@ -155,6 +216,7 @@ class Llm::StructuredOutputPolicy # rubocop:disable Metrics/ClassLength
 
       normalized_content = fallback.with_indifferent_access
       validate_content!(schema, normalized_content)
+      validate_semantic_content!(schema, normalized_content)
       response.content = normalized_content if response.respond_to?(:content=)
       response
     end
@@ -193,8 +255,9 @@ class Llm::StructuredOutputPolicy # rubocop:disable Metrics/ClassLength
       PROMPT
     end
 
-    def publish_invalid_event(chat:, response:, error:)
+    def publish_invalid_event(chat:, response:, error:, provider_refusal: false)
       schema = schema_for(chat)
+      extra = provider_refusal ? { provider_refusal: true } : {}
       Llm::EventBus.publish(
         'schema.invalid',
         schema_name: Llm::StructuredOutputSchema.name_for(schema),
@@ -203,6 +266,7 @@ class Llm::StructuredOutputPolicy # rubocop:disable Metrics/ClassLength
         response_type: response.respond_to?(:content) ? response_type(response.content) : nil,
         response_size: response.respond_to?(:content) ? response_size(response.content) : nil,
         response_healing_enabled: response_healing_enabled?(chat),
+        **extra,
         **Llm::MessageTokenPayload.for(response)
       )
     end
@@ -220,7 +284,7 @@ class Llm::StructuredOutputPolicy # rubocop:disable Metrics/ClassLength
     end
 
     def resolved_model_name(chat)
-      chat_model = chat&.model
+      chat_model = chat.model if chat.respond_to?(:model)
       return chat_model.id if chat_model.respond_to?(:id)
       return chat_model if chat_model.present?
 

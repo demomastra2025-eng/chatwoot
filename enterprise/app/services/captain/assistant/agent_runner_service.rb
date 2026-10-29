@@ -501,6 +501,9 @@ class Captain::Assistant::AgentRunnerService
       end
 
       return suppressed_response({ 'response' => '' }) if provider_booking_notification_deferred?(result.context)
+      if result.error.is_a?(Llm::StructuredOutputPolicy::ProviderRefusalError)
+        return provider_refusal_blocked_response(result, handoff_tool_called: handoff_tool_called)
+      end
 
       return final_error_response(result.error, result.context, handoff_tool_called: handoff_tool_called)
     end
@@ -553,6 +556,9 @@ class Captain::Assistant::AgentRunnerService
     end
     sanitize_response_artifact_ids!(response, result.context)
     return suppressed_response(response) if provider_booking_notification_deferred?(result.context)
+    if !response_suppressed?(response) && Llm::CaptainResponseContentNormalizer.provider_refusal?(response['response'])
+      return provider_refusal_output_response(result, handoff_tool_called: handoff_tool_called)
+    end
 
     semantic_error = semantic_output_error(response)
     return semantic_output_error_response(semantic_error, response, result.context, handoff_tool_called: handoff_tool_called) if semantic_error
@@ -1659,6 +1665,39 @@ class Captain::Assistant::AgentRunnerService
         "phase=#{name} duration_ms=#{duration_ms}"
       )
     end
+  end
+
+  def provider_refusal_output_response(result, handoff_tool_called: false)
+    error = Llm::StructuredOutputPolicy::ProviderRefusalError.new('Provider returned a safety refusal response')
+    refusal_result = Captain::Runtime::Result.new(
+      output: nil, messages: [], usage: (result.usage if result.respond_to?(:usage)), error: error, context: result.context
+    )
+    provider_refusal_blocked_response(refusal_result, handoff_tool_called: handoff_tool_called)
+  end
+
+  def provider_refusal_blocked_response(result, handoff_tool_called: false)
+    context = result.context
+    error = result.error
+    if !suggestion_run? && Array(context_value(context, Captain::Runtime::ToolWrapper::COMPLETED_ACTIONS_KEY)).any?
+      return provider_error_response(error, context, handoff_tool_called: handoff_tool_called)
+    end
+
+    response = blocked_by_moderation_response(
+      "Provider safety refusal stopped the response: #{error&.message}",
+      safety_reason: 'provider_refusal'
+    )
+    attach_refusal_metadata!(response, result, handoff_tool_called: handoff_tool_called)
+  end
+
+  def attach_refusal_metadata!(response, result, handoff_tool_called: false)
+    context = result.context
+    response['agent_name'] = context[:current_agent] if context&.dig(:current_agent).present?
+    response['agent_id'] = @acting_assistant_id if @acting_assistant_id.present?
+    pending_actions = Array(context&.dig(:captain_suggestion_pending_actions))
+    response['pending_actions'] = pending_actions if pending_actions.any?
+    response['handoff_tool_called'] = true if handoff_tool_called
+    add_playground_usage(response, result)
+    response
   end
 
   def blocked_by_moderation_response(reason, safety_reason: nil)

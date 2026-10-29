@@ -564,5 +564,162 @@ RSpec.describe Captain::Runtime::Runner do
       expect(chat.messages.count { |message| message.role == :user }).to eq(1)
       expect(result.context[:captain_v2_bound_tool_ids]).to eq([])
     end
+
+    describe 'provider safety refusal cross-vendor fallback' do
+      let(:fallback_events) { [] }
+      let(:fallback_subscriber) do
+        ActiveSupport::Notifications.subscribe('llm.run.provider_refusal_fallback') do |*args|
+          fallback_events << ActiveSupport::Notifications::Event.new(*args)
+        end
+      end
+
+      before do
+        allow(Llm::Models).to receive(:supports?).and_return(true)
+        fallback_subscriber
+      end
+
+      after do
+        ActiveSupport::Notifications.unsubscribe(fallback_subscriber)
+      end
+
+      it 'switches once from a refusing OpenAI model to google/gemini-3.8-flash on turn 1' do
+        agent = Captain::Runtime::Agent.new(
+          name: 'urology_agent',
+          model: 'openai/gpt-6-luna',
+          response_schema: Captain::ResponseSchema
+        )
+        primary_chat = RuntimeRunnerSpecChat.new(
+          ask_response: RubyLLM::Message.new(role: :assistant, content: "I'm sorry, but I cannot assist with that request.")
+        )
+        fallback_payload = {
+          'patient_language' => 'ru',
+          'response' => 'Приём уролога стоит 8000 тенге.',
+          'response_mode' => 'reply',
+          'reasoning' => 'Ответил по прайсу клиники.',
+          'artifact_ids' => []
+        }
+        fallback_chat = RuntimeRunnerSpecChat.new(
+          ask_response: RubyLLM::Message.new(role: :assistant, content: fallback_payload.to_json)
+        )
+        built_models = []
+        completed_models = []
+
+        allow(Llm::Runtime).to receive(:build_chat) do |**kwargs|
+          built_models << kwargs[:model]
+          built_models.size == 1 ? primary_chat : fallback_chat
+        end
+        allow(Llm::Runtime).to receive(:ask) do |chat, input, **|
+          Llm::StructuredOutputPolicy.execute(chat: chat) { chat.ask(input) }
+        end
+
+        result = runner.run(
+          agent,
+          'Сколько стоит приём уролога при боли в паху?',
+          registry: { agent.name => agent },
+          llm_context: llm_context,
+          account: account,
+          callbacks: { llm_call_complete: [->(_name, model, *_rest) { completed_models << model }] }
+        )
+
+        expect(result.error).to be_nil
+        expect(result.output).to include('response' => 'Приём уролога стоит 8000 тенге.')
+        expect(built_models).to eq(['openai/gpt-6-luna', 'google/gemini-3.8-flash'])
+        expect(completed_models).to eq(['google/gemini-3.8-flash'])
+        expect(fallback_events.size).to eq(1)
+        expect(fallback_events.first.payload).to include(
+          'from_model' => 'openai/gpt-6-luna',
+          'to_model' => 'google/gemini-3.8-flash',
+          'turn' => 1
+        )
+      end
+
+      it 'preserves completed tool results without re-executing tools when a refusal happens after a tool call' do
+        read_tool = RuntimeRunnerSpecClinicTool.new('search_available_slots')
+        agent = Captain::Runtime::Agent.new(
+          name: 'urology_agent',
+          model: 'openai/gpt-6-luna',
+          tools: [read_tool],
+          response_schema: Captain::ResponseSchema
+        )
+        primary_chat = RuntimeRunnerSpecScriptedChat.new(
+          [['search_available_slots', { service_id: 42 }]],
+          "I'm sorry, but I cannot assist with that request."
+        )
+        fallback_payload = {
+          'patient_language' => 'ru',
+          'response' => 'Свободное окно у уролога есть на 10:00.',
+          'response_mode' => 'reply',
+          'reasoning' => 'Использовал уже полученное расписание.',
+          'artifact_ids' => []
+        }
+        fallback_chat = RuntimeRunnerSpecChat.new(
+          complete_response: RubyLLM::Message.new(role: :assistant, content: fallback_payload.to_json)
+        )
+        chats = [primary_chat, fallback_chat]
+
+        allow(Llm::Runtime).to receive(:build_chat) { chats.shift }
+        allow(Llm::Runtime).to receive(:ask) do |chat, input, **|
+          Llm::StructuredOutputPolicy.execute(chat: chat) { chat.ask(input) }
+        end
+        allow(Llm::Runtime).to receive(:complete) do |chat, **|
+          Llm::StructuredOutputPolicy.execute(chat: chat) { chat.complete }
+        end
+
+        result = runner.run(
+          agent,
+          'Запишите к урологу на утро',
+          registry: { agent.name => agent },
+          llm_context: llm_context,
+          account: account
+        )
+
+        expect(result.error).to be_nil
+        expect(result.output).to include('response' => 'Свободное окно у уролога есть на 10:00.')
+        expect(read_tool.calls).to eq(1)
+        expect(fallback_chat.messages.map(&:role)).to include(:user, :assistant, :tool)
+      end
+
+      it 'stops after one cross-vendor fallback attempt and returns ProviderRefusalError on double refusal' do
+        agent = Captain::Runtime::Agent.new(
+          name: 'urology_agent',
+          model: 'google/gemini-3.8-flash',
+          response_schema: Captain::ResponseSchema
+        )
+        primary_chat = RuntimeRunnerSpecChat.new(
+          ask_response: RubyLLM::Message.new(role: :assistant, content: "I'm sorry, but I cannot assist with that request.")
+        )
+        fallback_chat = RuntimeRunnerSpecChat.new(
+          ask_response: RubyLLM::Message.new(role: :assistant, content: 'I apologize, but I cannot fulfill this request.')
+        )
+        built_models = []
+
+        allow(Llm::Runtime).to receive(:build_chat) do |**kwargs|
+          built_models << kwargs[:model]
+          built_models.size == 1 ? primary_chat : fallback_chat
+        end
+        allow(Llm::Runtime).to receive(:ask) do |chat, input, **|
+          Llm::StructuredOutputPolicy.execute(chat: chat) { chat.ask(input) }
+        end
+
+        result = runner.run(
+          agent,
+          'Вопрос врачу',
+          registry: { agent.name => agent },
+          llm_context: llm_context,
+          account: account
+        )
+
+        expect(result.output).to be_nil
+        expect(result.error).to be_a(Llm::StructuredOutputPolicy::ProviderRefusalError)
+        expect(built_models).to eq(['google/gemini-3.8-flash', 'anthropic/claude-haiku-5.5'])
+        expect(fallback_events.size).to eq(1)
+      end
+
+      it 'recognizes unprefixed legacy model ids (e.g. gemini-3.1-pro-preview) and switches to a different vendor' do
+        expect(Captain::Runtime::ProviderRefusalFallback.vendor_for('gemini-3.1-pro-preview')).to eq('google')
+        expect(Captain::Runtime::ProviderRefusalFallback.vendor_for('claude-sonnet-4-6')).to eq('anthropic')
+        expect(Captain::Runtime::ProviderRefusalFallback.vendor_for('gpt-5.4')).to eq('openai')
+      end
+    end
   end
 end

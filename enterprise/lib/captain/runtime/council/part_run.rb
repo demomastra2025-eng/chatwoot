@@ -15,7 +15,8 @@ class Captain::Runtime::Council::PartRun
   STOPPED_WHILE_WORKING = [Captain::Runtime::Runner::MaxTurnsExceeded, Captain::Runtime::Runner::ToolLoopStopped].freeze
   RUN_ERROR_REASONS = {
     'Captain::ReplySuggestion::RunControl::PartTimeUp' => 'time_up', 'Captain::Runtime::Runner::MaxTurnsExceeded' => 'max_turns',
-    'Captain::Runtime::Runner::ToolLoopStopped' => 'tool_loop'
+    'Captain::Runtime::Runner::ToolLoopStopped' => 'tool_loop',
+    'Llm::StructuredOutputPolicy::ProviderRefusalError' => 'provider_refusal'
   }.freeze
 
   # Counts what the tools of one run did. It belongs to one run and one thread.

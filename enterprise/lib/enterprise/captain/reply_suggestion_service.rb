@@ -237,7 +237,7 @@ module Enterprise::Captain::ReplySuggestionService
         on_llm_call_complete: method(:handle_llm_call_complete),
         on_llm_step: method(:handle_llm_step),
         on_suggestion_preload: method(:handle_suggestion_preload)
-      }.merge(@draft_stream ? { on_answer_delta: method(:handle_answer_delta) } : {})
+      }.merge(@draft_stream ? { on_answer_delta: method(:handle_answer_delta), on_chat_created: method(:handle_chat_created) } : {})
     end
 
     def broadcast_initial!
@@ -302,6 +302,12 @@ module Enterprise::Captain::ReplySuggestionService
       return if part_run?(context_wrapper)
 
       @monitor.synchronize { @draft_stream.feed(text) }
+    end
+
+    def handle_chat_created(_chat, _agent_name = nil, _model = nil, context_wrapper = nil)
+      return if part_run?(context_wrapper)
+
+      @monitor.synchronize { @draft_stream&.reset! }
     end
 
     def handle_agent_thinking(agent_name, _input = nil, context_wrapper = nil)

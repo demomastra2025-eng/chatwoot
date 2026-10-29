@@ -155,6 +155,40 @@ RSpec.describe Captain::ReplySuggestion::DraftStream do
 
       expect(texts).to eq(['[Анна], здравствуйте! Приём стоит 8000 тенге'])
     end
+
+    it 'never flashes a streamed provider safety refusal and cleanly previews the fallback answer that follows' do
+      stream.feed(%({"patient_language":"en","response_mode":"reply","response":"I'm sorry, but ))
+      advance(0.25)
+      stream.feed('I cannot assist with that request.","operator_note":"","reasoning":"refusal","artifact_ids":[]}')
+      stream.finish!
+
+      expect(sent).to be_empty
+
+      advance(0.25)
+      stream.feed('{"patient_language":"ru","response_mode":"reply","response":"Здравствуйте! Приём уролога стоит 8000 тенге."}')
+      stream.finish!
+
+      expect(texts).to eq(['Здравствуйте! Приём уролога стоит 8000 тенге.'])
+    end
+
+    it 'holds longer polite refusal prefixes (Sorry, but / As an AI language model / I am unable) without flashing' do
+      stream.feed(%({"response_mode":"reply","response":"As an AI language model, I apologize, but I am not able to assist you ))
+      advance(0.25)
+      stream.feed('with that request. If you have any other questions, feel free to ask."}')
+      stream.finish!
+
+      expect(sent).to be_empty
+    end
+
+    it 'still broadcasts a legitimate clinic English apology once the sentence is complete' do
+      stream.feed(%({"response_mode":"reply","response":"I'm sorry, Dr. Ivanov ))
+      expect(sent).to be_empty
+
+      advance(0.25)
+      stream.feed('is fully booked on Sunday."}')
+
+      expect(texts).to eq(["I'm sorry, Dr. Ivanov is fully booked on Sunday."])
+    end
   end
 
   describe '#reset!' do

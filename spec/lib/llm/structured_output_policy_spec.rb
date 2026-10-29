@@ -36,9 +36,12 @@ end
 
 class StructuredOutputPolicySpecResponse
   attr_accessor :content
+  attr_reader :raw, :finish_reason
 
-  def initialize(content)
+  def initialize(content, raw: nil, finish_reason: nil)
     @content = content
+    @raw = raw
+    @finish_reason = finish_reason
   end
 
   def tool_call?
@@ -524,6 +527,104 @@ RSpec.describe Llm::StructuredOutputPolicy do
       )
       expect(retry_chat.instructions.size).to eq(2)
       expect(retry_chat.messages).to contain_exactly(response_three)
+    end
+
+    it 'raises ProviderRefusalError immediately on a plain-text safety refusal without repair retries or fallback' do
+      refusal_one = StructuredOutputPolicySpecResponse.new("I'm sorry, but I cannot assist with that request.")
+      unused_two = StructuredOutputPolicySpecResponse.new('Should never be requested')
+      retry_chat = StructuredOutputPolicySpecChat.new([refusal_one, unused_two])
+
+      described_class.bind!(chat: retry_chat, schema: Captain::ResponseSchema)
+
+      expect do
+        described_class.execute(chat: retry_chat) { retry_chat.ask('Уролог расписание') }
+      end.to raise_error(described_class::ProviderRefusalError, /plain-text safety refusal/)
+
+      expect(retry_chat.instructions).to be_empty
+      expect(retry_chat.messages).to be_empty
+      expect(events.map(&:name)).to eq(['llm.schema.invalid'])
+      expect(events.first.payload).to include('provider_refusal' => true, 'schema_name' => 'Captain::ResponseSchema')
+    end
+
+    it 'raises ProviderRefusalError immediately on a JSON-wrapped safety refusal without repair retries' do
+      json_refusal = StructuredOutputPolicySpecResponse.new(
+        {
+          patient_language: 'ru',
+          response: 'I’m sorry, but I cannot assist with that request.',
+          response_mode: 'reply',
+          reasoning: 'Safety refusal.',
+          artifact_ids: []
+        }.to_json
+      )
+      retry_chat = StructuredOutputPolicySpecChat.new([json_refusal])
+
+      described_class.bind!(chat: retry_chat, schema: Captain::ResponseSchema)
+
+      expect do
+        described_class.execute(chat: retry_chat) { retry_chat.ask('Болит в паху, к какому врачу?') }
+      end.to raise_error(described_class::ProviderRefusalError, /structured safety refusal/)
+
+      expect(retry_chat.instructions).to be_empty
+      expect(retry_chat.messages).to be_empty
+      expect(events.map(&:name)).to eq(['llm.schema.invalid'])
+      expect(events.first.payload).to include('provider_refusal' => true)
+    end
+
+    it 'raises ProviderRefusalError immediately when the provider stops with content_filter finish_reason' do
+      raw_response = Struct.new(:body).new({ 'choices' => [{ 'finish_reason' => 'content_filter' }] })
+      filtered = StructuredOutputPolicySpecResponse.new('', raw: raw_response)
+      retry_chat = StructuredOutputPolicySpecChat.new([filtered])
+
+      described_class.bind!(chat: retry_chat, schema: Captain::ResponseSchema)
+
+      expect do
+        described_class.execute(chat: retry_chat) { retry_chat.ask('Вопрос врачу') }
+      end.to raise_error(described_class::ProviderRefusalError, /finish_reason=content_filter/)
+
+      expect(retry_chat.instructions).to be_empty
+      expect(retry_chat.messages).to be_empty
+    end
+
+    it 'raises ProviderRefusalError when finish_reason is stop but native_finish_reason or message.refusal signals refusal' do
+      native_raw = Struct.new(:body).new({ 'choices' => [{ 'finish_reason' => 'stop', 'native_finish_reason' => 'PROHIBITED_CONTENT' }] })
+      native_filtered = StructuredOutputPolicySpecResponse.new('', raw: native_raw)
+      native_chat = StructuredOutputPolicySpecChat.new([native_filtered])
+      described_class.bind!(chat: native_chat, schema: Captain::ResponseSchema)
+
+      expect do
+        described_class.execute(chat: native_chat) { native_chat.ask('Вопрос врачу') }
+      end.to raise_error(described_class::ProviderRefusalError, /finish_reason=prohibited_content/)
+
+      refusal_raw = Struct.new(:body).new(
+        { 'choices' => [{ 'finish_reason' => 'stop', 'message' => { 'content' => nil, 'refusal' => "I'm sorry, I cannot assist." } }] }
+      )
+      explicit_refusal = StructuredOutputPolicySpecResponse.new(nil, raw: refusal_raw)
+      refusal_chat = StructuredOutputPolicySpecChat.new([explicit_refusal])
+      described_class.bind!(chat: refusal_chat, schema: Captain::ResponseSchema)
+
+      expect do
+        described_class.execute(chat: refusal_chat) { refusal_chat.ask('Вопрос врачу') }
+      end.to raise_error(described_class::ProviderRefusalError, /explicit refusal payload/)
+    end
+
+    it 'raises ProviderRefusalError on streamed stop info captured by OpenRouterServerToolsPatch and on CouncilEditor reply key' do
+      streamed = StructuredOutputPolicySpecResponse.new('')
+      Llm::OpenRouterServerToolsPatch.attach_stop_info!(streamed, finish_reasons: %w[content_filter], refusal: nil)
+      stream_chat = StructuredOutputPolicySpecChat.new([streamed])
+      described_class.bind!(chat: stream_chat, schema: Captain::ResponseSchema)
+
+      expect do
+        described_class.execute(chat: stream_chat) { stream_chat.ask('Вопрос врачу') }
+      end.to raise_error(described_class::ProviderRefusalError, /finish_reason=content_filter/)
+
+      council_schema = Class.new(RubyLLM::Schema) { string :reply }
+      council_refusal = StructuredOutputPolicySpecResponse.new({ reply: "I'm sorry, but I cannot assist with that request." }.to_json)
+      council_chat = StructuredOutputPolicySpecChat.new([council_refusal])
+      described_class.bind!(chat: council_chat, schema: council_schema)
+
+      expect do
+        described_class.execute(chat: council_chat) { council_chat.ask('Собрать ответ консилиума') }
+      end.to raise_error(described_class::ProviderRefusalError, /structured safety refusal/)
     end
   end
 end
