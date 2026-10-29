@@ -144,13 +144,42 @@ const buttonTypeOptions = computed(() => [
     ...TEMPLATE_BUTTON_TYPE_OPTIONS[4],
     label: t('WHATSAPP_TEMPLATES.MANAGEMENT.BUTTON_OPTIONS.CATALOG'),
   },
+  {
+    ...TEMPLATE_BUTTON_TYPE_OPTIONS[5],
+    label: t('WHATSAPP_TEMPLATES.MANAGEMENT.BUTTON_OPTIONS.FLOW'),
+  },
 ]);
+
+const flowActionOptions = computed(() => [
+  {
+    value: 'data_exchange',
+    label: t('WHATSAPP_TEMPLATES.MANAGEMENT.FLOW.ACTION_DATA_EXCHANGE'),
+  },
+  {
+    value: 'navigate',
+    label: t('WHATSAPP_TEMPLATES.MANAGEMENT.FLOW.ACTION_NAVIGATE'),
+  },
+]);
+
+const publishedInboxFlows = computed(() => {
+  const inbox = store.getters['inboxes/getInbox']?.(props.inboxId) || {};
+  const flows =
+    store.getters['inboxes/getWhatsAppFlows']?.(props.inboxId) ||
+    inbox?.provider_config?.whatsapp_flows?.flows ||
+    inbox?.whatsapp_flows?.flows;
+  if (!Array.isArray(flows)) return [];
+
+  return flows.filter(
+    flow => flow?.id && String(flow?.status || '').toUpperCase() === 'PUBLISHED'
+  );
+});
 
 const buttonUsesText = buttonType => buttonType !== 'COPY_CODE';
 const buttonUsesUrl = buttonType => buttonType === 'URL';
 const buttonUsesCopyCode = buttonType => buttonType === 'COPY_CODE';
 const buttonUsesPhoneNumber = buttonType => buttonType === 'PHONE_NUMBER';
 const buttonUsesCatalog = buttonType => buttonType === 'CATALOG';
+const buttonUsesFlow = buttonType => buttonType === 'FLOW';
 
 const isAuthentication = computed(() => form.category === 'AUTHENTICATION');
 const isStandardTemplate = computed(
@@ -442,6 +471,10 @@ const validationErrors = computed(() => {
     );
   }
 
+  if (form.buttons.filter(button => buttonUsesFlow(button.type)).length > 1) {
+    errors.push(t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.FLOW_SINGLE_BUTTON'));
+  }
+
   form.buttons.forEach((button, index) => {
     const buttonIndex = index + 1;
 
@@ -540,6 +573,52 @@ const validationErrors = computed(() => {
               index: buttonIndex,
             }
           )
+        );
+      }
+    }
+
+    if (buttonUsesFlow(button.type)) {
+      const flowAction = String(button.flowAction || 'data_exchange')
+        .trim()
+        .toLowerCase();
+      const trimmedFlowId = String(button.flowId || '').trim();
+
+      if (button.text.trim().length > 25) {
+        errors.push(
+          t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.FLOW_BUTTON_TEXT_LENGTH', {
+            index: buttonIndex,
+          })
+        );
+      }
+
+      if (!trimmedFlowId) {
+        errors.push(
+          t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.FLOW_ID_REQUIRED', {
+            index: buttonIndex,
+          })
+        );
+      } else if (!/^[A-Za-z0-9_-]{1,64}$/.test(trimmedFlowId)) {
+        errors.push(
+          t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.FLOW_ID_INVALID', {
+            index: buttonIndex,
+          })
+        );
+      }
+
+      if (!['data_exchange', 'navigate'].includes(flowAction)) {
+        errors.push(
+          t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.FLOW_ACTION_INVALID', {
+            index: buttonIndex,
+          })
+        );
+      } else if (
+        flowAction === 'navigate' &&
+        !String(button.navigateScreen || '').trim()
+      ) {
+        errors.push(
+          t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.FLOW_SCREEN_REQUIRED', {
+            index: buttonIndex,
+          })
         );
       }
     }
@@ -654,6 +733,13 @@ const updateButtonType = (index, type) => {
         ? currentButton.example
         : '',
     phoneNumber: buttonUsesPhoneNumber(type) ? currentButton.phoneNumber : '',
+    flowId: buttonUsesFlow(type) ? currentButton.flowId || '' : '',
+    flowAction: buttonUsesFlow(type)
+      ? currentButton.flowAction || 'data_exchange'
+      : 'data_exchange',
+    navigateScreen: buttonUsesFlow(type)
+      ? currentButton.navigateScreen || ''
+      : '',
   };
 };
 
@@ -1135,6 +1221,61 @@ defineExpose({
               )
             "
           />
+
+          <div v-if="buttonUsesFlow(button.type)" class="space-y-4">
+            <div
+              v-if="publishedInboxFlows.length"
+              class="flex flex-wrap items-center gap-1.5"
+            >
+              <button
+                v-for="inboxFlow in publishedInboxFlows"
+                :key="inboxFlow.id"
+                type="button"
+                data-testid="flow-quick-pick-chip"
+                class="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors"
+                :class="
+                  String(button.flowId) === String(inboxFlow.id)
+                    ? 'border-n-brand bg-n-brand/10 text-n-brand'
+                    : 'border-n-weak bg-n-alpha-black2 text-n-slate-12 hover:border-n-brand/60 hover:bg-n-brand/10 hover:text-n-brand'
+                "
+                @click="button.flowId = String(inboxFlow.id)"
+              >
+                <span class="i-lucide-workflow size-3" />
+                <span>{{ inboxFlow.name }}</span>
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Input
+                v-model="button.flowId"
+                :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FLOW.FLOW_ID')"
+                :placeholder="
+                  t('WHATSAPP_TEMPLATES.MANAGEMENT.FLOW.FLOW_ID_PLACEHOLDER')
+                "
+              />
+              <div class="flex flex-col gap-1">
+                <label class="mb-0.5 text-heading-3 text-n-slate-12">
+                  {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.FLOW.ACTION') }}
+                </label>
+                <ComboBox
+                  v-model="button.flowAction"
+                  :options="flowActionOptions"
+                  input-like
+                />
+              </div>
+            </div>
+
+            <Input
+              v-if="button.flowAction === 'navigate'"
+              v-model="button.navigateScreen"
+              :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FLOW.NAVIGATE_SCREEN')"
+              :placeholder="
+                t(
+                  'WHATSAPP_TEMPLATES.MANAGEMENT.FLOW.NAVIGATE_SCREEN_PLACEHOLDER'
+                )
+              "
+            />
+          </div>
         </div>
       </div>
 

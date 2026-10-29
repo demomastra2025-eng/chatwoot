@@ -461,11 +461,77 @@ RSpec.describe Whatsapp::TemplateRequestBuilderService do
       end.to raise_error(ArgumentError, 'Catalog buttons are only supported for MARKETING templates')
     end
 
-    it 'rejects Flow creation until an authoritative template contract is implemented' do
+    it 'builds FLOW buttons for data_exchange and navigate actions' do
+      data_exchange_result = described_class.new(
+        template_config: {
+          name: 'booking_flow_invite',
+          language: 'ru',
+          category: 'utility',
+          body_text: 'Запишитесь онлайн в удобное время.',
+          buttons: [{ type: 'FLOW', text: 'Записаться', flow_id: 'flow_booking_1', flow_action: 'data_exchange' }]
+        },
+        asset_upload_service: asset_upload_service
+      ).call
+
+      expect(data_exchange_result[:components].last).to eq(
+        type: 'BUTTONS',
+        buttons: [{
+          type: 'FLOW',
+          text: 'Записаться',
+          flow_id: 'flow_booking_1',
+          flow_action: 'data_exchange'
+        }]
+      )
+
+      navigate_result = described_class.new(
+        template_config: {
+          name: 'survey_flow_invite',
+          language: 'en_US',
+          category: 'marketing',
+          body_text: 'Share quick feedback.',
+          buttons: [{
+            type: 'FLOW',
+            text: 'Open survey',
+            flow_id: 'flow_survey_2',
+            flow_action: 'navigate',
+            navigate_screen: 'WELCOME_SCREEN'
+          }]
+        },
+        asset_upload_service: asset_upload_service
+      ).call
+
+      expect(navigate_result[:components].last).to eq(
+        type: 'BUTTONS',
+        buttons: [{
+          type: 'FLOW',
+          text: 'Open survey',
+          flow_id: 'flow_survey_2',
+          flow_action: 'navigate',
+          navigate_screen: 'WELCOME_SCREEN'
+        }]
+      )
+    end
+
+    it 'validates FLOW button required fields' do
       expect do
         described_class.new(
           template_config: {
-            name: 'signup_flow',
+            name: 'double_flow_tpl',
+            language: 'ru',
+            category: 'utility',
+            body_text: 'Две кнопки Flow',
+            buttons: [
+              { type: 'FLOW', text: 'Запись 1', flow_id: 'flow_1' },
+              { type: 'FLOW', text: 'Запись 2', flow_id: 'flow_2' }
+            ]
+          },
+          asset_upload_service: asset_upload_service
+        ).call
+      end.to raise_error(ArgumentError, 'Only one Flow button is allowed per template')
+      expect do
+        described_class.new(
+          template_config: {
+            name: 'missing_flow_id',
             language: 'en_US',
             category: 'marketing',
             body_text: 'Open the form.',
@@ -473,7 +539,20 @@ RSpec.describe Whatsapp::TemplateRequestBuilderService do
           },
           asset_upload_service: asset_upload_service
         ).call
-      end.to raise_error(ArgumentError, 'Unsupported button type: FLOW')
+      end.to raise_error(ArgumentError, 'Flow ID is required for Flow buttons')
+
+      expect do
+        described_class.new(
+          template_config: {
+            name: 'missing_navigate_screen',
+            language: 'en_US',
+            category: 'utility',
+            body_text: 'Open the form.',
+            buttons: [{ type: 'FLOW', text: 'Open', flow_id: 'flow_1', flow_action: 'navigate' }]
+          },
+          asset_upload_service: asset_upload_service
+        ).call
+      end.to raise_error(ArgumentError, 'Initial screen ID is required when Flow action is navigate')
     end
 
     it 'builds validated media carousel cards with uploaded handles' do

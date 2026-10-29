@@ -313,7 +313,9 @@ class Scheduling::Appointment < ApplicationRecord
 
   def medelement_outbound_actor?
     actor = Current.executed_by
-    actor.is_a?(User) || (defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant) && actor.account_id == account_id)
+    actor.is_a?(User) ||
+      (defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant) && actor.account_id == account_id) ||
+      (actor.is_a?(Channel::Whatsapp) && actor.account_id == account_id)
   end
 
   def assign_duration_min

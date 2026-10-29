@@ -240,6 +240,10 @@
         "FLOW_REFERENCE_XOR": "Для кнопки Flow {index} нужен ровно один источник: Flow ID или встроенный Flow JSON.",
         "FLOW_JSON_INVALID": "Кнопка Flow {index} содержит некорректный JSON.",
         "FLOW_ACTION_INVALID": "У кнопки Flow {index} указано неподдерживаемое действие.",
+        "FLOW_ID_REQUIRED": "Для кнопки Flow {index} нужен Flow ID.",
+        "FLOW_ID_INVALID": "У кнопки Flow {index} некорректный формат Flow ID.",
+        "FLOW_BUTTON_TEXT_LENGTH": "Текст кнопки Flow {index} может содержать до 25 символов.",
+        "FLOW_SINGLE_BUTTON": "В одном шаблоне допускается только одна кнопка Flow.",
         "FLOW_SCREEN_REQUIRED": "Для перехода кнопке Flow {index} нужен ID первого экрана."
       }
     }

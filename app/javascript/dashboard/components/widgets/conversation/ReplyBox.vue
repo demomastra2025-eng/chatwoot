@@ -32,6 +32,7 @@ import {
   getUndefinedVariablesInMessage,
 } from '@chatwoot/utils';
 import WhatsappTemplates from './WhatsappTemplates/Modal.vue';
+import SendWhatsAppFlowModal from './WhatsappFlows/SendWhatsAppFlowModal.vue';
 import ContentTemplates from './ContentTemplates/ContentTemplatesModal.vue';
 import { MESSAGE_MAX_LENGTH } from 'shared/helpers/MessageTypeHelper';
 import inboxMixin, { INBOX_FEATURES } from 'shared/mixins/inboxMixin';
@@ -97,6 +98,7 @@ export default {
     ReplyTopPanel,
     ContentTemplates,
     WhatsappTemplates,
+    SendWhatsAppFlowModal,
     WootMessageEditor,
     QuotedEmailPreview,
     CopilotEditorSection,
@@ -153,6 +155,7 @@ export default {
       emailSubject: '',
       doAutoSaveDraft: () => {},
       showWhatsAppTemplatesModal: false,
+      showWhatsAppFlowsModal: false,
       showContentTemplatesModal: false,
       updateEditorSelectionWith: '',
       undefinedVariableMessage: '',
@@ -340,6 +343,22 @@ export default {
         'inboxes/getConversationWhatsAppTemplates'
       ](this.inboxId);
       return !!(templates && templates.length);
+    },
+    showWhatsappFlows() {
+      if (this.isCommunicationCallReplyAction) return false;
+      if (this.isPrivate) return false;
+      if (this.isEditorDisabled) return false;
+      if (!this.isAWhatsAppCloudChannel) return false;
+
+      const flows =
+        this.$store.getters['inboxes/getWhatsAppFlows']?.(this.inboxId) || [];
+      return (
+        Array.isArray(flows) &&
+        flows.some(
+          flow =>
+            flow?.id && String(flow?.status || '').toUpperCase() === 'PUBLISHED'
+        )
+      );
     },
     showContentTemplates() {
       if (this.isCommunicationCallReplyAction) return false;
@@ -1299,6 +1318,13 @@ export default {
     hideWhatsappTemplatesModal() {
       this.showWhatsAppTemplatesModal = false;
     },
+    openWhatsappFlowsModal() {
+      if (this.isFirstSendInFlight) return;
+      this.showWhatsAppFlowsModal = true;
+    },
+    hideWhatsappFlowsModal() {
+      this.showWhatsAppFlowsModal = false;
+    },
     openContentTemplateModal() {
       if (this.isFirstSendInFlight) return;
       this.showContentTemplatesModal = true;
@@ -1580,6 +1606,14 @@ export default {
         ...messagePayload,
       });
       this.hideWhatsappTemplatesModal();
+    },
+    async onSendWhatsAppFlow(messagePayload) {
+      if (this.isFirstSendInFlight) return;
+      this.sendMessage({
+        conversationId: this.conversationId,
+        ...messagePayload,
+      });
+      this.hideWhatsappFlowsModal();
     },
     async onSendContentTemplateReply(messagePayload) {
       if (this.isFirstSendInFlight) return;
@@ -2233,6 +2267,7 @@ export default {
         :conversation-id="conversationId"
         :enable-multiple-file-upload="enableMultipleFileUpload"
         :enable-whats-app-templates="showWhatsappTemplates && !isEditingMessage"
+        :enable-whats-app-flows="showWhatsappFlows && !isEditingMessage"
         :enable-content-templates="showContentTemplates && !isEditingMessage"
         :inbox="inbox"
         :is-on-private-note="isOnPrivateNote"
@@ -2267,6 +2302,7 @@ export default {
         :new-conversation-modal-active="newConversationModalActive"
         @call-initiated="onCallInitiated"
         @select-whatsapp-template="openWhatsappTemplateModal"
+        @select-whatsapp-flow="openWhatsappFlowsModal"
         @select-content-template="openContentTemplateModal"
         @toggle-quoted-reply="toggleQuotedReply"
         @select-reply-channel="selectReplyChannel"
@@ -2279,6 +2315,13 @@ export default {
       :show="showWhatsAppTemplatesModal"
       @on-send="onSendWhatsAppReply"
       @cancel="hideWhatsappTemplatesModal"
+    />
+
+    <SendWhatsAppFlowModal
+      :inbox-id="inbox.id"
+      :show="showWhatsAppFlowsModal"
+      @on-send="onSendWhatsAppFlow"
+      @cancel="hideWhatsappFlowsModal"
     />
 
     <EditContact

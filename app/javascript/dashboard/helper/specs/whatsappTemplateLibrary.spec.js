@@ -169,34 +169,57 @@ describe('whatsappTemplateLibrary', () => {
       ]);
     });
 
-    it('does not expose or serialize unverified Flow creation fields', () => {
+    it('exposes FLOW button type and serializes flow_id, flow_action, and conditional navigate_screen', () => {
       expect(
         TEMPLATE_BUTTON_TYPE_OPTIONS.map(option => option.value)
-      ).not.toContain('FLOW');
+      ).toContain('FLOW');
 
       const form = createEmptyWhatsAppTemplateForm();
-      form.category = 'MARKETING';
+      form.category = 'UTILITY';
       form.buttons = [
         {
           type: 'FLOW',
-          text: ' Sign up ',
+          text: ' Записаться ',
+          url: '',
+          example: '',
+          phoneNumber: '',
+          flowId: ' flow_booking_1 ',
+          flowAction: 'data_exchange',
+          navigateScreen: ' IGNORED_SCREEN ',
+        },
+        {
+          type: 'FLOW',
+          text: ' Open survey ',
           url: '',
           example: '',
           phoneNumber: '',
           flowId: ' 123456789 ',
-          flowJson: '',
           flowAction: 'navigate',
           navigateScreen: ' WELCOME_SCREEN ',
         },
       ];
 
-      expect(buildWhatsAppTemplatePayload(form).buttons[0]).toEqual({
-        type: 'FLOW',
-        text: 'Sign up',
-        url: '',
-        example: '',
-        phone_number: '',
-      });
+      expect(buildWhatsAppTemplatePayload(form).buttons).toEqual([
+        {
+          type: 'FLOW',
+          text: 'Записаться',
+          url: '',
+          example: '',
+          phone_number: '',
+          flow_id: 'flow_booking_1',
+          flow_action: 'data_exchange',
+        },
+        {
+          type: 'FLOW',
+          text: 'Open survey',
+          url: '',
+          example: '',
+          phone_number: '',
+          flow_id: '123456789',
+          flow_action: 'navigate',
+          navigate_screen: 'WELCOME_SCREEN',
+        },
+      ]);
     });
 
     it('normalizes structured carousel cards without top-level components', () => {

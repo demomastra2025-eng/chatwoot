@@ -1585,6 +1585,7 @@
       "WIDGET_BUILDER": "Widget Builder",
       "BOT_CONFIGURATION": "Bot Configuration",
       "WHATSAPP_TEMPLATES": "Templates",
+      "WHATSAPP_FLOWS": "Flows",
       "ACCOUNT_HEALTH": "Account Health",
       "CSAT": "CSAT",
       "VOICE_CALLS": "Қоңыраулар және қызметкерлер"
@@ -2129,6 +2130,71 @@
       "STATUS": {
         "ENABLED": "Включён",
         "DISABLED": "Выключен"
+      }
+    },
+    "WHATSAPP_FLOWS": {
+      "PAGE_TITLE": "WhatsApp Flows",
+      "PAGE_DESCRIPTION": "WhatsApp Cloud интерактивті формаларын, Data Endpoint шифрлауын және OneLink кестесіне қосылған онлайн жазылу формасын басқарыңыз.",
+      "NOT_SYNCED_YET": "Әлі синхрондалмаған",
+      "LAST_SYNC": "Синхрондау: {timestamp}",
+      "SEARCH_PLACEHOLDER": "Flow атауы, ID, күйі немесе санаты бойынша іздеу",
+      "SYNC_BUTTON": "Синхрондау",
+      "SYNC_SUCCESS": "WhatsApp Flows тізімі жаңартылды.",
+      "EMPTY_TITLE": "WhatsApp Flows формалары әзірге жоқ",
+      "EMPTY_DESCRIPTION": "Жоғарыда онлайн жазылу формасын жасаңыз немесе Meta-дан бар формаларды синхрондаңыз.",
+      "NO_RESULTS_TITLE": "Ештеңе табылмады",
+      "NO_RESULTS_DESCRIPTION": "Басқа атау, ID немесе күй енгізіп көріңіз.",
+      "BOOKING_BADGE": "Онлайн жазылу",
+      "FLOW_ID_LABEL": "Flow ID: {id}",
+      "PUBLISH_ACTION": "Жариялау",
+      "PUBLISH_SUCCESS": "Форма жарияланды.",
+      "DELETE_TITLE": "Flow жобасын жою",
+      "DELETE_DESCRIPTION": "«{flowName}» жобасын WhatsApp Cloud-тан жою керек пе? Бұл әрекетті қайтару мүмкін емес.",
+      "DELETE_ACTION": "Жобаны жою",
+      "DELETE_SUCCESS": "Flow жобасы жойылды.",
+      "DEPRECATE_TITLE": "Flow формасын қолданыстан шығару",
+      "DEPRECATE_DESCRIPTION": "«{flowName}» формасын қолданыстан шығару керек пе? Meta-да жарияланған формаларды жою мүмкін емес, тек жаңа сессияларды тоқтату үшін мұрағатқа (Deprecated) ауыстырылады.",
+      "DEPRECATE_ACTION": "Қолданыстан шығару",
+      "DEPRECATE_SUCCESS": "Форма Deprecated күйіне ауыстырылды.",
+      "STATUSES": {
+        "PUBLISHED": "Жарияланған",
+        "DRAFT": "Жоба",
+        "DEPRECATED": "Қолданыстан шыққан",
+        "BLOCKED": "Бұғатталған",
+        "THROTTLED": "Шектелген"
+      },
+      "ENCRYPTION": {
+        "TITLE": "Data Endpoint шифрлауы",
+        "DESCRIPTION": "RSA-2048 кілттер жұбын жасайды және интерактивті формалар бос уақытты қауіпсіз жүктеуі үшін ашық кілтті Meta-ға жібереді.",
+        "STATUS_CONFIGURED": "Бапталған",
+        "STATUS_PENDING": "Жүктеуді күтуде",
+        "STATUS_ERROR": "Қате",
+        "STATUS_NOT_CONFIGURED": "Бапталмаған",
+        "UPLOADED_AT": "Кілт жүктелді: {timestamp}",
+        "SETUP_BUTTON": "Шифрлауды баптау",
+        "REUPLOAD_BUTTON": "Meta-дағы кілтті жаңарту",
+        "ROTATE_BUTTON": "Кілттерді жаңарту",
+        "SETUP_SUCCESS": "WhatsApp Flows шифрлауы сәтті бапталды."
+      },
+      "BOOKING": {
+        "TITLE": "1 басумен онлайн жазылу формасы",
+        "DESCRIPTION": "Кестеңізбен байланысқан WhatsApp ішіндегі дайын интерактивті жазылу формасын жасайды (қызметтер, мамандар, бос уақыт және клиент деректері).",
+        "PROVISION_BUTTON": "Жазылу формасын жасау",
+        "PROVISION_SUCCESS": "Онлайн жазылу формасы сәтті жасалды.",
+        "PROVISION_DRAFT_WARNING": "Форма жоба ретінде жасалды, бірақ автоматты түрде жарияланбады: {reason}",
+        "PROVISION_DRAFT_FALLBACK": "Форма жоба ретінде жасалды. Төмендегі ескертулерді тексеріп, «Жариялау» түймесін басыңыз.",
+        "FIELD_LABEL_MAX_LENGTH": "WhatsApp Flows өріс атаулары 20 таңбадан аспауы керек.",
+        "CTA_MAX_LENGTH": "WhatsApp Flows растау түймесінің мәтіні 35 таңбадан аспауы керек.",
+        "LOCALE_LABEL": "Форма тілі",
+        "NAME_LABEL": "Flow атауы (міндетті емес)",
+        "NAME_PLACEHOLDER": "OneLink онлайн жазылу",
+        "CTA_LABEL": "Растау түймесінің мәтіні (міндетті емес)",
+        "CTA_PLACEHOLDER": "Жазылу",
+        "SPECIALIST_LABEL": "Маман өрісінің атауы (міндетті емес)",
+        "SPECIALIST_PLACEHOLDER": "Маман",
+        "SERVICE_LABEL": "Қызмет өрісінің атауы (міндетті емес)",
+        "SERVICE_PLACEHOLDER": "Қызмет",
+        "PUBLISH_LABEL": "Жасалғаннан кейін бірден жариялау"
       }
     }
   }

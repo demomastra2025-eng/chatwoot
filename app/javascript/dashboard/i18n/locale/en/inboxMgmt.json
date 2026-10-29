@@ -1709,6 +1709,7 @@
       "WIDGET_BUILDER": "Widget Builder",
       "BOT_CONFIGURATION": "Bot Configuration",
       "WHATSAPP_TEMPLATES": "Templates",
+      "WHATSAPP_FLOWS": "Flows",
       "ACCOUNT_HEALTH": "Account Health",
       "VOICE_CALLS": "Calls and employees",
       "CSAT": "CSAT"
@@ -2343,6 +2344,71 @@
       "STATUS": {
         "ENABLED": "Enabled",
         "DISABLED": "Disabled"
+      }
+    },
+    "WHATSAPP_FLOWS": {
+      "PAGE_TITLE": "WhatsApp Flows",
+      "PAGE_DESCRIPTION": "Manage interactive WhatsApp Cloud Flows, endpoint encryption, and 1-click online booking forms connected to OneLink Scheduling.",
+      "NOT_SYNCED_YET": "Not synced yet",
+      "LAST_SYNC": "Last sync: {timestamp}",
+      "SEARCH_PLACEHOLDER": "Search Flows by name, ID, status, or category",
+      "SYNC_BUTTON": "Sync Flows",
+      "SYNC_SUCCESS": "WhatsApp Flows synced successfully.",
+      "EMPTY_TITLE": "No WhatsApp Flows yet",
+      "EMPTY_DESCRIPTION": "Provision an online booking Flow above or sync existing Flows from Meta.",
+      "NO_RESULTS_TITLE": "No Flows match this search",
+      "NO_RESULTS_DESCRIPTION": "Try a different name, ID, or status.",
+      "BOOKING_BADGE": "Online booking",
+      "FLOW_ID_LABEL": "Flow ID: {id}",
+      "PUBLISH_ACTION": "Publish",
+      "PUBLISH_SUCCESS": "Flow published successfully.",
+      "DELETE_TITLE": "Delete draft Flow",
+      "DELETE_DESCRIPTION": "Delete draft Flow \"{flowName}\" from WhatsApp Cloud? This action cannot be undone.",
+      "DELETE_ACTION": "Delete Flow",
+      "DELETE_SUCCESS": "Draft Flow deleted successfully.",
+      "DEPRECATE_TITLE": "Deprecate published Flow",
+      "DEPRECATE_DESCRIPTION": "Deprecate Flow \"{flowName}\"? Published Flows cannot be deleted in Meta, only deprecated so they stop accepting new sessions.",
+      "DEPRECATE_ACTION": "Deprecate Flow",
+      "DEPRECATE_SUCCESS": "Flow deprecated successfully.",
+      "STATUSES": {
+        "PUBLISHED": "Published",
+        "DRAFT": "Draft",
+        "DEPRECATED": "Deprecated",
+        "BLOCKED": "Blocked",
+        "THROTTLED": "Throttled"
+      },
+      "ENCRYPTION": {
+        "TITLE": "Data Endpoint Encryption",
+        "DESCRIPTION": "Generates an RSA-2048 key pair and uploads the public key to Meta so dynamic WhatsApp Flows can securely load live schedule slots.",
+        "STATUS_CONFIGURED": "Configured",
+        "STATUS_PENDING": "Pending upload",
+        "STATUS_ERROR": "Error",
+        "STATUS_NOT_CONFIGURED": "Not configured",
+        "UPLOADED_AT": "Public key uploaded: {timestamp}",
+        "SETUP_BUTTON": "Configure encryption",
+        "REUPLOAD_BUTTON": "Re-upload public key",
+        "ROTATE_BUTTON": "Rotate keys",
+        "SETUP_SUCCESS": "WhatsApp Flows encryption configured successfully."
+      },
+      "BOOKING": {
+        "TITLE": "1-Click Online Booking Flow",
+        "DESCRIPTION": "Creates and links an interactive booking form connected to your workspace schedule (services, specialists, available slots, and client details).",
+        "PROVISION_BUTTON": "Create booking Flow",
+        "PROVISION_SUCCESS": "Online booking Flow provisioned successfully.",
+        "PROVISION_DRAFT_WARNING": "Flow was created as a draft and could not be published automatically: {reason}",
+        "PROVISION_DRAFT_FALLBACK": "Flow was created as a draft. Review any validation errors below and click Publish.",
+        "FIELD_LABEL_MAX_LENGTH": "Field labels cannot exceed 20 characters in WhatsApp Flows.",
+        "CTA_MAX_LENGTH": "Confirm button text cannot exceed 35 characters in WhatsApp Flows.",
+        "LOCALE_LABEL": "Form language",
+        "NAME_LABEL": "Flow name (optional)",
+        "NAME_PLACEHOLDER": "OneLink Online Booking",
+        "CTA_LABEL": "Confirm button text (optional)",
+        "CTA_PLACEHOLDER": "Book appointment",
+        "SPECIALIST_LABEL": "Specialist field label (optional)",
+        "SPECIALIST_PLACEHOLDER": "Specialist",
+        "SERVICE_LABEL": "Service field label (optional)",
+        "SERVICE_PLACEHOLDER": "Service",
+        "PUBLISH_LABEL": "Publish immediately after creation"
       }
     }
   }

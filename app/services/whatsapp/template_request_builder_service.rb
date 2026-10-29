@@ -2,7 +2,9 @@
 class Whatsapp::TemplateRequestBuilderService
   SUPPORTED_CATEGORIES = %w[UTILITY MARKETING AUTHENTICATION].freeze
   SUPPORTED_HEADER_TYPES = %w[none text image video document].freeze
-  SUPPORTED_BUTTON_TYPES = %w[QUICK_REPLY URL COPY_CODE PHONE_NUMBER CATALOG].freeze
+  SUPPORTED_BUTTON_TYPES = %w[QUICK_REPLY URL COPY_CODE PHONE_NUMBER CATALOG FLOW].freeze
+  FLOW_BUTTON_ACTIONS = %w[navigate data_exchange].freeze
+  FLOW_ID_FORMAT = /\A[A-Za-z0-9_-]{1,64}\z/
   CAROUSEL_HEADER_TYPES = %w[image video].freeze
   CAROUSEL_BUTTON_TYPES = %w[QUICK_REPLY URL PHONE_NUMBER].freeze
   BUTTON_BUILDERS = {
@@ -10,7 +12,8 @@ class Whatsapp::TemplateRequestBuilderService
     'URL' => :build_url_button,
     'COPY_CODE' => :build_copy_code_button,
     'PHONE_NUMBER' => :build_phone_number_button,
-    'CATALOG' => :build_catalog_button
+    'CATALOG' => :build_catalog_button,
+    'FLOW' => :build_flow_button
   }.freeze
   MAX_TEMPLATE_BUTTONS = 10
   MAX_CAROUSEL_BUTTONS = 2
@@ -260,6 +263,7 @@ class Whatsapp::TemplateRequestBuilderService
 
     return if buttons.blank?
     raise ArgumentError, 'You can add up to 10 buttons' if buttons.size > MAX_TEMPLATE_BUTTONS
+    raise ArgumentError, 'Only one Flow button is allowed per template' if buttons.count { |btn| btn[:type] == 'FLOW' } > 1
 
     {
       type: 'BUTTONS',
@@ -335,6 +339,30 @@ class Whatsapp::TemplateRequestBuilderService
       type: 'CATALOG',
       text: required_value(button[:text], 'Catalog button text is required')
     }
+  end
+
+  def build_flow_button(button)
+    text = required_value(button[:text], 'Flow button text is required')
+    raise ArgumentError, 'Flow button text cannot exceed 25 characters' if text.length > 25
+
+    flow_id = required_value(button[:flow_id], 'Flow ID is required for Flow buttons')
+    raise ArgumentError, 'Flow ID format is invalid' unless flow_id.match?(FLOW_ID_FORMAT)
+
+    navigate_screen = button[:navigate_screen].to_s.strip
+    default_action = navigate_screen.present? ? 'navigate' : 'data_exchange'
+    flow_action = button[:flow_action].to_s.strip.downcase.presence || default_action
+    raise ArgumentError, "Unsupported Flow button action: #{flow_action}" unless FLOW_BUTTON_ACTIONS.include?(flow_action)
+
+    payload = {
+      type: 'FLOW',
+      text: text,
+      flow_id: flow_id,
+      flow_action: flow_action
+    }
+    if flow_action == 'navigate'
+      payload[:navigate_screen] = required_value(navigate_screen, 'Initial screen ID is required when Flow action is navigate')
+    end
+    payload
   end
 
   def example_values_for(key, variables, label)

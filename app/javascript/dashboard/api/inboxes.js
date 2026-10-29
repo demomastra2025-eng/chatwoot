@@ -156,6 +156,48 @@ class Inboxes extends CacheEnabledApiClient {
     });
   }
 
+  getWhatsAppFlows(inboxId) {
+    return axios.get(`${this.url}/${inboxId}/whatsapp_flows`);
+  }
+
+  setupWhatsAppFlowsEncryption(inboxId, payload = {}) {
+    return axios.post(
+      `${this.url}/${inboxId}/whatsapp_flows/setup_encryption`,
+      payload
+    );
+  }
+
+  syncWhatsAppFlows(inboxId) {
+    return axios.post(`${this.url}/${inboxId}/whatsapp_flows/sync`);
+  }
+
+  provisionWhatsAppBookingFlow(inboxId, whatsappFlow = {}) {
+    return axios.post(
+      `${this.url}/${inboxId}/whatsapp_flows/provision_booking`,
+      {
+        whatsapp_flow: whatsappFlow,
+      }
+    );
+  }
+
+  createWhatsAppFlow(inboxId, whatsappFlow) {
+    return axios.post(`${this.url}/${inboxId}/whatsapp_flows`, {
+      whatsapp_flow: whatsappFlow,
+    });
+  }
+
+  publishWhatsAppFlow(inboxId, flowId) {
+    return axios.post(
+      `${this.url}/${inboxId}/whatsapp_flows/${encodeURIComponent(flowId)}/publish`
+    );
+  }
+
+  deleteWhatsAppFlow(inboxId, flowId) {
+    return axios.delete(
+      `${this.url}/${inboxId}/whatsapp_flows/${encodeURIComponent(flowId)}`
+    );
+  }
+
   resetSecret(inboxId) {
     return axios.post(`${this.url}/${inboxId}/reset_secret`);
   }

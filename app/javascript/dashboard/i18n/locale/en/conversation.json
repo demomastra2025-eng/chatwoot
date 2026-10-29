@@ -264,6 +264,7 @@
       "COPILOT_MSG_INPUT": "Give the assistant additional prompts, or ask anything else... Press enter to send follow-up",
       "CLICK_HERE": "Click here to update",
       "WHATSAPP_TEMPLATES": "Whatsapp Templates",
+      "WHATSAPP_FLOWS": "WhatsApp Flows",
       "TEMPLATE_BUTTON": "Template",
       "WHATSAPP_TEMPLATE_ONLY": "The customer has not written in this conversation in the last 24 hours — WhatsApp only lets you start with a template."
     },
@@ -533,6 +534,52 @@
       "ADD": "Add reaction",
       "MORE": "More reactions",
       "ERROR": "Failed to update reaction"
+    },
+    "WHATSAPP_FLOWS": {
+      "BOOKING_CONFIRMED": "Appointment booked via WhatsApp Flow",
+      "BOOKING_FAILED": "Could not finalize booking automatically",
+      "FIELDS": {
+        "CLIENT_LAST_NAME": "Last name",
+        "CLIENT_FIRST_NAME": "First name",
+        "CLIENT_MIDDLE_NAME": "Middle name",
+        "CLIENT_PHONE": "Phone",
+        "CLIENT_BIRTH_DATE": "Date of birth",
+        "CLIENT_IIN": "IIN",
+        "CABINET": "Cabinet",
+        "NOTES": "Comment",
+        "SERVICE": "Service",
+        "SPECIALIST": "Specialist",
+        "SLOT": "Date & time"
+      },
+      "MODAL": {
+        "TITLE": "Send WhatsApp Flow",
+        "SUBTITLE": "Send an interactive form inside the active 24-hour WhatsApp session.",
+        "EMPTY_PUBLISHED": "No published WhatsApp Flows are available for this inbox yet. Publish a Flow in Inbox Settings → Flows.",
+        "FLOW_LABEL": "Flow",
+        "FLOW_PLACEHOLDER": "Select a published Flow",
+        "BODY_LABEL": "Message text",
+        "BODY_PLACEHOLDER": "Write a short invitation message above the Flow button",
+        "CTA_LABEL": "Button label (up to 20 chars)",
+        "CTA_PLACEHOLDER": "Book online",
+        "ACTION_LABEL": "Launch mode",
+        "ACTION_DATA_EXCHANGE": "Dynamic data exchange",
+        "ACTION_NAVIGATE": "Open initial screen",
+        "SCREEN_LABEL": "Initial screen ID",
+        "SCREEN_PLACEHOLDER": "BOOKING_STEP",
+        "DEFAULT_BODY": "Tap the button below to choose a convenient date and time.",
+        "DEFAULT_CTA": "Book online",
+        "CANCEL": "Cancel",
+        "SEND": "Send Flow",
+        "ERRORS": {
+          "FLOW_REQUIRED": "Please select a published Flow.",
+          "BODY_REQUIRED": "Message text is required.",
+          "BODY_MAX_LENGTH": "Message text cannot exceed 1024 characters.",
+          "CTA_REQUIRED": "Button label is required.",
+          "CTA_MAX_LENGTH": "Button label can be up to 20 characters.",
+          "CTA_NO_EMOJI": "Button label cannot contain emoji.",
+          "SCREEN_REQUIRED": "Initial screen ID is required for screen navigation."
+        }
+      }
     }
   },
   "EMAIL_TRANSCRIPT": {

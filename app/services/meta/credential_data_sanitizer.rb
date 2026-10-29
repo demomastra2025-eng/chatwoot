@@ -5,17 +5,19 @@ class Meta::CredentialDataSanitizer
     (?:
       access[_-]?token|api[_-]?key|app[_-]?secret|client[_-]?secret|refresh[_-]?token|
       (?:oauth|authorization)[_-]?code|authorization|password|webhook[_-]?verify[_-]?token|
-      verify[_-]?token|verification[_-]?pin|pin|token
+      verify[_-]?token|verification[_-]?pin|pin|token|
+      encrypted[_-]?private[_-]?key|private[_-]?key|endpoint[_-]?secret
     )\z
   /ix
   PROVIDER_SECRET_KEYS = %w[app_secret app_secret_key client_secret api_secret].freeze
   QUERY_SECRET = /
     ((?:access_token|api_key|app_secret|client_secret|refresh_token|oauth_code|authorization_code|
-        webhook_verify_token|verify_token|code|token|verification_pin|pin)=)[^&\s"']+
+        webhook_verify_token|verify_token|endpoint_secret|endpoint_token|code|token|verification_pin|pin)=)[^&\s"']+
   /ix
   JSON_SECRET = /
     ("(?:access_token|api_key|app_secret|client_secret|refresh_token|oauth_code|authorization_code|
-        webhook_verify_token|verify_token|code|token|verification_pin|pin)"\s*:\s*")[^"]+("?)
+        webhook_verify_token|verify_token|encrypted_private_key|private_key|endpoint_secret|endpoint_token|
+        code|token|verification_pin|pin)"\s*:\s*")[^"]+("?)
   /ix
   LABELED_SECRET = /((?:webhook[_-]?verify[_-]?token|verify[_-]?token)\s*:\s*)[^\s,}"']+/ix
   LABELED_PIN = /((?:(?:registration|verification)\s+)?pin(?:\s+(?:is|was))?\s*[:=]?\s*)\d{4,8}\b/i
@@ -45,7 +47,10 @@ class Meta::CredentialDataSanitizer
         [channel.page_access_token, channel.user_access_token, app_secret, "#{app_id}|#{app_secret}"]
       when Channel::Whatsapp
         config = channel.provider_config.to_h
+        flows_cfg = config['whatsapp_flows'].to_h
         [config['api_key'], config['webhook_verify_token'], config['verification_pin'],
+         flows_cfg['endpoint_secret'], flows_cfg['encrypted_private_key'],
+         Whatsapp::Flows::TokenService.build_endpoint_token(channel, flows_cfg['endpoint_secret']),
          *PROVIDER_SECRET_KEYS.filter_map { |key| config[key] },
          GlobalConfigService.load('WHATSAPP_APP_SECRET', '')]
       else

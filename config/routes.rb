@@ -517,6 +517,17 @@ Rails.application.routes.draw do
                       param: :template_name do
               patch :visibility, on: :member
             end
+
+            resources :whatsapp_flows,
+                      only: [:index, :create, :destroy],
+                      controller: 'inbox_whatsapp_flows' do
+              collection do
+                post :setup_encryption
+                post :sync
+                post :provision_booking
+              end
+              post :publish, on: :member
+            end
           end
 
           get 'voice/calls/export', to: 'telephony/calls#export'
@@ -940,6 +951,7 @@ Rails.application.routes.draw do
   post 'webhooks/sms/:phone_number', to: 'webhooks/sms#process_payload'
   get 'webhooks/whatsapp', to: 'webhooks/whatsapp#verify'
   post 'webhooks/whatsapp', to: 'webhooks/whatsapp#process_payload'
+  post 'webhooks/whatsapp/flows/:endpoint_token', to: 'webhooks/whatsapp_flows#process_payload'
   get 'webhooks/whatsapp/:phone_number', to: 'webhooks/whatsapp#verify'
   post 'webhooks/whatsapp/:phone_number', to: 'webhooks/whatsapp#process_payload'
   post 'webhooks/whatsapp_web/:webhook_identifier', to: 'webhooks/whatsapp_web#process_payload'

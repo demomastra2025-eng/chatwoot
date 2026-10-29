@@ -20,6 +20,7 @@ import InboxHealthAPI from 'dashboard/api/inboxHealth';
 import PreChatFormSettings from './PreChatForm/Settings.vue';
 import ConfigurationPage from './settingsPage/ConfigurationPage.vue';
 import WhatsAppTemplatesPage from './settingsPage/WhatsAppTemplatesPage.vue';
+import WhatsAppFlowsPage from './settingsPage/WhatsAppFlowsPage.vue';
 import AccountHealth from './components/AccountHealth.vue';
 import ConnectionStatusBadge from './components/ConnectionStatusBadge.vue';
 import DeveloperDetails from './components/DeveloperDetails.vue';
@@ -94,6 +95,7 @@ export default {
     DeveloperDetails,
     FacebookReauthorize,
     WhatsAppTemplatesPage,
+    WhatsAppFlowsPage,
     PreChatFormSettings,
     SettingIntroBanner,
     SettingsToggleSection,
@@ -675,6 +677,10 @@ export default {
           {
             key: 'whatsapp-templates',
             name: this.$t('INBOX_MGMT.TABS.WHATSAPP_TEMPLATES'),
+          },
+          {
+            key: 'whatsapp-flows',
+            name: this.$t('INBOX_MGMT.TABS.WHATSAPP_FLOWS'),
           },
           {
             key: 'whatsapp-health',
@@ -4568,6 +4574,9 @@ export default {
         </div>
         <div v-if="selectedTabKey === 'whatsapp-templates'">
           <WhatsAppTemplatesPage :inbox="inbox" />
+        </div>
+        <div v-if="selectedTabKey === 'whatsapp-flows'">
+          <WhatsAppFlowsPage :inbox="inbox" />
         </div>
       </div>
     </section>

@@ -157,7 +157,9 @@ class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
   end
 
   def blank_session_message?
-    message.outgoing_content.blank? && message.attachments.blank?
+    message.outgoing_content.blank? &&
+      message.attachments.blank? &&
+      message.content_attributes.to_h.with_indifferent_access[:whatsapp_payload].blank?
   end
 
   def fail_blank_session_message!

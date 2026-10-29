@@ -3,7 +3,7 @@ class Api::V1::Accounts::InboxWhatsappTemplatesController < Api::V1::Accounts::B
     name language category add_security_recommendation code_expiration_minutes
     header_type header_text body_text footer_text sample_media_url sample_media_blob_id
   ].freeze
-  BUTTON_FIELDS = %i[type text url example phone_number].freeze
+  BUTTON_FIELDS = %i[type text url example phone_number flow_id flow_action navigate_screen].freeze
   CAROUSEL_CARD_FIELDS = [
     :header_type,
     :sample_media_url,

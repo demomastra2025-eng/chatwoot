@@ -156,6 +156,59 @@ RSpec.describe Whatsapp::TemplateProcessorService do
       )
     end
 
+    it 'auto-injects a signed olf1 flow_token action parameter for templates with a FLOW button' do
+      account = channel.account
+      contact = create(:contact, account: account, name: 'Асет')
+      conversation = create(:conversation, account: account, inbox: channel.inbox, contact: contact)
+      message = create(:message, account: account, inbox: channel.inbox, conversation: conversation, message_type: 'outgoing')
+
+      channel.update!(
+        provider_config: channel.provider_config.merge(
+          'whatsapp_flows' => {
+            'flows' => [{ 'id' => 'flow_booking_99', 'kind' => 'booking', 'locale' => 'ru' }]
+          }
+        ),
+        message_templates: [
+          {
+            'name' => 'booking_invite',
+            'language' => 'ru',
+            'status' => 'APPROVED',
+            'category' => 'UTILITY',
+            'components' => [
+              { 'type' => 'BODY', 'text' => 'Запишитесь онлайн в 1 клик' },
+              {
+                'type' => 'BUTTONS',
+                'buttons' => [{ 'type' => 'FLOW', 'text' => 'Записаться', 'flow_id' => 'flow_booking_99' }]
+              }
+            ]
+          }
+        ]
+      )
+
+      service = described_class.new(
+        channel: channel,
+        template_params: { 'name' => 'booking_invite', 'language' => 'ru', 'processed_params' => {} },
+        message: message
+      )
+      _, _, _, components = service.call
+
+      flow_button = components.find { |comp| comp[:type] == 'button' && comp[:sub_type] == 'flow' }
+      expect(flow_button).to be_present
+      expect(flow_button[:index]).to eq(0)
+
+      generated_token = flow_button.dig(:parameters, 0, :action, :flow_token)
+      expect(generated_token).to start_with('olf1.')
+      verified = Whatsapp::Flows::TokenService.verify_flow_token(generated_token, channel: channel)
+      expect(verified[:valid]).to be(true)
+      expect(verified[:payload]).to include(
+        channel_id: channel.id,
+        conversation_id: conversation.id,
+        contact_id: contact.id,
+        kind: 'booking',
+        locale: 'ru'
+      )
+    end
+
     it 'builds nested carousel card components from exact cached template structure' do
       channel.update!(message_templates: [carousel_template])
 
@@ -308,6 +361,42 @@ RSpec.describe Whatsapp::TemplateProcessorService do
           }
         ]
       )
+    end
+
+    it 'auto-signs explicit flow button parameters when flow_token is omitted or unused' do
+      contact = create(:contact, account: channel.account, name: 'Алия')
+      conversation = create(:conversation, account: channel.account, inbox: channel.inbox, contact: contact)
+      message = create(
+        :message, account: channel.account, inbox: channel.inbox, conversation: conversation, message_type: 'outgoing'
+      )
+      channel.update!(
+        message_templates: [{
+          'name' => 'flow_booking_tpl',
+          'language' => 'ru',
+          'status' => 'APPROVED',
+          'components' => [
+            { 'type' => 'BODY', 'text' => 'Запишитесь онлайн' },
+            { 'type' => 'BUTTONS', 'buttons' => [{ 'type' => 'FLOW', 'text' => 'Записаться', 'flow_id' => 'flow_1' }] }
+          ]
+        }]
+      )
+
+      _, _, _, components = described_class.new(
+        channel: channel,
+        message: message,
+        template_params: {
+          'name' => 'flow_booking_tpl',
+          'language' => 'ru',
+          'processed_params' => {
+            'buttons' => [{ 'type' => 'flow', 'action' => { 'flow_action_data' => { 'service_id' => '5' } } }]
+          }
+        }
+      ).call
+
+      flow_btn = components.find { |c| c[:type] == 'button' && c[:sub_type] == 'flow' }
+      action = flow_btn.dig(:parameters, 0, :action)
+      expect(action[:flow_action_data]).to eq(service_id: '5')
+      expect(action[:flow_token]).to start_with('olf1.')
     end
   end
 end
