@@ -43,7 +43,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   private
 
   def can_transcribe?
-    account.call_transcriptions_enabled? && account.captain_quota_available?
+    account.call_transcriptions_enabled? && account.call_analysis_quota_available?
   end
 
   def cached_transcript
@@ -288,19 +288,67 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   end
 
   def persist_call_transcript!(result, source, transcript_ref)
+    metering_payload = nil
+    billable_source = source.to_s == 'audio_transcription'
     call_session.with_lock do
       metadata = (call_session.reload.metadata || {}).deep_dup
       recording = metadata['recording'] ||= {}
+      existing_billed_at = recording.dig('transcription', 'billed_at')
       recording['audio_probe'] = @audio_probe if @audio_probe.present?
-      recording['transcription'] = transcription_metadata(result, source, recording)
+      billed_at = existing_billed_at || (Time.current.iso8601 if billable_source)
+      recording['transcription'] = transcription_metadata(result, source, recording, billed_at: billed_at)
       call_session.update!(metadata: metadata, transcript_ref: transcript_ref)
+      if billable_source && existing_billed_at.blank?
+        metering_payload = build_call_metering_payload(recording, metadata, result)
+      end
     end
+    record_call_metering!(metering_payload)
   end
 
-  def transcription_metadata(result, source, recording)
-    result.merge('status' => 'completed', 'source' => source, 'model' => model,
-                 'channels' => @audio_probe&.dig('channels') || recording['channels'],
-                 'completed_at' => Time.current.iso8601)
+  def build_call_metering_payload(recording, metadata, result)
+    {
+      duration_seconds: resolve_call_duration_seconds(recording, metadata),
+      unanswered: unanswered_call?(result, metadata)
+    }
+  end
+
+  def record_call_metering!(payload)
+    return unless payload
+
+    Accounts::MonthlyAiUsageService.new(account).record_call_analysis!(**payload)
+  end
+
+  def transcription_metadata(result, source, recording, billed_at: nil)
+    payload = result.merge('status' => 'completed', 'source' => source, 'model' => model,
+                           'channels' => @audio_probe&.dig('channels') || recording['channels'],
+                           'completed_at' => Time.current.iso8601)
+    payload['billed_at'] = billed_at if billed_at.present?
+    payload
+  end
+
+  def resolve_call_duration_seconds(recording, metadata)
+    @audio_probe&.dig('duration_seconds') ||
+      recording.dig('audio_probe', 'duration_seconds') ||
+      recording['duration_seconds'] ||
+      metadata['duration_seconds'] ||
+      call_session_duration_seconds
+  end
+
+  def call_session_duration_seconds
+    return call_session.duration_seconds if call_session.respond_to?(:duration_seconds) && call_session.duration_seconds.present?
+    return unless call_session.respond_to?(:answered_at) && call_session.respond_to?(:ended_at)
+    return unless call_session.answered_at.present? && call_session.ended_at.present?
+
+    call_session.ended_at - call_session.answered_at
+  end
+
+  def unanswered_call?(result, metadata)
+    unanswered_statuses = %w[created ringing connecting missed unanswered no_answer busy failed canceled cancelled rejected]
+    end_reason = call_session.respond_to?(:end_reason) ? call_session.end_reason.to_s : ''
+    result['outcome'].to_s == 'no_answer' ||
+      unanswered_statuses.include?(call_session.status.to_s) ||
+      unanswered_statuses.include?(end_reason) ||
+      %w[NO_ANSWER USER_BUSY ORIGINATOR_CANCEL].include?(metadata['hangup_cause'].to_s)
   end
 
   def update_voice_message!(result, transcript_ref)

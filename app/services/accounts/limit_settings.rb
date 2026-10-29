@@ -124,9 +124,10 @@ class Accounts::LimitSettings # rubocop:disable Metrics/ClassLength
 
   # modules: the modules of the plan to read the plan numbers from (default: the plan applied to the account, none without one)
   # draft  : the lists to read instead of the ones of the account (what the choices of #apply would write)
-  def initialize(account, modules: nil, draft: nil)
+  def initialize(account, modules: nil, tariff: :from_account, draft: nil)
     @account = account
     @modules = modules
+    @tariff = resolve_initial_tariff(tariff)
     @draft = draft
   end
 
@@ -322,7 +323,7 @@ class Accounts::LimitSettings # rubocop:disable Metrics/ClassLength
   # { 'agents' => { 'from' => Position, 'to' => Position } } for the limits whose source or number differs after the choices
   # (the zero an ended trial holds on a limit nobody touched is still the platform's, not a choice)
   def changes_between(draft, keys = Accounts::Plans::LIMIT_KEYS)
-    after = self.class.new(@account, modules: @modules, draft: draft)
+    after = self.class.new(@account, modules: @modules, tariff: @tariff, draft: draft)
     keys.each_with_object({}) do |key, changes|
       before = Position.new(source: source(key), value: effective(key))
       now = Position.new(source: after.source(key), value: after.effective(key))
@@ -338,16 +339,24 @@ class Accounts::LimitSettings # rubocop:disable Metrics/ClassLength
     @stored_limits ||= (@draft ? @draft.limits : @account.limits).to_h.transform_keys(&:to_s)
   end
 
+  def resolve_initial_tariff(tariff)
+    if tariff == :from_account
+      @modules ? nil : Accounts::Plans.stored_tariff(attributes[Accounts::ApplyPlan::TARIFF_KEY])
+    else
+      Accounts::Plans.stored_tariff(tariff)
+    end
+  end
+
   def plan_assigned?
-    @modules ? true : attributes[Accounts::ApplyPlan::PLAN_KEY].present?
+    @modules || @tariff ? true : attributes[Accounts::ApplyPlan::PLAN_KEY].present?
   end
 
   def plan_limits
-    @plan_limits ||= Accounts::Plans.limits_for(plan_modules)
+    @plan_limits ||= @tariff ? Accounts::Plans.limits_for(plan_modules, tariff: @tariff) : Accounts::Plans.limits_for(plan_modules)
   end
 
   def plan_modules
-    @modules || Accounts::Plans.known_modules(attributes[Accounts::ApplyPlan::MODULES_KEY])
+    @modules || (@tariff ? Accounts::Plans.tariff_modules(@tariff) : Accounts::Plans.known_modules(attributes[Accounts::ApplyPlan::MODULES_KEY]))
   end
 
   # The zero a trial left on a limit is the platform's, not a choice

@@ -462,7 +462,8 @@ RSpec.describe 'Super Admin clinic card', type: :request do
   describe 'the limits and spend block' do
     let(:limits) do
       { 'agents' => 10, 'inboxes' => 20, 'conversations' => 1000, 'non_web_inboxes' => 5, 'storage_bytes' => 50.gigabytes,
-        'captain_responses' => 100, 'captain_documents' => 10, 'captain_tokens' => 1000, 'emails' => 50 }
+        'captain_responses' => 100, 'captain_documents' => 10, 'captain_tokens' => 1000,
+        'captain_ai_dialogs' => 1000, 'call_analysis_minutes' => 1000, 'emails' => 50 }
     end
 
     it 'lists every limit with a Russian name, in order' do
@@ -471,10 +472,14 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       open_card
 
       keys = block('usage-block').css('[data-usage]').map { |row| row['data-usage'] }
-      expect(keys).to eq(%w[agents inboxes conversations non_web_inboxes storage captain_responses captain_documents captain_tokens emails])
+      expect(keys).to eq(
+        %w[agents inboxes conversations non_web_inboxes storage captain_responses captain_documents captain_tokens
+           captain_ai_dialogs call_analysis_minutes emails]
+      )
       labels = block('usage-block').css('[data-usage]').map { |row| text(row.at_css('span')) }
       expect(labels).to eq(
-        ['Операторы', 'Каналы', 'Диалоги за 30 дней', 'Основные каналы', 'Хранилище', 'Ответы ИИ', 'Документы ИИ', 'Токены ИИ', 'Письма в день']
+        ['Операторы', 'Каналы', 'Диалоги за 30 дней', 'Основные каналы', 'Хранилище', 'Ответы ИИ', 'Документы ИИ', 'Токены ИИ',
+         'ИИ-диалоги в месяц', 'Анализ звонков в месяц', 'Письма в день']
       )
     end
 
@@ -486,7 +491,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
 
       expect(text(block('usage-block').at_css('[data-usage="agents"]'))).to include('2 из 10')
       expect(text(block('usage-block').at_css('[data-usage="storage"]'))).to include('0 Б из 50 ГБ')
-      expect(block('usage-block').css('[data-usage] .admin-meter').size).to eq(9)
+      expect(block('usage-block').css('[data-usage] .admin-meter').size).to eq(11)
     end
 
     it 'says «Без ограничений» instead of Unlimited when a limit is not set' do
@@ -503,7 +508,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
       open_card
 
       hints = block('usage-block').css('[data-usage] .admin-limit__hint').map { |hint| text(hint) }
-      expect(hints.size).to eq(9)
+      expect(hints.size).to eq(11)
       expect(hints).to all(match(/\p{Cyrillic}/))
     end
 

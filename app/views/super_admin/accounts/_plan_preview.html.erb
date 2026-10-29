@@ -13,13 +13,14 @@ and off, the limits that would change and the facts the operator should know
 <%
   feature_label = SuperAdmin::AccountFeaturesHelper.method(:feature_label)
   names = ->(flags) { flags.map { |flag| feature_label.call(flag) }.sort }
-  next_plan = Accounts::Plans.plan_label(diff.modules)
+  next_plan = diff.tariff ? Accounts::Plans.plan_label(diff.modules, tariff: diff.tariff) : Accounts::Plans.plan_label(diff.modules)
+  prev_plan = diff.previous_tariff ? Accounts::Plans.plan_label(diff.previous_modules, tariff: diff.previous_tariff) : Accounts::Plans.plan_label(diff.previous_modules)
   headline = if diff.previous_plan.blank?
                t('super_admin.clinic_card.preview.assign', plan: next_plan)
-             elsif diff.previous_modules.sort == diff.modules.sort
+             elsif diff.previous_modules.sort == diff.modules.sort && diff.previous_tariff == diff.tariff
                t(diff.notes.include?('trial_limits_restored') ? 'super_admin.clinic_card.preview.restore' : 'super_admin.clinic_card.preview.same', plan: next_plan)
              else
-               t('super_admin.clinic_card.preview.change', from: Accounts::Plans.plan_label(diff.previous_modules), to: next_plan)
+               t('super_admin.clinic_card.preview.change', from: prev_plan, to: next_plan)
              end
 %>
 <div class="flex flex-col gap-3 rounded-xl bg-n-solid-1 p-4 outline outline-1 -outline-offset-1 outline-n-strong" data-testid="plan-preview" data-changed="<%= diff.changed? %>">

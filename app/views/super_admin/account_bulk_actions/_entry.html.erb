@@ -57,7 +57,7 @@ is skipped).
       <span class="ms-1.5 text-[13px] text-n-slate-12">
         <% if action == 'apply_plan' %>
           <% diff = detail[:diff] %>
-          <%= Accounts::Plans.plan_label(diff.modules) %>
+          <%= Accounts::Plans.plan_label(diff.modules, tariff: diff.tariff) %>
           <span class="block text-xs tabular-nums text-n-slate-11">
             <% parts = [] %>
             <% parts << t('super_admin.bulk.detail.enable', count: diff.enable.size) if diff.enable.any? %>

@@ -93,7 +93,8 @@ RSpec.describe SuperAdmin::LimitForm do
       expect(read).to be_submitted
       expect(read.choices).to eq(
         'inboxes' => :plan, 'agents' => 12, 'conversations' => 0, 'non_web_inboxes' => :plan, 'storage_bytes' => 1.5.gigabytes.to_i,
-        'captain_responses' => :plan, 'captain_documents' => :plan, 'captain_tokens' => :plan, 'emails' => :plan
+        'captain_responses' => :plan, 'captain_documents' => :plan, 'captain_tokens' => :plan,
+        'captain_ai_dialogs' => :plan, 'call_analysis_minutes' => :plan, 'emails' => :plan
       )
     end
 

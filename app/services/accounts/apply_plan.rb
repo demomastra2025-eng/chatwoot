@@ -31,6 +31,7 @@ class Accounts::ApplyPlan
   class UnknownModule < ArgumentError; end
 
   PLAN_KEY = 'plan'
+  TARIFF_KEY = 'plan_tariff'
   MODULES_KEY = 'plan_modules'
   VERSION_KEY = 'plan_version'
   APPLIED_AT_KEY = 'plan_applied_at'
@@ -43,26 +44,31 @@ class Accounts::ApplyPlan
   #         'trial_locks_limits' (and its end will put the operator and channel limits at zero) or
   #         'trial_limits_restored' (a trial has ended and holds the operator and channel limits at zero: this plan gives
   #         them back, see #trial_limit_restore)
-  Diff = Struct.new(:plan, :modules, :plan_version, :previous_plan, :previous_modules, :previous_version,
+  Diff = Struct.new(:plan, :tariff, :modules, :plan_version, :previous_plan, :previous_tariff, :previous_modules, :previous_version,
                     :enable, :disable, :limits, :kept_limits, :notes, keyword_init: true) do
     def changed?
       enable.any? || disable.any? || limits.any?
     end
 
     def as_json(*)
-      {
+      previous = { 'plan' => previous_plan, 'modules' => previous_modules, 'plan_version' => previous_version }
+      previous['tariff'] = previous_tariff if previous_tariff.present?
+      payload = {
         'plan' => plan, 'modules' => modules, 'plan_version' => plan_version,
-        'previous' => { 'plan' => previous_plan, 'modules' => previous_modules, 'plan_version' => previous_version },
+        'previous' => previous,
         'enable' => enable, 'disable' => disable, 'limits' => limits, 'kept_limits' => kept_limits, 'notes' => notes, 'changed' => changed?
       }
+      payload['tariff'] = tariff if tariff.present?
+      payload
     end
   end
 
-  attr_reader :account, :modules
+  attr_reader :account, :modules, :tariff
 
-  def initialize(account:, modules: [], actor: nil, request: nil)
+  def initialize(account:, modules: [], tariff: nil, actor: nil, request: nil)
     @account = account
-    @modules = normalize_modules(modules)
+    @tariff = tariff.present? ? normalize_tariff(tariff) : nil
+    @modules = @tariff ? Accounts::Plans.tariff_modules(@tariff) : normalize_modules(modules)
     @actor = actor
     @request = request
     @audit_extra = {}
@@ -99,6 +105,12 @@ class Accounts::ApplyPlan
     raise UnknownModule, e.message
   end
 
+  def normalize_tariff(requested)
+    Accounts::Plans.known_tariff(requested)
+  rescue ArgumentError => e
+    raise UnknownModule, e.message
+  end
+
   def build_diff
     read_limits
     attributes = account.custom_attributes.to_h
@@ -106,8 +118,9 @@ class Accounts::ApplyPlan
     desired = desired_features
 
     Diff.new(
-      plan: Accounts::Plans::BASE_KEY, modules: modules, plan_version: Accounts::Plans.version,
-      previous_plan: attributes[PLAN_KEY], previous_modules: Array(attributes[MODULES_KEY]), previous_version: attributes[VERSION_KEY],
+      plan: Accounts::Plans::BASE_KEY, tariff: tariff, modules: modules, plan_version: Accounts::Plans.version,
+      previous_plan: attributes[PLAN_KEY], previous_tariff: Accounts::Plans.stored_tariff(attributes[TARIFF_KEY]),
+      previous_modules: Array(attributes[MODULES_KEY]), previous_version: attributes[VERSION_KEY],
       enable: desired - enabled,
       disable: (Accounts::Plans.managed_features - desired) & enabled,
       limits: limit_changes, kept_limits: kept_limits, notes: notes
@@ -118,7 +131,8 @@ class Accounts::ApplyPlan
   # following it hold are read before anything is written: the zero of a trial that is about to be given back is what tells that a
   # limit follows the plan.
   def read_limits
-    @limit_settings = Accounts::LimitSettings.new(account, modules: modules)
+    @current_limit_settings = Accounts::LimitSettings.new(account)
+    @limit_settings = Accounts::LimitSettings.new(account, modules: modules, tariff: tariff)
     @plan_numbers = limit_settings.following_plan_numbers
   end
 
@@ -137,9 +151,12 @@ class Accounts::ApplyPlan
     current = account.limits.to_h
     changes = trial_limit_restore(current)
     effective = current.merge(changes.transform_values { |change| change['to'] })
-    Accounts::Plans.limits_for(modules).each do |key, value|
-      next if value.nil? || effective[key] == value
-      next if limit_settings.manual?(key)
+    target_plan_limits.each do |key, value|
+      if value.nil?
+        changes[key] = { 'from' => current[key], 'to' => nil } if clear_previous_plan_limit?(key, effective[key])
+        next
+      end
+      next if effective[key] == value || limit_settings.manual?(key)
 
       changes[key] = { 'from' => current[key], 'to' => value }
     end
@@ -148,9 +165,17 @@ class Accounts::ApplyPlan
 
   # The limits chosen for this account whose number the plan would have changed
   def kept_limits
-    Accounts::Plans.limits_for(modules).filter_map do |key, value|
+    target_plan_limits.filter_map do |key, value|
       key if !value.nil? && limit_settings.manual?(key) && limit_settings.effective(key) != value
     end
+  end
+
+  def clear_previous_plan_limit?(key, effective_value)
+    !effective_value.nil? && !@current_limit_settings.plan_value(key).nil? && !@current_limit_settings.manual?(key)
+  end
+
+  def target_plan_limits
+    tariff ? Accounts::Plans.limits_for(modules, tariff: tariff) : Accounts::Plans.limits_for(modules)
   end
 
   # The limits the end of a trial put at 0 and left there, as changes back to what they were before the trial. 'to' is nil for
@@ -191,6 +216,7 @@ class Accounts::ApplyPlan
   # limits that follow it hold are kept for the next time (Accounts::LimitSettings)
   def custom_attributes_after(diff)
     attributes = account.custom_attributes.to_h.deep_dup.merge(plan_attributes(diff))
+    diff.tariff.present? ? attributes[TARIFF_KEY] = diff.tariff : attributes.delete(TARIFF_KEY)
     if @plan_numbers.empty?
       attributes.delete(Accounts::LimitSettings::PLAN_NUMBERS_KEY)
     else
@@ -210,9 +236,13 @@ class Accounts::ApplyPlan
   end
 
   def audit_changes(diff)
+    before = { 'plan' => diff.previous_plan, 'plan_modules' => diff.previous_modules, 'plan_version' => diff.previous_version }
+    before['plan_tariff'] = diff.previous_tariff if diff.previous_tariff.present?
+    after = { 'plan' => diff.plan, 'plan_modules' => diff.modules, 'plan_version' => diff.plan_version }
+    after['plan_tariff'] = diff.tariff if diff.tariff.present?
     {
-      'before' => { 'plan' => diff.previous_plan, 'plan_modules' => diff.previous_modules, 'plan_version' => diff.previous_version },
-      'after' => { 'plan' => diff.plan, 'plan_modules' => diff.modules, 'plan_version' => diff.plan_version },
+      'before' => before,
+      'after' => after,
       'features' => { 'enabled' => diff.enable, 'disabled' => diff.disable },
       'limits' => diff.limits
     }.merge(@audit_extra)

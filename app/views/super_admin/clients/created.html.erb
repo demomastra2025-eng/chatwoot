@@ -33,7 +33,7 @@ response of the POST that created everything, nothing keeps the password, and th
   lines = [
     t('super_admin.onboarding.created.account', name: account.name, id: account.id, timezone: SuperAdmin::AccountTimezones.label_for(account.reporting_timezone)),
     organization_line,
-    t('super_admin.onboarding.created.plan', plan: Accounts::Plans.plan_label(onboarding.modules))
+    t('super_admin.onboarding.created.plan', plan: Accounts::Plans.plan_label(onboarding.modules, tariff: onboarding.tariff))
   ]
   lines << t('super_admin.onboarding.created.trial', date: super_admin_time(onboarding.trial_expires_at)) if onboarding.trial_expires_at.present?
   lines << admin_line

@@ -44,7 +44,8 @@ a POST to `create`, which looks at every account again and leaves one entry in t
           <%= hidden_field_tag :chosen, '1', id: nil %>
 
           <% if action == 'apply_plan' %>
-            <%= render 'super_admin/accounts/plan_cards', chosen: strategy.modules || [] %>
+            <%= render 'super_admin/accounts/plan_cards', chosen: strategy.modules || [],
+                       tariff: (strategy.tariff == :invalid ? nil : strategy.tariff) %>
           <% else %>
             <div class="flex flex-col gap-1.5 sm:max-w-md">
               <%= label_tag :organization_id, t('super_admin.bulk.parameters.link_organization.label'), class: 'text-xs text-n-slate-11' %>
@@ -163,6 +164,7 @@ a POST to `create`, which looks at every account again and leaves one entry in t
           <%= render 'hidden_fields', action: action, ids: ids, back: back %>
           <%= hidden_field_tag :chosen, '1', id: nil %>
           <% if action == 'apply_plan' %>
+            <%= hidden_field_tag :tariff, strategy.tariff, id: nil if strategy.tariff.present? && strategy.tariff != :invalid %>
             <% (strategy.modules || []).each do |module_key| %>
               <%= hidden_field_tag 'modules[]', module_key, id: nil %>
             <% end %>

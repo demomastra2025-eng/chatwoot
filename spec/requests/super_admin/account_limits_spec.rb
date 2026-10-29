@@ -193,7 +193,7 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       expect(text(row('agents').at_css('.admin-limit__usage'))).to include('2 из 10')
       expect(row('agents').at_css('.admin-meter')).to be_present
       expect(row('conversations').at_css('.admin-meter')).to be_nil # no limit, nothing to fill
-      expect(page.css("[data-testid='limit-rows'] .admin-limit__hint").size).to eq(9)
+      expect(page.css("[data-testid='limit-rows'] .admin-limit__hint").size).to eq(11)
     end
 
     it 'says that a limit with the older number of the plan will be updated when the plan is applied' do
@@ -489,14 +489,14 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       expect(page.css('fieldset.form-section > legend').map { |legend| text(legend) }).to eq(['Основное', 'Лимиты', 'ИИ', 'Тонкая настройка'])
       expect(page.css("[data-testid='limit-rows'] [data-limit]").map { |node| node['data-limit'] }).to eq(keys)
       expect(page.css('input[name^="account[limits]"]')).to be_empty
-      expect(page.css('input[name^="account[limit_choices]"][type=radio]').size).to eq(27)
+      expect(page.css('input[name^="account[limit_choices]"][type=radio]').size).to eq(33)
       expect(response.body).to include('У каждого лимита три варианта')
     end
 
     it 'shows the spend with meters in the rows' do
       get "/super_admin/accounts/#{account.id}/edit"
 
-      expect(page.css('[data-limit] .admin-limit__usage').size).to eq(9)
+      expect(page.css('[data-limit] .admin-limit__usage').size).to eq(11)
       expect(response.body).not_to match(/Unlimited|Usage is read-only|Resettable counters|Leave a field blank|Outbound|Captain responses/)
     end
 
@@ -504,7 +504,7 @@ RSpec.describe 'Super Admin limits of an account', type: :request do
       get "/super_admin/accounts/#{account.id}/edit"
 
       form = page.at_css('form.form')
-      expect(form.css('[data-limit]').size).to eq(9)
+      expect(form.css('[data-limit]').size).to eq(11)
       expect(form.at_css('input[name="account[name]"]')).to be_present
     end
 

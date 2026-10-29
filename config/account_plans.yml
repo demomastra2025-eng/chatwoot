@@ -1,4 +1,4 @@
-# Account plans: BASE + MODULES. There are no tariffs and no prices here (or anywhere in the code).
+# Account plans: BASE + MODULES + TARIFFS (approved unified 2026-10 tariff grid + legacy basic/pro/max archive).
 #
 # Every NEW account gets the base (an account that existed before plans shows «Тариф не назначен» until a super admin assigns it).
 # Modules are switched on per account on top of it.
@@ -28,7 +28,7 @@
 # no number to follow: what the account holds there is its own.
 # Version history: 1 = first base + modules, 2 = agent_bots left the base (the Agent Bots were removed from the product).
 # An account keeps the version it was applied with; applying the plan again moves it to the current one.
-version: 2
+version: 3
 
 base:
   features:
@@ -69,6 +69,8 @@ base:
     captain_responses: null # AI quotas, governed by the Captain plan quota settings
     captain_documents: null
     captain_tokens: null
+    captain_ai_dialogs: null
+    call_analysis_minutes: null
 
 modules:
   ai_agents:
@@ -147,6 +149,127 @@ internal:
   - communication_threads # one chat per patient: an owner decision, not a plan option
   - deferred_touch_materialization
   - captain_openrouter_byok
+
+# Approved unified commercial tariff grid (2026-10) + legacy archive tariffs (basic, pro, max).
+tariffs:
+  text_call:
+    modules: []
+    limits:
+      agents: 5
+      storage_bytes: 5368709120 # 5 GB
+      conversations: unlimited
+      non_web_inboxes: unlimited
+      captain_ai_dialogs: 0
+      call_analysis_minutes: 0
+    pricing:
+      monthly_kzt: 99000
+      annual_monthly_kzt: 85000
+      annual_total_kzt: 1020000
+      extra_agent_kzt: 10000
+      extra_storage_10gb_kzt: 3000
+      overage_ai_dialog_kzt: 30
+      overage_call_minute_kzt: 10
+  ai_agent_rop:
+    modules:
+      - ai_agents
+    limits:
+      agents: 7
+      storage_bytes: 10737418240 # 10 GB
+      conversations: unlimited
+      non_web_inboxes: unlimited
+      captain_ai_dialogs: 1000
+      call_analysis_minutes: 1000
+    pricing:
+      monthly_kzt: 199000
+      annual_monthly_kzt: 169000
+      annual_total_kzt: 2028000
+      extra_agent_kzt: 15000
+      extra_storage_10gb_kzt: 3000
+      overage_ai_dialog_kzt: 30
+      overage_call_minute_kzt: 10
+  voice_ai:
+    modules:
+      - ai_agents
+      - quality
+    limits:
+      agents: 10
+      storage_bytes: 26843545600 # 25 GB
+      conversations: unlimited
+      non_web_inboxes: unlimited
+      captain_ai_dialogs: 2000
+      call_analysis_minutes: 2000
+    pricing:
+      monthly_kzt: 399000
+      annual_monthly_kzt: 339000
+      annual_total_kzt: 4068000
+      extra_agent_kzt: 20000
+      extra_storage_10gb_kzt: 3000
+      overage_ai_dialog_kzt: 30
+      overage_call_minute_kzt: 10
+  enterprise:
+    modules:
+      - ai_agents
+      - broadcasts
+      - quality
+      - extensions
+    limits:
+      agents: unlimited
+      storage_bytes: unlimited
+      inboxes: unlimited
+      conversations: unlimited
+      non_web_inboxes: unlimited
+      captain_ai_dialogs: unlimited
+      call_analysis_minutes: unlimited
+    pricing:
+      custom: true
+      monthly_kzt: null
+      annual_monthly_kzt: null
+      annual_total_kzt: null
+      extra_agent_kzt: null
+      extra_storage_10gb_kzt: null
+      overage_ai_dialog_kzt: 30
+      overage_call_minute_kzt: 10
+  basic:
+    legacy: true
+    modules: []
+    limits:
+      conversations: unlimited
+      non_web_inboxes: unlimited
+    pricing:
+      monthly_kzt: 60000
+      annual_monthly_kzt: 51000
+      annual_total_kzt: 612000
+      overage_ai_dialog_kzt: 30
+      overage_call_minute_kzt: 10
+  pro:
+    legacy: true
+    modules:
+      - ai_agents
+    limits:
+      conversations: unlimited
+      non_web_inboxes: unlimited
+    pricing:
+      monthly_kzt: 160000
+      annual_monthly_kzt: 136000
+      annual_total_kzt: 1632000
+      overage_ai_dialog_kzt: 30
+      overage_call_minute_kzt: 10
+  max:
+    legacy: true
+    modules:
+      - ai_agents
+      - broadcasts
+      - quality
+      - extensions
+    limits:
+      conversations: unlimited
+      non_web_inboxes: unlimited
+    pricing:
+      monthly_kzt: 300000
+      annual_monthly_kzt: 255000
+      annual_total_kzt: 3060000
+      overage_ai_dialog_kzt: 30
+      overage_call_minute_kzt: 10
 
 # New accounts get a short trial of the base plus every available product module.
 trial:

@@ -49,7 +49,7 @@ class SuperAdmin::AccountBulkActionsController < SuperAdmin::ApplicationControll
 
   # What the request carries for the actions that ask for a setting
   def bulk_options
-    { chosen: params[:chosen], modules: params[:modules], organization_id: params[:organization_id] }
+    { chosen: params[:chosen], tariff: params[:tariff], modules: params[:modules], organization_id: params[:organization_id] }
   end
 
   def refuse(reason, **)

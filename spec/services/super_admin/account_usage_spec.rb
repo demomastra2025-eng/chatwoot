@@ -16,7 +16,9 @@ RSpec.describe SuperAdmin::AccountUsage do
       captain: {
         responses: summary(consumed: 5, total: 100),
         documents: summary(consumed: 1, total: 10),
-        tokens: summary(consumed: 900, total: 1000)
+        tokens: summary(consumed: 900, total: 1000),
+        ai_dialogs: summary(consumed: 20, total: 1000),
+        call_analysis_minutes: summary(consumed: 45, total: 1000)
       }
     }
   end
@@ -28,7 +30,8 @@ RSpec.describe SuperAdmin::AccountUsage do
 
   it 'lists every limit in the order the card shows them, with Russian names' do
     expect(usage.rows.map(&:label)).to eq(
-      ['Операторы', 'Каналы', 'Диалоги за 30 дней', 'Основные каналы', 'Хранилище', 'Ответы ИИ', 'Документы ИИ', 'Токены ИИ', 'Письма в день']
+      ['Операторы', 'Каналы', 'Диалоги за 30 дней', 'Основные каналы', 'Хранилище', 'Ответы ИИ', 'Документы ИИ', 'Токены ИИ',
+       'ИИ-диалоги в месяц', 'Анализ звонков в месяц', 'Письма в день']
     )
   end
 

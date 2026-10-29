@@ -2,6 +2,8 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
   CAPTAIN_RESPONSES = 'captain_responses'.freeze
   CAPTAIN_DOCUMENTS = 'captain_documents'.freeze
   CAPTAIN_TOKENS = 'captain_tokens'.freeze
+  CAPTAIN_AI_DIALOGS = 'captain_ai_dialogs'.freeze
+  CALL_ANALYSIS_MINUTES = 'call_analysis_minutes'.freeze
   CAPTAIN_RESPONSES_USAGE = 'captain_responses_usage'.freeze
   CAPTAIN_DOCUMENTS_USAGE = 'captain_documents_usage'.freeze
   CAPTAIN_TOKENS_USAGE = 'captain_tokens_usage'.freeze
@@ -21,7 +23,9 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
       captain: {
         documents: get_captain_limits(:documents),
         responses: get_captain_limits(:responses),
-        tokens: get_captain_limits(:tokens)
+        tokens: get_captain_limits(:tokens),
+        ai_dialogs: captain_ai_dialogs_usage_summary,
+        call_analysis_minutes: call_analysis_minutes_usage_summary
       }
     }
     limits.default_proc = proc do |hash, key|
@@ -80,13 +84,11 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
     token_count = token_count.to_i
     return if token_count <= 0
 
-    custom_attributes[CAPTAIN_TOKENS_USAGE] = captain_tokens_usage + token_count
-    save
+    increment_custom_attribute(CAPTAIN_TOKENS_USAGE, token_count)
   end
 
   def reset_token_usage
-    custom_attributes[CAPTAIN_TOKENS_USAGE] = 0
-    save
+    update_custom_attribute(CAPTAIN_TOKENS_USAGE, 0)
   end
 
   def captain_tokens_usage
@@ -105,12 +107,30 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
     AccountLimits::StorageUsageService.new(account: self).usage_bytes
   end
 
-  def captain_quota_available?
-    limits = usage_limits
-    response_available = limits.dig(:captain, :responses, :current_available)
-    token_available = limits.dig(:captain, :tokens, :current_available)
+  def captain_ai_dialogs_disabled?
+    raw = self[:limits]&.[](CAPTAIN_AI_DIALOGS)
+    !raw.nil? && raw != '' && raw.to_i <= 0
+  end
 
-    [response_available, token_available].compact.all?(&:positive?)
+  def call_analysis_minutes_disabled?
+    raw = self[:limits]&.[](CALL_ANALYSIS_MINUTES)
+    !raw.nil? && raw != '' && raw.to_i <= 0
+  end
+
+  def captain_quota_available?
+    return true if ai_trial_active? && !manual_zero_limit_override?(CAPTAIN_AI_DIALOGS)
+    return false if captain_ai_dialogs_disabled?
+    return true if positive_limit_configured?(CAPTAIN_AI_DIALOGS)
+
+    captain_legacy_quota_available?
+  end
+
+  def call_analysis_quota_available?
+    return true if ai_trial_active? && !manual_zero_limit_override?(CALL_ANALYSIS_MINUTES)
+    return false if call_analysis_minutes_disabled?
+    return true if positive_limit_configured?(CALL_ANALYSIS_MINUTES)
+
+    captain_legacy_quota_available?
   end
 
   def email_transcript_enabled?
@@ -140,6 +160,57 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
   end
 
   private
+
+  def ai_trial_active?
+    respond_to?(:trial_active?) && trial_active? && Array(granted_trial_features).include?('captain_integration')
+  end
+
+  def manual_zero_limit_override?(key)
+    Accounts::LimitSettings.marks_in(custom_attributes)[key] == 0
+  end
+
+  def positive_limit_configured?(key)
+    raw = self[:limits]&.[](key)
+    !raw.nil? && raw != '' && raw.to_i.positive?
+  end
+
+  def tariff_overage_kzt(pricing_key, fallback)
+    tariff = Accounts::Plans.stored_tariff(custom_attributes[Accounts::ApplyPlan::TARIFF_KEY])
+    configured = tariff ? Accounts::Plans.tariff_pricing(tariff)[pricing_key] : nil
+    configured.is_a?(Numeric) && configured.positive? ? configured.to_i : fallback
+  end
+
+  def captain_legacy_quota_available?
+    limits = usage_limits
+    response_available = limits.dig(:captain, :responses, :current_available)
+    token_available = limits.dig(:captain, :tokens, :current_available)
+
+    [response_available, token_available].compact.all?(&:positive?)
+  end
+
+  def captain_ai_dialogs_usage_summary
+    monthly_non_blocking_usage_summary(
+      CAPTAIN_AI_DIALOGS,
+      consumed: Accounts::MonthlyAiUsageService.new(self).ai_dialogs_consumed,
+      unit_overage_kzt: tariff_overage_kzt('overage_ai_dialog_kzt', Accounts::MonthlyAiUsageService::OVERAGE_AI_DIALOG_KZT)
+    )
+  end
+
+  def call_analysis_minutes_usage_summary
+    monthly_non_blocking_usage_summary(
+      CALL_ANALYSIS_MINUTES,
+      consumed: Accounts::MonthlyAiUsageService.new(self).call_analysis_minutes_consumed,
+      unit_overage_kzt: tariff_overage_kzt('overage_call_minute_kzt', Accounts::MonthlyAiUsageService::OVERAGE_CALL_MINUTE_KZT)
+    )
+  end
+
+  def monthly_non_blocking_usage_summary(limit_name, consumed:, unit_overage_kzt:)
+    metadata = usage_limit_metadata(limit_name)
+    base = get_usage_summary(total_count: metadata[:value], consumed: consumed, unlimited: metadata[:unlimited])
+    total = base[:total_count].to_i
+    overage = metadata[:unlimited] || total <= 0 ? 0 : [consumed.to_i - total, 0].max
+    base.merge(overage_count: overage, overage_kzt: overage * unit_overage_kzt, non_blocking_overage: true)
+  end
 
   def get_captain_limits(type)
     consumed = case type
@@ -225,13 +296,16 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
     custom_attributes[key] = value
   end
 
-  def increment_custom_attribute(key)
+  def increment_custom_attribute(key, delta = 1)
+    step = delta.to_i
+    return if step <= 0
+
     Account.where(id: id).update_all([
                                        "custom_attributes = jsonb_set(COALESCE(custom_attributes, '{}'), ARRAY[:key], " \
-                                       '(COALESCE((custom_attributes ->> :key)::int, 0) + 1)::text::jsonb)',
-                                       { key: key }
+                                       '(COALESCE((custom_attributes ->> :key)::bigint, 0) + :delta)::text::jsonb)',
+                                       { key: key, delta: step }
                                      ])
-    custom_attributes[key] = custom_attributes[key].to_i + 1
+    custom_attributes[key] = custom_attributes[key].to_i + step
   end
   # rubocop:enable Rails/SkipsModelValidations
 
