@@ -2,6 +2,7 @@
 
 class Integrations::KaspiPay::AuthService
   APP_ID = 'kaspi_pay'
+  VERSION_RESOLVER = Integrations::KaspiPay::AppVersionResolver
   DISCONNECTED_PAYLOAD = {
     connected: false, hook_id: nil, session_status: 'disconnected', organization_name: nil,
     organization_bin: nil, organization_id: nil, profile_id: nil, organizations: [],
@@ -14,9 +15,7 @@ class Integrations::KaspiPay::AuthService
     @pending_store = Integrations::KaspiPay::PendingAuthStore.new(account_id: account.id)
   end
 
-  def hook
-    @hook ||= @account.hooks.find_by(app_id: APP_ID)
-  end
+  def hook = @hook ||= @account.hooks.find_by(app_id: APP_ID)
 
   def status_payload(verify_live: false)
     return DISCONNECTED_PAYLOAD.dup if hook.blank? || hook.disabled?
@@ -28,13 +27,10 @@ class Integrations::KaspiPay::AuthService
   def send_otp!(raw_phone:, app_version: nil, app_build: nil)
     phone_10 = Integrations::KaspiPay::PhoneNormalizer.to_kaspi_10_digits!(raw_phone)
     device = resolve_device_identity
-    app_overrides = { version: app_version.presence, build: app_build.presence }.compact
+    explicit_overrides = { version: app_version.presence, build: app_build.presence }.compact
+    otp_res, effective_overrides = send_otp_with_version_retry(device, phone_10, explicit_overrides)
 
-    client = Integrations::KaspiPay::ApiClient.new(device: device, app_overrides: app_overrides)
-    init_res = client.auth_init
-    otp_res = client.auth_send_phone(process_id: init_res[:process_id], phone_10: phone_10, user_token: init_res[:user_token])
-
-    save_pending_otp!(otp_res, device: device, phone_10: phone_10, app_overrides: app_overrides)
+    save_pending_otp!(otp_res, device: device, phone_10: phone_10, app_overrides: effective_overrides, explicit_overrides: explicit_overrides)
     masked = Integrations::KaspiPay::PhoneNormalizer.mask(phone_10)
     { process_id: otp_res[:process_id], phone_masked: masked, description: otp_res[:desc].presence || "SMS-код отправлен на #{masked}" }
   end
@@ -91,20 +87,42 @@ class Integrations::KaspiPay::AuthService
     Integrations::KaspiPay::ApiClient.new(
       device: device,
       session: { 'token_sn' => token_sn, 'vtoken_secret_b64' => vtoken_b64, 'profile_id' => s['profile_id'] },
-      app_overrides: { version: s['app_version'], build: s['app_build'] }
+      app_overrides: { version: VERSION_RESOLVER.sanitize_saved_version(s['app_version']), build: s['app_build'] }
     )
   end
 
   private
+
+  def send_otp_with_version_retry(device, phone_10, explicit_overrides)
+    client = Integrations::KaspiPay::ApiClient.new(device: device, app_overrides: explicit_overrides)
+    [perform_entrance_otp(client, phone_10), explicit_overrides.merge(version: client.app_version)]
+  rescue Integrations::KaspiPay::ApiClient::ApiError => e
+    raise unless explicit_overrides[:version].blank? && old_version_error?(e)
+
+    refreshed = VERSION_RESOLVER.resolve(force_refresh: true)
+    raise if refreshed.blank? || refreshed == client&.app_version
+
+    retry_overrides = explicit_overrides.merge(version: refreshed)
+    retry_client = Integrations::KaspiPay::ApiClient.new(device: device, app_overrides: retry_overrides)
+    [perform_entrance_otp(retry_client, phone_10), retry_overrides]
+  end
+
+  def perform_entrance_otp(client, phone_10)
+    init_res = client.auth_init
+    client.auth_send_phone(process_id: init_res[:process_id], phone_10: phone_10, user_token: init_res[:user_token])
+  end
+
+  def old_version_error?(err) = err.code.to_s == 'OldVersionToUpdate' || err.details.to_s.include?('OldVersionToUpdate')
 
   def resolve_device_identity
     existing = hook&.secret_settings&.dig('device')
     existing.is_a?(Hash) && existing['ec_private_key'].present? ? existing : Integrations::KaspiPay::Crypto.generate_device_identity
   end
 
-  def save_pending_otp!(otp_res, device:, phone_10:, app_overrides:)
+  def save_pending_otp!(otp_res, device:, phone_10:, app_overrides:, explicit_overrides: {})
     payload = { 'device' => device, 'phone_10' => phone_10, 'user_token' => otp_res[:user_token],
-                'app_overrides' => app_overrides.stringify_keys, 'started_at' => Time.current.iso8601 }
+                'app_overrides' => app_overrides.stringify_keys, 'explicit_app_overrides' => explicit_overrides.stringify_keys,
+                'started_at' => Time.current.iso8601 }
     @pending_store.store!(process_id: otp_res[:process_id], payload: payload)
   end
 
@@ -125,18 +143,20 @@ class Integrations::KaspiPay::AuthService
 
   def build_verified_settings(prev, pending, org)
     now_iso = Time.current.iso8601
-    overrides = pending['app_overrides'] || {}
+    overrides = explicit_pending_overrides(pending)
     prev.merge(
       'session_status' => 'active', 'organization_name' => org['organization_name'],
       'organization_bin' => org['organization_bin'], 'organization_id' => org['organization_id']&.to_s,
       'profile_id' => org['profile_id']&.to_s, 'organizations' => org['organizations'] || [],
       'cashier_phone_masked' => Integrations::KaspiPay::PhoneNormalizer.mask(pending['phone_10']),
       'auto_send_link_to_chat' => prev.fetch('auto_send_link_to_chat', true),
-      'app_version' => overrides['version'].presence || prev['app_version'],
+      'app_version' => overrides['version'].presence || VERSION_RESOLVER.sanitize_saved_version(prev['app_version']),
       'app_build' => overrides['build'].presence || prev['app_build'],
       'connected_at' => now_iso, 'last_verified_at' => now_iso, 'last_error' => nil
     ).compact
   end
+
+  def explicit_pending_overrides(pnd) = (pnd.key?('explicit_app_overrides') ? pnd['explicit_app_overrides'] : pnd['app_overrides']) || {}
 
   def apply_session_check_result!(target_hook, res)
     settings = (target_hook.settings || {}).dup

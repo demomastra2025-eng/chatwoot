@@ -8,19 +8,22 @@ const mountComponent = props =>
     props,
     global: {
       mocks: {
-        $t: (key, params) => `${key}:${params?.count}`,
+        $t: (key, params) => (params ? `${key}:${params?.count}` : key),
       },
     },
   });
 
 describe('ChatListCount', () => {
-  it('renders a single total conversation count line', () => {
+  it('renders a single total conversation count line without search clear button', () => {
     const wrapper = mountComponent({ conversationCount: 42 });
 
     expect(wrapper.findAll('[data-test-id="conversation-count"]')).toHaveLength(
       1
     );
     expect(wrapper.text()).toBe('CHAT_LIST.TOTAL_COUNT:42');
+    expect(
+      wrapper.find('[data-test-id="clear-local-search-button"]').exists()
+    ).toBe(false);
   });
 
   it('renders zero instead of hiding the counter for an empty list', () => {
@@ -29,13 +32,21 @@ describe('ChatListCount', () => {
     expect(wrapper.text()).toBe('CHAT_LIST.TOTAL_COUNT:0');
   });
 
-  it('switches to the search result label while a local search is active', () => {
+  it('switches to the search result label and emits clearSearch when the reset button is clicked', async () => {
     const wrapper = mountComponent({
       conversationCount: 3,
       isSearchResult: true,
     });
 
     expect(wrapper.text()).toBe('CHAT_LIST.LOCAL_SEARCH.RESULT_COUNT:3');
+    const clearBtn = wrapper.find('[data-test-id="clear-local-search-button"]');
+    expect(clearBtn.exists()).toBe(true);
+    expect(clearBtn.attributes('aria-label')).toBe(
+      'CHAT_LIST.LOCAL_SEARCH.CLEAR_BUTTON_LABEL'
+    );
+
+    await clearBtn.trigger('click');
+    expect(wrapper.emitted('clearSearch')).toEqual([[]]);
   });
 
   it('shows a plus after the number of a search that read only the newest matches', () => {

@@ -7,6 +7,8 @@ module Crm::Tasks::RequestParams
     creator_id
     team_id
     originating_conversation_id
+    originating_conversation_display_id
+    originating_communication_thread_id
     title
     description
     task_type_id
@@ -32,6 +34,8 @@ module Crm::Tasks::RequestParams
     creator_id
     team_id
     originating_conversation_id
+    originating_conversation_display_id
+    originating_communication_thread_id
     title
     description
     task_type_id

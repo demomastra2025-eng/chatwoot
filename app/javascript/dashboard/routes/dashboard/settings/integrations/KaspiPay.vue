@@ -553,7 +553,7 @@ onMounted(() => {
                     :label="
                       t('INTEGRATION_SETTINGS.KASPI_PAY.AUTH.APP_VERSION_LABEL')
                     "
-                    placeholder="26.0921"
+                    placeholder="26.1029"
                   />
                   <Input
                     v-model="appBuild"

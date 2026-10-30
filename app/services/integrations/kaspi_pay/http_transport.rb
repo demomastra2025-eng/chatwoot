@@ -6,22 +6,25 @@ require 'uri'
 module Integrations::KaspiPay::HttpTransport
   ALMATY_TZ = 'Asia/Almaty'
   SESSION_EVICTED_CODE = -101_001
+  VERSION_RESOLVER = Integrations::KaspiPay::AppVersionResolver
   QRPAY_X_SH = 'url,X-Install-ID,X-PI,X-App-Bld,X-Platform-Ver,X-Locale,X-App-Ver,X-Device-ID,X-SV,X-Time,' \
                'X-Platform-Type,X-Call,X-Kb-TokenSnMac,X-Kb-TokenSn'
 
   APP_ENV_MAP = {
-    version: ['KASPI_PAY_APP_VERSION', '26.0921'], build: %w[KASPI_PAY_APP_BUILD 1115],
+    version: ['KASPI_PAY_APP_VERSION', VERSION_RESOLVER::FALLBACK_VERSION], build: %w[KASPI_PAY_APP_BUILD 1115],
     platform: %w[KASPI_PAY_APP_PLATFORM iOS], platform_ver: ['KASPI_PAY_APP_PLATFORM_VER', '18.4'],
     model: ['KASPI_PAY_APP_MODEL', 'iPhone16,2'], cf_network: ['KASPI_PAY_APP_CFNETWORK', 'CFNetwork/3826.400.120'],
     darwin: ['KASPI_PAY_APP_DARWIN', 'Darwin/24.4.0']
   }.freeze
   STATIC_APP_DEFAULTS = { locale: 'ru-RU', brand: 'Apple', device_name: 'iPhone', screen_w: '430.0', screen_h: '932.0' }.freeze
 
+  def app_version = @app[:version]
+
   private
 
   def build_app_config(overrides = {})
     ovr = (overrides || {}).symbolize_keys
-    resolved = APP_ENV_MAP.to_h { |key, (env_name, fallback)| [key, ovr[key].presence || ENV.fetch(env_name, fallback)] }
+    resolved = APP_ENV_MAP.to_h { |k, (env, fb)| [k, ovr[k].presence || ENV[env].presence || (k == :version ? VERSION_RESOLVER.resolve : fb)] }
     STATIC_APP_DEFAULTS.merge(resolved).merge(locale: ovr[:locale].presence || 'ru-RU')
   end
 
@@ -120,7 +123,5 @@ module Integrations::KaspiPay::HttpTransport
     "#{t.strftime('%Y-%m-%dT%H:%M:%S')}.#{format('%03d', t.usec / 1000)}#{t.strftime('%z')}"
   end
 
-  def ua_native
-    "Kaspi%20Pay/#{@app[:build]} #{@app[:cf_network]} #{@app[:darwin]}"
-  end
+  def ua_native = "Kaspi%20Pay/#{@app[:build]} #{@app[:cf_network]} #{@app[:darwin]}"
 end

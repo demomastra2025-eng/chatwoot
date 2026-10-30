@@ -11,6 +11,8 @@ const props = defineProps({
   isCountApproximate: { type: Boolean, default: false },
 });
 
+const emit = defineEmits(['clearSearch']);
+
 const shouldShowCount = computed(
   () => !props.isListLoading && (props.isFiltered || props.isSearchResult)
 );
@@ -31,23 +33,36 @@ const formattedConversationCount = computed(
     <span
       v-if="shouldShowCount"
       data-test-id="conversation-count"
-      class="truncate rounded-md bg-n-alpha-2 px-1.5 py-0.5 text-[11px] leading-none font-medium tabular-nums text-n-slate-11"
+      class="inline-flex min-w-0 items-center gap-1 rounded-md bg-n-alpha-2 px-1.5 py-0.5 text-[11px] leading-none font-medium tabular-nums text-n-slate-11"
       :title="String(conversationCount || 0)"
     >
-      <template v-if="isSearchResult">
-        {{
-          $t('CHAT_LIST.LOCAL_SEARCH.RESULT_COUNT', {
-            count: formattedConversationCount,
-          })
-        }}
-      </template>
-      <template v-else>
-        {{
-          $t('CHAT_LIST.TOTAL_COUNT', {
-            count: formattedConversationCount,
-          })
-        }}
-      </template>
+      <span class="truncate">
+        <template v-if="isSearchResult">
+          {{
+            $t('CHAT_LIST.LOCAL_SEARCH.RESULT_COUNT', {
+              count: formattedConversationCount,
+            })
+          }}
+        </template>
+        <template v-else>
+          {{
+            $t('CHAT_LIST.TOTAL_COUNT', {
+              count: formattedConversationCount,
+            })
+          }}
+        </template>
+      </span>
+      <button
+        v-if="isSearchResult"
+        type="button"
+        data-test-id="clear-local-search-button"
+        class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm text-n-slate-10 transition-colors hover:bg-n-alpha-3 hover:text-n-slate-12"
+        :aria-label="$t('CHAT_LIST.LOCAL_SEARCH.CLEAR_BUTTON_LABEL')"
+        :title="$t('CHAT_LIST.LOCAL_SEARCH.CLEAR_BUTTON_LABEL')"
+        @click.stop="emit('clearSearch')"
+      >
+        <span class="i-lucide-x size-3" aria-hidden="true" />
+      </button>
     </span>
   </div>
 </template>
