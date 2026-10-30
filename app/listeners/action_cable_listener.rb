@@ -145,17 +145,17 @@ class ActionCableListener < BaseListener # rubocop:disable Metrics/ClassLength
 
   def contact_created(event)
     contact, account = extract_contact_and_account(event)
-    broadcast(account, [account_token(account)], CONTACT_CREATED, contact.push_event_data)
+    broadcast(account, [account_token(account)], CONTACT_CREATED, contact.push_event_data(include_phone_relations: true))
   end
 
   def contact_updated(event)
     contact, account = extract_contact_and_account(event)
-    broadcast(account, [account_token(account)], CONTACT_UPDATED, contact.push_event_data)
+    broadcast(account, [account_token(account)], CONTACT_UPDATED, contact.push_event_data(include_phone_relations: true))
   end
 
   def contact_merged(event)
     contact, account = extract_contact_and_account(event)
-    broadcast(account, [account_token(account)], CONTACT_MERGED, contact.push_event_data)
+    broadcast(account, [account_token(account)], CONTACT_MERGED, contact.push_event_data(include_phone_relations: true))
   end
 
   def contact_deleted(event)

@@ -505,5 +505,43 @@ describe('ConversationHeader', () => {
         wrapper.find('[data-test-id="conversation-patient-tab-4"]').exists()
       ).toBe(true);
     });
+
+    it('resolves patient store in production builds where piniaSymbol is an anonymous Symbol()', async () => {
+      SchedulingContactsAPI.patients.mockResolvedValue({
+        data: {
+          payload: {
+            contact_id: 1,
+            patients: [
+              {
+                id: 1,
+                account_id: 530,
+                communication_contact_id: 1,
+                full_name: 'Алия',
+                is_primary_holder: true,
+              },
+              {
+                id: 2,
+                account_id: 530,
+                communication_contact_id: 1,
+                full_name: 'Арман',
+              },
+            ],
+          },
+        },
+      });
+      const pinia = createPinia();
+      const anonSymbol = Symbol();
+      const wrapper = mountComponent(
+        {},
+        {
+          provide: { [anonSymbol]: pinia },
+        }
+      );
+      await flushPromises();
+
+      expect(
+        wrapper.find('[data-test-id="conversation-patient-tabs"]').exists()
+      ).toBe(true);
+    });
   });
 });

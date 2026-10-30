@@ -137,6 +137,13 @@ RSpec.describe 'Contact Phones & Global Patient Context API', type: :request do
 
         # Automated notifications to husband still route to husband's own personal +7701
         expect(Contacts::SharedPhone.route_contact(husband.reload)).to eq(husband)
+
+        # ActionCable contact push_event_data omits phone_numbers by default (message/conversation)
+        # and includes full owner_contact / shared_contacts when include_phone_relations: true
+        expect(husband.push_event_data).not_to have_key(:phone_numbers)
+        ac_payload = husband.push_event_data(include_phone_relations: true)
+        ac_shared = ac_payload[:phone_numbers].find { |p| p[:phone_number] == '+77020001122' }
+        expect(ac_shared[:owner_contact]).to eq({ id: wife.id, name: 'Алия' })
       end
 
       it 'links a child without own phone to mom number, keeps child phone_numbers non-empty, and routes child notifications via mom (Subcase B2)' do

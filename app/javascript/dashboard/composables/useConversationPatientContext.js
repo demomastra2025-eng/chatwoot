@@ -9,12 +9,27 @@ import {
 
 export const resolveOptionalPatientStore = () => {
   const instance = getCurrentInstance();
-  const appProvides = instance?.appContext?.provides;
-  const hasProvidedPinia = Boolean(
-    appProvides &&
-      Reflect.ownKeys(appProvides).some(key => String(key).includes('pinia'))
-  );
-  if (!hasProvidedPinia) return null;
+  const appPinia =
+    instance?.appContext?.config?.globalProperties?.$pinia || null;
+  if (appPinia) return useConversationPatientContextStore(appPinia);
+  if (instance) {
+    const appProvides = instance.appContext?.provides;
+    const providedPinia =
+      appProvides &&
+      Reflect.ownKeys(appProvides)
+        .map(key => appProvides[key])
+        .find(
+          val =>
+            val &&
+            typeof val === 'object' &&
+            '_s' in val &&
+            'state' in val &&
+            typeof val.use === 'function'
+        );
+    return providedPinia
+      ? useConversationPatientContextStore(providedPinia)
+      : null;
+  }
   const pinia = getActivePinia();
   return pinia ? useConversationPatientContextStore(pinia) : null;
 };

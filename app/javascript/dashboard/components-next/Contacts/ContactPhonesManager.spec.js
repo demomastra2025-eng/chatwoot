@@ -169,4 +169,48 @@ describe('ContactPhonesManager', () => {
       link_shared: true,
     });
   });
+
+  it('preserves ownerContact router-link even if a partial list update omits owner_contact', async () => {
+    const wrapper = mountManager({
+      id: 201,
+      name: 'Серик',
+      phone_numbers: [
+        {
+          id: 11,
+          phone_number: '+77020001122',
+          primary: false,
+          shared: true,
+          owner_contact_id: 100,
+          owner_contact: { id: 100, name: 'Алия' },
+          shared_contacts: [],
+        },
+      ],
+    });
+
+    expect(wrapper.get('[data-testid="contact-phone-owner-link"]').text()).toBe(
+      'Алия'
+    );
+
+    await wrapper.setProps({
+      contact: {
+        id: 201,
+        name: 'Серик',
+        phone_numbers: [
+          {
+            id: 11,
+            phone_number: '+77020001122',
+            primary: false,
+            shared: true,
+            owner_contact_id: 100,
+            owner_contact: null,
+            shared_contacts: [],
+          },
+        ],
+      },
+    });
+
+    expect(wrapper.get('[data-testid="contact-phone-owner-link"]').text()).toBe(
+      'Алия'
+    );
+  });
 });

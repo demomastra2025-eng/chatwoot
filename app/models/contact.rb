@@ -231,7 +231,7 @@ class Contact < ApplicationRecord
   # The name and the avatar here are always the person's own (display_full_name / resolved_avatar_url), whatever
   # channel the event came from, so a list row, a dialog header and a contact panel never swap pictures between
   # events. The profile of the given contact_inbox is carried apart, as channel_profile, for per-channel places.
-  def push_event_data(contact_inbox: nil)
+  def push_event_data(contact_inbox: nil, include_phone_relations: false)
     data = {
       additional_attributes: Contacts::IinPrivacy.mask_attributes_hash(additional_attributes),
       custom_attributes: Contacts::IinPrivacy.mask_attributes_hash(custom_attributes),
@@ -244,12 +244,12 @@ class Contact < ApplicationRecord
       owner_id: owner_id,
       owner: owner&.push_event_data,
       phone_number: phone_number,
-      phone_numbers: Contacts::PhonePresenter.present(self, include_related: false),
       thumbnail: resolved_avatar_url,
       blocked: blocked,
       notifications_muted: notifications_muted,
       type: 'contact'
     }
+    data[:phone_numbers] = Contacts::PhonePresenter.present(self, include_related: true) if include_phone_relations
 
     attach_channel_profile(data, contact_inbox)
   end

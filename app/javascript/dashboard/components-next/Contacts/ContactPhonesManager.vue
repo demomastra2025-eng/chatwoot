@@ -40,6 +40,7 @@ const newPhone = ref('');
 const newLabel = ref('');
 const errorMessage = ref('');
 const conflictState = ref(null);
+const cachedRelations = ref({});
 
 const contactId = computed(() => Number(props.contact?.id) || null);
 const accountId = computed(
@@ -54,20 +55,72 @@ const accountId = computed(
 const contactUrl = targetContactId =>
   `/app/accounts/${accountId.value}/contacts/${targetContactId}`;
 
+const relationCacheKey = (cId, phone) => `${cId || 0}:${phone || ''}`;
+
+const rememberRelationsFromList = (cId, list) => {
+  if (!cId || !Array.isArray(list)) return;
+  const next = { ...cachedRelations.value };
+  let changed = false;
+  list.forEach(entry => {
+    const phone = entry.phone_number || entry.phoneNumber || '';
+    if (!phone) return;
+    const owner = entry.owner_contact || entry.ownerContact || null;
+    const peers = entry.shared_contacts || entry.sharedContacts || [];
+    if (owner || peers.length > 0) {
+      const key = relationCacheKey(cId, phone);
+      next[key] = {
+        ownerContact: owner || next[key]?.ownerContact || null,
+        sharedContacts:
+          peers.length > 0 ? peers : next[key]?.sharedContacts || [],
+      };
+      changed = true;
+    }
+  });
+  if (changed) cachedRelations.value = next;
+};
+
+watch(
+  () => [
+    contactId.value,
+    props.contact?.phone_numbers,
+    props.contact?.phoneNumbers,
+  ],
+  () => {
+    rememberRelationsFromList(
+      contactId.value,
+      props.contact?.phone_numbers ?? props.contact?.phoneNumbers
+    );
+  },
+  { immediate: true, deep: true }
+);
+
 const phoneEntries = computed(() => {
   const rawList = props.contact?.phone_numbers ?? props.contact?.phoneNumbers;
   if (Array.isArray(rawList) && rawList.length > 0) {
     return rawList
-      .map(entry => ({
-        id: entry.id ?? null,
-        phoneNumber: entry.phone_number || entry.phoneNumber || '',
-        primary: Boolean(entry.primary),
-        shared: Boolean(entry.shared),
-        label: entry.label || '',
-        ownerContactId: entry.owner_contact_id ?? entry.ownerContactId ?? null,
-        ownerContact: entry.owner_contact || entry.ownerContact || null,
-        sharedContacts: entry.shared_contacts || entry.sharedContacts || [],
-      }))
+      .map(entry => {
+        const phoneNumber = entry.phone_number || entry.phoneNumber || '';
+        const shared = Boolean(entry.shared);
+        const ownerContactId =
+          entry.owner_contact_id ?? entry.ownerContactId ?? null;
+        const rawOwner = entry.owner_contact || entry.ownerContact || null;
+        const rawShared = entry.shared_contacts || entry.sharedContacts || [];
+        const cached =
+          cachedRelations.value[relationCacheKey(contactId.value, phoneNumber)];
+        return {
+          id: entry.id ?? null,
+          phoneNumber,
+          primary: Boolean(entry.primary),
+          shared,
+          label: entry.label || '',
+          ownerContactId,
+          ownerContact:
+            rawOwner ||
+            (shared && ownerContactId ? cached?.ownerContact || null : null),
+          sharedContacts:
+            rawShared.length > 0 ? rawShared : cached?.sharedContacts || [],
+        };
+      })
       .filter(entry => Boolean(entry.phoneNumber));
   }
 
@@ -125,6 +178,10 @@ const openAddForm = () => {
 const syncAfterMutation = async (response, extraContactId = null) => {
   const payload = response?.data?.payload || response?.data;
   if (payload) {
+    rememberRelationsFromList(
+      payload.id || contactId.value,
+      payload.phone_numbers || payload.phoneNumbers
+    );
     emit('updated', payload);
   }
   if (contactId.value && store?.dispatch) {
@@ -207,6 +264,9 @@ const removePhone = async entry => {
   busyPhoneId.value = entry.id;
   try {
     const response = await ContactPhonesAPI.destroy(contactId.value, entry.id);
+    const nextCache = { ...cachedRelations.value };
+    delete nextCache[relationCacheKey(contactId.value, entry.phoneNumber)];
+    cachedRelations.value = nextCache;
     await syncAfterMutation(response, entry.ownerContactId);
     useAlert(t('CONTACT_PHONES.REMOVED_SUCCESS'));
   } catch (error) {
