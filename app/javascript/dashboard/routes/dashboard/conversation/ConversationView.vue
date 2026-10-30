@@ -13,7 +13,9 @@ import { BUS_EVENTS } from 'shared/constants/busEvents';
 import CmdBarConversationSnooze from 'dashboard/routes/dashboard/commands/CmdBarConversationSnooze.vue';
 import { emitter } from 'shared/helpers/mitt';
 import SidepanelSwitch from 'dashboard/components-next/Conversation/SidepanelSwitch.vue';
+import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import {
+  THREAD_CAPABLE_CONVERSATION_ROUTES,
   isCommunicationThread,
   isDraftDialog,
 } from 'dashboard/helper/communicationThreadHelper';
@@ -101,6 +103,18 @@ export default {
       chatList: 'getAllConversations',
       currentChat: 'getSelectedChat',
     }),
+    effectiveCommunicationThreadMode() {
+      if (this.communicationThreadMode) return true;
+      if (!THREAD_CAPABLE_CONVERSATION_ROUTES.includes(this.$route?.name)) {
+        return false;
+      }
+      return Boolean(
+        this.$store?.getters?.['accounts/isFeatureEnabledonAccount']?.(
+          this.$route?.params?.accountId,
+          FEATURE_FLAGS.COMMUNICATION_THREADS
+        )
+      );
+    },
     hasSelectedDialog() {
       return Boolean(this.conversationId || this.personContactId);
     },
@@ -135,6 +149,11 @@ export default {
     conversationId() {
       resetMobileConversationPanel();
       this.fetchConversationIfUnavailable();
+    },
+    effectiveCommunicationThreadMode(nextMode, previousMode) {
+      if (nextMode === previousMode || !this.conversationId) return;
+      this.fetchConversationIfUnavailable();
+      this.setActiveChat();
     },
     'currentChat.inbox_id'() {
       this.normalizeConversationRoute();
@@ -210,6 +229,11 @@ export default {
         previously_used_conversation_display_type: newViewType,
       });
     },
+    isThreadMode() {
+      return Boolean(
+        this.effectiveCommunicationThreadMode ?? this.communicationThreadMode
+      );
+    },
     fetchConversationIfUnavailable() {
       if (!this.conversationId) {
         return;
@@ -217,25 +241,22 @@ export default {
       const chat = this.findConversation();
       if (!chat) {
         this.$store.dispatch(
-          this.communicationThreadMode
-            ? 'getCommunicationThread'
-            : 'getConversation',
+          this.isThreadMode() ? 'getCommunicationThread' : 'getConversation',
           this.conversationId
         );
       }
     },
     findConversation() {
       const conversationId = parseInt(this.conversationId, 10);
+      const threadMode = this.isThreadMode();
       return this.chatList.find(
-        c =>
-          c.id === conversationId &&
-          isCommunicationThread(c) === this.communicationThreadMode
+        c => c.id === conversationId && isCommunicationThread(c) === threadMode
       );
     },
     normalizeConversationRoute() {
       if (
         this.isLeavingConversationRoute ||
-        this.communicationThreadMode ||
+        this.isThreadMode() ||
         this.$route.name !== 'inbox_conversation' ||
         !this.conversationId ||
         !this.currentChat?.inbox_id
@@ -372,7 +393,7 @@ export default {
       :team-id="teamId"
       :conversation-type="conversationType"
       :folders-id="foldersId"
-      :communication-thread-mode="communicationThreadMode"
+      :communication-thread-mode="effectiveCommunicationThreadMode"
       :is-on-expanded-layout="isOnExpandedLayout"
       :is-leaving-route="isLeavingConversationRoute"
       @conversation-load="onConversationLoad"

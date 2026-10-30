@@ -136,20 +136,33 @@ module CommunicationThreads::ControllerContext
 
   def preload_meta_ad_referrals(communication_threads)
     thread_ids = communication_threads.map(&:id)
-    accessible_conversation_ids = (@accessible_links_by_thread_id || {}).values.flatten.filter_map(&:conversation_id)
+    accessible_conversation_ids = (@accessible_links_by_thread_id || {}).values.flatten.filter_map(&:conversation_id).uniq
     @meta_ad_referrals_by_communication_thread_id = if thread_ids.empty? || accessible_conversation_ids.empty?
                                                       {}
                                                     else
-                                                      MetaAdReferral
-                                                        .where(
-                                                          account_id: Current.account.id,
-                                                          communication_thread_id: thread_ids,
-                                                          conversation_id: accessible_conversation_ids
-                                                        )
-                                                        .select('DISTINCT ON (communication_thread_id) meta_ad_referrals.*')
-                                                        .reorder(Arel.sql('communication_thread_id, received_at DESC, id DESC'))
-                                                        .index_by(&:communication_thread_id)
+                                                      fetch_meta_ad_referrals_by_thread_id(thread_ids, accessible_conversation_ids)
                                                     end
+  end
+
+  def fetch_meta_ad_referrals_by_thread_id(thread_ids, accessible_conversation_ids)
+    MetaAdReferral
+      .joins(
+        'INNER JOIN communication_thread_conversations ctc ' \
+        'ON ctc.conversation_id = meta_ad_referrals.conversation_id ' \
+        'AND ctc.account_id = meta_ad_referrals.account_id'
+      )
+      .where(
+        account_id: Current.account.id,
+        ctc: { communication_thread_id: thread_ids, conversation_id: accessible_conversation_ids }
+      )
+      .preload(:conversation)
+      .select('DISTINCT ON (ctc.communication_thread_id) meta_ad_referrals.*, ctc.communication_thread_id AS resolved_communication_thread_id')
+      .reorder(
+        Arel.sql(
+          'ctc.communication_thread_id, COALESCE(meta_ad_referrals.received_at, meta_ad_referrals.created_at) DESC, meta_ad_referrals.id DESC'
+        )
+      )
+      .index_by { |referral| referral[:resolved_communication_thread_id] }
   end
 
   def preload_last_public_messages_by_thread

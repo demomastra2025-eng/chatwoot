@@ -144,8 +144,28 @@ const currentSidebarContextKey = computed(() => {
 const metaAdReferral = computed(
   () => currentDealSourceContext.value.metaAdReferral || {}
 );
+const currentChatIdentityKey = computed(
+  () =>
+    `${Number(accountId.value) || 0}:${currentDealSourceContext.value.sourceType || ''}:${Number(props.currentChat?.id) || 0}`
+);
 const hasMetaAdReferral = computed(() =>
   hasMetaAdReferralDetails(metaAdReferral.value)
+);
+watch(
+  () => [currentChatIdentityKey.value, hasMetaAdReferral.value],
+  ([nextChatKey, nextHasMetaAdReferral], previous) => {
+    const [prevChatKey, prevHasMetaAdReferral] = previous || [];
+    if (nextChatKey !== prevChatKey) {
+      metaAdReferralExpanded.value = Boolean(nextHasMetaAdReferral);
+      return;
+    }
+    if (nextHasMetaAdReferral && !prevHasMetaAdReferral) {
+      metaAdReferralExpanded.value = true;
+    } else if (!nextHasMetaAdReferral) {
+      metaAdReferralExpanded.value = false;
+    }
+  },
+  { immediate: true }
 );
 const metaAdReferralProviderLabel = computed(() =>
   resolveMetaAdReferralProviderLabel(metaAdReferral.value, t)

@@ -1,7 +1,11 @@
 import { emitter } from 'shared/helpers/mitt';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { differenceInSeconds } from 'date-fns';
-import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
+import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import {
+  THREAD_CAPABLE_CONVERSATION_ROUTES,
+  isCommunicationThread,
+} from 'dashboard/helper/communicationThreadHelper';
 import {
   isAConversationRoute,
   isAInboxViewRoute,
@@ -79,10 +83,19 @@ class ReconnectService {
 
   getConversationRouteContext = () => {
     const { name, fullPath, params = {} } = this.router.currentRoute.value;
-    const communicationThreadMode = [
-      'communication_threads_dashboard',
-      'communication_thread_conversation',
-    ].includes(name);
+    const isAccountThreadEnabled = Boolean(
+      this.store.getters?.['accounts/isFeatureEnabledonAccount']?.(
+        params.accountId,
+        FEATURE_FLAGS.COMMUNICATION_THREADS
+      )
+    );
+    const communicationThreadMode =
+      [
+        'communication_threads_dashboard',
+        'communication_thread_conversation',
+      ].includes(name) ||
+      (isAccountThreadEnabled &&
+        THREAD_CAPABLE_CONVERSATION_ROUTES.includes(name));
 
     const conversationId =
       params.conversation_id || params.communication_thread_id;
@@ -305,9 +318,7 @@ class ReconnectService {
   };
 
   revalidateCaches = async () => {
-    const { label, inbox, team } = await this.store.dispatch(
-      'accounts/getCacheKeys'
-    );
+    const { label, inbox } = await this.store.dispatch('accounts/getCacheKeys');
     await Promise.all([
       this.store.dispatch('labels/revalidate', { newKey: label }),
       this.store.dispatch('inboxes/revalidate', { newKey: inbox }),

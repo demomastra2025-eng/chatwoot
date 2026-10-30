@@ -1,6 +1,15 @@
 import { MESSAGE_STATUS, MESSAGE_TYPE } from 'shared/constants/messages';
 import { timestampInSeconds } from './timestampHelper';
 
+export const THREAD_CAPABLE_CONVERSATION_ROUTES = [
+  'label_conversations',
+  'conversations_through_label',
+  'team_conversations',
+  'conversations_through_team',
+  'folder_conversations',
+  'conversations_through_folders',
+];
+
 export const isCommunicationThread = chat => {
   return Boolean(
     chat?.is_communication_thread || chat?.communication_thread_id

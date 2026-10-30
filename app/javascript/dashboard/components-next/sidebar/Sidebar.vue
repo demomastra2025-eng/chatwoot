@@ -1046,6 +1046,10 @@ const menuItems = computed(() => {
             children: conversationCustomViews.value.map(view => ({
               name: `${view.name}-${view.id}`,
               label: view.name,
+              activeOn: [
+                'folder_conversations',
+                'conversations_through_folders',
+              ],
               to: withConversationStatus(
                 'folder_conversations',
                 { id: view.id },
@@ -1085,6 +1089,10 @@ const menuItems = computed(() => {
                             ? labelMarkerEmoji(label)
                             : '',
                       }),
+                      activeOn: [
+                        'label_conversations',
+                        'conversations_through_label',
+                      ],
                       to: withConversationStatus(
                         'label_conversations',
                         {
@@ -1539,8 +1547,19 @@ const queryMatches = child => {
     return false;
   }
 
+  const isPathScopedConversationChild = [
+    'label_conversations',
+    'folder_conversations',
+  ].includes(child?.to?.name);
+
   return Object.entries(childQuery).every(([key, value]) => {
     if (NON_ACTIVE_QUERY_KEYS.has(key) || typeof value === 'undefined') {
+      return true;
+    }
+    if (
+      isPathScopedConversationChild &&
+      (key === 'status' || key === 'assignee_type')
+    ) {
       return true;
     }
 
@@ -1613,7 +1632,8 @@ const matchesChildRoute = child => {
     return false;
   }
 
-  if (route.path === resolvePath(child.to) && queryMatches(child)) {
+  const targetPath = resolvePath(child.to);
+  if (route.path === targetPath && queryMatches(child)) {
     return !child.suppressExactPathActive;
   }
 
@@ -1625,7 +1645,10 @@ const matchesChildRoute = child => {
     return false;
   }
 
-  return route.path.startsWith(resolvePath(child.to)) && queryMatches(child);
+  return (
+    (route.path === targetPath || route.path.startsWith(`${targetPath}/`)) &&
+    queryMatches(child)
+  );
 };
 
 const activeChildNamesFor = item => {

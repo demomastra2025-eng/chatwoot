@@ -386,4 +386,40 @@ describe('ConversationView', () => {
       );
     });
   });
+
+  describe('effectiveCommunicationThreadMode on scoped label/team/folder routes', () => {
+    it('resolves thread mode dynamically from account feature flag on conversations_through_label and fetches communication thread', () => {
+      const context = {
+        communicationThreadMode: false,
+        conversationId: '42',
+        chatList: [],
+        $route: {
+          name: 'conversations_through_label',
+          params: { accountId: '1', label: 'vip', conversation_id: '42' },
+        },
+        $store: {
+          dispatch: vi.fn(),
+          getters: {
+            'accounts/isFeatureEnabledonAccount': (accountId, flag) =>
+              String(accountId) === '1' && flag === 'communication_threads',
+          },
+        },
+      };
+      context.effectiveCommunicationThreadMode =
+        ConversationView.computed.effectiveCommunicationThreadMode.call(
+          context
+        );
+      context.isThreadMode = () =>
+        ConversationView.methods.isThreadMode.call(context);
+      context.findConversation = () =>
+        ConversationView.methods.findConversation.call(context);
+
+      expect(context.effectiveCommunicationThreadMode).toBe(true);
+      ConversationView.methods.fetchConversationIfUnavailable.call(context);
+      expect(context.$store.dispatch).toHaveBeenCalledWith(
+        'getCommunicationThread',
+        '42'
+      );
+    });
+  });
 });

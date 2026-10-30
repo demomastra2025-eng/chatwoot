@@ -512,9 +512,10 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def apply_labels_filter(scope)
-    return scope if params[:labels].blank? && !labels_scope_any?
+    return scope.with_labels(params[:labels], accessible_conversations: accessible_conversations) if params[:labels].present?
+    return scope.with_any_label(accessible_conversations: accessible_conversations) if labels_scope_any?
 
-    scope.where(id: linked_thread_ids(conversation_ids: labeled_conversation_ids))
+    scope
   end
 
   def apply_crm_deal_context_filter(scope)
@@ -652,16 +653,6 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     ActiveModel::Type::Boolean.new.cast(
       params[:waiting_for_callback].presence || params[:waitingForCallback].presence
     )
-  end
-
-  def labeled_conversation_ids
-    # The label is on the conversation or on its contact (labels belong to the person).
-    labeled = if params[:labels].present?
-                Labels::ConversationScope.with_labels(accessible_conversations, params[:labels])
-              else
-                Labels::ConversationScope.with_any_label(accessible_conversations)
-              end
-    labeled.reselect(:id)
   end
 
   def current_crm_deal_dialog_scope

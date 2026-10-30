@@ -71,32 +71,18 @@ class MetaAdReferral < ApplicationRecord
   validates :provider, :provider_message_id, :received_at, presence: true
   validates :provider_message_id, uniqueness: { scope: [:provider, :inbox_id] }
 
-  def summary
-    {
-      id: id,
-      provider: provider,
-      attribution_type: attribution_type,
-      source: source,
-      source_type: source_type,
-      source_id: source_id,
-      source_url: source_url,
-      ad_id: ad_id,
-      ctwa_clid: ctwa_clid,
-      ref: ref,
-      referral_type: referral_type,
-      headline: headline,
-      body: body,
-      media_type: media_type,
-      image_url: image_url,
-      video_url: video_url,
-      thumbnail_url: thumbnail_url,
-      post_id: post_id,
-      product_id: product_id,
-      flow_id: flow_id,
+  SUMMARY_SCALAR_FIELDS = %i[
+    id provider attribution_type source source_type source_id source_url
+    ad_id ctwa_clid ref referral_type headline body media_type image_url
+    video_url thumbnail_url post_id product_id flow_id message_id
+  ].freeze
+
+  def summary(communication_thread: nil)
+    resolved_thread = communication_thread || self.communication_thread
+    SUMMARY_SCALAR_FIELDS.index_with { |field| public_send(field) }.merge(
       received_at: received_at&.iso8601,
       conversation_id: conversation&.display_id,
-      communication_thread_id: communication_thread&.display_id,
-      message_id: message_id
-    }.compact_blank
+      communication_thread_id: resolved_thread&.display_id
+    ).compact_blank
   end
 end

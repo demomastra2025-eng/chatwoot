@@ -160,9 +160,28 @@ class CommunicationThreads::FilterService < FilterService
     )
   end
 
-  # The label is on the conversation or on its contact (labels belong to the person).
+  # The label is on the conversation or on its contact (labels belong to the person),
+  # or on any accessible channel conversation of the same communication thread.
   def conversations_with_any_label(scope)
-    Labels::ConversationScope.with_any_label(scope)
+    scope.where(Arel.sql(labels_exist_sql))
+  end
+
+  def labels_exist_sql(tag_ids_sql = nil)
+    direct_match_sql = Labels::ConversationScope.match_tags_sql(tag_ids_sql)
+    accessible_labeled_ids_sql = base_relation
+                                 .where(Arel.sql(direct_match_sql))
+                                 .reselect('conversations.id')
+                                 .to_sql
+    account_id = @account.id.to_i
+
+    "(#{direct_match_sql} OR conversations.id = ANY (ARRAY(" \
+      'SELECT ctc_peer.conversation_id FROM communication_thread_conversations ctc_peer ' \
+      "WHERE ctc_peer.account_id = #{account_id} " \
+      'AND ctc_peer.conversation_id IS NOT NULL ' \
+      'AND ctc_peer.communication_thread_id IN (' \
+      'SELECT ctc_labeled.communication_thread_id FROM communication_thread_conversations ctc_labeled ' \
+      "WHERE ctc_labeled.account_id = #{account_id} " \
+      "AND ctc_labeled.conversation_id IN (#{accessible_labeled_ids_sql})))))"
   end
 
   # A label condition of the advanced filter also matches the labels of the conversation's contact, see FilterService#tag_filter_query.

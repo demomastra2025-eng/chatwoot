@@ -458,9 +458,6 @@ describe('ReconnectService', () => {
       expect(storeMock.dispatch).toHaveBeenCalledWith('inboxes/revalidate', {
         newKey: 'inboxKey',
       });
-      expect(storeMock.dispatch).toHaveBeenCalledWith('teams/revalidate', {
-        newKey: 'teamKey',
-      });
     });
   });
 
@@ -549,6 +546,28 @@ describe('ReconnectService', () => {
       expect(emitter.emit).toHaveBeenCalledWith(
         BUS_EVENTS.WEBSOCKET_RECONNECT_COMPLETED
       );
+    });
+  });
+
+  describe('getConversationRouteContext on thread-capable scoped routes', () => {
+    it('uses communicationThreadMode on conversations_through_label when communication_threads feature is enabled', () => {
+      storeMock.getters['accounts/isFeatureEnabledonAccount'] = (
+        accountId,
+        flag
+      ) => String(accountId) === '1' && flag === 'communication_threads';
+      routerMock.currentRoute.value = {
+        name: 'conversations_through_label',
+        fullPath: '/app/accounts/1/label/vip/conversations/42',
+        params: {
+          accountId: '1',
+          label: 'vip',
+          conversation_id: '42',
+        },
+      };
+
+      const context = reconnectService.getConversationRouteContext();
+      expect(context.communicationThreadMode).toBe(true);
+      expect(context.conversationType).toBe('communication_thread');
     });
   });
 });

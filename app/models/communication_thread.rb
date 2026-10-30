@@ -51,6 +51,13 @@ class CommunicationThread < ApplicationRecord
   validates :contact_id, presence: true
   validates :display_id, presence: true, uniqueness: { scope: :account_id }
 
+  scope :with_labels, lambda { |labels, accessible_conversations: nil|
+    with_label_tag_ids(Labels::ConversationScope.tag_ids_for(labels), accessible_conversations: accessible_conversations)
+  }
+  scope :with_any_label, lambda { |accessible_conversations: nil|
+    with_label_tag_ids(nil, accessible_conversations: accessible_conversations)
+  }
+
   # The thread of a person. There is one per person (the resolver keeps it so); where an old duplicate is still there, every reader
   # takes the same one: the one with the latest activity, then the oldest.
   def self.of_person(account_id:, contact_id:)
@@ -61,6 +68,42 @@ class CommunicationThread < ApplicationRecord
   def self.snoozed_until_for(conversations)
     Array(conversations).filter_map { |conversation| conversation.snoozed_until if conversation&.snoozed? }.min
   end
+
+  def self.with_label_tag_ids(tag_ids = nil, accessible_conversations: nil)
+    return none if tag_ids&.empty?
+
+    tag_ids_sql = tag_ids&.map(&:to_i)&.join(', ')
+    contact_sql = "communication_threads.contact_id = ANY (#{Labels::ConversationScope.labeled_ids_sql('Contact', tag_ids_sql)})"
+    linked_conv_sql = linked_labeled_conversations_sql(tag_ids_sql, accessible_conversations)
+    accessible_thread_relation(accessible_conversations).where(Arel.sql("(#{contact_sql} OR #{linked_conv_sql})"))
+  end
+
+  def self.accessible_thread_relation(accessible_conversations)
+    return all if accessible_conversations.nil?
+
+    accessible_thread_ids = CommunicationThreadConversation
+                            .where(conversation_id: accessible_conversations.reselect(:id))
+                            .select(:communication_thread_id)
+    where(id: accessible_thread_ids)
+  end
+
+  def self.linked_labeled_conversations_sql(tag_ids_sql, accessible_conversations)
+    conversation_ids_sql = Labels::ConversationScope.labeled_ids_sql('Conversation', tag_ids_sql)
+    if accessible_conversations.nil?
+      return 'communication_threads.id IN (' \
+             'SELECT ctc_label.communication_thread_id FROM communication_thread_conversations ctc_label ' \
+             "WHERE ctc_label.conversation_id = ANY (#{conversation_ids_sql}))"
+    end
+
+    accessible_labeled_sql = accessible_conversations
+                             .where(Arel.sql("conversations.id = ANY (#{conversation_ids_sql})"))
+                             .reselect('conversations.id')
+                             .to_sql
+    'communication_threads.id IN (' \
+      'SELECT ctc_label.communication_thread_id FROM communication_thread_conversations ctc_label ' \
+      "WHERE ctc_label.conversation_id IN (#{accessible_labeled_sql}))"
+  end
+  private_class_method :accessible_thread_relation, :linked_labeled_conversations_sql
 
   private
 

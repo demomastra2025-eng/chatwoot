@@ -84,4 +84,69 @@ RSpec.describe CommunicationThread do
       expect(duplicate.errors[:display_id]).to be_present
     end
   end
+
+  describe '.with_labels and .with_any_label' do
+    let(:account) { create(:account).tap { |record| record.enable_features!('communication_threads') } }
+    let(:accessible_inbox) { create(:inbox, account: account) }
+    let(:hidden_inbox) { create(:inbox, account: account) }
+
+    def create_thread(contact_label: nil, conversation_label: nil, inbox: accessible_inbox)
+      contact = create(:contact, account: account)
+      contact.update_labels(contact_label) if contact_label
+      conversation = create(:conversation, account: account, inbox: inbox, contact: contact)
+      conversation.update_labels(conversation_label) if conversation_label
+      conversation.reload.communication_thread
+    end
+
+    it 'matches labels on either the contact or any linked conversation without duplicates', :aggregate_failures do
+      contact_thread = create_thread(contact_label: 'vip')
+      conversation_thread = create_thread(conversation_label: 'vip')
+      both_thread = create_thread(contact_label: 'vip', conversation_label: 'vip')
+      second_inbox = create(:inbox, account: account)
+      second_conv = create(
+        :conversation,
+        account: account,
+        inbox: second_inbox,
+        contact: both_thread.contact,
+        contact_inbox: create(:contact_inbox, contact: both_thread.contact, inbox: second_inbox)
+      )
+      second_conv.update_labels('vip')
+      other_thread = create_thread(contact_label: 'other')
+      unlabeled_thread = create_thread
+
+      matched_ids = described_class.where(account_id: account.id).with_labels(['vip']).pluck(:id)
+      expect(matched_ids).to contain_exactly(contact_thread.id, conversation_thread.id, both_thread.id)
+      expect(described_class.where(account_id: account.id).with_labels(['nonexistent'])).to be_empty
+
+      any_ids = described_class.where(account_id: account.id).with_any_label.pluck(:id)
+      expect(any_ids).to contain_exactly(contact_thread.id, conversation_thread.id, both_thread.id, other_thread.id)
+      expect(any_ids).not_to include(unlabeled_thread.id)
+    end
+
+    it 'does not leak labels from inaccessible inboxes when accessible_conversations is provided', :aggregate_failures do
+      hidden_only_thread = create_thread(contact_label: 'vip', inbox: hidden_inbox)
+      mixed_contact = create(:contact, account: account)
+      hidden_conv = create(:conversation, account: account, inbox: hidden_inbox, contact: mixed_contact, status: :resolved)
+      hidden_conv.update_labels('vip')
+      visible_conv = create(
+        :conversation,
+        account: account,
+        inbox: accessible_inbox,
+        contact: mixed_contact,
+        contact_inbox: create(:contact_inbox, contact: mixed_contact, inbox: accessible_inbox),
+        status: :open
+      )
+      mixed_thread = visible_conv.reload.communication_thread
+      visible_labeled_thread = create_thread(conversation_label: 'vip', inbox: accessible_inbox)
+
+      accessible_scope = Conversation.where(account_id: account.id, inbox_id: accessible_inbox.id)
+      matched_ids = described_class
+                    .where(account_id: account.id)
+                    .with_labels(['vip'], accessible_conversations: accessible_scope)
+                    .pluck(:id)
+
+      expect(matched_ids).to contain_exactly(visible_labeled_thread.id)
+      expect(matched_ids).not_to include(hidden_only_thread.id, mixed_thread.id)
+    end
+  end
 end

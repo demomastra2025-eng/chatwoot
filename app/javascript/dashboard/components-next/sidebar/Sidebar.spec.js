@@ -147,17 +147,24 @@ const storePlugin = store => ({
   },
 });
 
-const mountSidebar = async ({ permissions, routeName }) => {
+const mountSidebar = async ({
+  permissions,
+  routeName,
+  routeParams = {},
+  routeQuery = {},
+  routePath = null,
+}) => {
   mocks.user = {
     id: 7,
     name: 'Employee',
     accounts: [{ id: ACCOUNT_ID, permissions }],
   };
+  const mergedParams = { accountId: String(ACCOUNT_ID), ...routeParams };
   mocks.route = {
     name: routeName,
-    path: fakePath(routeName, { accountId: ACCOUNT_ID }),
-    params: { accountId: String(ACCOUNT_ID) },
-    query: {},
+    path: routePath || fakePath(routeName, mergedParams),
+    params: mergedParams,
+    query: routeQuery,
   };
   const store = buildStore();
 
@@ -792,6 +799,28 @@ describe('Sidebar', () => {
       expect(secondaryColumn(wrapper).props('label')).toBe(
         sidebarGroup(wrapper, 'Conversation').props('label')
       );
+    });
+
+    it('keeps only the active label highlighted on conversations_through_label including bare deep-links without prefix collisions', async () => {
+      mocks.labels = [
+        { id: 1, title: 'vip', color: '#1f93ff' },
+        { id: 2, title: 'vip_2', color: '#ff5733' },
+      ];
+      try {
+        const wrapper = await mountSidebar({
+          permissions: ADMINISTRATOR,
+          routeName: 'conversations_through_label',
+          routeParams: { label: 'vip_2', conversation_id: '42' },
+          routePath: `/app/accounts/${ACCOUNT_ID}/label/vip_2/conversations/42`,
+          routeQuery: {},
+        });
+
+        expect(secondaryColumn(wrapper).props('activeChildNames')).toEqual([
+          'vip_2-2',
+        ]);
+      } finally {
+        mocks.labels = [];
+      }
     });
   });
 });

@@ -4,7 +4,15 @@ const ConversationView = () => import('./ConversationView.vue');
 import inboxDialogRoutes from '../settings/inbox/inboxDialog.routes';
 import { CONVERSATION_ACCESS_PERMISSIONS } from '../../../constants/permissions';
 import { FEATURE_FLAGS } from '../../../featureFlags';
+import store from '../../../store';
 import { redirectToCommunicationThread } from './redirectToCommunicationThread';
+
+const isCommunicationThreadsEnabled = accountId => {
+  const checkFeature = store.getters?.['accounts/isFeatureEnabledonAccount'];
+  return Boolean(
+    checkFeature?.(accountId, FEATURE_FLAGS.COMMUNICATION_THREADS)
+  );
+};
 
 export default {
   routes: [
@@ -114,7 +122,12 @@ export default {
         permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
-      props: route => ({ label: route.params.label }),
+      props: route => ({
+        label: route.params.label,
+        communicationThreadMode: isCommunicationThreadsEnabled(
+          route.params.accountId
+        ),
+      }),
     },
     {
       path: frontendURL(
@@ -128,6 +141,9 @@ export default {
       props: route => ({
         conversationId: route.params.conversation_id,
         label: route.params.label,
+        communicationThreadMode: isCommunicationThreadsEnabled(
+          route.params.accountId
+        ),
       }),
     },
     {
@@ -137,7 +153,12 @@ export default {
         permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
-      props: route => ({ teamId: route.params.teamId }),
+      props: route => ({
+        teamId: route.params.teamId,
+        communicationThreadMode: isCommunicationThreadsEnabled(
+          route.params.accountId
+        ),
+      }),
     },
     {
       path: frontendURL(
@@ -151,6 +172,9 @@ export default {
       props: route => ({
         conversationId: route.params.conversationId,
         teamId: route.params.teamId,
+        communicationThreadMode: isCommunicationThreadsEnabled(
+          route.params.accountId
+        ),
       }),
     },
     {
@@ -160,7 +184,12 @@ export default {
         permissions: CONVERSATION_ACCESS_PERMISSIONS,
       },
       component: ConversationView,
-      props: route => ({ foldersId: route.params.id }),
+      props: route => ({
+        foldersId: route.params.id,
+        communicationThreadMode: isCommunicationThreadsEnabled(
+          route.params.accountId
+        ),
+      }),
     },
     {
       path: frontendURL(
@@ -174,6 +203,9 @@ export default {
       props: route => ({
         conversationId: route.params.conversation_id,
         foldersId: route.params.id,
+        communicationThreadMode: isCommunicationThreadsEnabled(
+          route.params.accountId
+        ),
       }),
     },
     {

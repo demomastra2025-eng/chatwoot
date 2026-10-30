@@ -62,11 +62,9 @@ class Labels::ConversationScope
       ActsAsTaggableOn::Tag.named_any(tag_list).pluck(:id)
     end
 
-    private
-
     # Ids of the records of one type that carry a label (taggable_id IS NOT NULL keeps NULL out of the array, which
     # would turn a failed "= ANY" into NULL).
-    def labeled_ids_sql(taggable_type, tag_ids_sql)
+    def labeled_ids_sql(taggable_type, tag_ids_sql = nil)
       conditions = [
         "label_taggings.taggable_type = '#{taggable_type}'",
         "label_taggings.context = 'labels'",

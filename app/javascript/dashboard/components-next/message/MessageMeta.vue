@@ -9,8 +9,10 @@ import Label from 'dashboard/components-next/label/Label.vue';
 import { useInbox } from 'dashboard/composables/useInbox';
 import {
   buildMetaAdReferralTooltipText,
+  getMetaAdReferralValue,
   hasMetaAdReferral as hasMetaAdReferralDetails,
   metaAdReferralSourceLabel,
+  sanitizeMetaAdReferralUrl,
 } from 'dashboard/helper/metaAdReferralHelper';
 import { useMessageContext } from './provider.js';
 import { useAudioPlaybackState } from './audioPlaybackState';
@@ -130,6 +132,11 @@ const metaAdReferralLabel = computed(() =>
 
 const metaAdReferralTooltipText = computed(() =>
   buildMetaAdReferralTooltipText(metaReferral.value, t)
+);
+const metaAdReferralSourceUrl = computed(() =>
+  sanitizeMetaAdReferralUrl(
+    getMetaAdReferralValue(metaReferral.value, 'sourceUrl', 'source_url')
+  )
 );
 
 const showStatusIndicator = computed(() => {
@@ -263,8 +270,28 @@ const isIncomingOrientation = computed(() => orientation.value === 'left');
 
 <template>
   <div class="message-meta-root text-xs flex items-center gap-1.5">
+    <a
+      v-if="hasMetaAdReferral && metaAdReferralSourceUrl"
+      v-tooltip.top="{
+        content: metaAdReferralTooltipText,
+        delay: { show: 250, hide: 0 },
+      }"
+      :href="metaAdReferralSourceUrl"
+      :title="metaAdReferralTooltipText"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="inline-flex cursor-pointer"
+      data-testid="message-meta-ad-referral"
+      @click.stop
+    >
+      <Label :label="metaAdReferralLabel" color="blue" compact>
+        <template #action>
+          <Icon icon="i-lucide-external-link" class="size-3 shrink-0" />
+        </template>
+      </Label>
+    </a>
     <span
-      v-if="hasMetaAdReferral"
+      v-else-if="hasMetaAdReferral"
       v-tooltip.top="{
         content: metaAdReferralTooltipText,
         delay: { show: 250, hide: 0 },

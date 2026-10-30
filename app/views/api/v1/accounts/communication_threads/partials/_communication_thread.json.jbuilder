@@ -43,7 +43,7 @@ json.meta do
                   excluded_additional_attribute_keys: ['last_meta_ad_referral']
   end
   json.channel 'CommunicationThread'
-  json.meta_ad_referral meta_ad_referral.summary if meta_ad_referral.present?
+  json.meta_ad_referral meta_ad_referral.summary(communication_thread: communication_thread) if meta_ad_referral.present?
   if communication_thread.assignee.present?
     json.assignee do
       json.partial! 'api/v1/models/agent', formats: [:json], resource: communication_thread.assignee

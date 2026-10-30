@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class CommunicationThreads::RealtimeUpdateService
+class CommunicationThreads::RealtimeUpdateService # rubocop:disable Metrics/ClassLength
   EVENT_NAME = 'communication_thread.updated'
   FEATURE_NAME = 'communication_threads'
 
@@ -63,6 +63,7 @@ class CommunicationThreads::RealtimeUpdateService
 
     read_states = batch_read_states(account, links)
     preload_conversation_directional_timestamps(account, links)
+    preload_meta_ad_referrals(account, links)
     groups.each_value do |group|
       shared_payload = shared_realtime_payload(communication_thread, group[:links], source_conversation, message)
       payload = realtime_payload(communication_thread, group[:links], shared_payload, read_states)
@@ -97,7 +98,7 @@ class CommunicationThreads::RealtimeUpdateService
   def thread_identity_payload(communication_thread, links, source_conversation)
     {
       id: communication_thread.display_id, communication_thread_id: communication_thread.display_id,
-      is_communication_thread: true, meta: thread_meta(communication_thread),
+      is_communication_thread: true, meta: thread_meta(communication_thread, links),
       source_event: source_event, conversation_id: source_conversation.display_id,
       conversation_ids: links.map { |link| link.conversation.display_id },
       contact_id: communication_thread.contact_id, inbox_id: source_conversation.inbox_id,
@@ -141,12 +142,36 @@ class CommunicationThreads::RealtimeUpdateService
 
   # The thread belongs to one person: its name and avatar must not depend on the channel the event came from, or the
   # list row and the dialog header would swap pictures on every event. Per-channel profiles travel in channels[].
-  def thread_meta(communication_thread)
-    @thread_meta ||= {
+  def thread_meta(communication_thread, links = [])
+    base_meta = @base_thread_meta ||= {
       sender: communication_thread.contact.push_event_data,
       channel: 'CommunicationThread', assignee: communication_thread.assignee&.push_event_data,
       assignee_type: communication_thread.assignee.present? ? 'User' : nil, team: communication_thread.team&.push_event_data
     }
+    referral = meta_ad_referral_for_links(links)
+    return base_meta if referral.blank?
+
+    base_meta.merge(meta_ad_referral: referral.summary(communication_thread: communication_thread))
+  end
+
+  def preload_meta_ad_referrals(account, links)
+    conversation_ids = links.filter_map(&:conversation_id).uniq
+    @meta_ad_referrals = if conversation_ids.empty?
+                           []
+                         else
+                           MetaAdReferral
+                             .where(account_id: account.id, conversation_id: conversation_ids)
+                             .preload(:conversation)
+                             .reorder(Arel.sql('COALESCE(received_at, created_at) DESC, id DESC'))
+                             .to_a
+                         end
+  end
+
+  def meta_ad_referral_for_links(links)
+    return if @meta_ad_referrals.blank?
+
+    allowed_conversation_ids = links.filter_map(&:conversation_id).to_set
+    @meta_ad_referrals.find { |referral| allowed_conversation_ids.include?(referral.conversation_id) }
   end
 
   def channel_payloads(communication_thread, links, read_states)

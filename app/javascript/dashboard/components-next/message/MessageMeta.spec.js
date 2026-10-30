@@ -90,7 +90,16 @@ const mountComponent = () =>
   shallowMount(MessageMeta, {
     global: {
       stubs: {
-        Icon: true,
+        Icon: {
+          name: 'Icon',
+          props: ['icon'],
+          template: '<i :data-icon="icon" />',
+        },
+        Label: {
+          name: 'Label',
+          props: ['label', 'color', 'compact'],
+          template: '<span>{{ label }}<slot name="action" /></span>',
+        },
         MessageStatus: {
           name: 'MessageStatus',
           props: ['status'],
@@ -263,6 +272,13 @@ describe('MessageMeta', () => {
     const metaAdsTooltip = wrapper.find(
       '[data-testid="message-meta-ad-referral"]'
     );
+    expect(metaAdsTooltip.element.tagName).toBe('A');
+    expect(metaAdsTooltip.attributes('href')).toBe('https://fb.me/1AbCdEf');
+    expect(metaAdsTooltip.attributes('target')).toBe('_blank');
+    expect(metaAdsTooltip.attributes('rel')).toBe('noopener noreferrer');
+    expect(
+      metaAdsTooltip.find('[data-icon="i-lucide-external-link"]').exists()
+    ).toBe(true);
     expect(metaAdsTooltip.attributes('title')).toContain(
       'CTWA click: ARaD-ctwa-click-id-123'
     );
@@ -270,6 +286,33 @@ describe('MessageMeta', () => {
       'Source URL: https://fb.me/1AbCdEf'
     );
   });
+
+  it.each(['', `${'java'}script:alert(1)`, 'data:text/html,boom', 'not a url'])(
+    'renders Meta Ads badge as a non-clickable span when sourceUrl is %j',
+    unsafeUrl => {
+      useMessageContextMock.mockReturnValue({
+        ...baseMessageContext(MESSAGE_STATUS.SENT),
+        messageType: ref(MESSAGE_TYPES.INCOMING),
+        contentAttributes: ref({
+          metaReferral: {
+            provider: 'instagram',
+            headline: 'Instagram Reel Ad',
+            source_url: unsafeUrl,
+          },
+        }),
+        orientation: ref('left'),
+      });
+
+      const wrapper = mountComponent();
+      const badge = wrapper.get('[data-testid="message-meta-ad-referral"]');
+
+      expect(badge.element.tagName).toBe('SPAN');
+      expect(badge.attributes('href')).toBeUndefined();
+      expect(badge.find('[data-icon="i-lucide-external-link"]').exists()).toBe(
+        false
+      );
+    }
+  );
 
   it('shows a humanized subagent name when agentName is present', () => {
     useMessageContextMock.mockReturnValue({

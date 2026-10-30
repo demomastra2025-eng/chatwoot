@@ -322,5 +322,49 @@ RSpec.describe CommunicationThreads::RealtimeUpdateService do
       expect(payloads.pluck(:status)).to eq(%w[open open open])
       expect(payloads.last.fetch(:channels).pluck(:status)).to match_array(%w[resolved open snoozed])
     end
+
+    context 'when broadcasting meta_ad_referral across visible and hidden inboxes' do
+      def build_channel_conv(account, contact, inbox, status:)
+        create(:conversation, account: account, contact: contact, inbox: inbox,
+                              contact_inbox: create(:contact_inbox, contact: contact, inbox: inbox), status: status)
+      end
+
+      def build_ad_referral(conv, provider:, type:, url:, received_at:)
+        MetaAdReferral.create!(
+          account: conv.account, inbox: conv.inbox, contact: conv.contact, conversation: conv,
+          communication_thread_id: nil, provider: provider, attribution_type: type,
+          source_url: url, received_at: received_at
+        )
+      end
+
+      it 'includes the latest accessible meta_ad_referral without leaking hidden inbox referrals', :aggregate_failures do
+        account = create(:account).tap { |record| record.enable_features!('communication_threads') }
+        contact = create(:contact, account: account)
+        agent = create(:user, account: account, role: :agent)
+        admin = create(:user, account: account, role: :administrator)
+        whatsapp_inbox, hidden_inbox, voice_inbox = create_list(:inbox, 3, account: account)
+        create(:inbox_member, inbox: whatsapp_inbox, user: agent)
+        create(:inbox_member, inbox: voice_inbox, user: agent)
+        InboxMember.where(user: agent, inbox: hidden_inbox).delete_all
+
+        visible_ref = build_ad_referral(build_channel_conv(account, contact, whatsapp_inbox, status: :resolved),
+                                        provider: 'whatsapp', type: 'ctwa_ad', url: 'https://fb.me/visible-ad', received_at: 2.hours.ago)
+        hidden_ref = build_ad_referral(build_channel_conv(account, contact, hidden_inbox, status: :resolved),
+                                       provider: 'instagram', type: 'ig_ad', url: 'https://instagram.com/p/hidden-ad', received_at: 10.minutes.ago)
+        voice_conv = build_channel_conv(account, contact, voice_inbox, status: :open)
+        thread = voice_conv.reload.communication_thread
+        broadcasts = []
+        allow(ActionCableBroadcastJob).to receive(:perform_later) { |members, event, payload| broadcasts << [members, event, payload] }
+
+        described_class.new(communication_thread_id: thread.id, source_conversation_id: voice_conv.id, source_event: 'conversation.updated').perform
+
+        thread_events = broadcasts.select { |_members, event, _payload| event == 'communication_thread.updated' }
+        agent_payload = thread_events.find { |members, _event, _payload| members.include?(agent.pubsub_token) }.last
+        admin_payload = thread_events.find { |members, _event, _payload| members.include?(admin.pubsub_token) }.last
+
+        expect(agent_payload.dig(:meta, :meta_ad_referral)).to include(id: visible_ref.id, communication_thread_id: thread.display_id)
+        expect(admin_payload.dig(:meta, :meta_ad_referral)).to include(id: hidden_ref.id, communication_thread_id: thread.display_id)
+      end
+    end
   end
 end

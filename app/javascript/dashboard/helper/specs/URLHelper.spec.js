@@ -697,4 +697,59 @@ describe('#URL Helpers', () => {
       expect(sanitizeAllowedDomains(input)).toBe('example.com,foo.bar,bar.baz');
     });
   });
+
+  describe('communicationThread scoped routes', () => {
+    it('preserves label, team, and custom folder paths when communicationThread is true', () => {
+      expect(
+        conversationUrl({
+          accountId: 1,
+          id: 42,
+          label: 'первичка',
+          communicationThread: true,
+        })
+      ).toBe('accounts/1/label/первичка/conversations/42?assignee_type=all');
+
+      expect(
+        conversationUrl({
+          accountId: 1,
+          id: 42,
+          teamId: 7,
+          communicationThread: true,
+        })
+      ).toBe('accounts/1/team/7/conversations/42?assignee_type=all');
+
+      expect(
+        conversationUrl({
+          accountId: 1,
+          id: 42,
+          foldersId: 9,
+          communicationThread: true,
+        })
+      ).toBe('accounts/1/custom_view/9/conversations/42?assignee_type=all');
+
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          label: 'первичка',
+          communicationThread: true,
+        })
+      ).toBe('/app/accounts/1/label/первичка?assignee_type=all');
+
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          teamId: 7,
+          communicationThread: true,
+        })
+      ).toBe('/app/accounts/1/team/7?assignee_type=all');
+
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          customViewId: 9,
+          communicationThread: true,
+        })
+      ).toBe('/app/accounts/1/custom_view/9?assignee_type=all');
+    });
+  });
 });

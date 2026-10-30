@@ -97,10 +97,15 @@ const backButtonUrl = computed(() => {
 
   // A thread opened from the list remembers that exact list URL (folder,
   // label, team, inbox and every filter), so "back" restores the same view.
-  if (name === 'communication_thread_conversation') {
+  const openThreadId =
+    name === 'communication_thread_conversation'
+      ? route.params.communication_thread_id
+      : isCommunicationThreadConversation.value &&
+        (route.params.conversation_id || route.params.conversationId);
+  if (openThreadId) {
     const returnPath = conversationListReturnPath({
       accountId: accountId.value,
-      threadId: route.params.communication_thread_id,
+      threadId: openThreadId,
     });
     if (returnPath) return returnPath;
   }
@@ -120,7 +125,8 @@ const backButtonUrl = computed(() => {
     assigneeType: route.query.assignee_type || route.query.assigneeType,
     communicationThread:
       name === 'communication_thread_conversation' ||
-      name === PERSON_DIALOG_ROUTE_NAME,
+      name === PERSON_DIALOG_ROUTE_NAME ||
+      isCommunicationThreadConversation.value,
   });
 });
 

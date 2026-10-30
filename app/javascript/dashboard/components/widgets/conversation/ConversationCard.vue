@@ -493,13 +493,24 @@ const conversationPath = computed(() => {
 // reuse the list that thread was opened from instead of the thread URL.
 const currentListPath = () => {
   const currentRoute = router.currentRoute?.value;
-  if (currentRoute?.name === 'communication_thread_conversation') {
+  const openThreadId =
+    currentRoute?.name === 'communication_thread_conversation'
+      ? currentRoute.params?.communication_thread_id
+      : isCommunicationThreadChat.value &&
+        (currentRoute?.params?.conversation_id ||
+          currentRoute?.params?.conversationId);
+  if (openThreadId) {
     return conversationListReturnPath({
       accountId: accountId.value,
-      threadId: currentRoute.params?.communication_thread_id,
+      threadId: openThreadId,
     });
   }
-  if (currentRoute?.params?.conversation_id) return undefined;
+  if (
+    currentRoute?.params?.conversation_id ||
+    currentRoute?.params?.conversationId
+  ) {
+    return undefined;
+  }
 
   return `${window.location.pathname}${window.location.search}`;
 };

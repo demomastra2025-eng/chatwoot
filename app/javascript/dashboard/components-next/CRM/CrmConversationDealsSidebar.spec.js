@@ -544,3 +544,62 @@ it('reuses loaded CRM references and companies when switching between conversati
   expect(referencesStore.loadFieldDefinitions).toHaveBeenCalledTimes(2);
   expect(CompanyAPI.get).toHaveBeenCalledTimes(1);
 });
+
+it('auto-expands Meta Ad referral when present, on async arrival, and on chat switch while preserving manual collapse', async () => {
+  const chatWithAd = {
+    id: 11963,
+    display_id: 185,
+    meta: {
+      sender: { id: 77, name: 'Customer' },
+      meta_ad_referral: {
+        provider: 'whatsapp',
+        headline: 'Dental Implant Promo',
+        source_url: 'https://fb.me/implant-ad',
+      },
+    },
+  };
+
+  const wrapper = shallowMount(CrmConversationDealsSidebar, {
+    props: { currentChat: chatWithAd },
+    global: { mocks: { $t: key => key } },
+  });
+  await flushPromises();
+
+  const state = wrapper.vm.$.setupState;
+  expect(state.metaAdReferralExpanded).toBe(true);
+
+  const toggleButton = wrapper.get(
+    '[data-test-id="crm-meta-ad-referral"] button'
+  );
+  await toggleButton.trigger('click');
+  expect(state.metaAdReferralExpanded).toBe(false);
+
+  // Switching to a chat without meta_ad_referral resets expanded state
+  await wrapper.setProps({
+    currentChat: {
+      id: 11964,
+      display_id: 186,
+      meta: { sender: { id: 78, name: 'Plain customer' } },
+    },
+  });
+  await flushPromises();
+  expect(state.metaAdReferralExpanded).toBe(false);
+
+  // Async arrival of meta_ad_referral on the currently open chat auto-expands
+  await wrapper.setProps({
+    currentChat: {
+      id: 11964,
+      display_id: 186,
+      meta: {
+        sender: { id: 78, name: 'Plain customer' },
+        meta_ad_referral: {
+          provider: 'instagram',
+          headline: 'Async Ad',
+          source_url: 'https://instagram.com/p/ad',
+        },
+      },
+    },
+  });
+  await flushPromises();
+  expect(state.metaAdReferralExpanded).toBe(true);
+});

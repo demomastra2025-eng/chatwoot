@@ -2339,4 +2339,68 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(response.parsed_body['error']).to include('Invalid communication thread assignee_type')
     end
   end
+
+  describe 'MetaAdReferral resolution across multi-channel threads' do
+    let(:ad_contact) { create(:contact, :with_email, account: account) }
+    let(:whatsapp_inbox) { create(:inbox, account: account) }
+    let(:voice_inbox) { create(:inbox, account: account) }
+    let(:hidden_inbox) { create(:inbox, account: account) }
+    let!(:whatsapp_conv) do
+      create(:conversation, account: account, inbox: whatsapp_inbox, contact: ad_contact,
+                            contact_inbox: create(:contact_inbox, contact: ad_contact, inbox: whatsapp_inbox),
+                            status: :resolved).tap { |conv| conv.update_labels('первичка') }
+    end
+    let!(:hidden_conv) do
+      create(:conversation, account: account, inbox: hidden_inbox, contact: ad_contact,
+                            contact_inbox: create(:contact_inbox, contact: ad_contact, inbox: hidden_inbox), status: :resolved)
+    end
+    let!(:voice_conv) do
+      create(:conversation, account: account, inbox: voice_inbox, contact: ad_contact,
+                            contact_inbox: create(:contact_inbox, contact: ad_contact, inbox: voice_inbox), status: :open)
+    end
+    let!(:latest_accessible_referral) do
+      MetaAdReferral.create!(account: account, inbox: whatsapp_inbox, contact: ad_contact, conversation: whatsapp_conv,
+                             communication_thread_id: nil, provider: 'whatsapp', attribution_type: 'ctwa_ad',
+                             source_url: 'https://fb.me/older-ad', received_at: 2.days.ago)
+      MetaAdReferral.create!(account: account, inbox: whatsapp_inbox, contact: ad_contact, conversation: whatsapp_conv,
+                             communication_thread_id: nil, provider: 'whatsapp', attribution_type: 'ctwa_ad',
+                             source_url: 'https://fb.me/latest-ad', headline: 'Latest WhatsApp Ad', received_at: 1.day.ago)
+    end
+
+    before do
+      create(:inbox_member, user: agent, inbox: whatsapp_inbox)
+      create(:inbox_member, user: agent, inbox: voice_inbox)
+      InboxMember.where(user: agent, inbox: hidden_inbox).delete_all
+      MetaAdReferral.create!(account: account, inbox: hidden_inbox, contact: ad_contact, conversation: hidden_conv,
+                             communication_thread_id: nil, provider: 'instagram', attribution_type: 'ig_ad',
+                             source_url: 'https://instagram.com/p/hidden', received_at: 1.hour.ago)
+    end
+
+    it 'returns the latest accessible MetaAdReferral on index, show, and filter when Voice is latest', :aggregate_failures do
+      thread = voice_conv.reload.communication_thread
+      expect(latest_accessible_referral.reload.communication_thread_id).to be_nil
+
+      get "/api/v1/accounts/#{account.id}/communication_threads",
+          params: { labels: ['первичка'], status: 'open', assignee_type: 'all' }, headers: headers
+      expect(response).to have_http_status(:success)
+      list_payload = response.parsed_body.dig('data', 'payload')
+      expect(list_payload.pluck('id')).to eq([thread.display_id])
+      expect(list_payload.first.dig('meta', 'meta_ad_referral')).to include(
+        'id' => latest_accessible_referral.id, 'source_url' => 'https://fb.me/latest-ad',
+        'conversation_id' => whatsapp_conv.display_id, 'communication_thread_id' => thread.display_id
+      )
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}", headers: headers
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body.dig('meta', 'meta_ad_referral', 'id')).to eq(latest_accessible_referral.id)
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/filter",
+           params: { payload: [
+             { attribute_key: 'status', filter_operator: 'equal_to', values: ['open'], query_operator: 'AND' },
+             { attribute_key: 'labels', filter_operator: 'equal_to', values: ['первичка'], query_operator: nil }
+           ] }, headers: headers, as: :json
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body['payload'].first.dig('meta', 'meta_ad_referral', 'id')).to eq(latest_accessible_referral.id)
+    end
+  end
 end

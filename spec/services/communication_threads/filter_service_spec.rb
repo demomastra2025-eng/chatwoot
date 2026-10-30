@@ -100,4 +100,38 @@ RSpec.describe CommunicationThreads::FilterService do
     expect(result[:communication_threads].map(&:id)).to match_array(labeled_ids + [other_label_thread.id])
     expect(result[:count]).to include(all_count: 4)
   end
+
+  describe 'multi-channel thread where the label sits only on an older resolved conversation' do
+    let!(:multichannel_thread) do
+      contact = create(:contact, account: account)
+      whatsapp_conv = add_conversation(contact, status: :resolved, target_inbox: inbox)
+      whatsapp_conv.update_labels('первичка')
+      voice_inbox = create(:inbox, account: account, enable_auto_assignment: false)
+      create(:inbox_member, user: user, inbox: voice_inbox)
+      voice_conv = create(
+        :conversation,
+        account: account,
+        inbox: voice_inbox,
+        contact: contact,
+        contact_inbox: create(:contact_inbox, contact: contact, inbox: voice_inbox),
+        status: :open
+      )
+      voice_conv.reload.communication_thread
+    end
+
+    it 'matches open status with peer-conversation labels and excludes negated label operators', :aggregate_failures do
+      open_and_labeled = [
+        { attribute_key: 'status', filter_operator: 'equal_to', values: ['open'], query_operator: 'AND' }.with_indifferent_access,
+        labels_condition('equal_to', ['первичка'])
+      ]
+      matched = perform(open_and_labeled)
+      expect(matched[:communication_threads].map(&:id)).to contain_exactly(multichannel_thread.id)
+
+      excluded_by_negation = perform([labels_condition('not_equal_to', ['первичка'])])
+      expect(excluded_by_negation[:communication_threads].map(&:id)).not_to include(multichannel_thread.id)
+
+      excluded_by_not_present = perform([labels_condition('is_not_present', [])])
+      expect(excluded_by_not_present[:communication_threads].map(&:id)).not_to include(multichannel_thread.id)
+    end
+  end
 end

@@ -186,12 +186,17 @@ export const conversationUrl = ({
   unread,
   communicationThread = false,
 }) => {
-  let url = communicationThread
-    ? `accounts/${accountId}/communication_threads/${id}`
-    : `accounts/${accountId}/conversations/${id}`;
   if (communicationThread) {
+    let threadUrl = `accounts/${accountId}/communication_threads/${id}`;
+    if (label) {
+      threadUrl = `accounts/${accountId}/label/${label}/conversations/${id}`;
+    } else if (teamId) {
+      threadUrl = `accounts/${accountId}/team/${teamId}/conversations/${id}`;
+    } else if (foldersId && foldersId !== 0) {
+      threadUrl = `accounts/${accountId}/custom_view/${foldersId}/conversations/${id}`;
+    }
     return appendQueryToPath(
-      url,
+      threadUrl,
       conversationQuery({
         status,
         assigneeType,
@@ -205,6 +210,7 @@ export const conversationUrl = ({
       })
     );
   }
+  let url = `accounts/${accountId}/conversations/${id}`;
   if (activeInbox) {
     url = `accounts/${accountId}/inbox/${activeInbox}/conversations/${id}`;
   } else if (label) {
@@ -252,13 +258,18 @@ export const conversationListPageURL = ({
   unread,
   communicationThread = false,
 }) => {
-  let url = communicationThread
-    ? `accounts/${accountId}/communication_threads`
-    : `accounts/${accountId}/dashboard`;
   if (communicationThread) {
+    let threadListUrl = `accounts/${accountId}/communication_threads`;
+    if (label) {
+      threadListUrl = `accounts/${accountId}/label/${label}`;
+    } else if (teamId) {
+      threadListUrl = `accounts/${accountId}/team/${teamId}`;
+    } else if (customViewId) {
+      threadListUrl = `accounts/${accountId}/custom_view/${customViewId}`;
+    }
     return frontendURL(
       appendQueryToPath(
-        url,
+        threadListUrl,
         conversationQuery({
           status,
           assigneeType,
@@ -273,6 +284,7 @@ export const conversationListPageURL = ({
       )
     );
   }
+  let url = `accounts/${accountId}/dashboard`;
   if (label) {
     url = `accounts/${accountId}/label/${label}`;
   } else if (teamId) {
