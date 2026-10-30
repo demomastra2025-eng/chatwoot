@@ -481,7 +481,13 @@
         "STAGE_FALLBACK": "кезең",
         "TITLE": "Ауыстыру себебі: {stage}"
       },
-      "BULK_ACTIONS": "Жаппай әрекеттер"
+      "BULK_ACTIONS": "Жаппай әрекеттер",
+      "EXPORT": {
+        "BUTTON": "Экспорт",
+        "XLSX": "Excel жүктеу (.xlsx)",
+        "CSV": "CSV жүктеу (.csv)",
+        "ERROR": "Мәмілелерді жүктеу мүмкін болмады"
+      }
     },
     "TASKS": {
       "PANEL_TITLE": "Задачи",

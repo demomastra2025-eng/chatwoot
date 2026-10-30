@@ -290,6 +290,7 @@ Rails.application.routes.draw do
             resources :deals, only: [:index, :show, :create, :update, :destroy] do
               collection do
                 get :appointment_options
+                get :export
                 post :bulk_action
               end
               member do

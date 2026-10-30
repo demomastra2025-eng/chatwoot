@@ -44,6 +44,7 @@ class Search::ConversationLookup
     @scope = access.conversations
     @inbox_ids = access.inbox_ids
     @restricted = access.restricted?
+    @account_user = access.respond_to?(:account_user) ? access.account_user : Current.account_user
     @message_since = message_since
     @capped = false
     @partial = false
@@ -96,7 +97,7 @@ class Search::ConversationLookup
   def by_contact
     return [] unless text_searchable? || Search::PhoneQuery.parse(@text)
 
-    contact_ids = Search::ContactQuery.new(@text).apply(@account.contacts)
+    contact_ids = Search::ContactQuery.new(@text, account_user: @account_user).apply(@account.contacts)
                                       .reorder(Contact.arel_table[:last_activity_at].desc.nulls_last).limit(CONTACT_LIMIT).pluck(:id)
     return [] if contact_ids.empty?
 
@@ -118,8 +119,9 @@ class Search::ConversationLookup
 
     profile = ContactChannelProfile.arel_table
     pattern = Search::QueryText.like_pattern(@text)
-    fields = %i[username display_name identifier email phone_number]
+    fields = %i[username display_name email phone_number]
     condition = fields.map { |field| profile[field].matches(pattern, nil, false) }
+    condition << channel_profile_identifier_arm(profile, pattern)
     phone = Search::PhoneQuery.parse(@text)
     condition << phone.condition(profile) if phone
     matches = condition.reduce { |combined, node| combined.or(node) }
@@ -129,6 +131,14 @@ class Search::ConversationLookup
        AND contact_channel_profiles.inbox_id = conversations.inbox_id
     SQL
     bounded_ids(ids)
+  end
+
+  def channel_profile_identifier_arm(profile, pattern)
+    arm = profile[:identifier].matches(pattern, nil, false)
+    return arm if Contacts::IinPrivacy.can_view_iin?(account_user: @account_user)
+
+    non_iin_guard = Arel.sql("regexp_replace(COALESCE(contact_channel_profiles.identifier, ''), '[[:space:]-]', '', 'g') !~ '^[0-9]{12}$'")
+    Arel::Nodes::Grouping.new(arm.and(non_iin_guard))
   end
 
   def by_social_handle

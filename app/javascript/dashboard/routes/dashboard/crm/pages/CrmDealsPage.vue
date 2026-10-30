@@ -2748,6 +2748,50 @@ const buildDealsFetchParams = page => {
   });
 };
 
+const isExportingDeals = ref(false);
+const selectedExportFormat = ref('');
+const exportFormatOptions = computed(() => [
+  { value: 'xlsx', label: t('CRM.DEALS.EXPORT.XLSX') },
+  { value: 'csv', label: t('CRM.DEALS.EXPORT.CSV') },
+]);
+
+const handleExportDeals = async exportFormat => {
+  if (!exportFormat || isExportingDeals.value) return;
+  selectedExportFormat.value = '';
+  isExportingDeals.value = true;
+  try {
+    const baseParams = buildDealsFetchParams(1);
+    delete baseParams.page;
+    delete baseParams.per_page;
+    delete baseParams.board;
+    delete baseParams.board_sort;
+    delete baseParams.board_sort_directions;
+    delete baseParams.show_closed_stages;
+    const response = await CrmDealsAPI.exportDeals({
+      ...baseParams,
+      export_format: exportFormat,
+    });
+    const ext = exportFormat === 'xlsx' ? 'xlsx' : 'csv';
+    const stamp = new Date().toISOString().slice(0, 10);
+    const blob =
+      response?.data instanceof Blob
+        ? response.data
+        : new Blob([response?.data ?? '']);
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.setAttribute('download', `crm-deals-${stamp}.${ext}`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+  } catch (error) {
+    useAlert(formatErrorMessage(error) || t('CRM.DEALS.EXPORT.ERROR'));
+  } finally {
+    isExportingDeals.value = false;
+  }
+};
+
 // `quiet` refreshes the data in place: no skeleton, no remount of the board and
 // no page-level error. Realtime events use it; the data stays on screen.
 async function loadDeals({
@@ -4184,6 +4228,17 @@ watch(
             :label="selectedBoardSortLabel"
             sub-menu-position="bottom"
             @update:model-value="handleBoardSortChange"
+          />
+          <SelectMenu
+            v-if="canViewDeals"
+            icon="i-lucide-download"
+            :model-value="selectedExportFormat"
+            :options="exportFormatOptions"
+            :label="$t('CRM.DEALS.EXPORT.BUTTON')"
+            :disabled="isExportingDeals || ui.isLoading"
+            sub-menu-position="bottom"
+            data-test="export-deals-menu"
+            @update:model-value="handleExportDeals"
           />
           <Button
             v-if="canManageDeals"

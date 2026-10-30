@@ -10,6 +10,7 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
   def create_patient
     attrs = params.permit(:first_name, :name, :last_name, :middle_name, :iin, :identifier, :birth_date, :gender,
                           :phone, :phone_number, :conversation_id, :conversation_display_id, :idempotency_key)
+    sanitize_create_patient_iin!(attrs)
     card = Scheduling::PatientContactCreationService.new(account: Current.account, contact: @contact, params: attrs).perform
     render_payload(patient_payload(card), status: :created)
   end
@@ -69,7 +70,11 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
     {
       full_name: policy::NAME_KEYS.filter_map { |key| names[key].presence }.join(' '),
       first_name: names['first_name'], last_name: names['last_name'], middle_name: names['middle_name'],
-      identifier: policy.contact_iin(card) || card.identifier.presence || attributes['iin'],
+      identifier: if policy.contact_iin(card).present? || attributes['iin'].present?
+                    Contacts::IinPrivacy.mask_explicit_iin_value(policy.contact_iin(card) || attributes['iin'])
+                  else
+                    Contacts::IinPrivacy.mask_identifier(card.identifier)
+                  end,
       birth_date: patient_birth_date(attributes),
       gender: attributes['medelement_gender'].presence || attributes['gender']
     }
@@ -82,8 +87,17 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
     nil
   end
 
+  def sanitize_create_patient_iin!(attrs)
+    attrs.delete(:iin) if !Contacts::IinPrivacy.can_view_iin? || Contacts::IinPrivacy.masked_placeholder?(attrs[:iin])
+    return unless Contacts::IinPrivacy.masked_placeholder?(attrs[:identifier]) ||
+                  (!Contacts::IinPrivacy.can_view_iin? && Contacts::IinPrivacy.iin_like?(attrs[:identifier]))
+
+    attrs.delete(:identifier)
+  end
+
   def apply_search(scope)
     return scope if params[:search].blank?
+    return scope.none if !Contacts::IinPrivacy.can_view_iin? && Contacts::IinPrivacy.iin_search_query?(params[:search])
 
     Search::ContactQuery.new(params[:search]).apply(scope)
   end
@@ -116,6 +130,13 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
   end
 
   def resolved_identifier(attrs)
+    unless Contacts::IinPrivacy.can_view_iin?
+      return @contact.identifier if @contact&.persisted?
+      return nil if Contacts::IinPrivacy.masked_placeholder?(attrs[:identifier]) || Contacts::IinPrivacy.iin_like?(attrs[:identifier])
+
+      return attrs[:identifier].presence
+    end
+    return @contact&.identifier if Contacts::IinPrivacy.masked_placeholder?(attrs[:identifier])
     return attrs[:identifier].presence if attrs[:identifier].present?
 
     normalized_iin if params.key?(:iin) || @contact&.identifier.blank?
@@ -138,6 +159,8 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
 
   def contact_custom_attributes(contact)
     incoming = params.permit(:birth_date, :gender, :iin, custom_attributes: {})[:custom_attributes] || {}
+    incoming = Contacts::IinPrivacy.strip_masked_iin_entries(incoming)
+    incoming = incoming.except(*Contacts::IinPrivacy::EXPLICIT_IIN_KEYS) unless Contacts::IinPrivacy.can_view_iin?
     Integrations::Medelement::ProviderOwnedAttributesGuard.validate!(
       incoming: incoming,
       current: contact.custom_attributes
@@ -153,6 +176,8 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
   end
 
   def should_assign_custom_iin?(contact, merged)
+    return false unless Contacts::IinPrivacy.can_view_iin?
+
     normalized_iin.present? && (params.key?(:iin) || merged['iin'].present? || !contact.persisted?)
   end
 
@@ -160,7 +185,10 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
     sync_medelement_name_attributes!(contact, merged)
     merged['medelement_birth_date'] = birth_date if birth_date.present? && merged.key?('medelement_birth_date')
     merged['medelement_gender'] = params[:gender] if params[:gender].present? && merged.key?('medelement_gender')
-    merged['medelement_iin'] = normalized_iin if params.key?(:iin) && normalized_iin.present? && merged.key?('medelement_iin')
+    if Contacts::IinPrivacy.can_view_iin? && params.key?(:iin) && !Contacts::IinPrivacy.masked_placeholder?(params[:iin]) &&
+       normalized_iin.present? && merged.key?('medelement_iin')
+      merged['medelement_iin'] = normalized_iin
+    end
   end
 
   def sync_medelement_name_attributes!(contact, merged)
@@ -276,6 +304,8 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
   end
 
   def required_iin_value
+    return existing_contact_iin if !Contacts::IinPrivacy.can_view_iin? || Contacts::IinPrivacy.masked_placeholder?(params[:iin])
+
     params[:iin].presence || existing_contact_iin
   end
 

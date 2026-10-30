@@ -15,9 +15,10 @@ class Search::ContactQuery
 
   # identifier_case_sensitive: the contacts search has always compared identifiers with LIKE (case-sensitive) because
   # identifiers such as external ids differ by case; every other search used ILIKE.
-  def initialize(raw_query, identifier_case_sensitive: false)
+  def initialize(raw_query, identifier_case_sensitive: false, account_user: Current.account_user)
     @text = Search::QueryText.clean(raw_query)
     @identifier_case_sensitive = identifier_case_sensitive
+    @account_user = account_user
   end
 
   def phone_query
@@ -53,8 +54,17 @@ class Search::ContactQuery
       table[:middle_name].matches(pattern, nil, false),
       table[:email].matches(pattern, nil, false),
       table[:phone_number].matches(pattern, nil, false),
-      table[:identifier].matches(pattern, nil, @identifier_case_sensitive)
+      identifier_arm(table, pattern)
     ]
+  end
+
+  def identifier_arm(table, pattern)
+    arm = table[:identifier].matches(pattern, nil, @identifier_case_sensitive)
+    return arm if Contacts::IinPrivacy.can_view_iin?(account_user: @account_user)
+
+    quoted_table = ActiveRecord::Base.connection.quote_table_name(table.name)
+    non_iin_guard = Arel.sql("regexp_replace(COALESCE(#{quoted_table}.identifier, ''), '[[:space:]-]', '', 'g') !~ '^[0-9]{12}$'")
+    Arel::Nodes::Grouping.new(arm.and(non_iin_guard))
   end
 
   def words

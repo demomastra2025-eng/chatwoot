@@ -33,6 +33,7 @@ class CustomRole < ApplicationRecord
     conversation_unassigned_manage
     conversation_participating_manage
     contact_manage
+    contact_iin_view
     crm_deal_view
     crm_deal_manage
     crm_task_view

@@ -2,6 +2,7 @@ export const AVAILABLE_CUSTOM_ROLE_PERMISSIONS = [
   'conversation_manage',
   'conversation_unassigned_manage',
   'contact_manage',
+  'contact_iin_view',
   'crm_deal_view',
   'crm_deal_manage',
   'crm_task_view',
@@ -37,6 +38,7 @@ export const CONVERSATION_PARTICIPATING_PERMISSIONS =
   'conversation_participating_manage';
 
 export const CONTACT_PERMISSIONS = 'contact_manage';
+export const CONTACT_IIN_VIEW_PERMISSION = 'contact_iin_view';
 export const CONTACT_ACCESS_PERMISSIONS = [...ROLES, CONTACT_PERMISSIONS];
 
 export const REPORTS_PERMISSIONS = 'report_manage';

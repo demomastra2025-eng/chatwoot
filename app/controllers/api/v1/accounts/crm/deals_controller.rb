@@ -8,8 +8,17 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     :account, :stage, :company, :originating_conversation, :originating_communication_thread,
     { deal_contacts: :contact }, { tasks: [:status, :task_type, :task_outcome] }
   ].freeze
+  DEAL_EXPORT_PRELOADS = [
+    :account, :pipeline, :stage, :owner, :creator, :team, :company,
+    :originating_conversation, :originating_communication_thread,
+    { deal_contacts: :contact }, :stage_visits
+  ].freeze
+  MAX_EXPORT_ROWS = 10_000
+  XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'.freeze
+  CSV_MIME_TYPE = 'text/csv; charset=utf-8'.freeze
+
   before_action :ensure_crm_deals_enabled!
-  before_action :bootstrap_defaults_if_needed!, only: :index
+  before_action :bootstrap_defaults_if_needed!, only: [:index, :export]
   before_action :bootstrap_defaults!, only: :create
   before_action :set_deal, only: [
     :show, :update, :timeline, :transition_stage, :close_won, :close_lost, :reopen, :reorder, :undo_transition,
@@ -35,6 +44,23 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     render_payload(
       paginated_deals.map { |deal| ::Crm::PayloadBuilder.deal(deal, catalog_snapshot: catalog_snapshot) },
       meta: pagination_meta(deals, paginated_deals)
+    )
+  end
+
+  def export
+    authorize ::Crm::Deal, :export?
+
+    exporter = ::Crm::Deals::ExportService.new(
+      account: Current.account,
+      deals: deals_for_export,
+      account_user: Current.account_user
+    )
+    is_xlsx = requested_export_format == 'xlsx'
+    send_data(
+      is_xlsx ? exporter.to_xlsx : exporter.to_csv,
+      type: is_xlsx ? XLSX_MIME_TYPE : CSV_MIME_TYPE,
+      disposition: 'attachment',
+      filename: "crm-deals-#{Current.account.id}-#{export_filename_stamp}.#{is_xlsx ? 'xlsx' : 'csv'}"
     )
   end
 
@@ -274,6 +300,25 @@ def bulk_action
 end
 
   private
+
+  def deals_for_export
+    deals = filtered_deals
+    deals = visible_board_deals(deals) if board_mode?
+    ::Crm::Deals::ListOrderService.new(
+      scope: deals, page: 1, per_page: MAX_EXPORT_ROWS,
+      sort_by: params[:sort_by], sort_direction: params[:sort_direction]
+    ).perform.except(:preload).preload(*DEAL_EXPORT_PRELOADS).to_a
+  end
+
+  def export_filename_stamp
+    timezone = Time.find_zone!(::Crm::WorkspaceTimezone.resolve(Current.account))
+    Time.current.in_time_zone(timezone).strftime('%Y%m%d-%H%M')
+  end
+
+  def requested_export_format
+    raw = (params[:export_format].presence || params[:format]).to_s.downcase
+    raw == 'xlsx' ? 'xlsx' : 'csv'
+  end
 
   def set_deal
     @deal = policy_scope(::Crm::Deal).preload(*DEAL_PRELOADS).find(params[:id])

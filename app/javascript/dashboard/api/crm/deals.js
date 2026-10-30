@@ -10,6 +10,10 @@ class CrmDealsAPI extends ApiClient {
     return axios.get(this.url, { params });
   }
 
+  exportDeals(params = {}) {
+    return axios.get(`${this.url}/export`, { params, responseType: 'blob' });
+  }
+
   appointmentOptions(params = {}) {
     return axios.get(`${this.url}/appointment_options`, { params });
   }

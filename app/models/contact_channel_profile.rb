@@ -114,7 +114,7 @@ class ContactChannelProfile < ApplicationRecord
       channel_type: channel_type,
       provider: provider,
       source_id: source_id,
-      identifier: identifier
+      identifier: Contacts::IinPrivacy.mask_identifier(identifier)
     }
   end
 
@@ -131,7 +131,9 @@ class ContactChannelProfile < ApplicationRecord
   end
 
   def serialized_profile_data
-    self.class.sanitize_profile_data(provider: provider, profile_data: profile_data)
+    Contacts::IinPrivacy.mask_attributes_hash(
+      self.class.sanitize_profile_data(provider: provider, profile_data: profile_data)
+    )
   end
 
   def attached_avatar_url

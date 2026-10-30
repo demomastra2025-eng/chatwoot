@@ -228,11 +228,11 @@ class Contact < ApplicationRecord
   # events. The profile of the given contact_inbox is carried apart, as channel_profile, for per-channel places.
   def push_event_data(contact_inbox: nil)
     data = {
-      additional_attributes: additional_attributes,
-      custom_attributes: custom_attributes,
+      additional_attributes: Contacts::IinPrivacy.mask_attributes_hash(additional_attributes),
+      custom_attributes: Contacts::IinPrivacy.mask_attributes_hash(custom_attributes),
       email: email,
       id: id,
-      identifier: identifier,
+      identifier: Contacts::IinPrivacy.mask_identifier(identifier),
       last_name: last_name,
       middle_name: middle_name,
       name: display_full_name,
@@ -728,10 +728,11 @@ class Contact < ApplicationRecord
   def dispatch_destroy_event
     # Pass serialized data instead of ActiveRecord object to avoid DeserializationError
     # when the async EventDispatcherJob runs after the contact has been deleted
+    contact_payload = Current.without_account_user { push_event_data.merge(account_id: account_id) }
     Rails.configuration.dispatcher.dispatch(
       CONTACT_DELETED,
       Time.zone.now,
-      contact_data: push_event_data.merge(account_id: account_id)
+      contact_data: contact_payload
     )
   end
 
