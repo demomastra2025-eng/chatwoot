@@ -71,6 +71,10 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  selectedPatient: {
+    type: Object,
+    default: null,
+  },
 });
 
 const emit = defineEmits(['close']);
@@ -121,13 +125,14 @@ const {
 const metaAdReferralExpanded = ref(false);
 
 const currentDealSourceContext = computed(() =>
-  buildCrmDealSourceContext(props.currentChat)
+  buildCrmDealSourceContext(props.currentChat, props.selectedPatient)
 );
 const currentSidebarContextKey = computed(() => {
   const context = currentDealSourceContext.value;
   return JSON.stringify({
     accountId: Number(accountId.value) || null,
     contactId: Number(context.contactId) || null,
+    isSecondaryPatientSelected: Boolean(context.isSecondaryPatientSelected),
     conversationId: Number(props.currentChat?.id) || null,
     originatingCommunicationThreadId:
       Number(context.originatingCommunicationThreadId) || null,
@@ -469,6 +474,7 @@ const loadDeals = async context => {
   const lookupParams = buildCrmDealLookupParams(context);
   const originLookupParams = buildCrmDealOriginLookupParams(context);
   const shouldFetchOrigin =
+    !context?.isSecondaryPatientSelected &&
     originLookupParams &&
     JSON.stringify(originLookupParams) !== JSON.stringify(lookupParams);
 

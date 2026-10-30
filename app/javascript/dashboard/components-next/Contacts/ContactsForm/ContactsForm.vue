@@ -143,12 +143,14 @@ const countryOptions = computed(() =>
 );
 
 const editDetailsForm = computed(() =>
-  Object.keys(FORM_CONFIG).map(key => ({
-    key,
-    placeholder: t(
-      `CONTACTS_LAYOUT.CARD.EDIT_DETAILS_FORM.FORM.${key}.PLACEHOLDER`
-    ),
-  }))
+  Object.keys(FORM_CONFIG)
+    .filter(key => !(props.isDetailsView && key === 'PHONE_NUMBER'))
+    .map(key => ({
+      key,
+      placeholder: t(
+        `CONTACTS_LAYOUT.CARD.EDIT_DETAILS_FORM.FORM.${key}.PLACEHOLDER`
+      ),
+    }))
 );
 
 const socialProfilesForm = computed(() =>

@@ -478,7 +478,14 @@ class Telephony::AiVoice::ToolDispatchService
                  scope.where(id: arguments['contact_id'])
                elsif query.present?
                  normalized = Contacts::PhoneNumberNormalizer.normalize(query)
-                 scope.where('phone_number IN (?) OR name ILIKE ?', [query, normalized].compact.uniq, "%#{query}%")
+                 phones = [query, normalized].compact.uniq
+                 scope.where(
+                   'contacts.phone_number IN (:phones) OR contacts.name ILIKE :q OR EXISTS (' \
+                   'SELECT 1 FROM contact_phones cp WHERE cp.contact_id = contacts.id ' \
+                   'AND cp.account_id = contacts.account_id AND cp.phone_number IN (:phones) AND cp.shared = FALSE)',
+                   phones: phones,
+                   q: "%#{query}%"
+                 )
                else
                  scope.none
                end
@@ -502,7 +509,8 @@ class Telephony::AiVoice::ToolDispatchService
       )
     end
 
-    contact = account.contacts.find_or_initialize_by(phone_number: phone_number)
+    contact = Contacts::PhoneLookup.find_owner_contact(account, phone_number) ||
+              account.contacts.find_or_initialize_by(phone_number: phone_number)
     contact.name = arguments['name'].presence || phone_number if contact.name.blank? || arguments['name'].present?
     contact.email = arguments['email'] if arguments['email'].present?
     contact.save!

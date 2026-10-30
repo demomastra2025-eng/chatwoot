@@ -29,11 +29,23 @@ class Integrations::Medelement::PatientContactDeduplicationService
   end
 
   def phone_owner
-    @phone_owner ||= account.contacts.lock.find_by(phone_number: provider_phone)
+    return @phone_owner if defined?(@phone_owner)
+
+    owner = Contacts::PhoneLookup.find_owner_contact(account, provider_phone)
+    @phone_owner = owner ? account.contacts.lock.find_by(id: owner.id) : nil
+  end
+
+  def linked_contact_owned_phones
+    @linked_contact_owned_phones ||= if linked_contact.blank?
+                                       []
+                                     else
+                                       owned = linked_contact.contact_phones.where(shared: false).pluck(:phone_number)
+                                       ([linked_contact_phone] + owned).compact_blank.uniq
+                                     end
   end
 
   def linked_contact_owns_provider_phone?
-    linked_contact.present? && (phone_owner&.id == linked_contact.id || provider_phones.include?(linked_contact_phone))
+    linked_contact.present? && (phone_owner&.id == linked_contact.id || provider_phones.intersect?(linked_contact_owned_phones))
   end
 
   def resolve_owned_phone
@@ -45,7 +57,7 @@ class Integrations::Medelement::PatientContactDeduplicationService
   end
 
   def resolve_free_phone
-    return result(linked_contact) if linked_contact && (linked_contact.phone_number.blank? || provider_phones.include?(linked_contact_phone))
+    return result(linked_contact) if linked_contact && (linked_contact.phone_number.blank? || provider_phones.intersect?(linked_contact_owned_phones))
     return result(identity_contact || account.contacts.new) if linked_contact.blank?
 
     move_linked_patient_to(account.contacts.new(phone_number: provider_phone))

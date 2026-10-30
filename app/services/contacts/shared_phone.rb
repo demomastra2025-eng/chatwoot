@@ -102,7 +102,16 @@ module Contacts::SharedPhone # rubocop:disable Metrics/ModuleLength
   def primary_holder(account_id:, phone:, excluding: [])
     return if phone.blank?
 
-    Contact.where(account_id: account_id, phone_number: phone).where.not(id: Array(excluding).compact).order(:id).first
+    excluded = Array(excluding).compact
+    direct = Contact.where(account_id: account_id, phone_number: phone).where.not(id: excluded).order(:id).first
+    return direct if direct
+    return unless ContactPhone.table_exists?
+
+    Contact.joins(:contact_phones)
+           .where(account_id: account_id, contact_phones: { phone_number: phone, primary: false, shared: false })
+           .where.not(id: excluded)
+           .order('contacts.id ASC')
+           .first
   end
 
   # ContactInboxes whose channel source is exactly this number (the number's chat identities):

@@ -749,5 +749,41 @@
     "KEEP_BADGE": "Keep",
     "MERGE_INTO_BADGE": "Merge",
     "SWAP_DIRECTION": "Swap primary contact"
+  },
+  "CONTACT_PHONES": {
+    "TITLE": "Phone numbers",
+    "ADD_BUTTON": "Add phone",
+    "LABEL_PLACEHOLDER": "Label (Activ, Beeline, work)",
+    "PHONE_PLACEHOLDER": "+7 701 000 00 00",
+    "SAVE": "Save",
+    "CANCEL": "Cancel",
+    "SET_PRIMARY": "Make primary",
+    "REMOVE": "Remove phone",
+    "UNLINK_SHARED": "Unlink shared phone",
+    "COPY": "Copy phone number",
+    "OWNER_PREFIX": "Phone owner:",
+    "SHARED_WITH_PREFIX": "Linked cards:",
+    "CONFLICT_TITLE": "Number {phone} already belongs to",
+    "CONFLICT_HINT": "The channel thread stays in the owner’s single chat without duplicating dialogs.",
+    "LINK_SHARED_BUTTON": "Link as shared family phone",
+    "ADDED_SUCCESS": "Phone number added",
+    "SHARED_LINKED_SUCCESS": "Shared family phone linked",
+    "PRIMARY_UPDATED_SUCCESS": "Primary phone updated",
+    "REMOVED_SUCCESS": "Phone number removed",
+    "ERROR_GENERIC": "Failed to update phone number",
+    "BADGES": {
+      "PRIMARY_SHORT": "primary",
+      "SECONDARY_SHORT": "alt",
+      "SHARED_SHORT": "shared"
+    }
+  },
+  "PATIENT_TABS": {
+    "PRIMARY_SUFFIX": "primary",
+    "OVERFLOW_MORE": "+{count} more",
+    "ADD_FAMILY_CARD": "Add family card",
+    "MODAL_TITLE": "New family card",
+    "MODAL_DESCRIPTION": "This card will appear as a tab above this chat without creating an empty duplicate dialog.",
+    "OWN_PHONE_OPTIONAL": "Personal phone (optional, if they have their own)",
+    "CREATE_SUCCESS": "Family card created"
   }
 }

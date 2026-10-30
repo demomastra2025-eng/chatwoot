@@ -32,7 +32,11 @@ class Whatsapp::IdentifierSyncService
   def update_contact_phone_number(phone_number)
     phone_number = phone_number.presence
     return if phone_number.blank? || synced_contact.phone_number.present?
-    return if synced_contact.account.contacts.where(phone_number: phone_number).where.not(id: synced_contact.id).exists?
+    return if Contacts::PhoneLookup.owned_by_other_contact?(
+      synced_contact.account,
+      phone_number,
+      excluding_contact_id: synced_contact.id
+    )
 
     synced_contact.update!(phone_number: phone_number)
   rescue ActiveRecord::RecordInvalid => e

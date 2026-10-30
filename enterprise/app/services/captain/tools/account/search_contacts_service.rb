@@ -12,7 +12,7 @@ class Captain::Tools::Account::SearchContactsService < Captain::Tools::Account::
   def execute(email: nil, phone_number: nil, name: nil, limit: nil)
     contacts = (patient_scope ? patient_scope.contacts : account.contacts).order(:name, :id)
     contacts = contacts.where(email: email) if email.present?
-    contacts = contacts.where(phone_number: phone_number) if phone_number.present?
+    contacts = filter_by_phone(contacts, phone_number) if phone_number.present?
     contacts = contacts.where('LOWER(name) ILIKE ?', "%#{name.to_s.downcase}%") if name.present?
 
     total_count = contacts.count
@@ -34,6 +34,11 @@ class Captain::Tools::Account::SearchContactsService < Captain::Tools::Account::
   end
 
   private
+
+  def filter_by_phone(contacts, phone_number)
+    matched_ids = Contacts::PhoneLookup.matching_contact_ids(account, phone_number)
+    contacts.where(phone_number: phone_number).or(contacts.where(id: matched_ids))
+  end
 
   def contact_payload(contact)
     {

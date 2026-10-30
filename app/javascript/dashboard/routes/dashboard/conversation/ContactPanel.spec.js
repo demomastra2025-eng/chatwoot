@@ -249,7 +249,7 @@ describe('ContactPanel patient context', () => {
     ).toEqual(patient);
   });
 
-  it('shows tabs for two people and fetches contact details for selected patient', async () => {
+  it('omits sidebar patient dropdown, fetches selected patient contact, and switches ContactInfo to active card', async () => {
     const wrapper = await mountPanel({
       ...common,
       patientEntry: { loaded: true, patients: [patient, { id: 85 }] },
@@ -257,15 +257,19 @@ describe('ContactPanel patient context', () => {
     expect(
       wrapper
         .findComponent({ name: 'SchedulingConversationPatientSelector' })
-        .props('showChips')
-    ).toBe(true);
+        .exists()
+    ).toBe(false);
     expect(
-      wrapper
-        .findComponent({ name: 'SchedulingConversationPatientSelector' })
-        .props('showAddButton')
+      wrapper.findComponent({ name: 'SchedulingPatientDetails' }).exists()
     ).toBe(false);
     expect(mocks.dispatch).toHaveBeenCalledWith('contacts/show', { id: 84 });
+    expect(
+      wrapper.findComponent({ name: 'ContactInfo' }).props('contact').id
+    ).toBe(84);
     await wrapper.setProps({ selectedPatient: { id: 85 } });
     expect(mocks.dispatch).toHaveBeenCalledWith('contacts/show', { id: 85 });
+    expect(
+      wrapper.findComponent({ name: 'ContactInfo' }).props('contact').id
+    ).toBe(85);
   });
 });

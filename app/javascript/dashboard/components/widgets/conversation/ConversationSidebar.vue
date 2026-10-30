@@ -1,15 +1,12 @@
 <script setup>
-import { computed, defineAsyncComponent, watch } from 'vue';
+import { computed, defineAsyncComponent } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useMapGetter } from 'dashboard/composables/store';
-import { resolveChatContactId } from 'dashboard/components-next/CRM/crmConversationDealContext';
-import SchedulingConversationPatientSelector from 'dashboard/components-next/Scheduling/SchedulingConversationPatientSelector.vue';
 import {
-  conversationPatientContextKey,
-  isDraftPatientContextKey,
   patientContactId,
-  useConversationPatientContextStore,
+  patientDisplayName,
 } from 'dashboard/stores/scheduling/patientContext';
+import { useConversationPatientContext } from 'dashboard/composables/useConversationPatientContext';
 import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 import { vOnClickOutside } from '@vueuse/components';
 
@@ -35,83 +32,42 @@ const SchedulingConversationAppointmentsSidebar = defineAsyncComponent(
     )
 );
 
-const { activePanel, appointmentsAvailable, closePanel, isSmallScreen } =
+const { activePanel, closePanel, isSmallScreen } =
   useConversationSidepanelAvailability();
 const route = useRoute();
 const router = useRouter();
 const currentAccountId = useMapGetter('getCurrentAccountId');
 const currentUser = useMapGetter('getCurrentUser');
 const getContact = useMapGetter('contacts/getContact');
-const patientStore = useConversationPatientContextStore();
-const patientContextKey = computed(() =>
-  conversationPatientContextKey({
-    accountId: currentAccountId.value,
-    userId: currentUser.value?.id,
-    chat: props.currentChat,
-  })
-);
-const chatContactId = computed(() => resolveChatContactId(props.currentChat));
-const taskContact = computed(
-  () =>
-    getContact.value?.(chatContactId.value) ||
-    props.currentChat?.meta?.sender ||
-    {}
-);
 // A person without a dialog: only what belongs to the person is shown, nothing that belongs to a conversation.
 const isDraft = computed(() => Boolean(props.currentChat?.is_draft));
-const patientContextEnabled = computed(
-  () =>
-    appointmentsAvailable.value &&
-    ['contact', 'appointments'].includes(activePanel.value)
-);
-const patientEntry = computed(
-  () => patientStore.contexts[patientContextKey.value] || null
-);
-const selectedPatient = computed(() =>
-  patientStore.selectedPatient(patientContextKey.value)
-);
-// The first message made the dialog: the card of the patient that was selected for the empty dialog stays selected.
-watch(patientContextKey, (newKey, oldKey) => {
-  if (!newKey || !oldKey || newKey === oldKey) return;
-  if (!isDraftPatientContextKey(oldKey) || isDraftPatientContextKey(newKey)) {
-    return;
-  }
-  const previous = patientStore.selectedPatient(oldKey);
-  if (previous?.id) patientStore.rememberSelection(newKey, previous.id);
+const {
+  patientStore,
+  chatContactId,
+  patientContextKey,
+  patientContextEnabled,
+  patientEntry,
+  selectedPatient,
+} = useConversationPatientContext({
+  chat: computed(() => props.currentChat),
+  accountId: currentAccountId,
+  userId: computed(() => currentUser.value?.id),
+  route,
+  router,
 });
-watch(
-  () => [
-    patientContextKey.value,
-    chatContactId.value,
-    patientContextEnabled.value,
-    route.query?.patientContactId,
-    route.query?.patientChatContactId,
-  ],
-  () => {
-    if (
-      !patientContextEnabled.value ||
-      !patientContextKey.value ||
-      !chatContactId.value
-    )
-      return;
-    const requestedPatient = route.query?.patientContactId;
-    const hasPatientRequest =
-      Number(route.query?.patientChatContactId) ===
-        Number(chatContactId.value) && Boolean(requestedPatient);
-    if (hasPatientRequest) {
-      patientStore.rememberSelection(patientContextKey.value, requestedPatient);
-      if (patientEntry.value?.loaded)
-        patientStore.select(patientContextKey.value, requestedPatient);
-      const query = { ...route.query };
-      delete query.patientContactId;
-      delete query.patientChatContactId;
-      router.replace({ query });
-    }
-    patientStore.load(patientContextKey.value, chatContactId.value, {
-      force: hasPatientRequest,
-    });
-  },
-  { immediate: true }
+const activeTaskContactId = computed(
+  () => patientContactId(selectedPatient.value?.id) || chatContactId.value
+);
+const taskContact = computed(
+  () =>
+    getContact?.value?.(activeTaskContactId.value) ||
+    (activeTaskContactId.value &&
+    Number(activeTaskContactId.value) !== Number(chatContactId.value)
+      ? {
+          id: activeTaskContactId.value,
+          name: patientDisplayName(selectedPatient.value),
+        }
+      : props.currentChat?.meta?.sender || {})
 );
 const clickOutsideOptions = {
   ignore: [
@@ -223,6 +179,7 @@ const closeAppointmentsSidebar = () => closePanel();
       <div v-if="activeTab === 'deals' && !isDraft" class="min-w-0 flex-1">
         <CrmConversationDealsSidebar
           :current-chat="currentChat"
+          :selected-patient="selectedPatient"
           @close="closeDealsSidebar"
         />
       </div>
@@ -244,23 +201,7 @@ const closeAppointmentsSidebar = () => closePanel();
           "
           @patient-bound="refreshBoundPatient"
           @close="closeAppointmentsSidebar"
-        >
-          <template #after-header>
-            <SchedulingConversationPatientSelector
-              v-if="
-                patientContextEnabled &&
-                patientContextKey &&
-                ((patientEntry?.patients?.length || 0) > 1 ||
-                  patientEntry?.error)
-              "
-              chips
-              :show-chips="(patientEntry?.patients?.length || 0) > 1"
-              :context-key="patientContextKey"
-              :entry="patientEntry"
-              :conversation-display-id="patientConversationDisplayId"
-            />
-          </template>
-        </SchedulingConversationAppointmentsSidebar>
+        />
       </div>
     </div>
   </div>

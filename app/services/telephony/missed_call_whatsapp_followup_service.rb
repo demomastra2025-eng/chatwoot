@@ -138,6 +138,9 @@ class Telephony::MissedCallWhatsappFollowupService
   end
 
   def ensure_contact!(phone_number)
+    existing = Contacts::PhoneLookup.find_owner_contact(account, phone_number, default_country: 'KZ')
+    return existing if existing
+
     account.contacts.find_or_create_by!(phone_number: phone_number) do |record|
       record.name = phone_number if record.name.blank?
     end

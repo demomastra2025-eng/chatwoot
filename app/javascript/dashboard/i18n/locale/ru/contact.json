@@ -749,5 +749,41 @@
     "KEEP_BADGE": "Останется",
     "MERGE_INTO_BADGE": "Вольётся",
     "SWAP_DIRECTION": "Поменять основной контакт"
+  },
+  "CONTACT_PHONES": {
+    "TITLE": "Телефоны",
+    "ADD_BUTTON": "Добавить номер",
+    "LABEL_PLACEHOLDER": "Метка (Activ, Beeline, рабочий)",
+    "PHONE_PLACEHOLDER": "+7 701 000 00 00",
+    "SAVE": "Сохранить",
+    "CANCEL": "Отмена",
+    "SET_PRIMARY": "Сделать основным",
+    "REMOVE": "Удалить номер",
+    "UNLINK_SHARED": "Отвязать общий номер",
+    "COPY": "Скопировать номер",
+    "OWNER_PREFIX": "Владелец номера:",
+    "SHARED_WITH_PREFIX": "Связанные карточки:",
+    "CONFLICT_TITLE": "Номер {phone} уже принадлежит контакту",
+    "CONFLICT_HINT": "Канальный тред остаётся в одном чате владельца номера без дублирования диалогов.",
+    "LINK_SHARED_BUTTON": "Привязать как общий семейный номер",
+    "ADDED_SUCCESS": "Номер добавлен",
+    "SHARED_LINKED_SUCCESS": "Общий семейный номер привязан",
+    "PRIMARY_UPDATED_SUCCESS": "Основной номер обновлён",
+    "REMOVED_SUCCESS": "Номер удалён",
+    "ERROR_GENERIC": "Не удалось обновить номер телефона",
+    "BADGES": {
+      "PRIMARY_SHORT": "осн.",
+      "SECONDARY_SHORT": "доп.",
+      "SHARED_SHORT": "общий"
+    }
+  },
+  "PATIENT_TABS": {
+    "PRIMARY_SUFFIX": "осн.",
+    "OVERFLOW_MORE": "Ещё +{count}",
+    "ADD_FAMILY_CARD": "Добавить семейную карточку",
+    "MODAL_TITLE": "Новая семейная карточка",
+    "MODAL_DESCRIPTION": "Карточка будет доступна вкладкой над этим чатом без создания пустого дублирующего диалога.",
+    "OWN_PHONE_OPTIONAL": "Личный телефон (необязательно, если есть свой)",
+    "CREATE_SUCCESS": "Семейная карточка создана"
   }
 }

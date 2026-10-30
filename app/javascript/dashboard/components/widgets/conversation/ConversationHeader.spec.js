@@ -1,9 +1,13 @@
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
+import { createPinia } from 'pinia';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import chatlistRu from 'dashboard/i18n/locale/ru/chatlist.json';
+import contactRu from 'dashboard/i18n/locale/ru/contact.json';
 import conversationRu from 'dashboard/i18n/locale/ru/conversation.json';
 import schedulingRu from 'dashboard/i18n/locale/ru/scheduling.json';
+import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
+import { useConversationPatientContextStore } from 'dashboard/stores/scheduling/patientContext';
 import ConversationHeader from './ConversationHeader.vue';
 import { rememberConversationListReturnPath } from 'dashboard/helper/conversationListReturnContext';
 import { snoozedReopenTime } from 'dashboard/helper/snoozeHelpers';
@@ -17,8 +21,13 @@ const routeState = vi.hoisted(() => ({
 }));
 const listUrl = vi.hoisted(() => vi.fn());
 
+vi.mock('dashboard/api/scheduling/contacts', () => ({
+  default: { patients: vi.fn(), createPatient: vi.fn() },
+}));
+
 const translationMessages = {
   ...chatlistRu,
+  ...contactRu,
   ...conversationRu,
   ...schedulingRu,
 };
@@ -28,7 +37,14 @@ const resolveTranslation = key =>
     .split('.')
     .reduce((value, segment) => value?.[segment], translationMessages);
 
-const translate = key => resolveTranslation(key) || key;
+const translate = (key, params = {}) => {
+  const raw = resolveTranslation(key);
+  if (!raw) return key;
+  return Object.entries(params).reduce(
+    (str, [k, v]) => str.replace(`{${k}}`, v),
+    raw
+  );
+};
 
 vi.mock('../BackButton.vue', () => ({
   default: { template: '<div data-test-id="back-button" />' },
@@ -73,6 +89,7 @@ vi.mock('vuex', () => ({
         return storeState.selectedChat;
       },
       getCurrentAccountId: 530,
+      getCurrentUser: { id: 9 },
       'contacts/getContact': () => ({
         id: 1,
         name: 'Аружан',
@@ -100,7 +117,7 @@ vi.mock('dashboard/composables/useConversationSidepanelAvailability', () => ({
   }),
 }));
 
-const mountComponent = props =>
+const mountComponent = (props, globalOverrides = {}) =>
   mount(ConversationHeader, {
     props: {
       chat: {
@@ -130,6 +147,7 @@ const mountComponent = props =>
       ...props,
     },
     global: {
+      ...globalOverrides,
       mocks: { $t: translate },
       stubs: {
         Avatar: { template: '<div data-test-id="avatar" />' },
@@ -394,6 +412,98 @@ describe('ConversationHeader', () => {
       expect(listUrl).toHaveBeenCalledWith(
         expect.objectContaining({ communicationThread: true })
       );
+    });
+  });
+
+  describe('global patient card switcher tabs above chat (Stage 2)', () => {
+    it('renders zero extra patient tabs when only 1 card exists on the dialog', async () => {
+      SchedulingContactsAPI.patients.mockResolvedValue({
+        data: {
+          payload: {
+            contact_id: 1,
+            patients: [
+              {
+                id: 1,
+                account_id: 530,
+                communication_contact_id: 1,
+                full_name: 'Аружан',
+                is_primary_holder: true,
+              },
+            ],
+          },
+        },
+      });
+      const pinia = createPinia();
+      const wrapper = mountComponent({}, { plugins: [pinia] });
+      await flushPromises();
+
+      expect(
+        wrapper.find('[data-test-id="conversation-patient-tabs"]').exists()
+      ).toBe(false);
+    });
+
+    it('renders native pill tabs, overflow menu for >3 cards, and globally switches selectedPatient on click', async () => {
+      SchedulingContactsAPI.patients.mockResolvedValue({
+        data: {
+          payload: {
+            contact_id: 1,
+            patients: [
+              {
+                id: 1,
+                account_id: 530,
+                communication_contact_id: 1,
+                full_name: 'Алия Серикова',
+                is_primary_holder: true,
+              },
+              {
+                id: 2,
+                account_id: 530,
+                communication_contact_id: 1,
+                full_name: 'Серик',
+              },
+              {
+                id: 3,
+                account_id: 530,
+                communication_contact_id: 1,
+                full_name: 'Амина',
+              },
+              {
+                id: 4,
+                account_id: 530,
+                communication_contact_id: 1,
+                full_name: 'Димаш',
+              },
+            ],
+          },
+        },
+      });
+      const pinia = createPinia();
+      const wrapper = mountComponent({}, { plugins: [pinia] });
+      await flushPromises();
+
+      const tabsBar = wrapper.get('[data-test-id="conversation-patient-tabs"]');
+      expect(tabsBar.text()).toContain('Алия Серикова');
+      expect(tabsBar.text()).toContain('осн.');
+      expect(
+        wrapper.get('[data-test-id="patient-tabs-overflow-trigger"]').text()
+      ).toContain('Ещё +1');
+
+      const store = useConversationPatientContextStore(pinia);
+      await wrapper
+        .get('[data-test-id="conversation-patient-tab-2"]')
+        .trigger('click');
+      expect(store.selectedPatient('530:9:thread:7')?.id).toBe(2);
+
+      await wrapper
+        .get('[data-test-id="patient-tabs-overflow-trigger"]')
+        .trigger('click');
+      await wrapper
+        .get('[data-test-id="patient-tabs-overflow-option-4"]')
+        .trigger('click');
+      expect(store.selectedPatient('530:9:thread:7')?.id).toBe(4);
+      expect(
+        wrapper.find('[data-test-id="conversation-patient-tab-4"]').exists()
+      ).toBe(true);
     });
   });
 });

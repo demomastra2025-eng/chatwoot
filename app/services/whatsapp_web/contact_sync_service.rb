@@ -566,10 +566,10 @@ class WhatsappWeb::ContactSyncService
 
   def conflicting_existing_contact
     @conflicting_existing_contact ||= begin
-      account_contacts = channel.inbox.account.contacts
+      account = channel.inbox.account
 
-      account_contacts.find_by(identifier: contact_identifier).presence ||
-        account_contacts.find_by(phone_number: phone_number).presence
+      account.contacts.find_by(identifier: contact_identifier).presence ||
+        Contacts::PhoneLookup.find_owner_contact(account, phone_number)
     end
   end
 
@@ -649,9 +649,8 @@ class WhatsappWeb::ContactSyncService
   def conflicting_phone_contact(phone_number:, excluding_contact_id:)
     return if phone_number.blank?
 
-    channel.inbox.account.contacts
-           .where.not(id: excluding_contact_id)
-           .find_by(phone_number: phone_number)
+    owner = Contacts::PhoneLookup.find_owner_contact(channel.inbox.account, phone_number)
+    owner unless owner&.id == excluding_contact_id
   end
 
   # Returns true only when the records were merged; the locked re-check can still refuse (a provider write that

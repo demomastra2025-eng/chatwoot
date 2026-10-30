@@ -20,6 +20,10 @@ else
   json.owner nil
 end
 json.phone_number resource.phone_number
+json.phone_numbers Contacts::PhonePresenter.present(
+  resource,
+  include_related: defined?(@contact) && @contact&.id == resource.id
+)
 json.blocked resource.blocked
 json.notifications_muted resource.notifications_muted
 json.identifier Contacts::IinPrivacy.mask_identifier(resource.identifier)

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_29_183000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_30_010000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1441,6 +1441,25 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_29_183000) do
     t.index ["inbox_id"], name: "index_contact_inboxes_on_inbox_id"
     t.index ["pubsub_token"], name: "index_contact_inboxes_on_pubsub_token", unique: true
     t.index ["source_id"], name: "index_contact_inboxes_on_source_id"
+  end
+
+  create_table "contact_phones", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "contact_id", null: false
+    t.string "phone_number", null: false
+    t.boolean "primary", default: false, null: false
+    t.boolean "shared", default: false, null: false
+    t.bigint "owner_contact_id"
+    t.string "label"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "account_id, \"right\"(regexp_replace((phone_number)::text, '[^0-9]'::text, ''::text, 'g'::text), 10)", name: "index_contact_phones_on_account_id_and_phone_national"
+    t.index "regexp_replace((phone_number)::text, '[^0-9]'::text, ''::text, 'g'::text) gin_trgm_ops", name: "index_contact_phones_on_phone_digits_trgm", using: :gin
+    t.index ["account_id", "contact_id", "phone_number"], name: "idx_contact_phones_unique_contact_phone", unique: true
+    t.index ["account_id", "phone_number"], name: "idx_contact_phones_unique_owner_per_account", unique: true, where: "(shared = false)"
+    t.index ["account_id", "phone_number"], name: "index_contact_phones_on_account_and_phone"
+    t.index ["contact_id"], name: "index_contact_phones_on_contact_id"
+    t.index ["owner_contact_id"], name: "index_contact_phones_on_owner_contact_id", where: "(owner_contact_id IS NOT NULL)"
   end
 
   create_table "contacts", id: :serial, force: :cascade do |t|
@@ -4210,6 +4229,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_29_183000) do
   add_foreign_key "contact_channel_profiles", "contact_inboxes"
   add_foreign_key "contact_channel_profiles", "contacts"
   add_foreign_key "contact_channel_profiles", "inboxes"
+  add_foreign_key "contact_phones", "contacts", column: "owner_contact_id", on_delete: :nullify
+  add_foreign_key "contact_phones", "contacts", on_delete: :cascade
   add_foreign_key "contacts", "users", column: "owner_id"
   add_foreign_key "conversation_status_transitions", "accounts"
   add_foreign_key "conversation_status_transitions", "conversations"

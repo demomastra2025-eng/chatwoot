@@ -42,7 +42,21 @@ class Search::ContactQuery
     nodes.concat(name_part_matches(table, text)) if Search::QueryText.yo?(text)
     nodes << all_words_in_name_parts(table) if words.size > 1
     nodes << phone_query.condition(table) if phone_query
+    nodes << contact_phones_arm(table) if ContactPhone.table_exists?
     nodes
+  end
+
+  def contact_phones_arm(table)
+    cp = ContactPhone.arel_table
+    phone_match = cp[:phone_number].matches(Search::QueryText.like_pattern(text), nil, false)
+    phone_match = phone_match.or(phone_query.condition(cp)) if phone_query
+    subquery = cp.project(Arel.sql('1'))
+                 .where(
+                   cp[:contact_id].eq(table[:id])
+                     .and(cp[:account_id].eq(table[:account_id]))
+                     .and(Arel::Nodes::Grouping.new(phone_match))
+                 )
+    Arel::Nodes::Exists.new(subquery)
   end
 
   # The original first-name, e-mail, phone and identifier predicates remain unchanged; surname and middle name are additive.

@@ -201,9 +201,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   def sanitize_iin_write_params(raw)
     raw.delete(:identifier) if raw.key?(:identifier) && Contacts::IinPrivacy.masked_placeholder?(raw[:identifier])
     raw[:custom_attributes] = Contacts::IinPrivacy.strip_masked_iin_entries(raw[:custom_attributes]) if raw[:custom_attributes].present?
-    if raw[:additional_attributes].present?
-      raw[:additional_attributes] = Contacts::IinPrivacy.strip_masked_iin_entries(raw[:additional_attributes])
-    end
+    raw[:additional_attributes] = Contacts::IinPrivacy.strip_masked_iin_entries(raw[:additional_attributes]) if raw[:additional_attributes].present?
     return raw if Contacts::IinPrivacy.can_view_iin?
 
     raw.delete(:identifier) if raw.key?(:identifier) && protected_identifier_write?(raw[:identifier])
@@ -307,13 +305,13 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def fetch_contact
-    contact_scope = Current.account.contacts
+    contact_scope = Current.account.contacts.includes(:contact_phones)
     contact_scope = contact_scope.includes(*contact_includes) if @include_contact_inboxes
     @contact = contact_scope.find(params[:id])
   end
 
   def contact_includes
-    includes = [:owner, { avatar_attachment: [:blob] }]
+    includes = [:owner, :contact_phones, { avatar_attachment: [:blob] }]
     return includes unless @include_contact_inboxes
 
     includes << :contact_channel_profiles

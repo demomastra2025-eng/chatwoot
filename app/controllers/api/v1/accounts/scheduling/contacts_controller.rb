@@ -1,4 +1,5 @@
 class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Scheduling::BaseController
+  skip_before_action :ensure_scheduling_enabled!, only: [:patients, :create_patient]
   before_action :set_contact, only: [:update, :patients, :create_patient]
   before_action :ensure_patient_context_employee!, only: [:patients, :create_patient]
 
@@ -49,14 +50,21 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
   private
 
   def patient_payload(card)
-    selectable = Contacts::SharedPhone.card_identity_recorded?(card) || Scheduling::IinValidator.valid?(card.custom_attributes.to_h['medelement_iin'])
+    shared_cp_phone = card.contact_phones.find(&:shared?)&.phone_number
+    selectable = Contacts::SharedPhone.card_identity_recorded?(card) ||
+                 Scheduling::IinValidator.valid?(card.custom_attributes.to_h['medelement_iin']) ||
+                 (card.id != @contact.id && shared_cp_phone.present?)
     owner_patient = card.id == @contact.id && card.custom_attributes.to_h['medelement_patient_code'].present? &&
                     Scheduling::IinValidator.valid?(card.custom_attributes.to_h['medelement_iin'])
-    phone = card.phone_number.presence || Contacts::SharedPhone.share_of(card)&.phone
+    phone = card.phone_number.presence || Contacts::SharedPhone.share_of(card)&.phone || shared_cp_phone
     Scheduling::PayloadBuilder.contact(card).merge(patient_identity_payload(card)).merge(
       patient_contact_id: selectable && (card.id != @contact.id || owner_patient) ? card.id : nil,
       selectable_patient: selectable,
+      is_primary_holder: card.id == @contact.id,
+      notifications_muted: card.notifications_muted,
       phone: phone,
+      phone_number: card.phone_number,
+      phone_numbers: Contacts::PhonePresenter.present(card, include_related: true),
       communication_contact_id: @contact.id
     )
   end
@@ -348,7 +356,11 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
 
   def validate_unique_phone!
     return if @contact.phone_number.blank? || !@contact.will_save_change_to_phone_number?
-    return unless Current.account.contacts.where(phone_number: @contact.phone_number).where.not(id: @contact.id).exists?
+    return unless Contacts::PhoneLookup.owned_by_other_contact?(
+      Current.account,
+      @contact.phone_number,
+      excluding_contact_id: @contact.id
+    )
 
     raise Scheduling::Error.new(code: 'CONTACT_PHONE_TAKEN', message: 'Phone number belongs to another contact', status: :conflict)
   end

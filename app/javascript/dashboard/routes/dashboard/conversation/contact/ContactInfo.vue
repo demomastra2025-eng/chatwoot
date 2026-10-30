@@ -13,7 +13,10 @@ import ContactMergeModal from 'dashboard/modules/contact/ContactMergeModal.vue';
 import InlineInput from 'dashboard/components-next/inline-input/InlineInput.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import ToggleSwitch from 'dashboard/components-next/switch/Switch.vue';
+import ContactPhonesManager from 'dashboard/components-next/Contacts/ContactPhonesManager.vue';
+import FamilyPatientCardModal from 'dashboard/components/widgets/conversation/FamilyPatientCardModal.vue';
 import CrmCustomFieldDescriptionHint from 'dashboard/components-next/CRM/CrmCustomFieldDescriptionHint.vue';
+import { resolveOptionalPatientStore } from 'dashboard/composables/useConversationPatientContext';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
 import {
   maskedPatientIin,
@@ -54,6 +57,8 @@ export default {
     Avatar,
     SocialIcons,
     ContactMergeModal,
+    ContactPhonesManager,
+    FamilyPatientCardModal,
     InlineInput,
     NextButton,
     ToggleSwitch,
@@ -63,24 +68,33 @@ export default {
       type: Object,
       default: () => ({}),
     },
+    communicationContact: {
+      type: Object,
+      default: null,
+    },
     showAvatar: {
       type: Boolean,
       default: true,
     },
     selectedPatient: { type: Object, default: null },
     patientContextEnabled: { type: Boolean, default: false },
+    patientContextKey: { type: String, default: '' },
+    patientEntry: { type: Object, default: null },
+    patientConversationDisplayId: { type: [Number, String], default: null },
   },
   emits: ['panelClose'],
   setup() {
     const { isAdmin } = useAdmin();
     return {
       isAdmin,
+      optionalPatientStore: resolveOptionalPatientStore(),
     };
   },
   data() {
     return {
       showEditModal: false,
       showDeleteModal: false,
+      showFamilyCardModal: false,
       isEditingName: false,
       editName: '',
       isSavingContactMute: false,
@@ -249,7 +263,27 @@ export default {
       }
       return trimmed;
     },
+    hasStructuredPhoneNumbers() {
+      const list = this.contact?.phone_numbers ?? this.contact?.phoneNumbers;
+      return Array.isArray(list);
+    },
+    primaryHeaderPhone() {
+      if (this.contact?.phone_number) return this.contact.phone_number;
+      if (this.contact?.phoneNumber) return this.contact.phoneNumber;
+      const list = this.contact?.phone_numbers ?? this.contact?.phoneNumbers;
+      if (Array.isArray(list) && list.length > 0) {
+        return list[0]?.phone_number || list[0]?.phoneNumber || '';
+      }
+      return '';
+    },
+    isPrimaryHeaderPhoneEditable() {
+      return Boolean(this.contact?.phone_number || this.contact?.phoneNumber);
+    },
+    channelOwnerContactId() {
+      return this.communicationContact?.id ?? this.contact?.id;
+    },
     dossierSecondaryPhones() {
+      if (this.hasStructuredPhoneNumbers) return '';
       const raw = this.customAttributes?.secondary_phones;
       if (raw === undefined || raw === null) return '';
       if (Array.isArray(raw)) {
@@ -371,10 +405,10 @@ export default {
     contactConversations() {
       return this.$store.getters[
         'contactConversations/getAllConversationsByContactId'
-      ](this.contact.id);
+      ](this.channelOwnerContactId);
     },
     contactConversationsLoaded() {
-      const contactId = Number(this.contact?.id);
+      const contactId = Number(this.channelOwnerContactId);
 
       if (!contactId) {
         return false;
@@ -403,7 +437,7 @@ export default {
     },
   },
   watch: {
-    'contact.id': {
+    channelOwnerContactId: {
       handler(id) {
         if (!id) return;
         this.$store.dispatch('contacts/fetchContactableInbox', id);
@@ -497,6 +531,13 @@ export default {
       await copyTextToClipboard(this.dossierIin);
       useAlert(this.$t('CONTACT_PANEL.COPY_SUCCESSFUL'));
     },
+    refreshPatientContextStore() {
+      const store = this.optionalPatientStore;
+      if (!store || !this.patientContextKey) return;
+      const entry = store.contexts?.[this.patientContextKey];
+      if (!entry?.contactId) return;
+      store.load(this.patientContextKey, entry.contactId, { force: true });
+    },
     async toggleContactNotificationsMuted(nextValue) {
       if (!this.contact?.id || this.isSavingContactMute) return;
       const muted = Boolean(nextValue);
@@ -506,6 +547,7 @@ export default {
           id: this.contact.id,
           notifications_muted: muted,
         });
+        this.refreshPatientContextStore();
         useAlert(
           muted
             ? this.$t('CONTACT_PANEL.NOTIFICATIONS_MUTED_SAVED')
@@ -552,6 +594,7 @@ export default {
           id: contactId,
           ...attrs,
         });
+        this.refreshPatientContextStore();
         useAlert(this.$t('CONTACT_FORM.SUCCESS_MESSAGE'));
         await this.$store.dispatch('contacts/fetchContactableInbox', contactId);
       } catch (error) {
@@ -618,14 +661,14 @@ export default {
               {{ contact.name }}
             </h3>
             <ContactInfoRow
-              v-if="contact.phone_number"
-              :href="`tel:${contact.phone_number}`"
-              :value="contact.phone_number"
+              v-if="primaryHeaderPhone"
+              :href="`tel:${primaryHeaderPhone}`"
+              :value="primaryHeaderPhone"
               icon="call"
               emoji="📞"
               :title="$t('CONTACT_PANEL.PHONE_NUMBER')"
               show-copy
-              editable
+              :editable="isPrimaryHeaderPhoneEditable"
               @update="value => onFieldUpdate('phone_number', value)"
             />
             <button
@@ -714,7 +757,36 @@ export default {
             :aria-label="$t('CONTACT_PANEL.OPEN_PROFILE')"
             @click="openContactProfile"
           />
+          <NextButton
+            v-if="patientContextKey"
+            v-tooltip.top-end="$t('PATIENT_TABS.ADD_FAMILY_CARD')"
+            data-testid="contact-add-family-card-button"
+            icon="i-lucide-user-plus"
+            slate
+            faded
+            sm
+            :disabled="
+              Boolean(
+                patientEntry && (!patientEntry.loaded || patientEntry.saving)
+              )
+            "
+            :aria-label="$t('PATIENT_TABS.ADD_FAMILY_CARD')"
+            @click="showFamilyCardModal = true"
+          />
         </div>
+        <ContactPhonesManager
+          v-if="contact && contact.id"
+          :contact="contact"
+          :patient-context-key="patientContextKey"
+          compact
+        />
+        <FamilyPatientCardModal
+          v-if="patientContextKey"
+          v-model:show="showFamilyCardModal"
+          :context-key="patientContextKey"
+          :contact-id="communicationContact?.id || contact?.id"
+          :conversation-display-id="patientConversationDisplayId"
+        />
         <div
           data-testid="contact-dossier"
           data-test="contact-dossier"

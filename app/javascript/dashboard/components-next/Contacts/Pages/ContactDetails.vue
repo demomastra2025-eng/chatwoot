@@ -11,6 +11,7 @@ import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import ContactLabels from 'dashboard/components-next/Contacts/ContactLabels/ContactLabels.vue';
+import ContactPhonesManager from 'dashboard/components-next/Contacts/ContactPhonesManager.vue';
 import ContactsForm from 'dashboard/components-next/Contacts/ContactsForm/ContactsForm.vue';
 import ConfirmContactDeleteDialog from 'dashboard/components-next/Contacts/ContactsForm/ConfirmContactDeleteDialog.vue';
 import Policy from 'dashboard/components/policy.vue';
@@ -145,6 +146,29 @@ watch(
   }
 );
 
+watch(
+  () => [
+    props.selectedContact?.phoneNumber,
+    props.selectedContact?.phone_number,
+    props.selectedContact?.phoneNumbers,
+    props.selectedContact?.phone_numbers,
+  ],
+  () => {
+    if (!props.selectedContact) return;
+    const nextPhone =
+      props.selectedContact.phoneNumber ?? props.selectedContact.phone_number;
+    const nextPhones =
+      props.selectedContact.phoneNumbers ?? props.selectedContact.phone_numbers;
+    if (nextPhone !== undefined) {
+      contactData.value.phoneNumber = nextPhone;
+    }
+    if (nextPhones !== undefined) {
+      contactData.value.phoneNumbers = nextPhones;
+    }
+  },
+  { deep: true }
+);
+
 const buildSourcePreference = (source, preferenceType = 'name') => {
   const resolvedSource =
     preferenceType === 'avatar'
@@ -245,7 +269,14 @@ const handleFormUpdate = updatedData => {
 
 const updateContact = async () => {
   try {
-    const { customAttributes, ...basicContactData } = contactData.value;
+    const {
+      customAttributes,
+      phoneNumber: _phoneNumber,
+      phone_number: _rawPhoneNumber,
+      phoneNumbers: _phoneNumbers,
+      phone_numbers: _rawPhoneNumbers,
+      ...basicContactData
+    } = contactData.value;
     const updatedContact = await store.dispatch(
       'contacts/update',
       basicContactData
@@ -442,6 +473,10 @@ const openChannelConversation = channelIdentity => {
         </div>
 
         <ContactLabels :contact-id="selectedContact?.id" />
+        <ContactPhonesManager
+          :contact="contactData"
+          @updated="applyUpdatedContact"
+        />
         <div
           data-testid="contact-details-notifications-muted-row"
           class="flex w-full items-center justify-between gap-3 rounded-xl bg-n-solid-2 px-4 py-3 outline outline-1 outline-n-container"

@@ -1713,6 +1713,9 @@ class Telephony::EventsIngestionService
   end
 
   def ensure_call_contact!(account, phone_number)
+    existing = Contacts::PhoneLookup.find_owner_contact(account, phone_number, default_country: 'KZ')
+    return existing if existing
+
     account.contacts.find_or_create_by!(phone_number: phone_number) do |record|
       record.name = phone_number if record.name.blank?
     end
@@ -2750,7 +2753,8 @@ class Telephony::EventsIngestionService
     phone_number ||= resolved_to_number if resolved_direction == 'outbound'
     return if phone_number.blank?
 
-    account.contacts.find_by(phone_number: normalize_phone_number(phone_number) || phone_number)
+    normalized = normalize_phone_number(phone_number) || phone_number
+    Contacts::PhoneLookup.find_owner_contact(account, normalized, default_country: 'KZ')
   end
 
   def resolve_inbox(account, call_session = nil)

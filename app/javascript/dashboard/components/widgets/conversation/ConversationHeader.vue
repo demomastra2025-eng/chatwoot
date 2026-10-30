@@ -5,8 +5,10 @@ import { useStore } from 'vuex';
 import { useElementSize } from '@vueuse/core';
 import BackButton from '../BackButton.vue';
 import MoreActions from './MoreActions.vue';
+import ConversationPatientTabs from './ConversationPatientTabs.vue';
 import Avatar from 'next/avatar/Avatar.vue';
 import SLACardLabel from './components/SLACardLabel.vue';
+import { useConversationPatientContext } from 'dashboard/composables/useConversationPatientContext';
 import wootConstants from 'dashboard/constants/globals';
 import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 import { conversationListPageURL } from 'dashboard/helper/URLHelper';
@@ -47,6 +49,7 @@ const { isAWebWidgetInbox } = useInbox();
 
 const currentChat = computed(() => store.getters.getSelectedChat);
 const accountId = computed(() => store.getters.getCurrentAccountId);
+const currentUser = computed(() => store.getters.getCurrentUser);
 
 const chatMetadata = computed(() => props.chat.meta || {});
 // A person without a dialog has no status and nothing to assign or resolve yet.
@@ -54,6 +57,23 @@ const isDraft = computed(() => isDraftDialog(props.chat));
 const isCommunicationThreadConversation = computed(() =>
   isCommunicationThread(props.chat)
 );
+const { patientContextKey, patientEntry, hasMultiplePatients } =
+  useConversationPatientContext({
+    chat: computed(() => props.chat),
+    accountId,
+    userId: computed(() => currentUser.value?.id),
+    route,
+  });
+const patientConversationDisplayId = computed(() => {
+  if (isDraft.value) return null;
+  const activeChannel = props.chat?.active_reply_channel || {};
+  return (
+    activeChannel.conversation_id ||
+    props.chat?.active_reply_channel_conversation_id ||
+    props.chat?.conversation_ids?.[0] ||
+    (isCommunicationThreadConversation.value ? null : props.chat?.id)
+  );
+});
 const communicationChannels = computed(() =>
   getUniqueCommunicationChannels(props.chat?.channels || [])
 );
@@ -348,152 +368,166 @@ const statusMeta = computed(() => {
 </script>
 
 <template>
-  <div
-    ref="conversationHeader"
-    class="flex flex-col gap-3 items-center justify-between flex-1 w-full min-w-0 xl:flex-row px-3 pt-3 pb-2 h-24 xl:h-12"
-  >
+  <div ref="conversationHeader" class="flex w-full min-w-0 shrink-0 flex-col">
     <div
-      class="flex items-center justify-start w-full xl:w-auto max-w-full min-w-0 xl:flex-1"
+      class="flex flex-col gap-3 items-center justify-between w-full min-w-0 xl:flex-row px-3 pt-3 pb-2"
+      :class="
+        hasMultiplePatients ? 'min-h-[6rem] xl:min-h-[3rem]' : 'h-24 xl:h-12'
+      "
     >
-      <BackButton
-        v-if="showBackButton"
-        :back-url="backButtonUrl"
-        class="ltr:mr-2 rtl:ml-2"
-      />
-      <Avatar
-        :name="contactDisplayName"
-        :src="currentContact.thumbnail"
-        :size="32"
-        :status="currentContact.availability_status"
-        hide-offline-status
-        rounded-full
-      />
       <div
-        class="flex flex-col items-start min-w-0 ml-2 overflow-hidden rtl:ml-0 rtl:mr-2"
+        class="flex items-center justify-start w-full xl:w-auto max-w-full min-w-0 xl:flex-1"
       >
+        <BackButton
+          v-if="showBackButton"
+          :back-url="backButtonUrl"
+          class="ltr:mr-2 rtl:ml-2"
+        />
+        <Avatar
+          :name="contactDisplayName"
+          :src="currentContact.thumbnail"
+          :size="32"
+          :status="currentContact.availability_status"
+          hide-offline-status
+          rounded-full
+        />
         <div
-          data-test-id="conversation-header-title-row"
-          class="flex flex-row items-center max-w-full gap-1.5 p-0 m-0"
+          class="flex flex-col items-start min-w-0 ml-2 overflow-hidden rtl:ml-0 rtl:mr-2"
         >
-          <span
-            class="min-w-0 truncate text-sm font-medium leading-tight text-n-slate-12"
-          >
-            {{ contactDisplayName }}
-          </span>
-          <span
-            v-if="!isDraft"
-            class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium leading-4 whitespace-nowrap"
-            :class="statusMeta.className"
-          >
-            {{ statusMeta.label }}
-          </span>
           <div
-            v-if="hasHeaderContext"
-            data-test-id="conversation-header-context-row"
-            class="inline-flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap"
+            data-test-id="conversation-header-title-row"
+            class="flex flex-row items-center max-w-full gap-1.5 p-0 m-0"
           >
-            <button
-              v-if="primaryDealStage"
-              type="button"
-              data-test-id="conversation-header-crm-stages"
-              :title="dealsSummaryTooltip"
-              class="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-n-alpha-1 px-2 py-0.5 text-[11px] font-medium leading-4 text-n-slate-12 ring-1 ring-inset ring-n-slate-6/20 transition-colors hover:bg-n-alpha-2 whitespace-nowrap cursor-pointer"
-              @click="openDealsSidebar"
+            <span
+              class="min-w-0 truncate text-sm font-medium leading-tight text-n-slate-12"
             >
-              <span
-                class="i-lucide-briefcase-business size-3 shrink-0 text-n-slate-10"
-              />
-              <span
-                data-test-id="conversation-header-crm-stage-dot"
-                class="size-2 shrink-0 rounded-full"
-                :style="{ backgroundColor: primaryDealStage.color }"
-              />
-              <span class="max-w-36 truncate text-n-slate-12">
-                {{ primaryDealStage.name }}
-              </span>
-              <span
-                v-if="extraDealsCount > 0"
-                data-test-id="conversation-header-crm-stages-more"
-                class="shrink-0 text-[10px] font-semibold text-n-slate-10 tabular-nums"
-              >
-                {{ `+${extraDealsCount}` }}
-              </span>
-            </button>
-            <button
-              v-if="primaryAppointmentStatus"
-              type="button"
-              data-test-id="conversation-header-appointment-statuses"
-              :title="appointmentsSummaryTooltip"
-              class="inline-flex min-w-0 items-center gap-1 rounded-full bg-n-alpha-1 px-2 py-0.5 text-[11px] font-medium leading-4 text-n-slate-12 ring-1 ring-inset ring-n-slate-6/20 transition-colors hover:bg-n-alpha-2 whitespace-nowrap cursor-pointer"
-              @click="openAppointmentsSidebar"
+              {{ contactDisplayName }}
+            </span>
+            <span
+              v-if="!isDraft"
+              class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium leading-4 whitespace-nowrap"
+              :class="statusMeta.className"
             >
-              <span
-                class="inline-flex min-w-0 items-center gap-1"
-                :class="appointmentStatusClass(primaryAppointmentStatus.status)"
+              {{ statusMeta.label }}
+            </span>
+            <div
+              v-if="hasHeaderContext"
+              data-test-id="conversation-header-context-row"
+              class="inline-flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap"
+            >
+              <button
+                v-if="primaryDealStage"
+                type="button"
+                data-test-id="conversation-header-crm-stages"
+                :title="dealsSummaryTooltip"
+                class="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-n-alpha-1 px-2 py-0.5 text-[11px] font-medium leading-4 text-n-slate-12 ring-1 ring-inset ring-n-slate-6/20 transition-colors hover:bg-n-alpha-2 whitespace-nowrap cursor-pointer"
+                @click="openDealsSidebar"
               >
                 <span
-                  class="size-3 shrink-0"
-                  :class="
-                    appointmentStatusIcon(primaryAppointmentStatus.status)
-                  "
+                  class="i-lucide-briefcase-business size-3 shrink-0 text-n-slate-10"
                 />
-                <span class="max-w-36 truncate">
-                  {{ appointmentStatusLabel(primaryAppointmentStatus.status) }}
+                <span
+                  data-test-id="conversation-header-crm-stage-dot"
+                  class="size-2 shrink-0 rounded-full"
+                  :style="{ backgroundColor: primaryDealStage.color }"
+                />
+                <span class="max-w-36 truncate text-n-slate-12">
+                  {{ primaryDealStage.name }}
                 </span>
-              </span>
-              <span
-                v-if="extraAppointmentsCount > 0"
-                data-test-id="conversation-header-appointment-statuses-more"
-                class="shrink-0 text-[10px] font-semibold text-n-slate-10 tabular-nums"
+                <span
+                  v-if="extraDealsCount > 0"
+                  data-test-id="conversation-header-crm-stages-more"
+                  class="shrink-0 text-[10px] font-semibold text-n-slate-10 tabular-nums"
+                >
+                  {{ `+${extraDealsCount}` }}
+                </span>
+              </button>
+              <button
+                v-if="primaryAppointmentStatus"
+                type="button"
+                data-test-id="conversation-header-appointment-statuses"
+                :title="appointmentsSummaryTooltip"
+                class="inline-flex min-w-0 items-center gap-1 rounded-full bg-n-alpha-1 px-2 py-0.5 text-[11px] font-medium leading-4 text-n-slate-12 ring-1 ring-inset ring-n-slate-6/20 transition-colors hover:bg-n-alpha-2 whitespace-nowrap cursor-pointer"
+                @click="openAppointmentsSidebar"
               >
-                {{ `+${extraAppointmentsCount}` }}
-              </span>
-            </button>
+                <span
+                  class="inline-flex min-w-0 items-center gap-1"
+                  :class="
+                    appointmentStatusClass(primaryAppointmentStatus.status)
+                  "
+                >
+                  <span
+                    class="size-3 shrink-0"
+                    :class="
+                      appointmentStatusIcon(primaryAppointmentStatus.status)
+                    "
+                  />
+                  <span class="max-w-36 truncate">
+                    {{
+                      appointmentStatusLabel(primaryAppointmentStatus.status)
+                    }}
+                  </span>
+                </span>
+                <span
+                  v-if="extraAppointmentsCount > 0"
+                  data-test-id="conversation-header-appointment-statuses-more"
+                  class="shrink-0 text-[10px] font-semibold text-n-slate-10 tabular-nums"
+                >
+                  {{ `+${extraAppointmentsCount}` }}
+                </span>
+              </button>
+            </div>
+            <fluent-icon
+              v-if="!isHMACVerified"
+              v-tooltip="$t('CONVERSATION.UNVERIFIED_SESSION')"
+              size="14"
+              class="text-n-amber-10 my-0 mx-0 min-w-[14px] flex-shrink-0"
+              icon="warning"
+            />
+            <span v-if="isSnoozed" class="font-medium text-xs text-n-amber-10">
+              {{ snoozedDisplayText }}
+            </span>
           </div>
-          <fluent-icon
-            v-if="!isHMACVerified"
-            v-tooltip="$t('CONVERSATION.UNVERIFIED_SESSION')"
-            size="14"
-            class="text-n-amber-10 my-0 mx-0 min-w-[14px] flex-shrink-0"
-            icon="warning"
-          />
-          <span v-if="isSnoozed" class="font-medium text-xs text-n-amber-10">
-            {{ snoozedDisplayText }}
-          </span>
-        </div>
 
-        <div
-          v-if="visibleContactIdentities.length"
-          data-test-id="conversation-header-identity-row"
-          class="flex items-center gap-2 overflow-hidden text-xs conversation--header--actions text-ellipsis whitespace-nowrap"
-        >
-          <span
-            v-for="identity in visibleContactIdentities"
-            :key="identity"
-            class="inline-flex items-center py-0.5 text-n-slate-11 whitespace-nowrap"
+          <div
+            v-if="visibleContactIdentities.length"
+            data-test-id="conversation-header-identity-row"
+            class="flex items-center gap-2 overflow-hidden text-xs conversation--header--actions text-ellipsis whitespace-nowrap"
           >
-            {{ identity }}
-          </span>
-          <span
-            v-if="hiddenCommunicationContactIdentityCount"
-            class="inline-flex items-center px-2 py-0.5 rounded-full bg-n-alpha-1 text-n-slate-10 whitespace-nowrap"
-          >
-            {{ `+${hiddenCommunicationContactIdentityCount}` }}
-          </span>
+            <span
+              v-for="identity in visibleContactIdentities"
+              :key="identity"
+              class="inline-flex items-center py-0.5 text-n-slate-11 whitespace-nowrap"
+            >
+              {{ identity }}
+            </span>
+            <span
+              v-if="hiddenCommunicationContactIdentityCount"
+              class="inline-flex items-center px-2 py-0.5 rounded-full bg-n-alpha-1 text-n-slate-10 whitespace-nowrap"
+            >
+              {{ `+${hiddenCommunicationContactIdentityCount}` }}
+            </span>
+          </div>
         </div>
       </div>
+      <div
+        class="flex flex-row items-center justify-start xl:justify-end flex-shrink-0 gap-2 w-full xl:w-auto header-actions-wrap"
+      >
+        <SLACardLabel
+          v-if="hasSlaPolicyId"
+          :chat="chat"
+          show-extended-info
+          :parent-width="width"
+          class="hidden md:flex"
+        />
+        <MoreActions v-if="!isDraft" :conversation-id="currentChat.id" />
+      </div>
     </div>
-    <div
-      class="flex flex-row items-center justify-start xl:justify-end flex-shrink-0 gap-2 w-full xl:w-auto header-actions-wrap"
-    >
-      <SLACardLabel
-        v-if="hasSlaPolicyId"
-        :chat="chat"
-        show-extended-info
-        :parent-width="width"
-        class="hidden md:flex"
-      />
-      <MoreActions v-if="!isDraft" :conversation-id="currentChat.id" />
-    </div>
+    <ConversationPatientTabs
+      v-if="hasMultiplePatients"
+      :context-key="patientContextKey"
+      :entry="patientEntry"
+      :conversation-display-id="patientConversationDisplayId"
+    />
   </div>
 </template>

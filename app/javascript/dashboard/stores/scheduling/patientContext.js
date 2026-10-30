@@ -95,13 +95,20 @@ export const patientAgeLabel = (patient, t, locale = 'ru') => {
   return t(`SCHEDULING.PATIENT_CONTEXT.AGE_${category}`, { age });
 };
 
+const isPatientIinCandidate = value =>
+  /^(?:\d{12}|[•*]{6,}\d{0,4})$/.test(String(value || '').trim());
+
 export const maskedPatientIin = patient => {
   const attributes =
     patient?.custom_attributes || patient?.customAttributes || {};
-  const value = String(
-    patient?.identifier || attributes.iin || attributes.medelement_iin || ''
-  );
-  return value ? `•••• ${value.slice(-4)}` : '';
+  const candidate = [
+    attributes.medelement_iin,
+    attributes.iin,
+    patient?.identifier,
+  ]
+    .map(item => String(item || '').trim())
+    .find(item => isPatientIinCandidate(item));
+  return candidate ? `•••• ${candidate.slice(-4)}` : '';
 };
 
 export const hasProviderPatientIdentity = patient => {

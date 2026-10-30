@@ -194,8 +194,12 @@ class Integrations::Medelement::ContactResolverService
   end
 
   def demographic_candidates(email:, phones:)
-    candidate_ids = account.contacts.where(phone_number: phones).pluck(:id) if phones.present?
-    candidate_ids = Array(candidate_ids)
+    candidate_ids = if phones.present?
+                      account.contacts.where(phone_number: phones).pluck(:id) +
+                        ContactPhone.where(account_id: account.id, shared: false, phone_number: phones).pluck(:contact_id)
+                    else
+                      []
+                    end
     candidate_ids.concat(account.contacts.where('LOWER(email) = ?', email.downcase).pluck(:id)) if email.present?
 
     account.contacts.where(id: candidate_ids.uniq).to_a

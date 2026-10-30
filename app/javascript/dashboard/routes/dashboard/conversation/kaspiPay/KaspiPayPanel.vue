@@ -76,11 +76,20 @@ const shouldRenderPanel = computed(
 );
 
 const defaultPhone = computed(
-  () => props.selectedPatient?.phone_number || props.contact?.phone_number || ''
+  () =>
+    props.selectedPatient?.phone_number ||
+    props.selectedPatient?.phone ||
+    props.contact?.phone_number ||
+    props.contact?.phone_numbers?.[0]?.phone_number ||
+    ''
 );
 
 const activeContactId = computed(
-  () => props.selectedPatient?.contact_id || props.contact?.id || null
+  () =>
+    props.selectedPatient?.id ||
+    props.selectedPatient?.contact_id ||
+    props.contact?.id ||
+    null
 );
 
 const hasPendingPayments = computed(() =>

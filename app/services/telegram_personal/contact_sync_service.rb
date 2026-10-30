@@ -280,7 +280,7 @@ class TelegramPersonal::ContactSyncService
   end
 
   def merge_phone_contact!
-    target_contact = inbox.account.contacts.find_by(phone_number: normalized_phone_number)
+    target_contact = Contacts::PhoneLookup.find_owner_contact(inbox.account, normalized_phone_number)
     return if target_contact.blank? || target_contact.id == @contact.id
     return unless Contacts::PatientIdentityMergeGuard.allowed?(source_contact: @contact, target_contact: target_contact)
 

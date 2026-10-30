@@ -655,7 +655,7 @@ class Telephony::AiVoice::ContextBuilder
                  elsif caller_number.blank? || account.blank?
                    nil
                  else
-                   account.contacts.find_by(phone_number: caller_number) || account.contacts.find_by(phone_number: normalized_caller_number)
+                   Contacts::PhoneLookup.find_owner_contact(account, caller_number)
                  end
   end
 

@@ -746,5 +746,41 @@
       "DISMISS_SUCCESS": "Жұп бөлек контактілер ретінде белгіленді",
       "DISMISS_ERROR": "Контакт жұбын жасыру мүмкін болмады"
     }
+  },
+  "CONTACT_PHONES": {
+    "TITLE": "Телефондар",
+    "ADD_BUTTON": "Нөмір қосу",
+    "LABEL_PLACEHOLDER": "Белгі (Activ, Beeline, жұмыс)",
+    "PHONE_PLACEHOLDER": "+7 701 000 00 00",
+    "SAVE": "Сақтау",
+    "CANCEL": "Болдырмау",
+    "SET_PRIMARY": "Негізгі ету",
+    "REMOVE": "Нөмірді өшіру",
+    "UNLINK_SHARED": "Ортақ нөмірді ажырату",
+    "COPY": "Нөмірді көшіру",
+    "OWNER_PREFIX": "Нөмір иесі:",
+    "SHARED_WITH_PREFIX": "Байланысты карточкалар:",
+    "CONFLICT_TITLE": "{phone} нөмірі басқа контактіге тиесілі:",
+    "CONFLICT_HINT": "Арна тізбегі диалогтарды қосарламай, нөмір иесінің бір чатында қалады.",
+    "LINK_SHARED_BUTTON": "Ортақ отбасылық нөмір ретінде байланыстыру",
+    "ADDED_SUCCESS": "Нөмір қосылды",
+    "SHARED_LINKED_SUCCESS": "Ортақ отбасылық нөмір байланыстырылды",
+    "PRIMARY_UPDATED_SUCCESS": "Негізгі нөмір жаңартылды",
+    "REMOVED_SUCCESS": "Нөмір өшірілді",
+    "ERROR_GENERIC": "Телефон нөмірін жаңарту мүмкін болмады",
+    "BADGES": {
+      "PRIMARY_SHORT": "нег.",
+      "SECONDARY_SHORT": "қос.",
+      "SHARED_SHORT": "ортақ"
+    }
+  },
+  "PATIENT_TABS": {
+    "PRIMARY_SUFFIX": "нег.",
+    "OVERFLOW_MORE": "Тағы +{count}",
+    "ADD_FAMILY_CARD": "Отбасылық карточка қосу",
+    "MODAL_TITLE": "Жаңа отбасылық карточка",
+    "MODAL_DESCRIPTION": "Карточка бос қосарланған диалог құрмай-ақ осы чаттың үстінде қойынды ретінде қолжетімді болады.",
+    "OWN_PHONE_OPTIONAL": "Жеке телефон (міндетті емес, өз нөмірі болса)",
+    "CREATE_SUCCESS": "Отбасылық карточка құрылды"
   }
 }

@@ -43,15 +43,37 @@ export const resolveChatContact = chat => {
 export const resolveChatContactId = chat =>
   normalizePositiveNumber(resolveChatContact(chat)?.id);
 
-export const buildCrmDealSourceContext = chat => {
+const resolveSelectedPatientName = patient =>
+  patient?.full_name ||
+  patient?.fullName ||
+  patient?.name ||
+  [patient?.last_name, patient?.first_name, patient?.middle_name]
+    .filter(Boolean)
+    .join(' ');
+
+export const buildCrmDealSourceContext = (chat, selectedPatient = null) => {
   const referenceId = resolveReferenceId(chat);
   const communicationThread = isCommunicationThread(chat);
-  const contact = resolveChatContact(chat);
-  const contactId = normalizePositiveNumber(contact?.id);
+  const chatContact = resolveChatContact(chat);
+  const chatContactId = normalizePositiveNumber(chatContact?.id);
+  const selectedPatientId = normalizePositiveNumber(selectedPatient?.id);
+  const isSecondaryPatientSelected = Boolean(
+    selectedPatientId && (!chatContactId || selectedPatientId !== chatContactId)
+  );
+  const contact = isSecondaryPatientSelected
+    ? {
+        id: selectedPatientId,
+        name: resolveSelectedPatientName(selectedPatient),
+      }
+    : chatContact;
+  const contactId = isSecondaryPatientSelected
+    ? selectedPatientId
+    : chatContactId;
 
   return {
     contact,
     contactId,
+    isSecondaryPatientSelected,
     metaAdReferral: resolveMetaAdReferral(chat),
     sourceType: communicationThread ? 'communication_thread' : 'conversation',
     originatingConversationDisplayId: communicationThread
@@ -116,6 +138,10 @@ export const dealMatchesCrmDealSourceContext = (deal, context) => {
     dealContactIds(deal).includes(Number(context.contactId))
   ) {
     return true;
+  }
+
+  if (context.isSecondaryPatientSelected) {
+    return false;
   }
 
   if (context.originatingCommunicationThreadId) {

@@ -97,6 +97,7 @@ const mountComponent = (
         },
         CrmConversationDealsSidebar: {
           name: 'CrmConversationDealsSidebar',
+          props: ['currentChat', 'selectedPatient'],
           template: '<div />',
         },
         SchedulingConversationAppointmentsSidebar: {
@@ -209,20 +210,34 @@ describe('ConversationSidebar', () => {
     ).toBe(false);
   });
 
-  it('renders compact patient chips in the appointments panel when 2+ patients exist', async () => {
+  it('omits narrow sidebar patient selector when 2+ patients exist and passes selectedPatient to deals & appointments', async () => {
     mocks.uiSettings = ref({ is_scheduling_appointments_panel_open: true });
-    const wrapper = mountComponent({
-      id: 123,
-      inbox_id: 2,
-      meta: { sender: { id: 42 } },
-    });
+    const pinia = createPinia();
+    const wrapper = mountComponent(
+      {
+        id: 123,
+        inbox_id: 2,
+        meta: { sender: { id: 42 } },
+      },
+      pinia
+    );
     await flushPromises();
-    const selector = wrapper.findComponent({
-      name: 'SchedulingConversationPatientSelector',
+    expect(
+      wrapper
+        .findComponent({ name: 'SchedulingConversationPatientSelector' })
+        .exists()
+    ).toBe(false);
+    const store = useConversationPatientContextStore(pinia);
+    store.select('1:9:conversation:123', 84);
+    mocks.uiSettings.value = { is_crm_deal_panel_open: true };
+    await flushPromises();
+    const dealsSidebar = wrapper.findComponent({
+      name: 'CrmConversationDealsSidebar',
     });
-    expect(selector.exists()).toBe(true);
-    expect(selector.props('chips')).toBe(true);
-    expect(selector.props('showChips')).toBe(true);
+    expect(dealsSidebar.exists()).toBe(true);
+    expect(dealsSidebar.props('selectedPatient')).toMatchObject({
+      id: 84,
+    });
   });
 
   it('passes selected clinical context while keeping the chat recipient intact', async () => {

@@ -450,6 +450,11 @@ Rails.application.routes.draw do
                 post :promote
                 post :dismiss_hint
               end
+              resources :phones, only: [:create, :destroy] do
+                member do
+                  patch :set_primary
+                end
+              end
               resources :labels, only: [:create, :index]
               resources :notes
               get :attachments, to: 'attachments#index'

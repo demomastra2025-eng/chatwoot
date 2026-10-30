@@ -1565,7 +1565,10 @@ class Telephony::InboundRoutingService
     conditions = []
     bind_values = []
     if normalized_caller_number.present?
-      conditions << 'contacts.phone_number = ?'
+      conditions << '(contacts.phone_number = ? OR EXISTS (SELECT 1 FROM contact_phones cp ' \
+                    'WHERE cp.contact_id = contacts.id AND cp.account_id = contacts.account_id ' \
+                    'AND cp.phone_number = ? AND cp.shared = FALSE))'
+      bind_values << normalized_caller_number
       bind_values << normalized_caller_number
     end
     conditions << 'contact_inboxes.source_id IN (?)'

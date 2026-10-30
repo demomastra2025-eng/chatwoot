@@ -52,6 +52,20 @@ const isContactBlocked = computed(() => {
   return props.selectedContact?.blocked;
 });
 
+const effectiveContactPhone = computed(() => {
+  if (props.selectedContact?.phoneNumber) {
+    return props.selectedContact.phoneNumber;
+  }
+  if (props.selectedContact?.phone_number) {
+    return props.selectedContact.phone_number;
+  }
+  const list =
+    props.selectedContact?.phoneNumbers ||
+    props.selectedContact?.phone_numbers ||
+    [];
+  return list[0]?.phoneNumber || list[0]?.phone_number || '';
+});
+
 const handleBreadcrumbClick = () => {
   emit('goToContactsList');
 };
@@ -101,7 +115,7 @@ const closeMobileSidebar = () => {
               />
               <PersonDialogActions
                 :contact-id="contactId"
-                :phone="selectedContact?.phoneNumber"
+                :phone="effectiveContactPhone"
               />
             </div>
           </div>

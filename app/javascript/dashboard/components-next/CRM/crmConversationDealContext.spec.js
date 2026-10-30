@@ -166,6 +166,41 @@ describe('crmConversationDealContext', () => {
     ).toEqual([3, 2, 1]);
   });
 
+  it('scopes deal context and filtering to a selected secondary family card without leaking primary thread deals', () => {
+    const chat = {
+      id: 41,
+      is_communication_thread: true,
+      meta: { sender: { id: 77, name: 'Алия' } },
+    };
+    const childCard = { id: 99, full_name: 'Серик' };
+    const context = buildCrmDealSourceContext(chat, childCard);
+
+    expect(context).toMatchObject({
+      contactId: 99,
+      isSecondaryPatientSelected: true,
+      contact: { id: 99, name: 'Серик' },
+      originatingCommunicationThreadId: 41,
+    });
+    expect(buildCrmDealLookupParams(context)).toEqual({ contact_id: 99 });
+
+    const momThreadDeal = {
+      id: 10,
+      primaryContactId: 77,
+      originatingCommunicationThreadDisplayId: 41,
+    };
+    const childDeal = {
+      id: 11,
+      primaryContactId: 99,
+      originatingCommunicationThreadDisplayId: 41,
+    };
+
+    expect(
+      sortCrmDealsForContext([momThreadDeal, childDeal], context).map(
+        deal => deal.id
+      )
+    ).toEqual([11]);
+  });
+
   it('merges contact and source lookups without duplicating deals', () => {
     expect(
       mergeUniqueCrmDeals(

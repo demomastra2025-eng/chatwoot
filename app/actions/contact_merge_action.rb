@@ -81,6 +81,7 @@ class ContactMergeAction
       base_contact: @base_contact,
       mergee_contact: @mergee_contact
     ).perform
+    merge_contact_phones
   end
 
   # The labels of the card that goes away stay with the person. They are written, together with everything the person
@@ -120,6 +121,14 @@ class ContactMergeAction
       base_contact: @base_contact,
       mergee_contact: @mergee_contact
     )
+  end
+
+  def merge_contact_phones
+    Contacts::PhoneMergeService.new(
+      account: @account,
+      base_contact: @base_contact,
+      mergee_contact: @mergee_contact
+    ).perform!
   end
 
   def merge_and_remove_mergee_contact

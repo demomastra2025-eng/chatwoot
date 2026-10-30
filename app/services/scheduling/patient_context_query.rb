@@ -8,8 +8,8 @@ class Scheduling::PatientContextQuery
   end
 
   def patients
-    ids = [contact.id] + appointment_patient_ids + shared_patient_ids + recorded_patient_ids
-    account.contacts.where(id: ids.uniq).order(:id).to_a.sort_by { |card| card.id == contact.id ? 0 : 1 }
+    ids = [contact.id] + appointment_patient_ids + shared_patient_ids + contact_phone_shared_patient_ids + recorded_patient_ids
+    account.contacts.includes(:contact_phones).where(id: ids.uniq).order(:id).to_a.sort_by { |card| card.id == contact.id ? 0 : 1 }
   end
 
   private
@@ -35,5 +35,20 @@ class Scheduling::PatientContextQuery
     cards.select do |card|
       card.id == contact.id || Contacts::SharedPhone.share_of(card).present? || (phone.present? && card.phone_number == phone)
     end.map(&:id)
+  end
+
+  def contact_phone_shared_patient_ids
+    return [] unless ContactPhone.table_exists?
+
+    owned_phones = (
+      [contact.phone_number] + contact.contact_phones.where(shared: false).pluck(:phone_number)
+    ).compact_blank.uniq
+    scope = ContactPhone.where(account_id: account.id, shared: true)
+    relation = if owned_phones.any?
+                 scope.where('owner_contact_id = :cid OR phone_number IN (:phones)', cid: contact.id, phones: owned_phones)
+               else
+                 scope.where(owner_contact_id: contact.id)
+               end
+    relation.pluck(:contact_id)
   end
 end

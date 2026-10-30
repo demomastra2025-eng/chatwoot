@@ -13,8 +13,6 @@ import SharedFiles from './SharedFiles.vue';
 import KaspiPayPanel from './kaspiPay/KaspiPayPanel.vue';
 import Draggable from 'vuedraggable';
 import SidebarActionsHeader from 'dashboard/components-next/SidebarActionsHeader.vue';
-import SchedulingPatientDetails from 'dashboard/components-next/Scheduling/SchedulingPatientDetails.vue';
-import SchedulingConversationPatientSelector from 'dashboard/components-next/Scheduling/SchedulingConversationPatientSelector.vue';
 
 const props = defineProps({
   conversationId: {
@@ -42,12 +40,6 @@ const {
 } = useUISettings();
 const dragging = ref(false);
 const conversationSidebarItems = ref([]);
-const showPatientSummary = computed(
-  () => props.patientContextEnabled && Boolean(props.selectedPatient)
-);
-const hasFamilyTabs = computed(
-  () => (props.patientEntry?.patients?.length || 0) > 1
-);
 
 const store = useStore();
 const currentChat = useMapGetter('getSelectedChat');
@@ -67,6 +59,40 @@ const detailsContactId = computed(() =>
     ? props.selectedPatient.id
     : contactId.value
 );
+const activeCardContact = computed(() => {
+  if (!props.patientContextEnabled || !props.selectedPatient?.id) {
+    return contact.value;
+  }
+  const selectedId = Number(props.selectedPatient.id);
+  if (selectedId === Number(contactId.value)) {
+    return contact.value;
+  }
+  const stored = contactGetter.value(selectedId);
+  if (stored?.id) return stored;
+  return {
+    id: selectedId,
+    name:
+      props.selectedPatient.full_name ||
+      props.selectedPatient.fullName ||
+      props.selectedPatient.name ||
+      '',
+    phone_number:
+      props.selectedPatient.phone_number || props.selectedPatient.phone || '',
+    phone_numbers: props.selectedPatient.phone_numbers || [],
+    identifier: props.selectedPatient.identifier || '',
+    notifications_muted: Boolean(props.selectedPatient.notifications_muted),
+    additional_attributes: {},
+    custom_attributes: {
+      ...(props.selectedPatient.custom_attributes || {}),
+      ...(props.selectedPatient.birth_date
+        ? { birth_date: props.selectedPatient.birth_date }
+        : {}),
+      ...(props.selectedPatient.gender
+        ? { gender: props.selectedPatient.gender }
+        : {}),
+    },
+  };
+});
 
 const getContactDetails = () => {
   if (contactId.value) {
@@ -143,35 +169,15 @@ onMounted(() => {
     >
       <slot name="after-header" />
       <ContactInfo
-        :contact="contact"
+        :contact="activeCardContact"
+        :communication-contact="contact"
         :channel-type="channelType"
         :selected-patient="selectedPatient"
         :patient-context-enabled="patientContextEnabled"
+        :patient-context-key="patientContextKey"
+        :patient-entry="patientEntry"
+        :patient-conversation-display-id="patientConversationDisplayId"
       >
-        <template #after-channels>
-          <SchedulingConversationPatientSelector
-            v-if="
-              patientContextEnabled &&
-              patientContextKey &&
-              patientEntry?.loaded &&
-              hasFamilyTabs
-            "
-            chips
-            :show-add-button="false"
-            :show-chips="hasFamilyTabs"
-            :context-key="patientContextKey"
-            :entry="patientEntry"
-            :conversation-display-id="patientConversationDisplayId"
-          />
-          <SchedulingPatientDetails
-            v-if="showPatientSummary && hasFamilyTabs"
-            :key="`${patientContextKey}:${selectedPatient.id}:family`"
-            :patient="selectedPatient"
-            :context-key="patientContextKey"
-            :show-name="false"
-            summary
-          />
-        </template>
         <div
           v-if="!isDraft"
           class="flex flex-col pt-0.5"
@@ -195,7 +201,7 @@ onMounted(() => {
           v-if="!isDraft"
           class="mb-2"
           :conversation-id="conversationId"
-          :contact="contact"
+          :contact="activeCardContact"
           :selected-patient="selectedPatient"
           :is-draft="isDraft"
         />

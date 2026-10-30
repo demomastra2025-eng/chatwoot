@@ -76,7 +76,7 @@ class Contact < ApplicationRecord
   include Labelable
   include LlmFormattable
 
-  attr_accessor :skip_runtime_events
+  attr_accessor :skip_runtime_events, :preserve_demoted_primary_phone
 
   validates :account_id, presence: true
   validates :email, allow_blank: true, uniqueness: { scope: [:account_id], case_sensitive: false },
@@ -85,6 +85,7 @@ class Contact < ApplicationRecord
   validates :phone_number,
             allow_blank: true, uniqueness: { scope: [:account_id] },
             format: { with: /\+[1-9]\d{1,14}\z/, message: I18n.t('errors.contacts.phone_number.invalid') }
+  validate :phone_number_not_owned_by_other_contact_phone
   validate :owner_belongs_to_account
 
   belongs_to :account
@@ -97,6 +98,9 @@ class Contact < ApplicationRecord
   has_many :conversations, dependent: :destroy_async
   has_many :contact_inboxes, dependent: :destroy_async
   has_many :contact_channel_profiles, dependent: :destroy
+  has_many :contact_phones, dependent: :delete_all
+  has_many :shared_phone_dependents, class_name: 'ContactPhone', foreign_key: :owner_contact_id,
+                                     dependent: :nullify, inverse_of: :owner_contact
   has_many :crm_deal_contacts, class_name: 'Crm::DealContact', dependent: :destroy_async
   has_many :crm_deals, through: :crm_deal_contacts, source: :deal
   has_many :csat_survey_responses, dependent: :destroy_async
@@ -110,6 +114,7 @@ class Contact < ApplicationRecord
   before_validation :prepare_contact_attributes, :normalize_phone_number, :lock_phone_identity
   before_save -> { Contacts::PatientSharedPhonePolicy.apply!(self) }
   before_save :sync_contact_attributes
+  after_save :sync_contact_phones_from_contact!
   after_commit :sync_unified_owner, if: :saved_change_to_owner_id?
   after_commit :enqueue_shared_phone_release, on: [:update, :destroy]
   after_create_commit :dispatch_create_event, :ip_lookup
@@ -239,6 +244,7 @@ class Contact < ApplicationRecord
       owner_id: owner_id,
       owner: owner&.push_event_data,
       phone_number: phone_number,
+      phone_numbers: Contacts::PhonePresenter.present(self, include_related: false),
       thumbnail: resolved_avatar_url,
       blocked: blocked,
       notifications_muted: notifications_muted,
@@ -683,8 +689,99 @@ class Contact < ApplicationRecord
   def enqueue_shared_phone_release
     released = destroyed? ? phone_number : (phone_number_before_last_save if saved_change_to_phone_number?)
     return if released.blank?
+    return if !destroyed? && contact_phones.exists?(phone_number: released, primary: false, shared: false)
 
     Contacts::SharedPhoneReleasedJob.enqueue(account_id: account_id, phone: released, previous_holder_id: id)
+  end
+
+  def phone_number_not_owned_by_other_contact_phone
+    return if phone_number.blank? || account_id.blank? || !ContactPhone.table_exists?
+
+    scope = ContactPhone.where(account_id: account_id, phone_number: phone_number, primary: false, shared: false)
+    scope = scope.where.not(contact_id: id) if id.present?
+    errors.add(:phone_number, :taken) if scope.exists?
+  end
+
+  def sync_contact_phones_from_contact!
+    return unless ContactPhone.table_exists?
+
+    sync_primary_contact_phone!
+    sync_shared_contact_phone!
+  ensure
+    self.preserve_demoted_primary_phone = false
+  end
+
+  def sync_primary_contact_phone!
+    handle_previous_primary_contact_phone! if saved_change_to_phone_number?
+    return clear_blank_primary_contact_phones! if phone_number.blank?
+
+    ContactPhone.prune_stale_primary_mirrors!(account_id: account_id, phone_numbers: [phone_number])
+    demote_other_primary_contact_phones!
+    upsert_primary_contact_phone!
+  end
+
+  def clear_blank_primary_contact_phones!
+    contact_phones.where(primary: true, shared: false).delete_all unless preserve_demoted_primary_phone
+  end
+
+  def demote_other_primary_contact_phones!
+    contact_phones.where(primary: true).where.not(phone_number: phone_number)
+                  .update_all(primary: false, updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
+  end
+
+  def upsert_primary_contact_phone!
+    existing = contact_phones.find_by(phone_number: phone_number)
+    if existing
+      return if existing.primary? && !existing.shared? && existing.owner_contact_id.nil?
+
+      existing.update_columns(primary: true, shared: false, owner_contact_id: nil, updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
+    else
+      contact_phones.create!(account_id: account_id, phone_number: phone_number, primary: true, shared: false)
+    end
+  end
+
+  def handle_previous_primary_contact_phone!
+    old_phone = phone_number_before_last_save.presence
+    return if old_phone.blank? || old_phone == phone_number
+
+    if preserve_demoted_primary_phone
+      contact_phones.where(phone_number: old_phone, primary: true)
+                    .update_all(primary: false, updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
+    else
+      contact_phones.where(phone_number: old_phone, primary: true, shared: false).delete_all
+    end
+  end
+
+  def sync_shared_contact_phone!
+    share = Contacts::SharedPhone.share_of(self)
+    upsert_shared_contact_phone!(share) if share.present? && share.phone.to_s.match?(ContactPhone::E164_FORMAT) && share.phone != phone_number
+    cleanup_cleared_shared_contact_phone!(share) if saved_change_to_custom_attributes?
+  end
+
+  def upsert_shared_contact_phone!(share)
+    owner_id = share.owner_id if share.owner_id.present? && Contact.exists?(id: share.owner_id, account_id: account_id)
+    existing = contact_phones.find_by(phone_number: share.phone)
+    if existing.nil?
+      contact_phones.create!(
+        account_id: account_id,
+        phone_number: share.phone,
+        primary: false,
+        shared: true,
+        owner_contact_id: owner_id
+      )
+    elsif existing.shared? && owner_id.present? && existing.owner_contact_id != owner_id
+      existing.update_columns(owner_contact_id: owner_id, updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
+    end
+  end
+
+  def cleanup_cleared_shared_contact_phone!(active_share)
+    return if phone_number.present?
+
+    prev_shared = custom_attributes_before_last_save.to_h[Contacts::SharedPhone::SHARED_PHONE_KEY].presence
+    return if prev_shared.blank? || prev_shared == phone_number || active_share&.phone == prev_shared
+    return if Array(custom_attributes.to_h[Contacts::SharedPhone::SECONDARY_PHONES_KEY]).include?(prev_shared)
+
+    contact_phones.where(phone_number: prev_shared, shared: true).delete_all
   end
 
   def sync_unified_owner
