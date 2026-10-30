@@ -2,15 +2,28 @@ require 'rails_helper'
 
 RSpec.describe Integrations::Medelement::SampleCaptureSingleAttemptPolicy do
   let(:configuration) do
-    instance_double(Integrations::Medelement::Configuration, integrator_key: 'synthetic-key', company_login: 'clinic-1',
-                    throttle_ms: 275, request_budget_per_minute: 30, live_reserve_per_minute: 10)
+    instance_double(
+      Integrations::Medelement::Configuration,
+      integrator_key: 'synthetic-key',
+      company_login: 'clinic-1',
+      throttle_ms: 275,
+      global_throttle_ms: 125,
+      request_budget_per_minute: 30,
+      live_reserve_per_minute: 10
+    )
   end
   let(:limiter) { instance_double(Integrations::Medelement::RequestRateLimiter) }
 
   before do
     allow(Integrations::Medelement::RequestRateLimiter).to receive(:new)
-      .with(integrator_key: 'synthetic-key', account_login: 'clinic-1', interval_ms: 275,
-            budget_per_minute: 30, live_reserve_per_minute: 10).and_return(limiter)
+      .with(
+        integrator_key: 'synthetic-key',
+        account_login: 'clinic-1',
+        interval_ms: 275,
+        global_interval_ms: 125,
+        budget_per_minute: 30,
+        live_reserve_per_minute: 10
+      ).and_return(limiter)
     allow(Integrations::Medelement::RequestTelemetry).to receive(:new).and_return(
       instance_double(Integrations::Medelement::RequestTelemetry, record: nil)
     )

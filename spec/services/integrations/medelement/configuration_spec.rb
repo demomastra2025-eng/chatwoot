@@ -46,6 +46,18 @@ RSpec.describe Integrations::Medelement::Configuration do
     end
   end
 
+  describe '#global_throttle_ms' do
+    it 'defaults to 125 ms cross-clinic background spacing and clamps shorter values' do
+      expect(configuration.global_throttle_ms).to eq(125)
+
+      allow(hook).to receive(:settings).and_return('global_throttle_ms' => 50)
+      expect(configuration.global_throttle_ms).to eq(125)
+
+      allow(hook).to receive(:settings).and_return('global_throttle_ms' => 250)
+      expect(configuration.global_throttle_ms).to eq(250)
+    end
+  end
+
   describe 'request volume settings' do
     it 'starts with a conservative shared budget and protected live share' do
       expect(configuration.request_budget_per_minute).to eq(30)

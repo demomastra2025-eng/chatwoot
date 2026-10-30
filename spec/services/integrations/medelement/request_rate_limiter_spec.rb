@@ -97,6 +97,43 @@ RSpec.describe Integrations::Medelement::RequestRateLimiter do
     expect(Integrations::Medelement::Configuration::DEFAULT_THROTTLE_MS).to eq(200)
   end
 
+  it 'evaluates budget reservation, two-key global slot reservation, budget rollback, and pause Lua scripts' do
+    limiter = described_class.new(
+      integrator_key: 'provider-secret', account_login: 'clinic-1', interval_ms: 200,
+      global_interval_ms: 125, budget_per_minute: 30, live_reserve_per_minute: 10,
+      connection_pool: connection_pool
+    )
+    expected_global_key = format(
+      described_class::GLOBAL_KEY_TEMPLATE,
+      fingerprint: Digest::SHA256.hexdigest('provider-secret').first(32)
+    )
+    expected_budget_key = format(
+      described_class::BUDGET_KEY_TEMPLATE,
+      fingerprint: Digest::SHA256.hexdigest("provider-secret\nclinic-1").first(32)
+    )
+
+    expect(connection).to receive(:call_with_namespace).with(
+      :eval, described_class::BUDGET_SCRIPT, keys: [expected_budget_key], argv: ['sync_near', 30, 10, 5]
+    ).ordered.and_return(29_889_000)
+    expect(connection).to receive(:call_with_namespace).with(
+      :eval, described_class::RESERVE_SCRIPT,
+      keys: [lane_key(login: 'clinic-1', operation: 'receptions_delta'), expected_global_key],
+      argv: [200, described_class::MAX_GLOBAL_WAIT_MS, 125]
+    ).ordered.and_return(-12_000)
+    expect(connection).to receive(:call_with_namespace).with(
+      :eval, described_class::RELEASE_BUDGET_SCRIPT, keys: [expected_budget_key], argv: ['sync_near', 29_889_000]
+    ).ordered.and_return(0)
+
+    expect { limiter.wait!(operation: 'receptions_delta', lane: :sync_near) }
+      .to raise_error(described_class::BusyError) { |err| expect(err.retry_after_ms).to eq(12_000) }
+
+    expect(connection).to receive(:call_with_namespace).with(
+      :eval, described_class::PAUSE_SCRIPT, keys: [expected_budget_key], argv: [0.0005]
+    ).ordered.and_return(1)
+
+    expect(limiter.record_429!(retry_after_seconds: 0.0005)).to eq(1)
+  end
+
   describe 'spacing across processes' do
     let(:redis) { MockRedis.new }
     let(:namespace) { Redis::Namespace.new(:medelement_rate_limiter_spec, redis: redis) }
@@ -184,6 +221,7 @@ RSpec.describe Integrations::Medelement::RequestRateLimiter do
       expect { limiter.wait!(operation: 'reception move') }.to raise_error(described_class::BusyError)
       expect { limiter.wait!(operation: 'reception move', write: true) }.not_to raise_error
     end
+
     it 'releases an idle ActiveRecord connection before sleeping when no transaction is open' do
       limiter.wait!(operation: 'reception create')
       allow(ActiveRecord::Base.connection_pool).to receive(:active_connection?).and_return(true)
@@ -230,6 +268,114 @@ RSpec.describe Integrations::Medelement::RequestRateLimiter do
       expect { limited.wait!(operation: 'receptions', lane: :other_jobs) }.to raise_error(described_class::BusyError)
       expect { limited.wait!(operation: 'timetable', lane: :sync_near) }.not_to raise_error
       expect { limited.wait!(operation: 'patient', lane: :live) }.not_to raise_error
+    end
+
+    it 'debounces concurrent headerless 429 bursts without escalating pause to five minutes' do
+      limited = described_class.new(
+        integrator_key: 'provider-secret', account_login: 'clinic-1', interval_ms: 200,
+        budget_per_minute: 10, live_reserve_per_minute: 2, connection_pool: pool, clock: clock
+      )
+
+      pauses = Array.new(6) { limited.record_429! }
+      expect(pauses.first).to eq(5_000)
+      expect(pauses.max).to be <= 5_000
+    end
+
+    it 'paces background traffic across clinics sharing an integrator key while letting live traffic bypass global wait' do
+      clinic_a = described_class.new(
+        integrator_key: 'shared-integrator', account_login: 'clinic-a', interval_ms: 200,
+        global_interval_ms: 125, budget_per_minute: 10, live_reserve_per_minute: 2,
+        connection_pool: pool, clock: clock, sleeper: ->(seconds) { sleeps << [:a, seconds] }
+      )
+      clinic_b = described_class.new(
+        integrator_key: 'shared-integrator', account_login: 'clinic-b', interval_ms: 200,
+        global_interval_ms: 125, budget_per_minute: 10, live_reserve_per_minute: 2,
+        connection_pool: pool, clock: clock, sleeper: ->(seconds) { sleeps << [:b, seconds] }
+      )
+
+      clinic_a.wait!(operation: 'receptions_delta', lane: :sync_near)
+      clinic_b.wait!(operation: 'receptions_delta', lane: :sync_near)
+      clinic_b.wait!(operation: 'patient', lane: :live)
+
+      expect(sleeps).to eq([[:b, 0.125]])
+    end
+
+    it 'does not consume a global integrator slot when the calling clinic is paused' do
+      paused_clinic = described_class.new(
+        integrator_key: 'shared-integrator', account_login: 'clinic-paused', interval_ms: 200,
+        global_interval_ms: 125, budget_per_minute: 10, live_reserve_per_minute: 2,
+        connection_pool: pool, clock: clock, sleeper: ->(seconds) { sleeps << [:paused, seconds] }
+      )
+      healthy_clinic = described_class.new(
+        integrator_key: 'shared-integrator', account_login: 'clinic-healthy', interval_ms: 200,
+        global_interval_ms: 125, budget_per_minute: 10, live_reserve_per_minute: 2,
+        connection_pool: pool, clock: clock, sleeper: ->(seconds) { sleeps << [:healthy, seconds] }
+      )
+      paused_clinic.record_429!(retry_after_seconds: 15)
+
+      expect { paused_clinic.wait!(operation: 'receptions', lane: :sync_far) }.to raise_error(described_class::BusyError)
+      healthy_clinic.wait!(operation: 'receptions', lane: :sync_far)
+
+      expect(sleeps).to be_empty
+    end
+
+    it 'clamps sub-millisecond Retry-After pauses to at least 1 ms without raising a Redis error' do
+      limited = described_class.new(
+        integrator_key: 'provider-secret', account_login: 'clinic-1', interval_ms: 200,
+        budget_per_minute: 10, live_reserve_per_minute: 2, connection_pool: pool, clock: clock
+      )
+
+      expect(limited.record_429!(retry_after_seconds: 0.0004)).to eq(1)
+    end
+
+    it 'exempts write requests from background global pacing and background pauses even on default lanes' do
+      clinic_a = described_class.new(
+        integrator_key: 'shared-integrator', account_login: 'clinic-a', interval_ms: 200,
+        global_interval_ms: 125, budget_per_minute: 3, live_reserve_per_minute: 1,
+        connection_pool: pool, clock: clock, sleeper: ->(seconds) { sleeps << [:a, seconds] }
+      )
+      clinic_b = described_class.new(
+        integrator_key: 'shared-integrator', account_login: 'clinic-b', interval_ms: 200,
+        global_interval_ms: 125, budget_per_minute: 3, live_reserve_per_minute: 1,
+        connection_pool: pool, clock: clock, sleeper: ->(seconds) { sleeps << [:b, seconds] }
+      )
+      clinic_a.wait!(operation: 'receptions_delta', lane: :sync_near)
+      clinic_b.wait!(operation: 'timetable', lane: :sync_far)
+      clinic_b.wait!(operation: 'receptions', lane: :sync_near)
+      clinic_b.record_429!(retry_after_seconds: 30)
+      sleeps.clear
+
+      clinic_b.wait!(operation: 'patient update', write: true, lane: :other_jobs)
+
+      expect(sleeps).to be_empty
+    end
+
+    it 'refunds the reserved minute budget on slot refusal across minute zero and minute rollovers' do
+      epoch_time = Time.zone.at(10)
+      epoch_limiter = described_class.new(
+        integrator_key: 'provider-secret', account_login: 'clinic-zero', interval_ms: 200,
+        budget_per_minute: 3, live_reserve_per_minute: 1, connection_pool: pool, clock: -> { epoch_time }
+      )
+      allow(epoch_limiter).to receive(:reserve_delay_ms).and_return(-5_000, 0)
+
+      expect { epoch_limiter.wait!(operation: 'receptions', lane: :sync_far) }.to raise_error(described_class::BusyError)
+      expect { epoch_limiter.wait!(operation: 'timetable', lane: :sync_far) }.not_to raise_error
+
+      times = [Time.zone.at(119), Time.zone.at(120)]
+      rollover_clock = -> { times.shift || Time.zone.at(120) }
+      rollover_limiter = described_class.new(
+        integrator_key: 'provider-secret', account_login: 'clinic-rollover', interval_ms: 200,
+        budget_per_minute: 3, live_reserve_per_minute: 1, connection_pool: pool, clock: rollover_clock
+      )
+      allow(rollover_limiter).to receive(:reserve_delay_ms).and_return(-5_000)
+
+      expect { rollover_limiter.wait!(operation: 'receptions', lane: :sync_far) }.to raise_error(described_class::BusyError)
+
+      same_minute_limiter = described_class.new(
+        integrator_key: 'provider-secret', account_login: 'clinic-rollover', interval_ms: 200,
+        budget_per_minute: 3, live_reserve_per_minute: 1, connection_pool: pool, clock: -> { Time.zone.at(119) }
+      )
+      expect { same_minute_limiter.wait!(operation: 'timetable', lane: :sync_far) }.not_to raise_error
     end
   end
 end

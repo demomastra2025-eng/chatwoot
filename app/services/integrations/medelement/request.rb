@@ -29,6 +29,7 @@ class Integrations::Medelement::Request
       integrator_key: configuration.integrator_key,
       account_login: configuration.company_login,
       interval_ms: configuration.throttle_ms,
+      global_interval_ms: configuration.global_throttle_ms,
       sleeper: sleeper,
       budget_per_minute: configuration.request_budget_per_minute,
       live_reserve_per_minute: configuration.live_reserve_per_minute

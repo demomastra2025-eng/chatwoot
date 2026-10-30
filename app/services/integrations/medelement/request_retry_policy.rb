@@ -31,18 +31,10 @@ class Integrations::Medelement::RequestRetryPolicy
 
     loop do
       @deadline&.check!
-      attempt = perform_attempt(operation, write, lane, &request)
-      if attempt.error
-        raise attempt.error if write || retry_index >= read_retry_limit
+      attempt = attempt_with_busy_wait(operation: operation, write: write, retry_429: retry_429, lane: lane, &request)
+      result = resolve_attempt(attempt, operation: operation, write: write, retry_429: retry_429, retry_index: retry_index)
+      return result if result
 
-        wait_before_retry(operation, retry_index, error: attempt.error)
-      else
-        return attempt.response unless retryable_response?(attempt.response, write)
-        return attempt.response if !retry_429 && attempt.response.code.to_i == 429
-        return attempt.response if retry_index >= read_retry_limit
-
-        wait_before_retry(operation, retry_index, response: attempt.response)
-      end
       retry_index += 1
     end
   end
@@ -51,29 +43,104 @@ class Integrations::Medelement::RequestRetryPolicy
 
   attr_reader :base_delay_seconds, :clock, :max_delay_seconds, :randomizer, :rate_limiter, :read_retry_limit, :sleeper, :transport_errors
 
+  def attempt_with_busy_wait(operation:, write:, retry_429:, lane:, &request)
+    busy_retries = 0
+    loop do
+      return perform_attempt(operation, write, lane, &request)
+    rescue Integrations::Medelement::RequestRateLimiter::BusyError => e
+      raise unless wait_for_busy_slot?(error: e, write: write, retry_429: retry_429, lane: lane, busy_retries: busy_retries)
+
+      busy_retries += 1
+      wait_for_busy_slot(operation, e, busy_retries)
+      @deadline&.check!
+    end
+  end
+
+  def resolve_attempt(attempt, operation:, write:, retry_429:, retry_index:)
+    if attempt.error
+      raise attempt.error if write || retry_index >= read_retry_limit
+
+      wait_before_retry(operation, retry_index, error: attempt.error)
+      return nil
+    end
+
+    return attempt.response if final_response?(attempt.response, write: write, retry_429: retry_429, retry_index: retry_index)
+
+    wait_before_retry(operation, retry_index, response: attempt.response)
+    nil
+  end
+
+  def final_response?(response, write:, retry_429:, retry_index:)
+    return true unless retryable_response?(response, write)
+    return true if !retry_429 && response.code.to_i == 429
+
+    retry_index >= read_retry_limit
+  end
+
+  def wait_for_busy_slot?(error:, write:, retry_429:, lane:, busy_retries:)
+    return false if write || !retry_429 || @deadline.present?
+    return false if lane.to_s == 'live'
+    return false if error.retry_after_ms.to_f > max_delay_seconds.to_f * 1000
+
+    busy_retries < read_retry_limit
+  end
+
+  def wait_for_busy_slot(operation, error, busy_retries)
+    base_wait = [error.retry_after_ms.to_f / 1000.0, 0.05].max
+    delay = [base_wait + randomizer.call(0.05, 0.5), max_delay_seconds.to_f].min
+    Rails.logger.info(
+      "[MEDELEMENT::REQUEST] waiting_for_budget operation=#{operation} " \
+      "attempt=#{busy_retries}/#{read_retry_limit} wait_seconds=#{format('%.3f', delay)}"
+    )
+    release_idle_db_connection
+    sleeper.call(delay)
+  end
+
+  def release_idle_db_connection
+    return unless defined?(ActiveRecord::Base)
+
+    ar_pool = ActiveRecord::Base.connection_pool
+    return unless ar_pool.active_connection?
+    return unless ActiveRecord::Base.connection.open_transactions.zero?
+
+    ar_pool.release_connection
+  rescue StandardError
+    nil
+  end
+
   # Every attempt, including a retry, takes its own slot for this request type before it goes out.
   def perform_attempt(operation, write, lane, &)
     perform_transport do
-      wait_options = { operation: operation, write: write }
-      wait_options[:max_wait_ms] = @slot_wait_ms if @slot_wait_ms
-      wait_options[:lane] = lane if lane
-      rate_limiter.wait!(**wait_options)
+      wait_for_slot(operation, write, lane)
       @deadline&.check!
-      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      begin
-        response = yield
-        @observer&.record(operation: operation, lane: lane || :other_jobs, response: response,
-                          duration_ms: elapsed_ms(started))
-        if response.code.to_i == 429 && rate_limiter.respond_to?(:record_429!)
-          pause_ms = rate_limiter.record_429!(retry_after_seconds: retry_after_seconds(response, maximum: 3600))
-          @observer&.record_pause(pause_ms)
-        end
-        response
-      rescue *transport_errors => e
-        @observer&.record(operation: operation, lane: lane || :other_jobs, error: e, duration_ms: elapsed_ms(started))
-        raise
-      end
+      execute_and_observe(operation, lane, &)
     end
+  end
+
+  def wait_for_slot(operation, write, lane)
+    wait_options = { operation: operation, write: write }
+    wait_options[:max_wait_ms] = @slot_wait_ms if @slot_wait_ms
+    wait_options[:lane] = lane if lane
+    rate_limiter.wait!(**wait_options)
+  end
+
+  def execute_and_observe(operation, lane)
+    effective_lane = lane || :other_jobs
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    response = yield
+    @observer&.record(operation: operation, lane: effective_lane, response: response, duration_ms: elapsed_ms(started))
+    record_rate_limit_pause(response) if response.code.to_i == 429
+    response
+  rescue *transport_errors => e
+    @observer&.record(operation: operation, lane: effective_lane, error: e, duration_ms: elapsed_ms(started))
+    raise
+  end
+
+  def record_rate_limit_pause(response)
+    return unless rate_limiter.respond_to?(:record_429!)
+
+    pause_ms = rate_limiter.record_429!(retry_after_seconds: retry_after_seconds(response, maximum: 3600))
+    @observer&.record_pause(pause_ms)
   end
 
   def elapsed_ms(started)
@@ -102,6 +169,7 @@ class Integrations::Medelement::RequestRetryPolicy
     )
     @deadline&.check!
     delay = [delay, @deadline.remaining].min if @deadline
+    release_idle_db_connection unless @deadline
     sleeper.call(delay)
   end
 

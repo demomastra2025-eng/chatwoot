@@ -804,7 +804,7 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
     end
   end
 
-  it 'prefetches stale patients into Concurrent::Map and passes Hash to sync_patient_codes when sync_patients? is enabled' do
+  it 'syncs patients only for newly fetched reception details without polling patients of unchanged appointments' do
     allow(configuration).to receive(:sync_patients?).and_return(true)
     allow(client).to receive(:search_patients_by_codes).and_return([])
     allow(client).to receive(:get_patient).with(patient_code: '550990851604984873').and_return(
@@ -816,7 +816,11 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
 
     travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
       expect { service.perform }.not_to raise_error
-      expect(client).to have_received(:get_patient).with(patient_code: '550990851604984873').at_least(:once)
+      expect(client).to have_received(:get_patient).with(patient_code: '550990851604984873').once
+
+      # Second sweep with unchanged reception fingerprint & fresh detail must not re-poll patient cards:
+      expect { service.perform }.not_to raise_error
+      expect(client).to have_received(:get_patient).with(patient_code: '550990851604984873').once
     end
   end
 

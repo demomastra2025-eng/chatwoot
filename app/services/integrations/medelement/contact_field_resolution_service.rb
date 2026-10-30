@@ -335,7 +335,10 @@ class Integrations::Medelement::ContactFieldResolutionService
   end
 
   def medelement_client
-    @medelement_client ||= client || Integrations::Medelement::Client.new(configuration: configuration)
+    @medelement_client ||= client || Integrations::Medelement::Client.new(
+      configuration: configuration,
+      retry_profile: :command
+    )
   end
 
   def configuration

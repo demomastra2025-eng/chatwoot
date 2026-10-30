@@ -301,6 +301,61 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaService do
     end
   end
 
+  it 'uses the sync_near priority lane when constructing its default MedElement client' do
+    expect(Integrations::Medelement::Client).to receive(:new)
+      .with(hash_including(lane: :sync_near)).and_return(client)
+
+    described_class.new(hook: hook)
+  end
+
+  it 'processes unseen reception codes ahead of previously seen codes while still applying secondary overlap updates' do
+    Integrations::Medelement::DeltaSeenReception.create!(
+      hook: hook,
+      reception_code: 'reception-001',
+      change_marker: 'stale-marker',
+      processed_at: 2.minutes.ago
+    )
+    entries = [{ 'RECEPTION_CODE' => 'reception-001' }, { 'RECEPTION_CODE' => 'reception-002' }]
+    allow(client).to receive(:receptions_by_update_date).and_return(entries)
+    fetched_order = []
+    allow(client).to receive(:get_reception) do |reception_code:, **|
+      fetched_order << reception_code
+      detail_for(reception_code)
+    end
+
+    result = service.perform
+
+    expect(fetched_order).to eq(%w[reception-002 reception-001])
+    expect(result).to include(changed_codes: 2, applied: 2, skipped: 0, complete: true)
+  end
+
+  it 'keeps the cursor fixed when MAX_CHANGED stops mid-backlog before previously seen codes are verified' do
+    stub_const("#{described_class}::MAX_CHANGED", 1)
+    cursor = Integrations::Medelement::SyncCursor.create!(
+      hook: hook, name: described_class::CURSOR_NAME, value: 15.minutes.ago, last_success_at: 15.minutes.ago
+    )
+    original_cursor_value = cursor.value
+    Integrations::Medelement::DeltaSeenReception.create!(
+      hook: hook, reception_code: 'reception-001', change_marker: 'stale-marker', processed_at: 2.minutes.ago
+    )
+    allow(client).to receive(:receptions_by_update_date).and_return(
+      [{ 'RECEPTION_CODE' => 'reception-001' }, { 'RECEPTION_CODE' => 'reception-002' }]
+    )
+    allow(client).to receive(:get_reception) { |reception_code:, **| detail_for(reception_code) }
+
+    first_poll = service.perform
+    expect(first_poll).to include(changed_codes: 2, applied: 1, skipped: 0, complete: false)
+    expect(cursor.reload.value).to be_within(1.second).of(original_cursor_value)
+
+    second_poll = service.perform
+    expect(second_poll).to include(changed_codes: 2, applied: 1, skipped: 0, complete: false)
+    expect(cursor.reload.value).to be_within(1.second).of(original_cursor_value)
+
+    third_poll = service.perform
+    expect(third_poll).to include(changed_codes: 2, applied: 0, skipped: 2, complete: true)
+    expect(cursor.reload.value).to be > original_cursor_value
+  end
+
   it 'does not call MedElement or reconcile absences when the flag is off' do
     hook.update!(settings: hook.settings.merge('incremental_receptions_enabled' => false))
 

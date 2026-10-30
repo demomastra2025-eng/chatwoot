@@ -4,6 +4,7 @@ class Integrations::Medelement::Configuration # rubocop:disable Metrics/ClassLen
   DEFAULT_DAYS_FORWARD = 89
   # MedElement allows five requests per second for each request type of an account.
   DEFAULT_THROTTLE_MS = Integrations::Medelement::RequestRateLimiter::DEFAULT_INTERVAL_MS
+  DEFAULT_GLOBAL_THROTTLE_MS = 125
   DEFAULT_REQUEST_BUDGET_PER_MINUTE = 30
   DEFAULT_LIVE_RESERVE_PER_MINUTE = 10
   DEFAULT_RATE_ALERT_THRESHOLD_PER_HOUR = 3
@@ -159,6 +160,10 @@ class Integrations::Medelement::Configuration # rubocop:disable Metrics/ClassLen
   # hook saved: a smaller value would let the clinic go over the provider's limit.
   def throttle_ms
     [integer_setting('throttle_ms', DEFAULT_THROTTLE_MS), DEFAULT_THROTTLE_MS].max
+  end
+
+  def global_throttle_ms
+    [integer_setting('global_throttle_ms', DEFAULT_GLOBAL_THROTTLE_MS), DEFAULT_GLOBAL_THROTTLE_MS].max
   end
 
   def request_budget_per_minute

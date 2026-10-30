@@ -17,7 +17,7 @@ class Integrations::Medelement::ReceptionsDeltaService
   def initialize(hook:, client: nil, configuration: nil, renew_locks: nil)
     @hook = hook
     @configuration = configuration || Integrations::Medelement::Configuration.new(hook: hook)
-    @client = client || Integrations::Medelement::Client.new(configuration: @configuration)
+    @client = client || Integrations::Medelement::Client.new(configuration: @configuration, lane: :sync_near)
     @renew_locks = renew_locks
   end
 
@@ -83,7 +83,7 @@ class Integrations::Medelement::ReceptionsDeltaService
     skipped = 0
     processed = 0
     complete = true
-    changes.each do |code, entries|
+    prioritize_unseen_changes(changes).each do |code, entries|
       outcome = process_code(code, entries, processed)
       if outcome == :seen
         skipped += 1
@@ -167,6 +167,20 @@ class Integrations::Medelement::ReceptionsDeltaService
     detail = client.get_reception(reception_code: code, version: :v2)
     validate_detail!(detail, code)
     [detail, Integrations::Medelement::ReceptionChangeMarker.call(detail)]
+  end
+
+  def prioritize_unseen_changes(changes)
+    return changes if changes.size <= 1
+
+    seen_codes = Integrations::Medelement::DeltaSeenReception
+                 .where(hook_id: hook.id, reception_code: changes.keys)
+                 .distinct
+                 .pluck(:reception_code)
+                 .to_set
+    return changes if seen_codes.empty? || seen_codes.size == changes.size
+
+    unseen, previously_seen = changes.partition { |code, _entries| seen_codes.exclude?(code) }
+    (unseen + previously_seen).to_h
   end
 
   def seen?(code, marker)

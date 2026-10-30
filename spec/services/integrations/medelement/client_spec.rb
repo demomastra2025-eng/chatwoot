@@ -10,7 +10,12 @@ RSpec.describe Integrations::Medelement::Client do
       password: 'secret',
       integrator_key: 'integrator-key',
       organization_id: 'company-1',
-      throttle_ms: 200
+      throttle_ms: 200,
+      global_throttle_ms: 125,
+      request_budget_per_minute: 30,
+      live_reserve_per_minute: 10,
+      account_id: 1,
+      hook_id: 2
     )
   end
 

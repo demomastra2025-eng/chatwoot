@@ -18,6 +18,7 @@ RSpec.describe Integrations::Medelement::Request do
       integrator_key: 'integrator-key',
       organization_id: 'company-1',
       throttle_ms: 200,
+      global_throttle_ms: 125,
       request_budget_per_minute: 30,
       live_reserve_per_minute: 10,
       account_id: 1,
@@ -278,6 +279,51 @@ RSpec.describe Integrations::Medelement::Request do
                            begin_datetime: '01.08.2026 00:00:00', end_datetime: '31.08.2026 23:59:59')
       end.to raise_error(Integrations::Medelement::Client::RateLimitedError) { |error| expect(error).to be_retryable }
       expect(provider_request).not_to have_been_requested
+    end
+
+    it 'waits across a minute-budget rollover for background reads while failing fast for live reads' do
+      calls = 0
+      allow(rate_limiter).to receive(:wait!) do
+        calls += 1
+        busy = Integrations::Medelement::RequestRateLimiter::BusyError.new(operation: 'receptions', retry_after_ms: 42_000)
+        raise busy if calls == 1
+      end
+      provider_request = stub_request(:post, "#{base_url}/v1/timetable/get_receptions")
+                         .to_return(status: 200, body: '[]', headers: { 'Content-Type' => 'application/json' })
+
+      result = request.receptions(
+        company_cabinet_code: 'cabinet-1', specialist_code: 'specialist-1',
+        begin_datetime: '01.08.2026 00:00:00', end_datetime: '31.08.2026 23:59:59'
+      )
+
+      expect(result).to eq([])
+      expect(provider_request).to have_been_requested.once
+      expect(sleeps).to eq([42.5])
+
+      live_request = described_class.new(
+        configuration: configuration, sleeper: ->(seconds) { sleeps << seconds },
+        randomizer: ->(_minimum, maximum) { maximum }, rate_limiter: rate_limiter, lane: :live
+      )
+      allow(rate_limiter).to receive(:wait!).and_raise(
+        Integrations::Medelement::RequestRateLimiter::BusyError.new(operation: 'patient', retry_after_ms: 5_000)
+      )
+      sleeps.clear
+
+      expect { live_request.call(:get, '/doctor/v1/patient/patient-1', operation: 'patient') }
+        .to raise_error(Integrations::Medelement::Client::RateLimitedError)
+      expect(sleeps).to be_empty
+
+      allow(rate_limiter).to receive(:wait!).and_raise(
+        Integrations::Medelement::RequestRateLimiter::BusyError.new(operation: 'receptions', retry_after_ms: 600_000)
+      )
+
+      expect do
+        request.receptions(
+          company_cabinet_code: 'cabinet-1', specialist_code: 'specialist-1',
+          begin_datetime: '01.08.2026 00:00:00', end_datetime: '31.08.2026 23:59:59'
+        )
+      end.to raise_error(Integrations::Medelement::Client::RateLimitedError)
+      expect(sleeps).to be_empty
     end
   end
 end

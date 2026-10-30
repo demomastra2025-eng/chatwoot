@@ -319,4 +319,12 @@ RSpec.describe Integrations::Medelement::ContactFieldResolutionService do
     expect(contact.reload.custom_attributes['address']).to eq('Provider address')
     expect(client).not_to have_received(:update_patient)
   end
+
+  it 'constructs its default MedElement client with the interactive command retry profile' do
+    expect(Integrations::Medelement::Client).to receive(:new)
+      .with(hash_including(retry_profile: :command))
+      .and_return(client)
+
+    described_class.new(conflict: conflict, user: admin).perform(field_directions: { address: 'medelement_to_onelink' })
+  end
 end
