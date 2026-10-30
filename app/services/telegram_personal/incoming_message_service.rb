@@ -41,14 +41,60 @@ class TelegramPersonal::IncomingMessageService
   end
 
   def find_existing_message
-    return inbox.messages.find_by(source_id: storage_source_id) unless group_chat? && params[:chat_id].present?
+    return find_existing_group_message if group_chat? && params[:chat_id].present?
 
-    contact_inbox = inbox.contact_inboxes.find_by(source_id: params[:chat_id].to_s)
+    find_existing_private_message
+  end
+
+  def find_existing_group_message
+    scoped = contact_inbox_messages(params[:chat_id])
+    return if scoped.blank?
+
+    candidates = TelegramPersonal::MessageSourceId.candidates(raw_storage_source_id, chat_id: params[:chat_id])
+    scoped.where(source_id: candidates).first || find_existing_album_message(scoped)
+  end
+
+  def find_existing_private_message
+    existing = inbox.messages.find_by(source_id: storage_source_id)
+    if existing.present?
+      legacy_group_id = legacy_group_chat_id_for(existing)
+      return existing if legacy_group_id.blank?
+
+      rekey_legacy_group_message!(existing, legacy_group_id)
+    end
+    return if params[:grouped_id].blank? || peer_user_id.blank?
+
+    scoped = contact_inbox_messages(peer_user_id)
+    find_existing_album_message(scoped) if scoped.present?
+  end
+
+  def legacy_group_chat_id_for(message)
+    candidate = message.conversation&.additional_attributes.to_h['chat_id'].to_s.presence ||
+                message.conversation&.contact_inbox&.source_id.to_s.presence
+    candidate if candidate.to_s.start_with?('-')
+  end
+
+  def rekey_legacy_group_message!(message, group_chat_id)
+    canonical_id = TelegramPersonal::MessageSourceId.format(message.source_id, chat_id: group_chat_id, group: true)
+    return if canonical_id == message.source_id
+    return if inbox.messages.exists?(source_id: canonical_id)
+
+    message.skip_runtime_events = true
+    message.update!(source_id: canonical_id)
+  end
+
+  def contact_inbox_messages(source_id)
+    contact_inbox = inbox.contact_inboxes.find_by(source_id: source_id.to_s)
     return if contact_inbox.blank?
 
-    inbox.messages.joins(:conversation)
-         .where(conversations: { contact_inbox_id: contact_inbox.id }, source_id: storage_source_id)
-         .first
+    inbox.messages.joins(:conversation).where(conversations: { contact_inbox_id: contact_inbox.id })
+  end
+
+  def find_existing_album_message(scoped)
+    return if params[:grouped_id].blank?
+
+    content_attrs = Message.attributes_object_sql('content_attributes', 'messages')
+    scoped.where("#{content_attrs} ->> 'grouped_id' = ?", params[:grouped_id].to_s).first
   end
 
   def set_contact
@@ -167,6 +213,7 @@ class TelegramPersonal::IncomingMessageService
       @message.reload
       next unless @message.content_attributes.to_h['telegram_history_media_incomplete']
 
+      @message.skip_runtime_events = true
       @unavailable_attachments = []
       attach_missing_history_media
       complete_history_media_enrichment! if history_media_enrichment_complete?
@@ -257,21 +304,34 @@ class TelegramPersonal::IncomingMessageService
     params[:message_id].to_s
   end
 
-  def storage_source_id
+  def raw_storage_source_id
     telegram_message_ids.first.presence || external_message_id
   end
 
+  def storage_source_id
+    TelegramPersonal::MessageSourceId.format(
+      raw_storage_source_id,
+      chat_id: params[:chat_id],
+      group: group_chat?
+    )
+  end
+
   def matching_outgoing_message
+    reference_time = provider_message_time || Time.current
+
     @conversation.messages.outgoing
                  .where(source_id: nil)
-                 .where('created_at >= ?', 10.minutes.ago)
+                 .where(created_at: (reference_time - 10.minutes)..(reference_time + 10.minutes))
                  .reorder(created_at: :desc)
                  .detect { |message| outgoing_message_matches_echo?(message) }
   end
 
   def outgoing_message_matches_echo?(message)
+    stored_reply_to = TelegramPersonal::MessageSourceId.provider_id(message.content_attributes.to_h['in_reply_to_external_id'])
+    incoming_reply_to = TelegramPersonal::MessageSourceId.provider_id(params[:reply_to_message_id])
+
     message.outgoing_content.to_s.strip == echo_content.to_s.strip &&
-      message.content_attributes.to_h['in_reply_to_external_id'].to_s == params[:reply_to_message_id].to_s &&
+      stored_reply_to == incoming_reply_to &&
       message.attachments.size == expected_attachment_count
   end
 
@@ -296,7 +356,7 @@ class TelegramPersonal::IncomingMessageService
     prefix = group_chat? && params[:chat_id].present? ? "group:#{params[:chat_id]}:" : ''
     return "#{prefix}album:#{params[:grouped_id]}" if params[:grouped_id].present?
 
-    "#{prefix}#{storage_source_id}"
+    "#{prefix}#{raw_storage_source_id}"
   end
 
   def telegram_message_ids
@@ -327,7 +387,7 @@ class TelegramPersonal::IncomingMessageService
       attrs[:external_created_at] = provider_message_time.utc.iso8601 if provider_message_time.present?
       attrs[:imported_history] = true if imported_history?
       attrs.merge!(history_media_content_attributes)
-      attrs[:in_reply_to_external_id] = params[:reply_to_message_id].to_s if params[:reply_to_message_id].present?
+      attrs[:in_reply_to_external_id] = formatted_reply_to_message_id if params[:reply_to_message_id].present?
       attrs[:telegram_message_ids] = telegram_message_ids if telegram_message_ids.many?
       attrs[:grouped_id] = params[:grouped_id].to_s if params[:grouped_id].present?
       attrs[:telegram_reactions] = params[:reactions].to_h if params[:reactions].present?
@@ -375,6 +435,14 @@ class TelegramPersonal::IncomingMessageService
       telegram_history_media_incomplete: true,
       telegram_history_media_skipped_message_ids: history_media_skipped_message_ids
     }
+  end
+
+  def formatted_reply_to_message_id
+    TelegramPersonal::MessageSourceId.format(
+      params[:reply_to_message_id],
+      chat_id: params[:chat_id],
+      group: group_chat?
+    )
   end
 
   def reconciled_message_content_attributes

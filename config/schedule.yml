@@ -74,6 +74,13 @@ weixin_sync_channels_job:
   class: 'Weixin::SyncChannelsJob'
   queue: scheduled_jobs
 
+# executed every 5 minutes to ensure Telegram Personal gateway runtimes stay connected and complete/reconcile history sync
+telegram_personal_sync_channels_job:
+  cron: '*/5 * * * *'
+  class: 'TelegramPersonal::SyncChannelsJob'
+  queue: scheduled_jobs
+  active_job: true
+
 # executed At every minute..
 trigger_imap_email_inboxes_job:
   cron: '*/1 * * * *'

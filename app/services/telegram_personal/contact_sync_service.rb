@@ -114,6 +114,7 @@ class TelegramPersonal::ContactSyncService
 
     [
       (@contact&.name if self_profile_payload?),
+      ('Избранное' if boolean_value(:is_self) == true),
       [safe_first_name, safe_last_name].compact.join(' ').strip.presence,
       safe_username,
       safe_phone_number,
@@ -424,9 +425,10 @@ class TelegramPersonal::ContactSyncService
     return @self_profile_payload if defined?(@self_profile_payload)
 
     @self_profile_payload = sync_source.in?(%w[message_event activity_event]) &&
-                            normalized_phone_number.present? &&
-                            channel_phone_number.present? &&
-                            normalized_phone_number == channel_phone_number
+                            (boolean_value(:is_self) == true ||
+                              (normalized_phone_number.present? &&
+                                channel_phone_number.present? &&
+                                normalized_phone_number == channel_phone_number))
   end
 
   def channel_phone_number

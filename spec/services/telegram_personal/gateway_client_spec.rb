@@ -229,6 +229,66 @@ RSpec.describe TelegramPersonal::GatewayClient do
 
       client.history_sync!(force: false, reset_cursor: true, include_contacts: true)
     end
+
+    it 'forwards explicit full mode when specified' do
+      response = instance_double(
+        HTTParty::Response,
+        success?: true,
+        parsed_response: { channel: { lifecycle_state: 'connected' } }
+      )
+
+      expect(HTTParty).to receive(:post) do |url, options|
+        expect(url).to eq("#{ENV.fetch('TELEGRAM_PERSONAL_GATEWAY_URL')}/internal/channels/42/history-sync")
+        expect(JSON.parse(options[:body])).to eq(
+          'force' => true,
+          'reset_cursor' => false,
+          'include_contacts' => false,
+          'full' => true
+        )
+      end.and_return(response)
+
+      client.history_sync!(full: true)
+    end
+  end
+
+  describe '#enrich_message_media!' do
+    it 'posts stripped numeric message ids to the gateway enrich-media endpoint' do
+      response = instance_double(
+        HTTParty::Response,
+        success?: true,
+        parsed_response: { payload: { message_id: '55' } }
+      )
+
+      expect(HTTParty).to receive(:post) do |url, options|
+        expect(url).to eq("#{ENV.fetch('TELEGRAM_PERSONAL_GATEWAY_URL')}/internal/channels/42/messages/enrich-media")
+        expect(options[:timeout]).to eq(180)
+        expect(JSON.parse(options[:body])).to eq(
+          'chat_id' => '-100500',
+          'peer_user_id' => '-100500',
+          'message_id' => '55',
+          'telegram_message_ids' => %w[55 56]
+        )
+      end.and_return(response)
+
+      client.enrich_message_media!(
+        chat_id: '-100500',
+        peer_user_id: '-100500',
+        message_id: 'tg_group:-100500:55',
+        telegram_message_ids: %w[tg_group:-100500:55 56]
+      )
+    end
+
+    it 'wraps Net::ReadTimeout in GatewayError instead of leaking an unhandled timeout' do
+      allow(HTTParty).to receive(:post).and_raise(Net::ReadTimeout.new('execution expired'))
+
+      expect do
+        client.enrich_message_media!(
+          chat_id: '-100500',
+          peer_user_id: '-100500',
+          message_id: '55'
+        )
+      end.to raise_error(TelegramPersonal::GatewayClient::GatewayError, /network error/)
+    end
   end
 
   describe '#contacts_sync!' do

@@ -11,7 +11,8 @@
 #   # => { 'history_sync_state' => 'running', 'history_sync_checkpoint' => { 'next_dialog_index' => 3, ... }, 'sync_groups' => false }
 module Inbox::RuntimeStatePresenter
   TELEGRAM_SECRET_KEYS = %w[string_session pending_phone_code_hash api_hash webhook_secret].freeze
-  TELEGRAM_HIDDEN_CHECKPOINT_KEYS = %w[dialog_user_ids last_completed_dialog_id].freeze
+  TELEGRAM_HIDDEN_RUNTIME_KEYS = %w[history_sync_last_completed_dialog_id].freeze
+  TELEGRAM_HIDDEN_CHECKPOINT_KEYS = %w[dialog_user_ids failed_dialog_ids last_completed_dialog_id dialog_cursors].freeze
   TELEGRAM_ADMIN_KEYS = %w[qr_login_url ignored_chat_ids].freeze
   WEIXIN_HIDDEN_KEYS = %w[message_dedup].freeze
   WEIXIN_ADMIN_KEYS = %w[qr_login_url].freeze
@@ -31,7 +32,7 @@ module Inbox::RuntimeStatePresenter
 
   # A Telegram runtime snapshot: the one stored on the channel or the one the gateway reports
   def telegram_personal_state(state, administrator)
-    payload = state.to_h.deep_stringify_keys.except(*TELEGRAM_SECRET_KEYS)
+    payload = state.to_h.deep_stringify_keys.except(*TELEGRAM_SECRET_KEYS, *TELEGRAM_HIDDEN_RUNTIME_KEYS)
     checkpoint = payload['history_sync_checkpoint']
     payload['history_sync_checkpoint'] = checkpoint.except(*TELEGRAM_HIDDEN_CHECKPOINT_KEYS) if checkpoint.is_a?(Hash)
     administrator ? payload : payload.except(*TELEGRAM_ADMIN_KEYS)
@@ -43,11 +44,11 @@ module Inbox::RuntimeStatePresenter
   #   telegram_personal_diagnostics('connected' => true, 'channel' => { 'string_session' => '1BV...', 'runtime_state' => { ... } })
   #   # => { 'connected' => true, 'channel' => { 'runtime_state' => { ... } } }
   def telegram_personal_diagnostics(diagnostics)
-    result = diagnostics.to_h.deep_stringify_keys.except(*TELEGRAM_SECRET_KEYS)
+    result = diagnostics.to_h.deep_stringify_keys.except(*TELEGRAM_SECRET_KEYS, *TELEGRAM_HIDDEN_RUNTIME_KEYS)
     channel = result['channel']
     return result unless channel.is_a?(Hash)
 
-    channel = channel.except(*TELEGRAM_SECRET_KEYS)
+    channel = channel.except(*TELEGRAM_SECRET_KEYS, *TELEGRAM_HIDDEN_RUNTIME_KEYS)
     channel['runtime_state'] = telegram_personal_state(channel['runtime_state'], true) if channel['runtime_state'].is_a?(Hash)
     result.merge('channel' => channel)
   end

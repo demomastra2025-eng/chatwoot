@@ -253,4 +253,32 @@ RSpec.describe 'Api::V1::Accounts::TelegramPersonalChannelsController', type: :r
       expect(response.parsed_body.dig('runtime_state', 'history_sync_mode')).to eq('full')
     end
   end
+
+  describe 'POST /api/v1/accounts/:account_id/inboxes/:id/telegram_personal_enrich_media' do
+    it 'allows assigned inbox agents to enrich historical media on demand' do
+      create(:inbox_member, inbox: inbox, user: agent)
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, inbox: inbox, contact: contact, source_id: '6002671687')
+      conversation = create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox)
+      message = create(
+        :message,
+        account: account,
+        inbox: inbox,
+        conversation: conversation,
+        source_id: '701',
+        content: '[Attachment]',
+        content_attributes: { 'imported_history' => true, 'telegram_history_media_incomplete' => true }
+      )
+      service = instance_double(TelegramPersonal::EnrichHistoryMediaService, perform: message)
+      expect(TelegramPersonal::EnrichHistoryMediaService).to receive(:new).with(message: message).and_return(service)
+
+      post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/telegram_personal_enrich_media",
+           params: { message_id: message.id },
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body['id']).to eq(message.id)
+    end
+  end
 end

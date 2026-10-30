@@ -495,6 +495,7 @@ Rails.application.routes.draw do
             post :telegram_personal_history_sync, on: :member, to: 'telegram_personal_channels#history_sync'
             post :telegram_personal_contacts_sync, on: :member, to: 'telegram_personal_channels#contacts_sync'
             post :telegram_personal_disconnect, on: :member, to: 'telegram_personal_channels#disconnect'
+            post :telegram_personal_enrich_media, on: :member, to: 'telegram_personal_channels#enrich_media'
             get :telegram_personal_diagnostics, on: :member, to: 'telegram_personal_channels#diagnostics'
 
             post :weixin_request_qr, on: :member, to: 'weixin_channels#request_qr'

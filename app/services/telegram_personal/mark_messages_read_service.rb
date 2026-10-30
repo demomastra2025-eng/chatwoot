@@ -45,7 +45,7 @@ class TelegramPersonal::MarkMessagesReadService
   def telegram_message_ids
     unread_messages.flat_map do |message|
       ids = Array.wrap(message.content_attributes.to_h['telegram_message_ids']).presence || [message.source_id]
-      ids.compact
+      ids.compact.map { |id| TelegramPersonal::MessageSourceId.provider_id(id) }
     end
   end
 end

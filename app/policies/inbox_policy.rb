@@ -127,6 +127,10 @@ class InboxPolicy < ApplicationPolicy
     @account_user.administrator?
   end
 
+  def telegram_personal_enrich_media?
+    @account_user.administrator? || show?
+  end
+
   def weixin_request_qr?
     @account_user.administrator?
   end
