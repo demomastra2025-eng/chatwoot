@@ -17,6 +17,13 @@ class OwnerFinance::Contract < ApplicationRecord
   validates :status, inclusion: { in: STATUSES }
   validates :tariff_code, inclusion: { in: TARIFF_CODES }
   validates :currency, inclusion: { in: OwnerFinance::SUPPORTED_CURRENCIES }
+  validates :monthly_amount, numericality: { greater_than_or_equal_to: 0 }
+  validates :medelement_commission_rate,
+            numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 1 },
+            allow_nil: true
+  validates :billing_day,
+            numericality: { only_integer: true, in: 1..31 },
+            allow_nil: true
 
   after_save :sync_expiry_deadline!
 

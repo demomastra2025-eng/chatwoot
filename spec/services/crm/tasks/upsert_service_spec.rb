@@ -201,6 +201,7 @@ RSpec.describe Crm::Tasks::UpsertService do
     first_conv = create(:conversation, account: account, inbox: inbox, contact: contact)
     second_conv = create(:conversation, account: account, inbox: inbox, contact: contact)
     # rubocop:disable Rails/SkipsModelValidations
+    first_conv.update_columns(display_id: first_conv.id + 50_000)
     second_conv.update_columns(display_id: first_conv.id)
     # rubocop:enable Rails/SkipsModelValidations
 
@@ -242,7 +243,7 @@ RSpec.describe Crm::Tasks::UpsertService do
     contact = create(:contact, account: account)
     thread = CommunicationThread.create!(account: account, contact: contact, status: :open)
     conv = create(:conversation, account: account, inbox: inbox, contact: contact)
-    CommunicationThreadConversation.find_or_create_by!(account: account, communication_thread: thread, conversation: conv)
+    CommunicationThreadConversation.find_or_create_by!(account: account, inbox: inbox, communication_thread: thread, conversation: conv)
 
     linked_task = described_class.new(
       account: account,

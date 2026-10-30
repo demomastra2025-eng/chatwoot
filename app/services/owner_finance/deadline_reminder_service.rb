@@ -23,14 +23,21 @@ class OwnerFinance::DeadlineReminderService
   private
 
   def process_deadlines
+    Crm::TaskCatalogs::Provisioner.new(account: @workspace_account).perform
+    @todo_status = resolve_todo_status
+    @task_type = resolve_task_type
+    return [] unless @todo_status && @task_type
+
+    collect_reminded_deadlines
+  end
+
+  def collect_reminded_deadlines
     reminded = []
     OwnerFinance::Deadline.active.order(:due_on, :id).find_each do |deadline|
       diff = deadline.days_left(@reference_date)
       next unless should_remind?(deadline, diff)
 
-      task = create_crm_task_if_possible(deadline, diff)
-      next unless task
-
+      task = find_or_create_crm_task(deadline, diff)
       deadline.update!(last_reminded_on: @reference_date, last_reminded_offset: diff)
       reminded << { deadline_id: deadline.id, title: deadline.title, days_left: diff, crm_task_id: task.id }
     end
@@ -56,27 +63,26 @@ class OwnerFinance::DeadlineReminderService
     nil
   end
 
-  def create_crm_task_if_possible(deadline, diff)
-    todo_status = resolve_todo_status
-    return nil unless todo_status
-
+  def find_or_create_crm_task(deadline, diff)
     idem_key = "owner_finance:deadline:#{deadline.id}:#{deadline.due_on.iso8601}:d#{diff}"
     Crm::Task.find_by(account_id: @workspace_account.id, idempotency_key: idem_key) ||
-      Crm::Task.create!(crm_task_attributes(deadline, diff, todo_status, idem_key))
+      Crm::Task.create!(crm_task_attributes(deadline, diff, idem_key))
   end
 
   def resolve_todo_status
-    return nil unless @owner && @workspace_account
-
     Crm::TaskStatus.find_by(account_id: @workspace_account.id, code: 'todo') ||
       Crm::TaskStatus.where(account_id: @workspace_account.id, category: 'open').order(:position, :id).first
   end
 
-  def crm_task_attributes(deadline, diff, todo_status, idem_key)
-    task_type = Crm::TaskType.find_by(account_id: @workspace_account.id, code: 'task') ||
-                Crm::TaskType.where(account_id: @workspace_account.id).order(:position, :id).first
+  def resolve_task_type
+    Crm::TaskType.find_by(account_id: @workspace_account.id, code: 'task') ||
+      Crm::TaskType.where(account_id: @workspace_account.id).order(:position, :id).first
+  end
+
+  def crm_task_attributes(deadline, diff, idem_key)
     {
-      account_id: @workspace_account.id, status_id: todo_status.id, task_type_id: task_type&.id,
+      account_id: @workspace_account.id, status_id: @todo_status.id,
+      task_type_id: @task_type.id, activity_type: @task_type.code,
       assignee_id: @owner.id, creator_id: @owner.id, priority: diff <= 2 ? 'high' : 'medium',
       all_day: true, due_on: @reference_date, idempotency_key: idem_key, external_ref: idem_key,
       title: build_title(deadline, diff), description: build_description(deadline, diff)

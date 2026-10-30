@@ -7,6 +7,10 @@ require 'uri'
 class OwnerFinance::OnecFreshSyncService
   DEFAULT_BASE_URL = 'https://1cfresh.kz/a/ea141/211858/odata/standard.odata'
   DEFAULT_AUTH_FILE = '/root/1cfresh_auth.json'
+  GENERIC_MERCHANT_REGEX = /\A(1С Платёж|Банковский ордер 1С)/
+  EXTRA_TRANSFER_PATTERNS = [
+    'подотчет', 'подотчёт', 'собственных средств', 'на личную карту', 'доход ип'
+  ].freeze
 
   def initialize(days_back: 45)
     @days_back = days_back
@@ -107,36 +111,97 @@ class OwnerFinance::OnecFreshSyncService
 
     src_key = "1cfresh:#{direction}:#{ref_key}"
     attrs = bank_doc_attributes(doc, direction, amount)
-    return false if OwnerFinance::PersonalTombstone.hidden_record?(external_source_key: src_key, merchant: attrs[:merchant])
+    return false if hidden_in_tombstones?(src_key, attrs[:merchant])
 
-    record = find_or_match_1c_record(src_key, attrs[:occurred_on], direction, amount)
-    record.update!(attrs.merge(external_source_key: record.external_source_key.presence || src_key))
-    true
+    persist_bank_doc(src_key, direction, amount, attrs)
   rescue Date::Error
     false
   end
 
-  def find_or_match_1c_record(src_key, occurred_on, direction, amount)
+  def persist_bank_doc(src_key, direction, amount, attrs)
+    record = find_or_match_1c_record(src_key, attrs[:occurred_on], [direction, attrs[:direction]].uniq, amount)
+    return false if record.persisted? && hidden_in_tombstones?(record.external_source_key, record.merchant)
+
+    record.update!(merged_1c_attributes(record, src_key, attrs))
+    true
+  end
+
+  def hidden_in_tombstones?(source_key, merchant)
+    OwnerFinance::PersonalTombstone.hidden_record?(external_source_key: source_key, merchant: merchant)
+  end
+
+  def find_or_match_1c_record(src_key, occurred_on, directions, amount)
     existing = OwnerFinance::TransactionRecord.find_by(external_source_key: src_key)
     return existing if existing
 
     matched = OwnerFinance::TransactionRecord
-              .where(official_status: 'official_1c', occurred_on: occurred_on, direction: direction, amount: amount)
+              .where(official_status: 'official_1c', occurred_on: occurred_on, direction: directions, amount: amount)
               .where("external_source_key IS NULL OR external_source_key NOT LIKE '1cfresh:%'")
+              .order(:id)
               .first
     matched || OwnerFinance::TransactionRecord.new(external_source_key: src_key)
   end
 
+  def merged_1c_attributes(record, src_key, attrs)
+    return attrs.merge(external_source_key: src_key) unless record.persisted?
+
+    attrs.merge(
+      external_source_key: src_key,
+      direction: record.direction,
+      pnl_treatment: record.pnl_treatment,
+      category: record.category,
+      merchant: preserve_merchant?(record.merchant) ? record.merchant : attrs[:merchant],
+      description: record.description.presence || attrs[:description],
+      metadata: merged_source_metadata(record, src_key)
+    )
+  end
+
+  def preserve_merchant?(merchant)
+    merchant.present? && !merchant.match?(GENERIC_MERCHANT_REGEX)
+  end
+
+  def merged_source_metadata(record, src_key)
+    meta = record.metadata || {}
+    prev_key = record.external_source_key
+    return meta if prev_key.blank? || prev_key == src_key
+
+    meta.merge('previous_external_source_key' => prev_key)
+  end
+
   def bank_doc_attributes(doc, direction, amount)
     purpose = doc['НазначениеПлатежа'].to_s.strip
+    transfer = accountable_transfer?(direction, purpose)
     {
-      occurred_on: Date.parse(doc['Date'].to_s), direction: direction,
-      pnl_treatment: 'pnl', official_status: 'official_1c', review_status: 'confirmed',
+      occurred_on: Date.parse(doc['Date'].to_s),
+      direction: transfer ? 'transfer' : direction,
+      pnl_treatment: transfer ? 'non_pnl' : 'pnl',
+      official_status: 'official_1c', review_status: 'confirmed',
       amount: amount, currency: 'KZT', amount_kzt: amount,
-      category: direction == 'income' ? 'client_subscription' : infer_1c_category(purpose),
-      merchant: doc['Номер'].present? ? "1С Платёж №#{doc['Номер']}" : 'Банковский ордер 1С',
+      category: resolve_1c_category(direction, purpose, transfer),
+      merchant: default_1c_merchant(doc, transfer),
       description: purpose
     }
+  end
+
+  def resolve_1c_category(direction, purpose, transfer)
+    return 'accountable_transfer' if transfer
+    return 'client_subscription' if direction == 'income'
+
+    infer_1c_category(purpose)
+  end
+
+  def default_1c_merchant(doc, transfer)
+    return 'Подотчётный перевод (Счёт ИП ↔ Карта)' if transfer
+
+    doc['Номер'].present? ? "1С Платёж №#{doc['Номер']}" : 'Банковский ордер 1С'
+  end
+
+  def accountable_transfer?(direction, purpose)
+    return false unless direction == 'expense'
+
+    low = purpose.downcase
+    patterns = OwnerFinance::StatementImportService::ACCOUNTABLE_TRANSFER_PATTERNS + EXTRA_TRANSFER_PATTERNS
+    patterns.any? { |pat| low.include?(pat) }
   end
 
   def infer_1c_category(purpose)

@@ -40,6 +40,7 @@ class OwnerFinance::DashboardQueryService
       contracts: serialized_contracts(col[:contracts]),
       needs_review_transactions: serialized_needs_review,
       transactions: serialized_confirmed(period_range),
+      transactions_total_count: confirmed_scope(period_range).count,
       obligations: col[:obligations].map { |item| OwnerFinance::RecordSerializer.obligation(item) },
       expense_breakdown: build_expense_breakdown(period_pnl_tx),
       monthly_series: build_monthly_series,
@@ -127,8 +128,12 @@ class OwnerFinance::DashboardQueryService
     end
   end
 
+  def confirmed_scope(period_range)
+    OwnerFinance::TransactionRecord.confirmed.where(occurred_on: period_range)
+  end
+
   def serialized_confirmed(period_range)
-    OwnerFinance::TransactionRecord.confirmed.where(occurred_on: period_range).order(occurred_on: :desc, id: :desc).limit(250).map do |item|
+    confirmed_scope(period_range).order(occurred_on: :desc, id: :desc).limit(250).map do |item|
       OwnerFinance::RecordSerializer.transaction(item)
     end
   end

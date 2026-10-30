@@ -31,9 +31,26 @@ import {
   formatMoney,
 } from '../constants';
 
-const nowAlmaty = new Date();
-const selectedYear = ref(nowAlmaty.getFullYear());
-const selectedMonth = ref(nowAlmaty.getMonth() + 1);
+function getAlmatyYearMonth() {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Almaty',
+      year: 'numeric',
+      month: '2-digit',
+    }).formatToParts(new Date());
+    const year = Number(parts.find(p => p.type === 'year')?.value);
+    const month = Number(parts.find(p => p.type === 'month')?.value);
+    if (year && month) return { year, month };
+  } catch {
+    // Fallback to local clock if Intl timeZone is unavailable
+  }
+  const fallback = new Date();
+  return { year: fallback.getFullYear(), month: fallback.getMonth() + 1 };
+}
+
+const initialAlmaty = getAlmatyYearMonth();
+const selectedYear = ref(initialAlmaty.year);
+const selectedMonth = ref(initialAlmaty.month);
 const activeTab = ref('overview');
 
 const isLoading = ref(false);
@@ -141,8 +158,13 @@ const obligationForm = reactive({
 });
 
 const yearOptions = computed(() => {
-  const base = nowAlmaty.getFullYear();
-  return [base - 1, base, base + 1];
+  const base = initialAlmaty.year;
+  const startYear = Math.min(2023, base - 2);
+  const endYear = base + 1;
+  return Array.from(
+    { length: endYear - startYear + 1 },
+    (_, idx) => startYear + idx
+  );
 });
 
 const kpis = computed(() => dashboard.value?.kpis || {});
