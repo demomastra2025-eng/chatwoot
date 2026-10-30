@@ -110,6 +110,29 @@ RSpec.describe Messages::MarkdownRendererService, type: :service do
       end
     end
 
+    context 'when channel is Channel::WhatsappWeb' do
+      let(:channel_type) { 'Channel::WhatsappWeb' }
+
+      it 'strips ProseMirror hard-break trailing backslashes while preserving the line break' do
+        content = "Здравствуйте! по Адресу https://app.one-link.kz/ \\\nЧерез логин + пароль"
+        result = described_class.new(content, channel_type).render
+        expect(result).to eq("Здравствуйте! по Адресу https://app.one-link.kz/ \nЧерез логин + пароль")
+        expect(result).not_to include('\\')
+      end
+
+      it 'converts bold, preserves italic, and unwraps markdown links for WhatsApp Web' do
+        content = '**Важно** _логин_ [OneLink](https://app.one-link.kz/)'
+        result = described_class.new(content, channel_type).render
+        expect(result).to eq('*Важно* _логин_ https://app.one-link.kz/')
+      end
+
+      it 'preserves multiple consecutive newlines' do
+        content = "Здравствуйте! по Адресу https://app.one-link.kz/\n\nЧерез логин + пароль"
+        result = described_class.new(content, channel_type).render
+        expect(result).to eq("Здравствуйте! по Адресу https://app.one-link.kz/\n\nЧерез логин + пароль")
+      end
+    end
+
     context 'when channel is Channel::Instagram' do
       let(:channel_type) { 'Channel::Instagram' }
 

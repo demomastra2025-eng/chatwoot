@@ -5,6 +5,7 @@ class Messages::MarkdownRendererService
     'Channel::Telegram' => :render_telegram_html,
     'Channel::TelegramPersonal' => :render_telegram_personal_html,
     'Channel::Whatsapp' => :render_whatsapp,
+    'Channel::WhatsappWeb' => :render_whatsapp,
     'Channel::FacebookPage' => :render_instagram,
     'Channel::Instagram' => :render_instagram,
     'Channel::Line' => :render_line,

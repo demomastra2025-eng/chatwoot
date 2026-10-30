@@ -22,6 +22,42 @@ describe '/app/login', type: :request do
       end
     end
 
+    it 'renders OpenGraph preview metadata with absolute PNG logo URL when DISPLAY_MANIFEST is enabled' do
+      InstallationConfig.find_or_initialize_by(name: 'DISPLAY_MANIFEST').update!(value: true)
+      InstallationConfig.find_or_initialize_by(name: 'INSTALLATION_NAME').update!(value: 'OneLink')
+      GlobalConfig.clear_cache
+
+      with_modified_env FRONTEND_URL: 'https://app.one-link.kz' do
+        get '/app/login'
+
+        document = Nokogiri::HTML(response.body)
+        expect(document.at_css('meta[property="og:type"]')['content']).to eq('website')
+        expect(document.at_css('meta[property="og:title"]')['content']).to eq('OneLink')
+        expect(document.at_css('meta[property="og:description"]')['content']).to include('это решение для поддержки клиентов')
+        expect(document.at_css('meta[property="og:url"]')['content']).to eq('https://app.one-link.kz/')
+        expect(document.at_css('meta[property="og:image"]')['content']).to eq('https://app.one-link.kz/favicon-512x512.png')
+        expect(document.at_css('meta[property="og:image:width"]')['content']).to eq('512')
+        expect(document.at_css('meta[property="og:image:height"]')['content']).to eq('512')
+      end
+    ensure
+      GlobalConfig.clear_cache
+    end
+
+    it 'omits og:url and og:image instead of reflecting Host when FRONTEND_URL is blank' do
+      InstallationConfig.find_or_initialize_by(name: 'DISPLAY_MANIFEST').update!(value: true)
+      GlobalConfig.clear_cache
+
+      with_modified_env FRONTEND_URL: '' do
+        get '/app/login', headers: { 'Host' => 'untrusted.example' }
+
+        document = Nokogiri::HTML(response.body)
+        expect(document.at_css('meta[property="og:url"]')).to be_nil
+        expect(document.at_css('meta[property="og:image"]')).to be_nil
+      end
+    ensure
+      GlobalConfig.clear_cache
+    end
+
     it 'keeps the dashboard shell locked to the viewport' do
       get '/app'
 

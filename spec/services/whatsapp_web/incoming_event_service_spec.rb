@@ -246,6 +246,51 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       expect(message.content_attributes['edited']).to eq(true)
     end
 
+    it 'preserves CommonMark content when receiving self-authored edit echoes and ignores blank edit payloads' do
+      signed_channel = create(:channel_whatsapp_web, sign_messages: true, sign_delimiter: '\\n')
+      agent = create(:user, account: signed_channel.account, name: 'Alice Agent')
+      conversation = create(:conversation, account: signed_channel.account, inbox: signed_channel.inbox)
+      message = create(
+        :message,
+        account: signed_channel.account,
+        inbox: signed_channel.inbox,
+        conversation: conversation,
+        sender: agent,
+        message_type: :outgoing,
+        content: "Здравствуйте! https://app.one-link.kz/ \\\n**Через логин + пароль**",
+        source_id: 'wa-self-edit-echo-1'
+      )
+
+      described_class.new(
+        channel: signed_channel,
+        payload: {
+          event: 'send.message.update',
+          data: {
+            key: { id: 'wa-self-edit-echo-1', remoteJid: '15551234567@s.whatsapp.net', fromMe: true },
+            editedMessage: {
+              extendedTextMessage: { text: "*Alice Agent:*\nЗдравствуйте! https://app.one-link.kz/ \n*Через логин + пароль*" }
+            }
+          }
+        }.with_indifferent_access
+      ).perform
+
+      expect(message.reload.content).to eq("Здравствуйте! https://app.one-link.kz/ \\n**Через логин + пароль**")
+      expect(message.content_attributes['edited']).to be(true)
+
+      described_class.new(
+        channel: signed_channel,
+        payload: {
+          event: 'send.message.update',
+          data: {
+            key: { id: 'wa-self-edit-echo-1', remoteJid: '15551234567@s.whatsapp.net', fromMe: true },
+            editedMessage: {}
+          }
+        }.with_indifferent_access
+      ).perform
+
+      expect(message.reload.content).to eq("Здравствуйте! https://app.one-link.kz/ \\\n**Через логин + пароль**")
+    end
+
     it 'maps provider delivery updates onto existing messages' do
       message = create(
         :message,
