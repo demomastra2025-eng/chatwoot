@@ -505,6 +505,7 @@ class Message < ApplicationRecord
     additional_metadata = message_attributes_hash(additional_attributes)
     [
       content_metadata['touch_id'], content_metadata['automation_rule_id'],
+      content_metadata['confirmation_request_id'],
       additional_metadata['touch_id'], additional_metadata['campaign_id']
     ].any?(&:present?)
   end
@@ -562,12 +563,7 @@ class Message < ApplicationRecord
     # person by the latest activity, and a reopened conversation must already carry the time of this message.
     set_conversation_activity
     refresh_contact_language_stats
-    if runtime_events_suppressed?
-      mark_pending_conversation_as_open_for_human_response(runtime_events: false)
-      update_contact_activity(runtime_events: false)
-      refresh_communication_thread
-      return
-    end
+    return execute_suppressed_after_create_callbacks if runtime_events_suppressed?
 
     # rails issue with order of active record callbacks being executed https://github.com/rails/rails/issues/20911
     reopen_conversation
@@ -721,11 +717,82 @@ class Message < ApplicationRecord
 
   def reopen_conversation
     return if conversation.muted?
-    return unless incoming?
+    return reopen_for_incoming_message if incoming?
 
+    reopen_for_manual_human_outgoing if manual_human_outgoing_reopen_candidate?
+  end
+
+  def execute_suppressed_after_create_callbacks
+    reopen_for_suppressed_live_echo
+    mark_pending_conversation_as_open_for_human_response(runtime_events: false)
+    update_contact_activity(runtime_events: false)
+    refresh_communication_thread
+  end
+
+  def reopen_for_suppressed_live_echo
+    return if Current.suppress_runtime_events || conversation.muted?
+
+    reopen_for_manual_human_outgoing if manual_human_outgoing_reopen_candidate?
+  end
+
+  def reopen_for_incoming_message
     transition_conversation_status!('open', source: 'contact') if conversation.snoozed?
-
     reopen_resolved_conversation if communication_threads_enabled? || conversation.resolved?
+  end
+
+  def reopen_for_manual_human_outgoing
+    reopen_resolved_conversation(by_human_outgoing: true) if communication_threads_enabled? || conversation.resolved?
+  end
+
+  def manual_human_outgoing_reopen_candidate?
+    return false unless public_human_text_reply?
+    return false if non_interactive_outgoing_context?
+
+    interactive_ui_human_sender? || live_external_echo_reply?
+  end
+
+  def public_human_text_reply?
+    human_response? && !private? && !voice_call? && !ai_voice_transcript_turn? && !imported_history_message?
+  end
+
+  def non_interactive_outgoing_context?
+    Current.api_access_token_authenticated || Current.macro_execution ||
+      automated_outbound_message? || scheduled_touch_message?
+  end
+
+  def interactive_ui_human_sender?
+    Current.interactive_ui_request == true && sender.is_a?(User)
+  end
+
+  def live_external_echo_reply?
+    return false if message_attributes_hash(content_attributes)['external_echo'].blank?
+
+    !recent_in_flight_unsourced_outgoing?
+  end
+
+  def recent_in_flight_unsourced_outgoing?
+    recent_unsourced_public_outgoing_candidates.any? do |candidate|
+      !echo_or_imported_attributes?(candidate.content_attributes)
+    end
+  end
+
+  def recent_unsourced_public_outgoing_candidates
+    conversation.messages.outgoing
+                .where(private: false, source_id: [nil, ''])
+                .where.not(id: id)
+                .where.not(status: :failed)
+                .where('created_at >= ?', 45.seconds.ago)
+                .select(:id, :content_attributes)
+                .limit(10)
+  end
+
+  def echo_or_imported_attributes?(raw_attributes)
+    attrs = message_attributes_hash(raw_attributes)
+    attrs['external_echo'].present? || ActiveModel::Type::Boolean.new.cast(attrs['imported_history'])
+  end
+
+  def imported_history_message?
+    ActiveModel::Type::Boolean.new.cast(message_attributes_hash(content_attributes)['imported_history'])
   end
 
   def mark_pending_conversation_as_open_for_human_response(runtime_events: true)
@@ -767,25 +834,25 @@ class Message < ApplicationRecord
     false
   end
 
-  def reopen_resolved_conversation
-    return perform_reopen_transition if !communication_threads_enabled? && conversation.resolved?
+  def reopen_resolved_conversation(by_human_outgoing: false)
+    return perform_reopen_transition(by_human_outgoing: by_human_outgoing) if !communication_threads_enabled? && conversation.resolved?
 
     conversation.restore_attributes if conversation.has_changes_to_save?
     conversation.with_lock do
       communication_thread = conversation.communication_thread
       if communication_thread
-        communication_thread.with_lock { reopen_locked_conversation(communication_thread) }
+        communication_thread.with_lock { reopen_locked_conversation(communication_thread, by_human_outgoing: by_human_outgoing) }
       elsif conversation.resolved?
-        perform_reopen_transition
+        perform_reopen_transition(by_human_outgoing: by_human_outgoing)
       end
     end
   end
 
-  def reopen_locked_conversation(communication_thread)
+  def reopen_locked_conversation(communication_thread, by_human_outgoing: false)
     return unless conversation.resolved?
 
     communication_thread.update!(session_started_at: communication_session_started_at) if communication_thread.resolved?
-    perform_reopen_transition
+    perform_reopen_transition(by_human_outgoing: by_human_outgoing)
   end
 
   # A reply to a closed notification conversation keeps the notification in view. It was sent while the thread was closed, so
@@ -806,25 +873,29 @@ class Message < ApplicationRecord
     latest_messages.take_while(&:automated_outbound_message?).last&.created_at
   end
 
-  def perform_reopen_transition
-    # mark resolved bot conversation as pending to be reopened by bot processor service
-    if conversation.inbox.active_bot? && !conversation.group_conversation?
-      transition_conversation_status!('pending', source: 'contact')
-    elsif conversation.inbox.api?
-      Current.executed_by = sender if reopened_by_contact?
-      transition_conversation_status!('open', source: reopened_by_contact? ? 'contact' : 'system')
-    else
-      transition_conversation_status!('open', source: reopened_by_contact? ? 'contact' : 'system')
-    end
+  def perform_reopen_transition(by_human_outgoing: false)
+    return transition_conversation_status!('open', source: 'system') if by_human_outgoing
+    return transition_conversation_status!('pending', source: 'contact') if bot_reopen_pending_candidate?
+
+    Current.executed_by = sender if conversation.inbox.api? && reopened_by_contact?
+    transition_conversation_status!('open', source: reopened_by_contact? ? 'contact' : 'system')
+  end
+
+  def bot_reopen_pending_candidate?
+    conversation.inbox.active_bot? && !conversation.group_conversation?
   end
 
   def transition_conversation_status!(target_status, source: 'system')
     Conversations::StatusTransitionService.new(
       conversation: conversation,
       params: { status: target_status },
-      actor: Current.user || Current.executed_by || (sender if reopened_by_contact?),
+      actor: Current.user || Current.executed_by || status_transition_sender_actor,
       source: source
     ).perform
+  end
+
+  def status_transition_sender_actor
+    sender if reopened_by_contact? || sender.is_a?(User)
   end
 
   def reopened_by_contact?

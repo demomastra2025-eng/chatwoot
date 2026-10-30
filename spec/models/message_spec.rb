@@ -587,6 +587,82 @@ RSpec.describe Message do
       expect(conversation.open?).to be false
       expect(conversation.pending?).to be true
     end
+
+    context 'when a human operator manually sends a public outgoing reply' do
+      let(:agent) { create(:user, account: conversation.account) }
+
+      it 'reopens a resolved conversation directly to open on interactive UI reply even when a bot is active',
+         :aggregate_failures do
+        create(:integrations_hook, :dialogflow, account: conversation.account, inbox: conversation.inbox)
+        conversation.resolved!
+
+        Current.with_interactive_ui_request do
+          create(:message, conversation: conversation, account: conversation.account, message_type: :outgoing, sender: agent)
+        end
+
+        expect(conversation.reload).to be_open
+        expect(conversation.status_transitions.last).to have_attributes(from_status: 'resolved', to_status: 'open', actor: agent)
+      end
+
+      it 'reopens a resolved communication thread and advances session_started_at on interactive UI reply',
+         :aggregate_failures do
+        account = conversation.account
+        account.enable_features!('communication_threads')
+        create(:message, account: account, inbox: conversation.inbox, conversation: conversation,
+                         message_type: :incoming, created_at: 2.days.ago)
+        conversation.resolved!
+        communication_thread = conversation.reload.refresh_communication_thread!
+
+        reply = Current.with_interactive_ui_request do
+          create(:message, account: account, inbox: conversation.inbox, conversation: conversation,
+                           message_type: :outgoing, sender: agent)
+        end
+
+        expect(conversation.reload).to be_open
+        expect(communication_thread.reload).to be_open
+        expect(communication_thread.session_started_at).to be_within(0.001.seconds).of(reply.created_at)
+      end
+
+      it 'reopens on live native external_echo (including TelegramPersonal skip_runtime_events) unless imported',
+         :aggregate_failures do
+        account = conversation.account
+        account.enable_features!('communication_threads')
+        conversation.resolved!
+        thread = conversation.reload.refresh_communication_thread!
+
+        conversation.messages.create!(account: account, inbox: conversation.inbox, message_type: :outgoing, content: 'Old',
+                                      skip_runtime_events: true, content_attributes: { external_echo: true, imported_history: true })
+        expect(conversation.reload).to be_resolved
+
+        Current.with_runtime_events_suppressed do
+          conversation.messages.create!(account: account, inbox: conversation.inbox, message_type: :outgoing, content: 'Bulk',
+                                        content_attributes: { external_echo: true })
+        end
+        expect(conversation.reload).to be_resolved
+
+        conversation.messages.create!(account: account, inbox: conversation.inbox, message_type: :outgoing, content: 'Phone reply',
+                                      skip_runtime_events: true, content_attributes: { external_echo: true })
+        expect(conversation.reload).to be_open
+        expect(thread.reload).to be_open
+      end
+
+      it 'does not reopen for in-flight unsourced automated sends, non-UI sends, or confirmation deliveries',
+         :aggregate_failures do
+        conversation.resolved!
+
+        create(:message, conversation: conversation, account: conversation.account, message_type: :outgoing, sender: agent,
+                         source_id: nil)
+        conversation.messages.create!(account: conversation.account, inbox: conversation.inbox, message_type: :outgoing,
+                                      content: 'Raced echo', content_attributes: { external_echo: true })
+        expect(conversation.reload).to be_resolved
+
+        Current.with_interactive_ui_request do
+          create(:message, conversation: conversation, account: conversation.account, message_type: :outgoing, sender: agent,
+                           content_attributes: { confirmation_request_id: 99 })
+        end
+        expect(conversation.reload).to be_resolved
+      end
+    end
   end
 
   describe '#mark_pending_conversation_as_open_for_human_response' do

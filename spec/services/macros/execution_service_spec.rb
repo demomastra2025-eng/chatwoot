@@ -169,6 +169,19 @@ RSpec.describe Macros::ExecutionService, type: :service do
     end
   end
 
+  describe 'status preservation during macro message actions' do
+    it 'keeps the conversation resolved when a macro resolves and sends a closing message inside an interactive UI request' do
+      allow(macro).to receive(:actions).and_return([
+                                                     { action_name: 'resolve_conversation', action_params: [] },
+                                                     { action_name: 'send_message', action_params: ['Closing message'] }
+                                                   ])
+
+      Current.with_interactive_ui_request { service.perform }
+
+      expect(conversation.reload).to be_resolved
+    end
+  end
+
   describe '#send_webhook_event' do
     it 'sends a webhook event' do
       expect(WebhookJob).to receive(:perform_later)

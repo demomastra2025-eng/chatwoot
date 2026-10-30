@@ -1431,6 +1431,37 @@ RSpec.describe 'Communication Threads API', type: :request do
   end
 
   describe 'POST /api/v1/accounts/:account_id/communication_threads/:id/messages' do
+    it 'reopens a resolved thread on manual UI public reply and keeps it resolved for notes or api_access_token',
+       :aggregate_failures do
+      conversation = create(:conversation, account: account, status: :resolved)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread
+      expect(thread).to be_resolved
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
+           params: { content: 'Private note on closed thread', conversation_id: conversation.display_id, private: true },
+           headers: headers,
+           as: :json
+      expect(response).to have_http_status(:success)
+      expect(thread.reload).to be_resolved
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
+           params: { content: 'API token send', conversation_id: conversation.display_id, private: false },
+           headers: { api_access_token: agent.access_token.token },
+           as: :json
+      expect(response).to have_http_status(:success)
+      expect(thread.reload).to be_resolved
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
+           params: { content: 'Manual operator reply', conversation_id: conversation.display_id, private: false },
+           headers: headers,
+           as: :json
+      expect(response).to have_http_status(:success)
+      expect(conversation.reload).to be_open
+      expect(thread.reload).to be_open
+      expect(response.parsed_body.dig('communication_thread', 'status')).to eq('open')
+    end
+
     it 'sends through an existing linked child conversation', :aggregate_failures do
       conversation = create(:conversation, account: account)
       create(:inbox_member, user: agent, inbox: conversation.inbox)

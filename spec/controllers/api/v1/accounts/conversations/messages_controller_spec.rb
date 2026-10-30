@@ -39,6 +39,27 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(response.parsed_body['error']).not_to include('PG::QueryCanceled')
       end
 
+      it 'reopens a resolved conversation on manual UI public reply but keeps it resolved for api_access_token',
+         :aggregate_failures do
+        conversation.resolved!
+
+        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
+             params: { content: 'Automated script broadcast', private: false },
+             headers: { api_access_token: agent.access_token.token },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.reload).to be_resolved
+
+        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
+             params: { content: 'Manual operator reply', private: false },
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.reload).to be_open
+      end
+
       it 'creates a new outgoing message' do
         params = { content: 'test-message', private: true }
 

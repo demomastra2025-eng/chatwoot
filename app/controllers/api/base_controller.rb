@@ -7,11 +7,16 @@ class Api::BaseController < ApplicationController
   before_action :authenticate_user!, unless: :authenticate_by_access_token?
   before_action :ensure_active_auth_session!, unless: :authenticate_by_access_token?
   before_action :enforce_super_admin_impersonation_scope!, unless: :authenticate_by_access_token?
+  before_action :mark_interactive_ui_request, unless: :authenticate_by_access_token?
 
   private
 
   def authenticate_by_access_token?
     request.headers[:api_access_token].present? || request.headers[:HTTP_API_ACCESS_TOKEN].present?
+  end
+
+  def mark_interactive_ui_request
+    Current.interactive_ui_request = true if (Current.user || current_user).is_a?(User)
   end
 
   def enforce_super_admin_impersonation_scope!

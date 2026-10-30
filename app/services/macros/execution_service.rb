@@ -8,12 +8,14 @@ class Macros::ExecutionService < ActionService
   end
 
   def perform
-    @macro.actions.each do |action|
-      action = action.with_indifferent_access
-      begin
-        send(action[:action_name], action[:action_params])
-      rescue StandardError => e
-        ChatwootExceptionTracker.new(e, account: @account).capture_exception
+    Current.with_macro_execution do
+      @macro.actions.each do |action|
+        action = action.with_indifferent_access
+        begin
+          send(action[:action_name], action[:action_params])
+        rescue StandardError => e
+          ChatwootExceptionTracker.new(e, account: @account).capture_exception
+        end
       end
     end
   ensure
