@@ -5,7 +5,8 @@
 #   form = SuperAdmin::ClientOnboarding::Form.blank          # the form as the page first shows it
 #   form = SuperAdmin::ClientOnboarding::Form.from_params(params)   # the form of a request: only text is taken
 SuperAdmin::ClientOnboarding::Form = Struct.new(
-  :account_name, :timezone, :organization_mode, :organization_id, :organization_name, :organization_bin, :modules, :start_trial, :admin,
+  :account_name, :timezone, :organization_mode, :organization_id, :organization_name, :organization_bin,
+  :tariff, :modules, :start_trial, :admin,
   keyword_init: true
 ) do
   # Astana, no organization, no modules, the invitation when the mail works and the password when it does not
@@ -15,7 +16,7 @@ SuperAdmin::ClientOnboarding::Form = Struct.new(
       access: SuperAdmin::MailState.configured? ? 'invitation' : 'password'
     )
     new(account_name: '', timezone: SuperAdmin::AccountTimezones::DEFAULT, organization_mode: 'none', organization_id: '',
-        organization_name: '', organization_bin: '', modules: [], start_trial: false, admin: admin)
+        organization_name: '', organization_bin: '', tariff: '', modules: [], start_trial: false, admin: admin)
   end
 
   # Anything that is not text (a list or a map where a field is expected) is an empty value
@@ -55,6 +56,7 @@ SuperAdmin::ClientOnboarding::Form = Struct.new(
   end
 
   def read_plan(params)
+    self.tariff = params[:tariff].is_a?(String) ? params[:tariff].strip : ''
     self.modules = self.class.module_list(params[:modules])
     self.start_trial = ActiveModel::Type::Boolean.new.cast(params[:start_trial]) ? true : false
   end

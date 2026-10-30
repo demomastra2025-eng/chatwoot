@@ -168,10 +168,12 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
 
     it 'names every limit, explains it and offers the three choices (see account_limits_spec)' do
       rows = page.css("[data-testid='limit-rows'] [data-limit]")
-      keys = %w[agents inboxes conversations non_web_inboxes storage_bytes captain_responses captain_documents captain_tokens emails]
+      keys = %w[agents inboxes conversations non_web_inboxes storage_bytes captain_responses captain_documents captain_tokens
+                captain_ai_dialogs call_analysis_minutes emails]
       expect(rows.map { |row| row['data-limit'] }).to eq(keys)
       expect(rows.map { |row| text(row.at_css('.admin-limit__label')) }).to eq(
-        ['Операторы', 'Каналы', 'Диалоги за 30 дней', 'Основные каналы', 'Хранилище', 'Ответы ИИ', 'Документы ИИ', 'Токены ИИ', 'Письма в день']
+        ['Операторы', 'Каналы', 'Диалоги за 30 дней', 'Основные каналы', 'Хранилище', 'Ответы ИИ', 'Документы ИИ', 'Токены ИИ',
+         'ИИ-диалоги в месяц', 'Анализ звонков в месяц', 'Письма в день']
       )
       expect(text(rows.first.at_css('.admin-limit__hint'))).to eq('Сколько пользователей может быть в аккаунте.')
       expect(rows.first.css('label.admin-limit__option').map { |option| text(option.at_css('.admin-limit__option-title')) })
@@ -196,7 +198,7 @@ RSpec.describe 'Super Admin clinic forms', type: :request do
     end
 
     it 'shows the spend with meters and without English' do
-      expect(page.css("[data-testid='limit-rows'] [data-usage] .admin-limit__usage").size).to eq(9)
+      expect(page.css("[data-testid='limit-rows'] [data-usage] .admin-limit__usage").size).to eq(11)
       expect(response.body).not_to match(/Unlimited|Usage is read-only|Resettable counters|Leave a field blank|Outbound|Captain responses/)
     end
 

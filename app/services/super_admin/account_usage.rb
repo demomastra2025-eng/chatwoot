@@ -10,10 +10,15 @@ class SuperAdmin::AccountUsage
   WARNING_PERCENT = 80
   CRITICAL_PERCENT = 95
 
-  Row = Struct.new(:key, :label, :hint, :consumed, :total, :unlimited, :bytes, :percent, :tone, keyword_init: true) do
+  Row = Struct.new(:key, :label, :hint, :consumed, :total, :unlimited, :bytes, :percent, :tone,
+                   :overage_count, :overage_kzt, :non_blocking_overage, keyword_init: true) do
     # A limit of 0 forbids the action altogether
     def blocked?
       !unlimited && total.to_i.zero?
+    end
+
+    def overage?
+      !unlimited && total.to_i.positive? && overage_count.to_i.positive?
     end
   end
 
@@ -27,6 +32,8 @@ class SuperAdmin::AccountUsage
     [:captain_responses, 'captain_responses', %i[captain responses], false],
     [:captain_documents, 'captain_documents', %i[captain documents], false],
     [:captain_tokens, 'captain_tokens', %i[captain tokens], false],
+    [:captain_ai_dialogs, 'captain_ai_dialogs', %i[captain ai_dialogs], false],
+    [:call_analysis_minutes, 'call_analysis_minutes', %i[captain call_analysis_minutes], false],
     [:emails, 'emails', %i[emails], false]
   ].freeze
 
@@ -60,9 +67,13 @@ class SuperAdmin::AccountUsage
     unlimited = summary[:unlimited] || Accounts::Plans.unlimited_value?(limit_key, total) ? true : false
     percent = percent_of(consumed, total, unlimited)
 
+    non_blocking = summary[:non_blocking_overage] ? true : false
     Row.new(
       key: key, label: I18n.t("super_admin.limits.#{limit_key}.label"), hint: I18n.t("super_admin.limits.#{limit_key}.hint"),
-      consumed: consumed, total: total, unlimited: unlimited, bytes: bytes, percent: percent, tone: tone_for(percent, total, unlimited)
+      consumed: consumed, total: total, unlimited: unlimited, bytes: bytes, percent: percent,
+      tone: tone_for(percent, total, unlimited, non_blocking: non_blocking),
+      overage_count: summary[:overage_count].to_i, overage_kzt: summary[:overage_kzt].to_i,
+      non_blocking_overage: non_blocking
     )
   end
 
@@ -72,9 +83,10 @@ class SuperAdmin::AccountUsage
     (consumed.to_f / total * 100).round(1)
   end
 
-  def tone_for(percent, total, unlimited)
+  def tone_for(percent, total, unlimited, non_blocking: false)
     return :idle if unlimited
     return :bad if total <= 0
+    return :warn if non_blocking && percent >= WARNING_PERCENT
     return :bad if percent >= CRITICAL_PERCENT
     return :warn if percent >= WARNING_PERCENT
 

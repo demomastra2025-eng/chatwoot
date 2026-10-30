@@ -12,7 +12,7 @@
 # Flag classification (base / one module / locked_on / never_enabled / internal) is described in the YAML.
 # A flag that appears in two places is an error here; a flag of features.yml that appears nowhere is reported by
 # #unclassified_features and is covered by a spec, so an upstream merge cannot stop the application from booting.
-class Accounts::Plans
+class Accounts::Plans # rubocop:disable Metrics/ClassLength
   class InvalidConfig < StandardError; end
 
   CONFIG_PATH = Rails.root.join('config/account_plans.yml').freeze
@@ -23,7 +23,12 @@ class Accounts::Plans
   # The keys of Account#limits. The one list: the validation of Account#limits (Enterprise::Account::PlanUsageAndLimits
   # #validate_limit_keys) is built from it, so a key added here is accepted by the model and the plans can set it.
   LIMIT_KEYS = %w[
-    inboxes agents conversations non_web_inboxes storage_bytes captain_responses captain_documents captain_tokens emails
+    inboxes agents conversations non_web_inboxes storage_bytes captain_responses captain_documents captain_tokens
+    captain_ai_dialogs call_analysis_minutes emails
+  ].freeze
+  PRICING_KEYS = %w[
+    monthly_kzt annual_monthly_kzt annual_total_kzt extra_agent_kzt extra_storage_10gb_kzt
+    overage_ai_dialog_kzt overage_call_minute_kzt custom
   ].freeze
   # What a limit is counted in decides whether the bare ChatwootApp.max_limit (100 000) can stand for «no limit» of it:
   #
@@ -39,6 +44,8 @@ class Accounts::Plans
     'captain_tokens' => 1_000_000,
     'captain_responses' => 1_000,
     'captain_documents' => 1_000,
+    'captain_ai_dialogs' => 1_000,
+    'call_analysis_minutes' => 1_000,
     'emails' => 1_000
   }.freeze
 
@@ -56,14 +63,24 @@ class Accounts::Plans
       Time.current.getlocal(ASTANA_OFFSET).iso8601
     end
 
-    # "База" or "База + ИИ-агенты + Рассылки"
-    def plan_label(modules)
+    # "База" or "База + ИИ-агенты + Рассылки", or the named commercial tariff
+    def plan_label(modules, tariff: nil)
+      return tariff_name(tariff) if tariff.present? && tariff?(tariff)
+
       names = [I18n.t('super_admin.plans.base.name')] + Array(modules).map { |key| module_name(key) }
       names.join(' + ')
     end
 
     def module_name(key)
       I18n.t("super_admin.plans.modules.#{key}.name", default: key.to_s)
+    end
+
+    def tariff_name(key)
+      I18n.t("super_admin.plans.tariffs.#{key}.name", default: key.to_s)
+    end
+
+    def tariff_description(key)
+      I18n.t("super_admin.plans.tariffs.#{key}.description", default: '')
     end
 
     # The number that stands for «no limit» in Account#limits. The code treats it as no limit (Enterprise::Account::PlanUsageAndLimits,
@@ -80,7 +97,9 @@ class Accounts::Plans
     delegate :version, :base_features, :base_limits, :module_keys, :module?, :module_features, :module_limits,
              :locked_on, :never_enabled, :internal, :classified_features, :managed_features, :unclassified_features,
              :features_for, :limits_for, :normalize_modules, :known_modules, :module_for_feature,
-             :trial_days, :trial_modules, :trial_features, to: :current
+             :trial_days, :trial_modules, :trial_features,
+             :tariff_keys, :active_tariff_keys, :tariff?, :legacy_tariff?, :known_tariff, :stored_tariff,
+             :tariff_modules, :tariff_limits, :tariff_pricing, to: :current
   end
 
   attr_reader :version, :base_features, :base_limits, :locked_on, :never_enabled, :internal, :trial_days, :trial_modules
@@ -88,17 +107,7 @@ class Accounts::Plans
   # config: the parsed YAML; feature_names: every flag the application knows (Featurable::FEATURE_NAMES)
   def initialize(config, feature_names: Featurable::FEATURE_NAMES)
     @feature_names = feature_names.to_a.map(&:to_s).freeze
-    config = config.is_a?(Hash) ? config : {}
-
-    @version = parse_version(config['version'])
-    @base_features = feature_list(config.dig('base', 'features'), 'base.features')
-    @base_limits = parse_limits(config.dig('base', 'limits'), 'base.limits', complete: true)
-    @modules = parse_modules(config['modules'])
-    @locked_on = feature_list(config['locked_on'], 'locked_on')
-    @internal = feature_list(config['internal'], 'internal')
-    # never_enabled may name flags that are absent from features.yml (they are removed by other branches)
-    @never_enabled = name_list(config['never_enabled'], 'never_enabled').freeze
-    @trial_days, @trial_modules = parse_trial(config['trial'])
+    load_sections(config.is_a?(Hash) ? config : {})
 
     validate_unique_classification!
     freeze
@@ -118,6 +127,45 @@ class Accounts::Plans
 
   def module_limits(key)
     fetch_module(key)[:limits]
+  end
+
+  def tariff_keys
+    @tariffs.keys
+  end
+
+  def active_tariff_keys
+    tariff_keys.reject { |key| legacy_tariff?(key) }
+  end
+
+  def tariff?(key)
+    @tariffs.key?(key.to_s)
+  end
+
+  def legacy_tariff?(key)
+    fetch_tariff(key)[:legacy] == true
+  end
+
+  def known_tariff(key)
+    normalized = key.to_s.strip
+    raise ArgumentError, "Unknown plan tariff: #{key}" unless tariff?(normalized)
+
+    normalized
+  end
+
+  def stored_tariff(key)
+    key.present? && tariff?(key) ? key.to_s : nil
+  end
+
+  def tariff_modules(key)
+    fetch_tariff(key)[:modules]
+  end
+
+  def tariff_limits(key)
+    fetch_tariff(key)[:limits]
+  end
+
+  def tariff_pricing(key)
+    fetch_tariff(key)[:pricing]
   end
 
   # Every flag the plans name, wherever it is placed
@@ -144,11 +192,11 @@ class Accounts::Plans
   # Limit values of base + these modules, for every key: a number, or nil when the plan leaves the key alone.
   # `unlimited` is resolved to the «no limit» number of that limit (see .unlimited_value). A module value (when not nil) wins
   # over the base.
-  def limits_for(modules)
+  def limits_for(modules, tariff: nil)
     merged = @base_limits.dup
-    normalize_modules(modules).each do |key|
-      module_limits(key).each { |limit_key, value| merged[limit_key] = value unless value.nil? }
-    end
+    effective_modules = tariff.present? ? tariff_modules(tariff) : normalize_modules(modules)
+    effective_modules.each { |key| merge_limit_layer!(merged, module_limits(key)) }
+    merge_limit_layer!(merged, tariff_limits(tariff)) if tariff.present?
     merged.to_h { |limit_key, value| [limit_key, resolve_limit(limit_key, value)] }.freeze
   end
 
@@ -183,8 +231,28 @@ class Accounts::Plans
     @base_features + @modules.values.flat_map { |entry| entry[:features] } + @locked_on + @never_enabled + @internal
   end
 
+  def load_sections(config)
+    @version = parse_version(config['version'])
+    @base_features = feature_list(config.dig('base', 'features'), 'base.features')
+    @base_limits = parse_limits(config.dig('base', 'limits'), 'base.limits', complete: true)
+    @modules = parse_modules(config['modules'])
+    @locked_on = feature_list(config['locked_on'], 'locked_on')
+    @internal = feature_list(config['internal'], 'internal')
+    @never_enabled = name_list(config['never_enabled'], 'never_enabled').freeze
+    @tariffs = parse_tariffs(config['tariffs'])
+    @trial_days, @trial_modules = parse_trial(config['trial'])
+  end
+
+  def merge_limit_layer!(target, layer)
+    layer.each { |limit_key, value| target[limit_key] = value unless value.nil? }
+  end
+
   def fetch_module(key)
     @modules.fetch(key.to_s) { raise ArgumentError, "Unknown plan module: #{key}" }
+  end
+
+  def fetch_tariff(key)
+    @tariffs.fetch(key.to_s) { raise ArgumentError, "Unknown plan tariff: #{key}" }
   end
 
   def resolve_limit(key, value)
@@ -209,6 +277,39 @@ class Accounts::Plans
     features = feature_list(entry['features'], "modules.#{key}.features")
     invalid!("module #{key} needs at least one feature") if features.empty?
     { features: features, limits: parse_limits(entry['limits'] || {}, "modules.#{key}.limits", complete: false) }.freeze
+  end
+
+  def parse_tariffs(raw)
+    return {}.freeze if raw.nil?
+
+    invalid!('tariffs must be a map of tariff key => { modules, limits, pricing }') unless raw.is_a?(Hash)
+    raw.to_h { |key, entry| [key.to_s, parse_tariff(key.to_s, entry)] }.freeze
+  end
+
+  def parse_tariff(key, entry)
+    invalid!("tariff key #{key.inspect} must be snake_case") unless key.match?(/\A[a-z][a-z0-9_]*\z/)
+    invalid!("tariff #{key} must be a map") unless entry.is_a?(Hash)
+
+    modules = parse_tariff_modules(key, entry['modules'])
+    limits = parse_limits(entry['limits'] || {}, "tariffs.#{key}.limits", complete: false)
+    pricing = parse_tariff_pricing(key, entry['pricing'] || {})
+    { modules: modules, limits: limits, pricing: pricing, legacy: entry['legacy'] == true }.freeze
+  end
+
+  def parse_tariff_modules(key, raw)
+    invalid!("tariffs.#{key}.modules must be a list") unless raw.is_a?(Array)
+    list = raw.map(&:to_s)
+    unknown = list - module_keys
+    invalid!("tariffs.#{key}.modules names unknown modules: #{unknown.join(', ')}") if unknown.any?
+    (module_keys & list).freeze
+  end
+
+  def parse_tariff_pricing(key, raw)
+    invalid!("tariffs.#{key}.pricing must be a map") unless raw.is_a?(Hash)
+    pricing = raw.transform_keys(&:to_s)
+    unknown = pricing.keys - PRICING_KEYS
+    invalid!("tariffs.#{key}.pricing has unknown keys: #{unknown.join(', ')}") if unknown.any?
+    pricing.freeze
   end
 
   def parse_trial(raw)

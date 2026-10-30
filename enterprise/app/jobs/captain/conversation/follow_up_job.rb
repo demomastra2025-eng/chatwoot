@@ -598,6 +598,7 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
     message = @delivery.call(content, follow_up_attributes)
     return unless valid_materialized_follow_up?(message)
 
+    Accounts::MonthlyAiUsageService.new(@conversation.account).record_ai_dialog_reply!(@conversation, message_id: message.id)
     message
   end
 

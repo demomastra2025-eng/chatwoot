@@ -63,15 +63,15 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
       <%# Applying the same plan again brings the functions back to it. %>
       <%= render 'super_admin/shared/confirm_action', key: 'reset-plan', label: t('super_admin.plans.drift.reset'),
                  text: [t('super_admin.plans.drift.reset_confirm')], url: apply_plan_super_admin_account_path(account),
-                 params: { modules: chosen }, tone: :primary, submit: t('super_admin.safety.plan.reset_submit'),
+                 params: { modules: chosen, tariff: state.tariff }.compact, tone: :primary, submit: t('super_admin.safety.plan.reset_submit'),
                  trigger_class: 'button button--small button--secondary' %>
     </div>
   <% end %>
 
   <%= form_with url: apply_plan_super_admin_account_path(account), method: :post, local: true, class: 'flex flex-col gap-4',
                 data: { plan_form: true, assigned: state.assigned?.to_s, limits_held: held.to_s, initial_modules: chosen.to_json,
-                        preview_url: plan_preview_super_admin_account_path(account) } do %>
-    <%= render 'plan_cards', chosen: chosen %>
+                        initial_tariff: state.tariff.to_s, preview_url: plan_preview_super_admin_account_path(account) } do %>
+    <%= render 'plan_cards', chosen: chosen, tariff: state.tariff %>
 
     <div data-plan-preview aria-live="polite" hidden></div>
 
@@ -97,17 +97,32 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
     // The end of a trial left the limits at 0: applying the plan gives them back, so it is possible with the modules as they are
     var held = form.getAttribute('data-limits-held') === 'true';
     var initial = JSON.parse(form.getAttribute('data-initial-modules') || '[]').slice().sort().join(',');
+    var initialTariff = form.getAttribute('data-initial-tariff') || '';
     var requestId = 0;
 
     function selected() {
       return Array.prototype.map.call(form.querySelectorAll('input[name="modules[]"]:checked'), function (input) { return input.value; });
     }
 
-    // A clinic with a plan can apply once the modules differ; a clinic without one can always take the base, and so can one
+    function selectedTariff() {
+      var checked = form.querySelector('input[name="tariff"]:checked');
+      return checked ? checked.value : '';
+    }
+
+    function applyTariffModules(radio) {
+      if (!radio || !radio.value) return;
+      var wanted = JSON.parse(radio.getAttribute('data-tariff-modules') || '[]');
+      Array.prototype.forEach.call(form.querySelectorAll('input[name="modules[]"]'), function (box) {
+        box.checked = wanted.indexOf(box.value) !== -1;
+      });
+    }
+
+    // A clinic with a plan can apply once the modules or tariff differ; a clinic without one can always take the base, and so can one
     // whose limits the end of a trial holds at 0.
     function sync() {
       var modules = selected();
-      var changed = !assigned || held || modules.slice().sort().join(',') !== initial;
+      var tariff = selectedTariff();
+      var changed = !assigned || held || tariff !== initialTariff || modules.slice().sort().join(',') !== initial;
       submit.disabled = !changed;
       if (!changed) {
         requestId += 1;
@@ -118,6 +133,7 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
       }
       var query = new URLSearchParams();
       query.append('fragment', '1');
+      if (tariff) query.append('tariff', tariff);
       modules.forEach(function (module) { query.append('modules[]', module); });
       var current = (requestId += 1);
       fetch(form.getAttribute('data-preview-url') + '?' + query.toString(), {
@@ -139,7 +155,15 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
     }
 
     form.addEventListener('change', function (event) {
-      if (event.target && event.target.name === 'modules[]') sync();
+      if (!event.target) return;
+      if (event.target.name === 'tariff') {
+        applyTariffModules(event.target);
+        sync();
+      } else if (event.target.name === 'modules[]') {
+        var customRadio = form.querySelector('input[name="tariff"][value=""]');
+        if (customRadio) customRadio.checked = true;
+        sync();
+      }
     });
     sync();
   })();

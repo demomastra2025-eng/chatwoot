@@ -18,7 +18,8 @@ the plan and are not asked) and its first administrator (an invitation by e-mail
   errors = @errors
   administrator = form.admin
   organizations = SuperAdmin::OrganizationOptions.for_select
-  chosen_modules = Accounts::Plans.module_keys & form.modules
+  chosen_tariff = Accounts::Plans.stored_tariff(form.tariff)
+  chosen_modules = chosen_tariff ? Accounts::Plans.tariff_modules(chosen_tariff) : (Accounts::Plans.module_keys & form.modules)
   trial_modules = Accounts::Plans.trial_modules.map { |key| Accounts::Plans.module_name(key) }.join(', ')
   adopt_offered = @conflict.present? || administrator.adopt
   # Where each problem of the summary leads: the field (or the section) it is about
@@ -151,7 +152,7 @@ the plan and are not asked) and its first administrator (an invitation by e-mail
         <h2 class="admin-block__title" id="client-plan-title"><%= t('super_admin.onboarding.plan.title') %></h2>
         <p class="admin-block__hint"><%= t('super_admin.onboarding.plan.hint') %></p>
       </div>
-      <%= render 'super_admin/accounts/plan_cards', chosen: chosen_modules %>
+      <%= render 'super_admin/accounts/plan_cards', chosen: chosen_modules, tariff: form.tariff %>
       <%= super_admin_field_error(errors, :modules) %>
       <p class="admin-block__note m-0" data-testid="limits-note"><%= t('super_admin.onboarding.plan.limits_note') %></p>
 

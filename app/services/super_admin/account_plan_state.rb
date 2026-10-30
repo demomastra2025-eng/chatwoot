@@ -37,13 +37,19 @@ class SuperAdmin::AccountPlanState
     attributes[Accounts::ApplyPlan::PLAN_KEY].present?
   end
 
+  def tariff
+    Accounts::Plans.stored_tariff(attributes[Accounts::ApplyPlan::TARIFF_KEY])
+  end
+
   # The modules that were chosen and still exist in the registry, in registry order
   def modules
     Accounts::Plans.known_modules(attributes[Accounts::ApplyPlan::MODULES_KEY])
   end
 
   def label
-    assigned? ? Accounts::Plans.plan_label(modules) : I18n.t('super_admin.plans.not_assigned')
+    return I18n.t('super_admin.plans.not_assigned') unless assigned?
+
+    tariff ? Accounts::Plans.plan_label(modules, tariff: tariff) : Accounts::Plans.plan_label(modules)
   end
 
   def version
@@ -149,7 +155,8 @@ class SuperAdmin::AccountPlanState
   def chips
     list = []
     if assigned?
-      list << Chip.new(text: I18n.t('super_admin.plans.base.name'), tone: :iris)
+      lead = tariff ? Accounts::Plans.tariff_name(tariff) : I18n.t('super_admin.plans.base.name')
+      list << Chip.new(text: lead, tone: :iris)
       modules.each { |key| list << Chip.new(text: Accounts::Plans.module_name(key), tone: :slate) }
     end
     list << trial_chip if trial_state != :none

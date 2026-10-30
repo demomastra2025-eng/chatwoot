@@ -8,8 +8,19 @@ class SuperAdmin::BulkAccounts::ApplyPlan < SuperAdmin::BulkAccounts::Base
 
   # The keys of the modules chosen, in the order of the registry; empty (the base alone) when none is chosen. Nil when the
   # request names a module that does not exist or sends the list in a wrong shape.
+  def tariff
+    return @tariff if defined?(@tariff)
+
+    raw = options[:tariff]
+    @tariff = raw.blank? ? nil : ::Accounts::Plans.known_tariff(raw)
+  rescue ArgumentError
+    @tariff = :invalid
+  end
+
   def modules
     return @modules if defined?(@modules)
+    return @modules = nil if tariff == :invalid
+    return @modules = ::Accounts::Plans.tariff_modules(tariff) if tariff.present?
 
     raw = options[:modules]
     @modules = case raw
@@ -20,7 +31,7 @@ class SuperAdmin::BulkAccounts::ApplyPlan < SuperAdmin::BulkAccounts::Base
     @modules = nil
   end
 
-  def error = (:unknown_module if modules.nil?)
+  def error = (:unknown_module if modules.nil? || tariff == :invalid)
 
   def evaluate(account)
     diff = plan_for(account).preview
@@ -37,13 +48,13 @@ class SuperAdmin::BulkAccounts::ApplyPlan < SuperAdmin::BulkAccounts::Base
   private
 
   def plan_for(account)
-    ::Accounts::ApplyPlan.new(account: account, modules: modules, actor: actor, request: request)
+    ::Accounts::ApplyPlan.new(account: account, modules: modules, tariff: tariff, actor: actor, request: request)
                          .with_audit_extra(SuperAdmin::BulkAccounts::AUDIT_EXTRA)
   end
 
   # Nothing to switch, no limit to move, and the account already says it is on this plan and version
   def same_plan?(diff)
-    !diff.changed? && diff.previous_plan == diff.plan && diff.previous_modules.sort == diff.modules.sort &&
-      diff.previous_version == diff.plan_version
+    !diff.changed? && diff.previous_plan == diff.plan && diff.previous_tariff == diff.tariff &&
+      diff.previous_modules.sort == diff.modules.sort && diff.previous_version == diff.plan_version
   end
 end

@@ -13,7 +13,8 @@ channels) is set on the clinic card.
 - `page`: an `Administrate::Page::Form` for a new Account.
 %>
 <%
-  chosen = Accounts::Plans.module_keys & Array(params[:modules]).map(&:to_s)
+  chosen_tariff = Accounts::Plans.stored_tariff(params[:tariff])
+  chosen = chosen_tariff ? Accounts::Plans.tariff_modules(chosen_tariff) : (Accounts::Plans.module_keys & Array(params[:modules]).map(&:to_s))
   trial_modules = Accounts::Plans.trial_modules.map { |key| Accounts::Plans.module_name(key) }.join(', ')
   fields = page.attributes('new').values.flatten
 %>
@@ -80,7 +81,7 @@ channels) is set on the clinic card.
         <h2 class="admin-block__title" id="new-plan-title"><%= t('super_admin.clinic_card.plan.title') %></h2>
         <p class="admin-block__hint"><%= t('super_admin.clinic_card.new.plan_hint') %></p>
       </div>
-      <%= render 'plan_cards', chosen: chosen %>
+      <%= render 'plan_cards', chosen: chosen, tariff: chosen_tariff %>
     </section>
 
     <section class="admin-block" aria-labelledby="new-trial-title" data-testid="new-trial-block">

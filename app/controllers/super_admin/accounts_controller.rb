@@ -73,12 +73,15 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   # operator typed into the form win over the plan; the plan only fills the blanks. `start_trial` starts a trial on
   # top of it.
   def create
+    tariff = requested_plan_tariff
     modules = requested_plan_modules
-    return redirect_to(new_super_admin_client_path, alert: I18n.t('super_admin.accounts.flashes.plan_unknown_module')) if modules.nil?
+    if modules.nil? || tariff == :invalid
+      return redirect_to(new_super_admin_client_path, alert: I18n.t('super_admin.accounts.flashes.plan_unknown_module'))
+    end
 
     super do |account|
       yield(account) if block_given?
-      apply_plan_to_new_account(account, modules)
+      apply_plan_to_new_account(account, modules, tariff: tariff)
       start_trial_for_new_account(account) if start_trial_requested?
     end
   end
@@ -199,17 +202,17 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
   # Writes base + the chosen modules (`modules[]`; none = the base alone) into the account and audits it.
   def apply_plan
+    tariff = requested_plan_tariff
     modules = requested_plan_modules
-    return redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.plan_unknown_module')) if modules.nil?
+    return redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.plan_unknown_module')) if invalid_plan_selection?(modules, tariff)
 
-    account = requested_resource
-    begin
-      Accounts::ApplyPlan.new(account: account, modules: modules, actor: current_super_admin, request: request).call
-    rescue StandardError => e
-      Rails.logger.warn("[SuperAdmin] Plan apply failed for account #{account.id}: #{e.class.name}: #{e.message}")
-      return redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.plan_apply_failed'))
-    end
-    redirect_to_account(notice: I18n.t('super_admin.accounts.flashes.plan_applied', plan: Accounts::Plans.plan_label(modules)))
+    diff = Accounts::ApplyPlan.new(
+      account: requested_resource, modules: modules, tariff: tariff, actor: current_super_admin, request: request
+    ).call
+    redirect_to_account(notice: I18n.t('super_admin.accounts.flashes.plan_applied', plan: plan_label_for_diff(diff)))
+  rescue StandardError => e
+    Rails.logger.warn("[SuperAdmin] Plan apply failed for account #{requested_resource.id}: #{e.class.name}: #{e.message}")
+    redirect_to_account(alert: I18n.t('super_admin.accounts.flashes.plan_apply_failed'))
   end
 
   # «Обновить лимиты по тарифу» of the limits block: the numbers of the plan as they are now go into the limits that follow the plan
@@ -230,10 +233,13 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   # and notes. The clinic card asks for the same thing as an HTML fragment (`fragment=1`) and shows it before the
   # operator confirms.
   def plan_preview
+    tariff = requested_plan_tariff
     modules = requested_plan_modules
-    return render(json: { error: I18n.t('super_admin.accounts.flashes.plan_unknown_module') }, status: :unprocessable_content) if modules.nil?
+    if invalid_plan_selection?(modules, tariff)
+      return render(json: { error: I18n.t('super_admin.accounts.flashes.plan_unknown_module') }, status: :unprocessable_content)
+    end
 
-    diff = Accounts::ApplyPlan.new(account: requested_resource, modules: modules, actor: current_super_admin).preview
+    diff = Accounts::ApplyPlan.new(account: requested_resource, modules: modules, tariff: tariff, actor: current_super_admin).preview
     if params[:fragment].present?
       render partial: 'super_admin/accounts/plan_preview', locals: { diff: diff }, formats: [:html]
     else
@@ -623,6 +629,24 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
 
   # The `modules` param as a list of known module keys; nil when it is malformed or names an unknown module.
+  def invalid_plan_selection?(modules, tariff)
+    modules.nil? || tariff == :invalid
+  end
+
+  def plan_label_for_diff(diff)
+    diff.tariff ? Accounts::Plans.plan_label(diff.modules, tariff: diff.tariff) : Accounts::Plans.plan_label(diff.modules)
+  end
+
+  def requested_plan_tariff
+    raw = params[:tariff]
+    return nil if raw.blank?
+    return :invalid unless raw.is_a?(String)
+
+    Accounts::Plans.known_tariff(raw)
+  rescue ArgumentError
+    :invalid
+  end
+
   def requested_plan_modules
     raw = params[:modules]
     return [] if raw.blank?
@@ -680,8 +704,8 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
 
   # An account that cannot take the plan stays created; the operator is told and can apply it from the card.
-  def apply_plan_to_new_account(account, modules)
-    Accounts::ApplyPlan.new(account: account, modules: modules, actor: current_super_admin, request: request).call
+  def apply_plan_to_new_account(account, modules, tariff: nil)
+    Accounts::ApplyPlan.new(account: account, modules: modules, tariff: tariff, actor: current_super_admin, request: request).call
   rescue StandardError => e
     Rails.logger.warn("[SuperAdmin] Plan apply on create failed for account #{account.id}: #{e.class.name}: #{e.message}")
     flash[:alert] = I18n.t('super_admin.accounts.flashes.plan_apply_failed')

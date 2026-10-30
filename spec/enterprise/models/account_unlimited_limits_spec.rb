@@ -31,7 +31,9 @@ RSpec.describe 'Account limits: «Без ограничений» in the code th
       'agents' => overview[:agents], 'inboxes' => overview[:inboxes], 'conversations' => overview[:conversations],
       'non_web_inboxes' => overview[:non_web_inboxes], 'storage_bytes' => overview[:storage], 'emails' => overview[:emails],
       'captain_responses' => overview[:captain][:responses], 'captain_documents' => overview[:captain][:documents],
-      'captain_tokens' => overview[:captain][:tokens]
+      'captain_tokens' => overview[:captain][:tokens],
+      'captain_ai_dialogs' => overview[:captain][:ai_dialogs],
+      'call_analysis_minutes' => overview[:captain][:call_analysis_minutes]
     }.fetch(key)
   end
 
@@ -40,12 +42,13 @@ RSpec.describe 'Account limits: «Без ограничений» in the code th
       expect(keys.index_with { |key| Accounts::Plans.unlimited_value(key) }).to eq(
         'agents' => max, 'inboxes' => max, 'conversations' => max, 'non_web_inboxes' => max,
         'storage_bytes' => max * 1.gigabyte, 'captain_tokens' => max * 1_000_000,
-        'captain_responses' => max * 1_000, 'captain_documents' => max * 1_000, 'emails' => max * 1_000
+        'captain_responses' => max * 1_000, 'captain_documents' => max * 1_000,
+        'captain_ai_dialogs' => max * 1_000, 'call_analysis_minutes' => max * 1_000, 'emails' => max * 1_000
       )
     end
 
     it 'is above 100 000 for every limit that a counter reaches, so a quota of 100 000 stays a quota' do
-      %w[captain_responses captain_documents emails storage_bytes captain_tokens].each do |key|
+      %w[captain_responses captain_documents captain_ai_dialogs call_analysis_minutes emails storage_bytes captain_tokens].each do |key|
         expect(Accounts::Plans.unlimited_value(key)).to be > max
         expect(Accounts::Plans.unlimited_value?(key, max)).to be(false)
       end
@@ -70,7 +73,7 @@ RSpec.describe 'Account limits: «Без ограничений» in the code th
     end
 
     it 'never leaves 100 000 where the counters would reach it' do
-      %w[captain_responses captain_documents emails].each do |key|
+      %w[captain_responses captain_documents captain_ai_dialogs call_analysis_minutes emails].each do |key|
         choose_unlimited(key)
 
         expect(account.limits[key]).to be > max

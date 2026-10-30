@@ -39,9 +39,16 @@ class SuperAdmin::ClientOnboarding
     errors.empty? && account.present?
   end
 
+  def tariff
+    return @tariff if defined?(@tariff)
+
+    raw = form.respond_to?(:tariff) ? form.tariff.to_s.strip : ''
+    @tariff = raw.present? ? Accounts::Plans.known_tariff(raw) : nil
+  end
+
   # The modules in the form that the plans know (the form's own list, checked)
   def modules
-    @modules ||= Accounts::Plans.normalize_modules(form.modules)
+    @modules ||= tariff ? Accounts::Plans.tariff_modules(tariff) : Accounts::Plans.normalize_modules(form.modules)
   end
 
   private
@@ -93,6 +100,7 @@ class SuperAdmin::ClientOnboarding
   end
 
   def validate_modules
+    tariff
     modules
   rescue ArgumentError
     errors[:modules] = I18n.t('super_admin.accounts.flashes.plan_unknown_module')
@@ -139,7 +147,7 @@ class SuperAdmin::ClientOnboarding
 
   # The limits of the plan fill the blanks of the new account (nothing is asked for them here)
   def apply_plan
-    Accounts::ApplyPlan.new(account: account, modules: modules, actor: @actor, request: @request).call
+    Accounts::ApplyPlan.new(account: account, modules: modules, tariff: tariff, actor: @actor, request: @request).call
   end
 
   def start_trial
@@ -161,7 +169,7 @@ class SuperAdmin::ClientOnboarding
       'organization_name' => organization&.name, 'organization_created' => organization_created ? true : false,
       'modules' => modules, 'trial' => form.start_trial ? true : false,
       'administrator' => { 'email' => member.user.email, 'access' => member.access.to_s }
-    }
+    }.merge(tariff.present? ? { 'tariff' => tariff } : {})
   end
 
   # Nothing was saved: forget the half-built objects and say what went wrong, on the field when it is one

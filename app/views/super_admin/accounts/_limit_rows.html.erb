@@ -52,6 +52,9 @@ them belongs to the page (the card has its own, the edit form of the account is 
           <div class="admin-meter" role="img" aria-label="<%= t('super_admin.limits.meter_label', label: row.label, percent: usage.percent) %>">
             <div class="admin-meter__fill <%= fill_class %>" style="width: <%= [[usage.percent.to_f, 0].max, 100].min %>%"></div>
           </div>
+          <% if usage.overage? %>
+            <span class="admin-badge admin-badge--amber w-fit" data-testid="limit-overage"><%= t('super_admin.limits.overage_badge', count: super_admin_number(usage.overage_count)) %></span>
+          <% end %>
         <% end %>
       <% end %>
 

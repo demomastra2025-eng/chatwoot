@@ -1,4 +1,4 @@
-class Whatsapp::CallTranscriptionService < Llm::BaseAiService
+class Whatsapp::CallTranscriptionService < Llm::BaseAiService # rubocop:disable Metrics/ClassLength
   include Integrations::LlmInstrumentation
 
   WHISPER_MODEL = 'whisper-1'.freeze
@@ -27,7 +27,7 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
   private
 
   def can_transcribe?
-    account.call_transcriptions_enabled? && account.captain_quota_available?
+    account.call_transcriptions_enabled? && account.call_analysis_quota_available?
   end
 
   # Transcribe per-direction recordings separately when possible so lines can
@@ -53,6 +53,7 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
     client = Whatsapp::MediaServerClient.new
     File.binwrite(customer_path, client.download_recording(call.media_session_id, side: 'customer'))
     File.binwrite(agent_path,    client.download_recording(call.media_session_id, side: 'agent'))
+    probe_diarized_duration(customer_path, agent_path)
 
     segments = transcribe_segments(customer_path, 'Customer') +
                transcribe_segments(agent_path, 'Agent')
@@ -233,6 +234,7 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
     File.open(temp_file_path, 'wb') do |file|
       blob.open { |blob_file| IO.copy_stream(blob_file, file) }
     end
+    @probed_duration_seconds ||= Telephony::CallTranscript.probe(temp_file_path)['duration_seconds']
 
     temp_file_path
   end
@@ -247,8 +249,16 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
   def update_call_and_message(transcribed_text)
     return if transcribed_text.blank?
 
-    call.update!(transcript: transcribed_text)
+    first_transcription = false
+    call.with_lock do
+      call.reload
+      first_transcription = call.transcript.blank?
+      call.update!(transcript: transcribed_text)
+    end
+    return unless first_transcription
+
     account.increment_response_usage
+    record_call_analysis_usage!
 
     message = call.message
     return unless message
@@ -258,6 +268,31 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
     data['data']['transcript'] = transcribed_text
     data['data']['recording_url'] = call.recording_url
     message.update!(content_attributes: data)
+  end
+
+  def probe_diarized_duration(customer_path, agent_path)
+    return if call.respond_to?(:duration_seconds) && call.duration_seconds.present?
+
+    @probed_duration_seconds ||= [
+      Telephony::CallTranscript.probe(customer_path)['duration_seconds'],
+      Telephony::CallTranscript.probe(agent_path)['duration_seconds']
+    ].compact.max
+  end
+
+  def record_call_analysis_usage!
+    duration = call.respond_to?(:duration_seconds) && call.duration_seconds.present? ? call.duration_seconds : @probed_duration_seconds
+    Accounts::MonthlyAiUsageService.new(account).record_call_analysis!(
+      duration_seconds: duration,
+      unanswered: unanswered_whatsapp_call?(duration)
+    )
+  end
+
+  def unanswered_whatsapp_call?(duration)
+    status = call.respond_to?(:status) ? call.status.to_s : ''
+    end_reason = call.respond_to?(:end_reason) ? call.end_reason.to_s : ''
+    unanswered_statuses = %w[missed unanswered no_answer busy failed canceled cancelled rejected]
+    unanswered_statuses.include?(status) || unanswered_statuses.include?(end_reason) ||
+      (%w[created ringing connecting].include?(status) && duration.to_f <= 0)
   end
 
   def extension_from_content_type(content_type)

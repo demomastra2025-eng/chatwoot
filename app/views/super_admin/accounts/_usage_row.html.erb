@@ -33,6 +33,9 @@ the action is forbidden and is marked as such.
     <div class="admin-meter" role="img" aria-label="<%= t('super_admin.limits.meter_label', label: row.label, percent: row.percent) %>">
       <div class="admin-meter__fill <%= fill_class %>" style="width: <%= fill_width %>%"></div>
     </div>
+    <% if row.overage? %>
+      <span class="admin-badge admin-badge--amber w-fit" data-testid="limit-overage"><%= t('super_admin.limits.overage_badge', count: super_admin_number(row.overage_count)) %></span>
+    <% end %>
   <% end %>
 
   <span class="text-xs text-n-slate-10"><%= row.hint %></span>
