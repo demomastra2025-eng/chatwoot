@@ -59,7 +59,7 @@ useEmitter('clearSearchInput', () => {
 </script>
 
 <template>
-  <div class="relative flex">
+  <div class="flex md:relative">
     <NextButton
       v-tooltip.right="$t('CHAT_LIST.LOCAL_SEARCH.TOOLTIP_LABEL')"
       :aria-label="$t('CHAT_LIST.LOCAL_SEARCH.TOOLTIP_LABEL')"
@@ -73,10 +73,10 @@ useEmitter('clearSearchInput', () => {
     <div
       v-if="isOpen"
       v-on-click-outside="closeSearch"
-      class="mt-1 bg-n-alpha-3 backdrop-blur-[100px] border border-n-weak w-[26rem] rounded-xl p-3 absolute z-40 top-full"
+      class="mt-1 bg-n-alpha-3 backdrop-blur-[100px] border border-n-weak inset-x-3 w-auto md:inset-x-auto md:w-[26rem] rounded-xl p-3 absolute z-40 top-full"
       :class="{
-        'ltr:left-0 rtl:right-0': !isOnExpandedLayout,
-        'ltr:right-0 rtl:left-0': isOnExpandedLayout,
+        'md:ltr:left-0 md:rtl:right-0': !isOnExpandedLayout,
+        'md:ltr:right-0 md:rtl:left-0': isOnExpandedLayout,
       }"
     >
       <h3 class="mb-2 px-1 text-sm font-medium text-n-slate-12">

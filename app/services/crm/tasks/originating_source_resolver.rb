@@ -48,7 +48,9 @@ module Crm::Tasks::OriginatingSourceResolver
   end
 
   def latest_thread_conversation(thread)
-    thread&.conversations&.order(Arel.sql('conversations.last_activity_at DESC NULLS LAST, conversations.id DESC'))&.first
+    thread&.conversations&.where(account_id: account.id)&.order(
+      Arel.sql('conversations.last_activity_at DESC NULLS LAST, conversations.id DESC')
+    )&.first
   end
 
   def thread_default_assignee
