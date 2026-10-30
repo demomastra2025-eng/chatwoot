@@ -6,6 +6,7 @@ import CrmDealsAPI from 'dashboard/api/crm/deals';
 import CrmTasksAPI from 'dashboard/api/crm/tasks';
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter } from 'dashboard/composables/store';
+import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 import CrmTaskFormFields from 'dashboard/components-next/CRM/CrmTaskFormFields.vue';
 import {
   taskStatusLabel,
@@ -29,6 +30,10 @@ const { t } = useI18n();
 const referencesStore = useCrmReferencesStore();
 const agents = useMapGetter('agents/getAgents');
 const currentUser = useMapGetter('getCurrentUser');
+const currentAccountId = useMapGetter('getCurrentAccountId');
+const isFeatureEnabledOnAccount = useMapGetter(
+  'accounts/isFeatureEnabledonAccount'
+);
 const saving = ref(false);
 const loading = ref(false);
 const dealOptions = ref([]);
@@ -41,6 +46,7 @@ const form = reactive({
   dealId: '',
   description: '',
   dueAt: '',
+  originatingCommunicationThreadId: '',
   originatingConversationDisplayId: '',
   originatingConversationId: '',
   priority: 'medium',
@@ -52,17 +58,35 @@ const open = computed({
   get: () => props.modelValue,
   set: value => emit('update:modelValue', value),
 });
-const conversationId = computed(() => {
+const isThread = computed(() => isCommunicationThread(props.currentChat));
+const conversationDisplayId = computed(() => {
   const chat = props.currentChat;
   if (chat?.is_draft) return null;
-  return (
+  const replyConversationId =
     Number(
       chat?.active_reply_channel?.conversation_id ||
         chat?.active_reply_channel_conversation_id ||
-        chat?.conversation_ids?.[0] ||
-        chat?.id
-    ) || null
-  );
+        chat?.conversation_ids?.[0]
+    ) || null;
+  if (replyConversationId) return replyConversationId;
+  if (isThread.value) return null;
+  return Number(chat?.display_id || chat?.displayId || chat?.id) || null;
+});
+const communicationThreadId = computed(() => {
+  const chat = props.currentChat;
+  if (chat?.is_draft || !isThread.value) return null;
+  return Number(chat?.display_id || chat?.displayId || chat?.id) || null;
+});
+const canLoadDeals = computed(() => {
+  if (
+    typeof isFeatureEnabledOnAccount.value === 'function' &&
+    Number(currentAccountId.value) > 0
+  ) {
+    return Boolean(
+      isFeatureEnabledOnAccount.value(currentAccountId.value, 'crm_deals')
+    );
+  }
+  return true;
 });
 const assigneeOptions = computed(() =>
   (agents.value || []).map(agent => ({
@@ -121,6 +145,23 @@ const updateAllDay = enabled => {
     form.dueAt = '';
   }
 };
+const loadDealOptions = async () => {
+  if (!canLoadDeals.value) return [];
+  try {
+    const dealsResponse = await CrmDealsAPI.get({
+      archived: false,
+      page: 1,
+      per_page: 100,
+    });
+    return normalizePayload(dealsResponse.data).map(deal => ({
+      label: deal.title,
+      value: deal.id,
+    }));
+  } catch (error) {
+    if (error?.response?.status === 403) return [];
+    throw error;
+  }
+};
 const resetForm = () => {
   const defaultStatus = referencesStore.taskStatuses.find(
     status => status.default && status.active !== false
@@ -128,8 +169,9 @@ const resetForm = () => {
   const defaultType =
     referencesStore.taskTypes.find(type => type.default && type.active) ||
     referencesStore.taskTypes.find(type => type.active);
-  const dealId =
-    props.currentChat.crm_deal_id || props.currentChat.deal_id || '';
+  const dealId = canLoadDeals.value
+    ? props.currentChat.crm_deal_id || props.currentChat.deal_id || ''
+    : '';
   Object.assign(form, {
     activityType: defaultType?.code || 'task',
     allDay: false,
@@ -147,9 +189,9 @@ const resetForm = () => {
     dealId,
     description: '',
     dueAt: '',
-    originatingConversationDisplayId:
-      props.currentChat.display_id || props.currentChat.displayId || '',
-    originatingConversationId: conversationId.value || '',
+    originatingCommunicationThreadId: communicationThreadId.value || '',
+    originatingConversationDisplayId: conversationDisplayId.value || '',
+    originatingConversationId: conversationDisplayId.value || '',
     priority: 'medium',
     startAt: '',
     statusId: defaultStatus?.id || '',
@@ -164,19 +206,17 @@ watch(
   () => props.modelValue,
   async visible => {
     if (!visible) return;
+    resetForm();
     loading.value = true;
     try {
-      const [, , , dealsResponse] = await Promise.all([
+      const [, , , loadedDeals] = await Promise.all([
         referencesStore.loadTaskStatuses(),
         referencesStore.loadTaskTypes(),
         referencesStore.loadFieldDefinitions('task'),
-        CrmDealsAPI.get({ archived: false, page: 1, per_page: 100 }),
+        loadDealOptions(),
       ]);
       if (!props.modelValue) return;
-      dealOptions.value = normalizePayload(dealsResponse.data).map(deal => ({
-        label: deal.title,
-        value: deal.id,
-      }));
+      dealOptions.value = loadedDeals;
       resetForm();
     } catch (error) {
       useAlert(formatCrmErrorMessage(error, t));
@@ -207,7 +247,15 @@ const save = async () => {
       context_kind: form.contextKind,
       custom_attributes: form.customAttributes,
       deal_id: form.dealId ? Number(form.dealId) : undefined,
-      originating_conversation_id: form.originatingConversationId || undefined,
+      originating_conversation_display_id: form.originatingConversationDisplayId
+        ? Number(form.originatingConversationDisplayId)
+        : undefined,
+      originating_conversation_id: form.originatingConversationId
+        ? Number(form.originatingConversationId)
+        : undefined,
+      originating_communication_thread_id: form.originatingCommunicationThreadId
+        ? Number(form.originatingCommunicationThreadId)
+        : undefined,
       assignee_id: form.assigneeId ? Number(form.assigneeId) : undefined,
       priority: form.priority,
       status_id: form.statusId ? Number(form.statusId) : undefined,

@@ -1,4 +1,6 @@
 module Crm::Tasks::UpsertRelations
+  include Crm::Tasks::OriginatingSourceResolver
+
   private
 
   def resolve_assignee(deal:, originating_conversation:)
@@ -13,7 +15,7 @@ module Crm::Tasks::UpsertRelations
   end
 
   def default_assignee(deal, conversation)
-    deal_owner(deal) || conversation_contact_owner(conversation) || conversation&.assignee
+    deal_owner(deal) || conversation_contact_owner(conversation) || conversation&.assignee || thread_default_assignee
   end
 
   def deal_owner(deal)
@@ -22,21 +24,6 @@ module Crm::Tasks::UpsertRelations
 
   def conversation_contact_owner(conversation)
     conversation&.contact&.owner
-  end
-
-  def resolve_originating_conversation(deal:)
-    return requested_originating_conversation if params.key?(:originating_conversation_id)
-    return task.originating_conversation if task.persisted?
-
-    deal&.originating_conversation
-  end
-
-  def requested_originating_conversation
-    resolve_optional_record(
-      :originating_conversation_id,
-      account.conversations,
-      current: task.originating_conversation
-    )
   end
 
   def resolve_completed_at(status:)

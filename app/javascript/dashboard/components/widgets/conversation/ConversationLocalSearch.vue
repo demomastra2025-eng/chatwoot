@@ -38,6 +38,11 @@ const closeSearch = () => {
   isOpen.value = false;
 };
 
+const clearSearch = async () => {
+  searchQuery.value = '';
+  await focusSearchInput();
+};
+
 const toggleSearch = async () => {
   if (isOpen.value) {
     closeSearch();
@@ -58,10 +63,11 @@ useEmitter('clearSearchInput', () => {
     <NextButton
       v-tooltip.right="$t('CHAT_LIST.LOCAL_SEARCH.TOOLTIP_LABEL')"
       :aria-label="$t('CHAT_LIST.LOCAL_SEARCH.TOOLTIP_LABEL')"
+      :aria-pressed="hasSearchQuery"
       icon="i-lucide-search"
-      slate
+      variant="faded"
+      :color="hasSearchQuery ? 'blue' : 'slate'"
       xs
-      :faded="!hasSearchQuery && !isOpen"
       @click="toggleSearch"
     />
     <div
@@ -85,7 +91,17 @@ useEmitter('clearSearchInput', () => {
           :placeholder="t('CHAT_LIST.LOCAL_SEARCH.PLACEHOLDER')"
           @keydown.escape.prevent="closeSearch"
         />
-        <span class="i-lucide-search text-sm text-n-slate-10" />
+        <button
+          v-if="hasSearchQuery"
+          type="button"
+          data-test-id="local-search-clear-input"
+          class="inline-flex size-5 shrink-0 items-center justify-center rounded text-n-slate-10 transition-colors hover:bg-n-alpha-3 hover:text-n-slate-12"
+          :aria-label="t('CHAT_LIST.LOCAL_SEARCH.CLEAR_BUTTON_LABEL')"
+          @click="clearSearch"
+        >
+          <span class="i-lucide-x size-3.5" aria-hidden="true" />
+        </button>
+        <span v-else class="i-lucide-search text-sm text-n-slate-10" />
       </div>
     </div>
   </div>

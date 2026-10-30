@@ -115,15 +115,11 @@ const props = defineProps({
   isLeavingRoute: { default: false, type: Boolean },
 });
 
+const emit = defineEmits(['conversationLoad']);
 let isChatListUnmounted = false;
 onBeforeUnmount(() => {
   isChatListUnmounted = true;
 });
-
-const canReplaceCurrentConversationRoute = () =>
-  !props.isLeavingRoute && !isChatListUnmounted && Boolean(route.name);
-
-const emit = defineEmits(['conversationLoad']);
 
 const ConversationFilter = defineAsyncComponent(
   () => import('next/filter/ConversationFilter.vue')
@@ -147,6 +143,9 @@ const { uiSettings, updateUISettings } = useUISettings();
 const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
+
+const canReplaceCurrentConversationRoute = () =>
+  !props.isLeavingRoute && !isChatListUnmounted && Boolean(route.name);
 const store = useStore();
 const crmReferencesStore = useCrmReferencesStore();
 
@@ -839,18 +838,6 @@ const pageTitle = computed(() => {
   }
   return t('CHAT_LIST.TAB_HEADING');
 });
-
-function filterByAssigneeTab(conversations) {
-  if (activeAssigneeTab.value === wootConstants.ASSIGNEE_TYPE.ME) {
-    return conversations.filter(
-      c => c.meta?.assignee?.id === currentUser.value?.id
-    );
-  }
-  if (activeAssigneeTab.value === wootConstants.ASSIGNEE_TYPE.UNASSIGNED) {
-    return conversations.filter(c => !c.meta?.assignee);
-  }
-  return [...conversations];
-}
 
 const conversationList = computed(() => {
   let localConversationList = [];
@@ -2510,6 +2497,7 @@ watch(bulkSelectionContextKey, contextKey => setSelectionContext(contextKey), {
         :is-search-result="hasLocalSearch"
         :is-filtered="isConversationListFiltered"
         :is-count-approximate="isServerSearch && isServerSearchCapped"
+        @clear-search="clearLocalSearch"
       />
     </ChatListHeader>
 

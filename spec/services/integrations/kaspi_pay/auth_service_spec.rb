@@ -6,6 +6,10 @@ RSpec.describe Integrations::KaspiPay::AuthService do
   let(:account) { create(:account) }
   let(:service) { described_class.new(account: account) }
 
+  before do
+    Redis::Alfred.delete(Integrations::KaspiPay::AppVersionResolver::REDIS_CACHE_KEY)
+  end
+
   def stub_cashier_phone_steps
     stub_request(:post, 'https://entrance-pay.kaspi.kz/api/v1/entrance/step')
       .with { |req| JSON.parse(req.body)['Data'].present? }
@@ -118,7 +122,7 @@ RSpec.describe Integrations::KaspiPay::AuthService do
         }
     end
 
-    it 'surfaces OldVersionToUpdate clearly when Kaspi bumps minimum mobile version' do
+    it 'surfaces OldVersionToUpdate clearly when no newer App Store version is available' do
       stub_request(:post, 'https://entrance-pay.kaspi.kz/api/v1/entrance/step')
         .to_return(
           status: 200,
@@ -135,6 +139,41 @@ RSpec.describe Integrations::KaspiPay::AuthService do
         .to raise_error(Integrations::KaspiPay::ApiClient::ApiError) { |err|
           expect(err.code).to eq('OldVersionToUpdate')
         }
+    end
+
+    it 'automatically refreshes the App Store version and retries once when Kaspi returns OldVersionToUpdate' do
+      allow(Integrations::KaspiPay::AppVersionResolver).to receive(:resolve).with(no_args).and_return('26.1029')
+      allow(Integrations::KaspiPay::AppVersionResolver).to receive(:resolve).with(force_refresh: true).and_return('26.1130')
+
+      stub_request(:post, 'https://entrance-pay.kaspi.kz/api/v1/entrance/step')
+        .with { |req| JSON.parse(req.body).dig('Data', 'appVersion') == '26.1029' }
+        .to_return(
+          status: 200,
+          headers: { 'Content-Type' => 'application/json' },
+          body: {
+            view: {
+              code: 'AlarmView',
+              onOpenAlarm: { error: { code: 'OldVersionToUpdate', label: 'Обновите приложение' } }
+            }
+          }.to_json
+        )
+      stub_request(:post, 'https://entrance-pay.kaspi.kz/api/v1/entrance/step')
+        .with { |req| JSON.parse(req.body).dig('Data', 'appVersion') == '26.1130' }
+        .to_return(
+          status: 200,
+          headers: { 'Content-Type' => 'application/json', 'Set-Cookie' => 'user_token=tok_init_new; Path=/' },
+          body: { meta: { pId: 'proc_refreshed_1' }, view: { code: 'KPUniversalEnterPhoneNumber' } }.to_json
+        )
+      stub_request(:post, 'https://entrance-pay.kaspi.kz/api/v1/entrance/step')
+        .with { |req| JSON.parse(req.body).dig('meta', 'sn') == 'EnterPhoneNumber' }
+        .to_return(
+          status: 200,
+          headers: { 'Content-Type' => 'application/json' },
+          body: { meta: { pId: 'proc_refreshed_1' }, view: { code: 'EnterOtp' }, data: { desc: 'Код отправлен' } }.to_json
+        )
+
+      otp_res = service.send_otp!(raw_phone: '+7 701 555 44 33')
+      expect(otp_res[:process_id]).to eq('proc_refreshed_1')
     end
   end
 
