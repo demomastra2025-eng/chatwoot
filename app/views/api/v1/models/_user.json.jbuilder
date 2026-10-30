@@ -26,6 +26,7 @@ json.role account_user&.role
 json.ui_settings resource.ui_settings
 json.uid resource.uid
 json.type resource.type
+json.owner_finance_enabled true if OwnerFinance::AccessPolicy.allowed?(resource, impersonation_context: impersonation_context)
 json.accounts do
   json.array! account_users do |account_user|
     json.id account_user.account_id

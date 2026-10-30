@@ -15,6 +15,33 @@ describe('#routeIsAccessibleFor', () => {
     expect(routeIsAccessibleFor(route, ['administrator'])).toEqual(true);
   });
 
+  it('should strictly restrict ownerFinanceOnly routes to user with owner_finance_enabled', () => {
+    const route = {
+      meta: {
+        permissions: ['administrator', 'agent', 'custom_role'],
+        ownerFinanceOnly: true,
+      },
+    };
+
+    expect(routeIsAccessibleFor(route, ['administrator'], {})).toEqual(false);
+    expect(
+      routeIsAccessibleFor(
+        route,
+        ['administrator'],
+        {},
+        { id: 12, owner_finance_enabled: false }
+      )
+    ).toEqual(false);
+    expect(
+      routeIsAccessibleFor(
+        route,
+        ['administrator'],
+        {},
+        { id: 6, owner_finance_enabled: true }
+      )
+    ).toEqual(true);
+  });
+
   it('should require enabled account feature flags when route declares one', () => {
     const route = {
       meta: {

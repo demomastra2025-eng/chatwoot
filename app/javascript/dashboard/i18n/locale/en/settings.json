@@ -575,7 +575,8 @@
     "CATALOG": "Products & Services",
     "CATALOG_PRODUCTS": "Products",
     "CATALOG_SERVICES": "Services",
-    "REPORTS_WHATSAPP": "WhatsApp"
+    "REPORTS_WHATSAPP": "WhatsApp",
+    "OWNER_FINANCE": "Finance & Deadlines"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",
