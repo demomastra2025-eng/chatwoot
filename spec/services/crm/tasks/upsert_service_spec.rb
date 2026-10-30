@@ -266,4 +266,44 @@ RSpec.describe Crm::Tasks::UpsertService do
     ).perform
     expect(standalone_task.originating_conversation).to be_nil
   end
+
+  it 'preserves originating_conversation_display_id precedence in SaveFormService without PK collision' do
+    actor = create(:user, account: account, role: :agent)
+    task = described_class.new(account: account, actor: actor, params: { status_id: status.id, title: 'Initial task' }).perform
+    decoy_conv = create(:conversation, account: account)
+    target_conv = create(:conversation, account: account)
+    target_conv.update!(display_id: decoy_conv.id)
+
+    updated = Crm::Tasks::SaveFormService.new(
+      account: account,
+      task: task,
+      actor: actor,
+      params: {
+        idempotency_key: "save-form-disp-#{SecureRandom.hex(4)}",
+        lock_version: task.lock_version,
+        originating_conversation_display_id: decoy_conv.id,
+        originating_conversation_id: decoy_conv.id
+      }
+    ).perform
+
+    expect(updated.originating_conversation).to eq(target_conv)
+  end
+
+  it 'skips historical conversation assignee removed from account.users when resolving default_assignee' do
+    ex_agent = create(:user, account: account, role: :agent)
+    conv = create(:conversation, account: account, assignee: ex_agent)
+    AccountUser.where(account: account, user: ex_agent).delete_all
+
+    task = described_class.new(
+      account: account,
+      params: {
+        status_id: status.id,
+        title: 'Task after assignee removal',
+        originating_conversation_display_id: conv.display_id
+      }
+    ).perform
+
+    expect(task).to be_persisted
+    expect(task.assignee).to be_nil
+  end
 end

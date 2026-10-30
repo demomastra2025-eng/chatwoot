@@ -150,7 +150,7 @@ class Integrations::KaspiPay::AuthService
       'profile_id' => org['profile_id']&.to_s, 'organizations' => org['organizations'] || [],
       'cashier_phone_masked' => Integrations::KaspiPay::PhoneNormalizer.mask(pending['phone_10']),
       'auto_send_link_to_chat' => prev.fetch('auto_send_link_to_chat', true),
-      'app_version' => overrides['version'].presence || VERSION_RESOLVER.sanitize_saved_version(prev['app_version']),
+      'app_version' => overrides['version'].presence,
       'app_build' => overrides['build'].presence || prev['app_build'],
       'connected_at' => now_iso, 'last_verified_at' => now_iso, 'last_error' => nil
     ).compact
@@ -191,7 +191,8 @@ class Integrations::KaspiPay::AuthService
     %i[app_version app_build].each do |field|
       next unless params.key?(field)
 
-      val = params[field].to_s.strip.presence
+      raw = params[field].to_s.strip.presence
+      val = field == :app_version ? VERSION_RESOLVER.sanitize_saved_version(raw) : raw
       val ? (settings[field.to_s] = val) : settings.delete(field.to_s)
     end
   end

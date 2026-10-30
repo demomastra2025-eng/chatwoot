@@ -9,6 +9,9 @@ class Crm::Tasks::SaveFormService < Crm::Tasks::CommandService
     task_type_id task_outcome_id activity_type outcome outcome_note priority
     position external_ref custom_attributes
   ].freeze
+  ORIGINATING_SOURCE_PARAM_KEYS = %i[
+    originating_conversation_display_id originating_communication_thread_id
+  ].freeze
   SCHEDULE_KEYS = Crm::Tasks::RescheduleService::SCHEDULE_KEYS
   STATUS_KEYS = %i[status_id task_outcome_id outcome outcome_note cancellation_reason position].freeze
 
@@ -50,7 +53,7 @@ class Crm::Tasks::SaveFormService < Crm::Tasks::CommandService
   end
 
   def save_details!
-    details = params.slice(*DETAIL_KEYS)
+    details = params.slice(*(DETAIL_KEYS + ORIGINATING_SOURCE_PARAM_KEYS))
     return if details.empty?
 
     run_operation(Crm::Tasks::UpsertService, details)

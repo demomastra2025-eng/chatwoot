@@ -79,7 +79,7 @@ const toggleConversationLayout = () => {
 
 <template>
   <div
-    class="flex items-center justify-between gap-2 px-3 h-[3.25rem]"
+    class="relative flex items-center justify-between gap-2 px-3 h-[3.25rem]"
     :class="{
       'border-b border-n-strong': hasAppliedFiltersOrActiveFolders,
     }"
@@ -103,8 +103,8 @@ const toggleConversationLayout = () => {
     </div>
     <div class="flex shrink-0 items-center gap-1">
       <NextButton
-        data-testid="waiting-for-callback-filter-button"
         v-tooltip.top-end="waitingForCallbackFilterTooltip"
+        data-testid="waiting-for-callback-filter-button"
         :aria-label="waitingForCallbackFilterTooltip"
         :aria-pressed="activeWaitingForCallbackOnly"
         icon="i-lucide-phone-missed"

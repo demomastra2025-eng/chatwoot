@@ -15,7 +15,9 @@ module Crm::Tasks::UpsertRelations
   end
 
   def default_assignee(deal, conversation)
-    deal_owner(deal) || conversation_contact_owner(conversation) || conversation&.assignee || thread_default_assignee
+    [deal_owner(deal), conversation_contact_owner(conversation), conversation&.assignee, thread_default_assignee]
+      .compact
+      .find { |user| account.users.exists?(id: user.id) }
   end
 
   def deal_owner(deal)
