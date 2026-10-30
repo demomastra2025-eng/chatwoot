@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_30_010000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_30_133000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2945,6 +2945,165 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_30_010000) do
     t.index ["bin"], name: "index_organizations_on_bin", unique: true
   end
 
+  create_table "owner_finance_accounts", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "account_kind", default: "business_bank", null: false
+    t.string "bank_code"
+    t.string "external_source_key"
+    t.string "currency", default: "KZT", null: false
+    t.decimal "current_balance", precision: 15, scale: 2, default: "0.0", null: false
+    t.string "scope", default: "business", null: false
+    t.boolean "active", default: true, null: false
+    t.text "notes"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["external_source_key"], name: "index_owner_finance_accounts_on_external_source_key", unique: true, where: "(external_source_key IS NOT NULL)"
+  end
+
+  create_table "owner_finance_contracts", force: :cascade do |t|
+    t.bigint "counterparty_id"
+    t.bigint "onelink_account_id"
+    t.string "client_name", null: false
+    t.string "title", null: false
+    t.string "contract_number"
+    t.string "external_source_key"
+    t.string "status", default: "active", null: false
+    t.string "tariff_code", default: "custom", null: false
+    t.decimal "monthly_amount", precision: 15, scale: 2, default: "0.0", null: false
+    t.decimal "one_time_amount", precision: 15, scale: 2, default: "0.0", null: false
+    t.string "currency", default: "KZT", null: false
+    t.integer "billing_day"
+    t.date "starts_on"
+    t.date "ends_on"
+    t.boolean "medelement_commission_enabled", default: false, null: false
+    t.decimal "medelement_commission_rate", precision: 5, scale: 4, default: "0.3", null: false
+    t.text "notes"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["counterparty_id"], name: "index_owner_finance_contracts_on_counterparty_id"
+    t.index ["ends_on"], name: "index_owner_finance_contracts_on_ends_on"
+    t.index ["external_source_key"], name: "index_owner_finance_contracts_on_external_source_key", unique: true, where: "(external_source_key IS NOT NULL)"
+    t.index ["status"], name: "index_owner_finance_contracts_on_status"
+  end
+
+  create_table "owner_finance_counterparties", force: :cascade do |t|
+    t.string "display_name", null: false
+    t.string "normalized_key", null: false
+    t.string "kind", default: "vendor", null: false
+    t.string "bin_iin"
+    t.string "default_category"
+    t.string "default_pnl_treatment"
+    t.string "external_source_key"
+    t.text "notes"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["external_source_key"], name: "index_owner_finance_counterparties_on_external_source_key", unique: true, where: "(external_source_key IS NOT NULL)"
+    t.index ["normalized_key"], name: "index_owner_finance_counterparties_on_normalized_key", unique: true
+  end
+
+  create_table "owner_finance_deadlines", force: :cascade do |t|
+    t.string "title", null: false
+    t.string "category", default: "hosting", null: false
+    t.string "payer_mode", default: "us", null: false
+    t.string "provider"
+    t.string "related_domain"
+    t.string "client_name"
+    t.string "external_source_key"
+    t.bigint "counterparty_id"
+    t.bigint "contract_id"
+    t.date "due_on", null: false
+    t.decimal "amount", precision: 15, scale: 2, default: "0.0", null: false
+    t.string "currency", default: "KZT", null: false
+    t.string "recurrence", default: "yearly", null: false
+    t.string "status", default: "active", null: false
+    t.integer "remind_days", default: [7, 3, 2, 1, 0], null: false, array: true
+    t.date "last_reminded_on"
+    t.integer "last_reminded_offset"
+    t.text "notes"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["category"], name: "index_owner_finance_deadlines_on_category"
+    t.index ["contract_id"], name: "index_owner_finance_deadlines_on_contract_id"
+    t.index ["counterparty_id"], name: "index_owner_finance_deadlines_on_counterparty_id"
+    t.index ["external_source_key"], name: "index_owner_finance_deadlines_on_external_source_key", unique: true, where: "(external_source_key IS NOT NULL)"
+    t.index ["status", "due_on"], name: "index_owner_finance_deadlines_on_status_and_due_on"
+  end
+
+  create_table "owner_finance_obligations", force: :cascade do |t|
+    t.bigint "contract_id"
+    t.string "entry_kind", default: "medelement_commission", null: false
+    t.string "title", null: false
+    t.string "counterparty_name"
+    t.string "period_label"
+    t.string "external_source_key"
+    t.decimal "base_amount", precision: 15, scale: 2, default: "0.0", null: false
+    t.decimal "overage_excluded_amount", precision: 15, scale: 2, default: "0.0", null: false
+    t.decimal "amount", precision: 15, scale: 2, default: "0.0", null: false
+    t.decimal "paid_amount", precision: 15, scale: 2, default: "0.0", null: false
+    t.string "currency", default: "KZT", null: false
+    t.date "due_on"
+    t.date "paid_on"
+    t.string "status", default: "open", null: false
+    t.text "notes"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["contract_id"], name: "index_owner_finance_obligations_on_contract_id"
+    t.index ["entry_kind", "status"], name: "index_owner_finance_obligations_on_entry_kind_and_status"
+    t.index ["external_source_key"], name: "index_owner_finance_obligations_on_external_source_key", unique: true, where: "(external_source_key IS NOT NULL)"
+  end
+
+  create_table "owner_finance_personal_tombstones", force: :cascade do |t|
+    t.string "row_fingerprint_sha256", null: false
+    t.string "merchant_key_hash"
+    t.boolean "hide_merchant_always", default: false, null: false
+    t.date "occurred_on"
+    t.datetime "hidden_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["merchant_key_hash", "hide_merchant_always"], name: "idx_owner_fin_tombstones_merchant_always"
+    t.index ["row_fingerprint_sha256"], name: "idx_on_row_fingerprint_sha256_523c0934d2", unique: true
+  end
+
+  create_table "owner_finance_sync_states", force: :cascade do |t|
+    t.string "sync_key", null: false
+    t.string "sync_status", default: "idle", null: false
+    t.datetime "last_synced_at"
+    t.jsonb "summary", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["sync_key"], name: "index_owner_finance_sync_states_on_sync_key", unique: true
+  end
+
+  create_table "owner_finance_transactions", force: :cascade do |t|
+    t.bigint "account_record_id"
+    t.bigint "counterparty_id"
+    t.bigint "contract_id"
+    t.date "occurred_on", null: false
+    t.string "direction", default: "expense", null: false
+    t.string "pnl_treatment", default: "pnl", null: false
+    t.string "official_status", default: "management", null: false
+    t.string "review_status", default: "confirmed", null: false
+    t.decimal "amount", precision: 15, scale: 2, default: "0.0", null: false
+    t.decimal "amount_kzt", precision: 15, scale: 2, default: "0.0", null: false
+    t.string "currency", default: "KZT", null: false
+    t.string "category", default: "office_and_ops", null: false
+    t.string "merchant", null: false
+    t.string "row_fingerprint_sha256"
+    t.string "external_source_key"
+    t.text "description"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_record_id"], name: "index_owner_finance_transactions_on_account_record_id"
+    t.index ["contract_id"], name: "index_owner_finance_transactions_on_contract_id"
+    t.index ["counterparty_id"], name: "index_owner_finance_transactions_on_counterparty_id"
+    t.index ["external_source_key"], name: "index_owner_finance_transactions_on_external_source_key", unique: true, where: "(external_source_key IS NOT NULL)"
+    t.index ["pnl_treatment", "occurred_on"], name: "idx_on_pnl_treatment_occurred_on_7ecee1b7ca"
+    t.index ["review_status", "occurred_on"], name: "idx_on_review_status_occurred_on_906423e620"
+    t.index ["row_fingerprint_sha256"], name: "index_owner_finance_transactions_on_row_fingerprint_sha256", unique: true, where: "(row_fingerprint_sha256 IS NOT NULL)"
+  end
+
   create_table "platform_app_permissibles", force: :cascade do |t|
     t.bigint "platform_app_id", null: false
     t.string "permissible_type", null: false
@@ -4332,6 +4491,13 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_30_010000) do
   add_foreign_key "meta_channel_credential_healths", "accounts", on_delete: :cascade
   add_foreign_key "meta_messaging_webhook_event_routes", "accounts", on_delete: :cascade
   add_foreign_key "meta_messaging_webhook_event_routes", "meta_messaging_webhook_events", on_delete: :cascade
+  add_foreign_key "owner_finance_contracts", "owner_finance_counterparties", column: "counterparty_id"
+  add_foreign_key "owner_finance_deadlines", "owner_finance_contracts", column: "contract_id"
+  add_foreign_key "owner_finance_deadlines", "owner_finance_counterparties", column: "counterparty_id"
+  add_foreign_key "owner_finance_obligations", "owner_finance_contracts", column: "contract_id"
+  add_foreign_key "owner_finance_transactions", "owner_finance_accounts", column: "account_record_id"
+  add_foreign_key "owner_finance_transactions", "owner_finance_contracts", column: "contract_id"
+  add_foreign_key "owner_finance_transactions", "owner_finance_counterparties", column: "counterparty_id"
   add_foreign_key "reminder_groups", "accounts"
   add_foreign_key "reminder_groups", "captain_assistants", column: "assistant_id"
   add_foreign_key "reminder_groups", "users", column: "creator_id"

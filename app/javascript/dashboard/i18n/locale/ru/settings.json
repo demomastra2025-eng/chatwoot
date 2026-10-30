@@ -573,7 +573,8 @@
     "CATALOG": "Товары и Услуги",
     "CATALOG_PRODUCTS": "Товары",
     "CATALOG_SERVICES": "Услуги",
-    "REPORTS_WHATSAPP": "WhatsApp"
+    "REPORTS_WHATSAPP": "WhatsApp",
+    "OWNER_FINANCE": "Финансы и сроки"
   },
   "LEAD_FORMS": {
     "KICKER": "Прием заявок",

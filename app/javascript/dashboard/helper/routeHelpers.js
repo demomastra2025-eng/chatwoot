@@ -12,7 +12,6 @@ import {
   CRM_SETTINGS_VIEW_PERMISSION,
   CRM_TASK_VIEW_PERMISSIONS,
   REPORTS_PERMISSIONS,
-  PORTAL_PERMISSIONS,
 } from 'dashboard/constants/permissions.js';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 
@@ -37,11 +36,19 @@ const isFeatureEnabled = (account, featureFlag) => {
 export const routeIsAccessibleFor = (
   route,
   userPermissions = [],
-  currentAccount = null
+  currentAccount = null,
+  user = null
 ) => {
   const {
-    meta: { permissions: routePermissions = [], featureFlag = null } = {},
+    meta: {
+      permissions: routePermissions = [],
+      featureFlag = null,
+      ownerFinanceOnly = false,
+    } = {},
   } = route;
+  if (ownerFinanceOnly && !user?.owner_finance_enabled) {
+    return false;
+  }
   return (
     hasPermissions(routePermissions, userPermissions) &&
     (!featureFlag || isFeatureEnabled(currentAccount, featureFlag))
@@ -126,7 +133,8 @@ const validateActiveAccountRoutes = (to, user, accountFeatureSource = null) => {
   const isAccessible = routeIsAccessibleFor(
     to,
     userPermissions,
-    currentAccount
+    currentAccount,
+    user
   );
   // If the route is not accessible for the user, return to dashboard screen
   return isAccessible

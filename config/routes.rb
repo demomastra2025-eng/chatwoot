@@ -803,6 +803,32 @@ Rails.application.routes.draw do
 
       resource :notification_subscriptions, only: [:create, :destroy]
 
+      namespace :owner_finance do
+        resource :dashboard, only: [:show]
+        resources :accounts, only: [:create, :update, :destroy]
+        resources :deadlines, only: [:create, :update, :destroy] do
+          member do
+            post :complete
+          end
+          collection do
+            post :run_reminders
+          end
+        end
+        resources :transactions, only: [:create, :update, :destroy] do
+          member do
+            post :hide_personal
+          end
+        end
+        resources :statements, only: [] do
+          collection do
+            post :import
+          end
+        end
+        resources :contracts, only: [:create, :update, :destroy]
+        resources :obligations, only: [:create, :update, :destroy]
+        resource :onec_sync, only: [:create]
+      end
+
       namespace :widget do
         resource :direct_uploads, only: [:create]
         resource :config, only: [:create]

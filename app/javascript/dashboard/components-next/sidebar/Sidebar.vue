@@ -1450,6 +1450,17 @@ const menuItems = computed(() => {
             },
           ]
         : []),
+      ...(currentUser.value?.owner_finance_enabled
+        ? [
+            {
+              name: 'OwnerFinance',
+              label: t('SIDEBAR.OWNER_FINANCE'),
+              icon: 'i-lucide-wallet',
+              to: accountScopedRoute('owner_finance_index'),
+              activeOn: ['owner_finance_index'],
+            },
+          ]
+        : []),
     ],
     effectiveSidebarVisibilitySettings.value
   );
@@ -1643,6 +1654,7 @@ const activeRouteMenuItem = computed(() => {
 
 const FULL_PAGE_WITHOUT_SECONDARY_SIDEBAR_ROUTES = new Set([
   'scheduling_appointment_show',
+  'owner_finance_index',
 ]);
 const isFullPageWithoutSecondarySidebar = computed(() =>
   FULL_PAGE_WITHOUT_SECONDARY_SIDEBAR_ROUTES.has(route.name)

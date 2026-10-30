@@ -7,6 +7,7 @@ import { routes as notificationRoutes } from './notifications/routes';
 import { routes as inboxRoutes } from './inbox/routes';
 import { routes as crmRoutes } from './crm/routes';
 import { routes as schedulingRoutes } from './scheduling/routes';
+import { routes as ownerFinanceRoutes } from './ownerFinance/routes';
 import { frontendURL } from '../../helper/URLHelper';
 import campaignsRoutes from './campaigns/campaigns.routes';
 import { routes as captainRoutes } from './captain/captain.routes';
@@ -27,6 +28,7 @@ export default {
         ...companyRoutes,
         ...crmRoutes,
         ...schedulingRoutes,
+        ...ownerFinanceRoutes,
         ...searchRoutes,
         ...notificationRoutes,
         ...campaignsRoutes.routes,

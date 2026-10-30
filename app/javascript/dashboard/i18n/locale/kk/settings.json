@@ -557,7 +557,8 @@
     "CATALOG": "Тауарлар мен қызметтер",
     "CATALOG_PRODUCTS": "Тауарлар",
     "CATALOG_SERVICES": "Қызметтер",
-    "REPORTS_WHATSAPP": "WhatsApp"
+    "REPORTS_WHATSAPP": "WhatsApp",
+    "OWNER_FINANCE": "Қаржы және мерзімдер"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",

@@ -301,3 +301,17 @@ crm_contract_renewal_sweep_job:
   class: 'Crm::Contracts::RenewalSweepJob'
   queue: scheduled_jobs
   active_job: true
+
+# Daily at 04:00 UTC (09:00 Asia/Almaty): reminds Owner (User #6) of hosting, domains, contracts, and personal deadlines at [7, 3, 2, 1, 0] days.
+owner_finance_deadline_reminder_sweep_job:
+  cron: '0 4 * * *'
+  class: 'OwnerFinance::DeadlineReminderSweepJob'
+  queue: scheduled_jobs
+  active_job: true
+
+# Nightly at 21:15 UTC (02:15 Asia/Almaty): syncs 1C:Fresh OData posted bank documents into local Owner Finance tables.
+owner_finance_onec_fresh_sync_job:
+  cron: '15 21 * * *'
+  class: 'OwnerFinance::OnecFreshSyncJob'
+  queue: low
+  active_job: true
