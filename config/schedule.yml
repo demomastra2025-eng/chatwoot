@@ -86,6 +86,12 @@ whatsapp_call_cleanup_job:
   class: 'Whatsapp::CallCleanupJob'
   queue: whatsapp_calls
 
+# cleanup stale telegram personal calls and reconcile stuck ringing/in-progress calls
+telegram_personal_call_cleanup_job:
+  cron: '*/5 * * * *'
+  class: 'TelegramPersonal::CallCleanupJob'
+  queue: whatsapp_calls
+
 # reconcile out-of-order WhatsApp edits/reactions/revokes and enforce bounded payload retention
 whatsapp_pending_message_mutation_sweep_job:
   cron: '*/5 * * * *'

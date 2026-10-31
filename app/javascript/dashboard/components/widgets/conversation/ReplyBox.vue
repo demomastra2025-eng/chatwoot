@@ -541,12 +541,23 @@ export default {
           : this.isAVoiceChannel)
       );
     },
+    isTelegramGroupConversation() {
+      const attrs = this.currentChat?.additional_attributes || {};
+      if (attrs.is_group === true) return true;
+      if (['group', 'supergroup', 'channel'].includes(attrs.chat_type)) {
+        return true;
+      }
+      const rawId = attrs.chat_id || attrs.peer_user_id || '';
+      return String(rawId).startsWith('-');
+    },
     isDirectWhatsappCallReplyAction() {
       return (
         !this.isCommunicationThreadConversation &&
         !this.isOnPrivateNote &&
         this.selectedDirectReplyAction === COMMUNICATION_CHANNEL_ACTIONS.CALL &&
-        this.isAWhatsAppCloudChannel &&
+        (this.isAWhatsAppCloudChannel ||
+          (this.isATelegramPersonalChannel &&
+            !this.isTelegramGroupConversation)) &&
         Boolean(this.inbox?.calling_enabled)
       );
     },

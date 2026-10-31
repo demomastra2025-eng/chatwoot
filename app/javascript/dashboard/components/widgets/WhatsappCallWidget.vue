@@ -91,6 +91,13 @@ const shouldPlayIncomingCallRingtone = computed(
     visibleIncomingCalls.value.length > 0
 );
 
+const isTelegramCall = call => call?.provider === 'telegram_personal';
+const callBrandLabel = call => (isTelegramCall(call) ? 'Telegram' : 'WhatsApp');
+const callBrandIcon = call =>
+  isTelegramCall(call)
+    ? 'i-ri-telegram-fill text-n-blue-11'
+    : 'i-ri-whatsapp-fill text-n-teal-9';
+
 useIncomingCallRingtone('whatsapp', shouldPlayIncomingCallRingtone);
 useIncomingCallAttention(
   'whatsapp',
@@ -98,7 +105,7 @@ useIncomingCallAttention(
     shouldPlayIncomingCallRingtone.value
       ? visibleIncomingCalls.value.map(call => ({
           key: callIdFor(call),
-          body: `${call.caller?.name || call.caller?.phone || t('CONVERSATION.VOICE_WIDGET.UNKNOWN_CALLER')} · WhatsApp`,
+          body: `${call.caller?.name || call.caller?.phone || t('CONVERSATION.VOICE_WIDGET.UNKNOWN_CALLER')} · ${callBrandLabel(call)}`,
         }))
       : []
   )
@@ -281,7 +288,8 @@ onUnmounted(() => {
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-1.5 min-w-0">
             <i
-              class="i-ri-whatsapp-fill text-n-teal-9 text-sm shrink-0"
+              class="text-sm shrink-0"
+              :class="callBrandIcon(call)"
               aria-hidden="true"
             />
             <p class="text-sm font-medium text-n-slate-12 truncate mb-0">
@@ -294,7 +302,11 @@ onUnmounted(() => {
           </div>
           <div class="flex items-center justify-between gap-1 mt-0.5">
             <p class="text-xs text-n-slate-11 truncate mb-0">
-              {{ t('WHATSAPP_CALL.INCOMING_WHATSAPP_CALL') }}
+              {{
+                isTelegramCall(call)
+                  ? t('CONVERSATION.VOICE_CALL.INCOMING_CALL')
+                  : t('WHATSAPP_CALL.INCOMING_WHATSAPP_CALL')
+              }}
             </p>
             <button
               v-if="props.embedded"
@@ -325,7 +337,7 @@ onUnmounted(() => {
             "
             class="text-xs text-n-slate-11 truncate mb-0 mt-0.5"
           >
-            WhatsApp · {{ call.caller.phone }}
+            {{ callBrandLabel(call) }} · {{ call.caller.phone }}
           </p>
           <!-- On a call, the employee cannot take another one for now. -->
           <p
@@ -399,7 +411,8 @@ onUnmounted(() => {
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-1.5 min-w-0">
           <i
-            class="i-ri-whatsapp-fill text-n-teal-9 text-sm shrink-0"
+            class="text-sm shrink-0"
+            :class="callBrandIcon(activeCall)"
             aria-hidden="true"
           />
           <p class="text-sm font-medium text-n-slate-12 truncate mb-0">
@@ -458,7 +471,7 @@ onUnmounted(() => {
           "
           class="text-xs text-n-slate-11 truncate mb-0 mt-0.5"
         >
-          WhatsApp · {{ activeCall.caller.phone }}
+          {{ callBrandLabel(activeCall) }} · {{ activeCall.caller.phone }}
         </p>
         <p
           v-if="isMuted"

@@ -27,7 +27,7 @@ class CommunicationThreads::ChannelReplyCapabilityBuilder
       can_send_text: can_send_text,
       reply_window_open: linked_reply_window_open?,
       disabled_reason: disabled_reason(linked_reply_window_open?),
-      can_call: whatsapp_call_enabled?
+      can_call: whatsapp_call_enabled? || telegram_personal_call_enabled?
     )
   end
 
@@ -105,6 +105,21 @@ class CommunicationThreads::ChannelReplyCapabilityBuilder
     inbox.try(:channel_type) == 'Channel::Whatsapp' &&
       inbox.channel.respond_to?(:voice_enabled?) &&
       inbox.channel.voice_enabled?
+  end
+
+  def telegram_personal_call_enabled?
+    inbox.try(:channel_type) == 'Channel::TelegramPersonal' &&
+      inbox.channel.respond_to?(:voice_enabled?) &&
+      inbox.channel.voice_enabled? &&
+      !telegram_group_conversation?
+  end
+
+  def telegram_group_conversation?
+    chat_type = conversation&.additional_attributes&.dig('chat_type').to_s
+    return true if %w[group supergroup channel].include?(chat_type)
+
+    source_id = conversation&.contact_inbox&.source_id.to_s
+    source_id.start_with?('-')
   end
 
   def channel_template_supported?

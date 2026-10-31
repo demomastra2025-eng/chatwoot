@@ -120,12 +120,22 @@ export const isCommunicationWhatsappCallChannel = channel =>
   channel?.channel === 'Channel::Whatsapp' &&
   communicationChannelAction(channel) === COMMUNICATION_CHANNEL_ACTIONS.CALL;
 
+export const isCommunicationTelegramPersonalCallChannel = channel =>
+  channel?.channel === 'Channel::TelegramPersonal' &&
+  communicationChannelAction(channel) === COMMUNICATION_CHANNEL_ACTIONS.CALL;
+
+export const isCommunicationMessengerCallChannel = channel =>
+  isCommunicationWhatsappCallChannel(channel) ||
+  isCommunicationTelegramPersonalCallChannel(channel);
+
 export const isCommunicationCallChannel = channel =>
   isCommunicationVoiceChannel(channel) ||
-  isCommunicationWhatsappCallChannel(channel);
+  isCommunicationMessengerCallChannel(channel);
 
-const isCommunicationWhatsappCallAvailable = channel =>
-  channel?.channel === 'Channel::Whatsapp' &&
+const isCommunicationMessengerCallAvailable = channel =>
+  ['Channel::Whatsapp', 'Channel::TelegramPersonal'].includes(
+    channel?.channel
+  ) &&
   channel?.can_call === true &&
   channel?.conversation_id &&
   channel?.disabled !== true;
@@ -138,7 +148,7 @@ const isCommunicationMessageActionable = channel =>
 export const isCommunicationChannelReplyable = channel => {
   const canCall =
     (isCommunicationVoiceChannel(channel) ||
-      isCommunicationWhatsappCallAvailable(channel) ||
+      isCommunicationMessengerCallAvailable(channel) ||
       isCommunicationCallChannel(channel)) &&
     channel?.disabled !== true;
 
@@ -210,7 +220,7 @@ export const getCommunicationReplyChannels = (channels = []) => {
     .filter(isCommunicationChannelReplyable)
     .flatMap(channel => {
       if (isCommunicationVoiceChannel(channel)) return [channel];
-      if (!isCommunicationWhatsappCallAvailable(channel)) return [channel];
+      if (!isCommunicationMessengerCallAvailable(channel)) return [channel];
 
       const actionChannels = [];
       const baseKey = communicationChannelActionKey(channel);
@@ -224,7 +234,7 @@ export const getCommunicationReplyChannels = (channels = []) => {
         });
       }
 
-      if (isCommunicationWhatsappCallAvailable(channel)) {
+      if (isCommunicationMessengerCallAvailable(channel)) {
         actionChannels.push({
           ...channel,
           communication_action: COMMUNICATION_CHANNEL_ACTIONS.CALL,

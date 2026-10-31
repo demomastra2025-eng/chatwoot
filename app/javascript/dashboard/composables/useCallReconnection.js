@@ -2,15 +2,34 @@ import { computed, nextTick, onMounted } from 'vue';
 import { emitter } from 'shared/helpers/mitt';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
+import TelegramPersonalCallsAPI, {
+  callsApiFor,
+} from 'dashboard/api/telegramPersonalCalls';
 import { handleAgentOffer } from 'dashboard/composables/useWhatsappCallSession';
 
+async function fetchActiveCallForApi(api, defaultProvider) {
+  try {
+    const { data } = await api.active();
+    const candidate = data?.call || data;
+    if (
+      candidate?.id &&
+      (!candidate.status || candidate.status === 'in_progress')
+    ) {
+      return {
+        call: candidate,
+        provider: candidate.provider || defaultProvider,
+      };
+    }
+  } catch {
+    // Endpoint may return 402/404 when feature flag is disabled on this account.
+  }
+  return null;
+}
+
 /**
- * Checks for an active WhatsApp call on page load and reconnects if found.
- * This handles the server-relay scenario where the call persists on the media
- * server even after the agent's browser reloads.
- *
- * Usage: call `useCallReconnection()` in the app-level layout component that
- * mounts once on page load.
+ * Checks for an active WhatsApp or Telegram Personal call on page load and
+ * reconnects if found. Each provider is probed independently so a 402 on
+ * WhatsApp Calling never blocks Telegram Personal call reconnection.
  */
 export function useCallReconnection() {
   const callsStore = useWhatsappCallsStore();
@@ -21,23 +40,25 @@ export function useCallReconnection() {
     /^\/app\/accounts\/[^/]+(?:\/|$)/.test(window.location.pathname);
 
   const reconnectActiveCall = async () => {
-    // The API client builds account-scoped URLs from /app/accounts/:id.
-    // App-level layouts also mount on / and auth pages; skip there to avoid
-    // probing the non-existent /api/v1/whatsapp_calls/active endpoint.
     if (!hasAccountScopedRoute()) return;
-
-    // Skip if there's already an active or incoming call in the store.
     if (callsStore.hasActiveCall || callsStore.hasIncomingCall) return;
 
     try {
-      const { data } = await WhatsappCallsAPI.active();
-      const activeCallData = data?.call || data;
-      if (!activeCallData?.id) return;
+      const found =
+        (await fetchActiveCallForApi(WhatsappCallsAPI, 'whatsapp')) ||
+        (await fetchActiveCallForApi(
+          TelegramPersonalCallsAPI,
+          'telegram_personal'
+        ));
+      if (!found) return;
+
+      const { call: activeCallData, provider: resolvedProvider } = found;
 
       callsStore.setReconnecting(true);
       callsStore.setActiveCall({
         id: activeCallData.id,
         callId: activeCallData.call_id,
+        provider: resolvedProvider,
         direction: activeCallData.direction,
         conversationId: activeCallData.conversation_id,
         status: 'reconnecting',
@@ -45,17 +66,15 @@ export function useCallReconnection() {
         caller: activeCallData.caller,
       });
 
-      // Set timer offset so the timer resumes from the correct elapsed time.
       if (activeCallData.elapsed_seconds) {
         callsStore.setTimerOffset(activeCallData.elapsed_seconds);
       }
 
-      // Let the call widget mount with the active call state before negotiating.
       await nextTick();
 
-      const { data: reconnectData } = await WhatsappCallsAPI.reconnect(
-        activeCallData.id
-      );
+      const { data: reconnectData } = await callsApiFor(
+        resolvedProvider
+      ).reconnect(activeCallData.id);
       if (!reconnectData?.sdp_offer) {
         throw new Error('Reconnect response missing sdp_offer');
       }
@@ -67,13 +86,13 @@ export function useCallReconnection() {
         {
           direction: activeCallData.direction,
           context: 'page-load-reconnect',
+          peerId: reconnectData.peer_id,
+          provider: resolvedProvider,
         }
       );
       callsStore.markActiveCallConnected();
       emitter.emit('whatsapp_call:agent_webrtc_connected');
     } catch {
-      // No active call or API/reconnect error — clear state and silent fail.
-      // clearActiveCall() also resets isReconnecting and callTimerOffset.
       callsStore.clearActiveCall();
     } finally {
       callsStore.setReconnecting(false);

@@ -93,7 +93,7 @@ class CommunicationThreads::ChannelPayloadBuilder
   end
 
   def media_server_enabled?
-    return false unless inbox.try(:channel_type) == 'Channel::Whatsapp'
+    return false unless %w[Channel::Whatsapp Channel::TelegramPersonal].include?(inbox.try(:channel_type))
 
     defined?(Call) ? Call.media_server_enabled?(inbox: inbox) : false
   end

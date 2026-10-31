@@ -24,7 +24,7 @@ import {
   getCommunicationChannelLabel,
   getCommunicationReplyChannels,
   isCommunicationCallChannel,
-  isCommunicationWhatsappCallChannel,
+  isCommunicationMessengerCallChannel,
   isCommunicationVoiceChannel,
 } from 'dashboard/helper/communicationThreadHelper';
 import { mapGetters } from 'vuex';
@@ -205,7 +205,7 @@ export default {
     const { setSignatureFlagForInbox, fetchSignatureFlagFromUISettings } =
       useUISettings();
     const activeWhatsappCallChannel = computed(() =>
-      isCommunicationWhatsappCallChannel(props.activeReplyChannel)
+      isCommunicationMessengerCallChannel(props.activeReplyChannel)
         ? props.activeReplyChannel
         : null
     );
@@ -309,22 +309,40 @@ export default {
     replyableCommunicationChannels() {
       return getCommunicationReplyChannels(this.communicationChannels);
     },
+    isTelegramGroupConversation() {
+      const attrs = this.currentConversation?.additional_attributes || {};
+      if (attrs.is_group === true) return true;
+      if (['group', 'supergroup', 'channel'].includes(attrs.chat_type)) {
+        return true;
+      }
+      const rawId = attrs.chat_id || attrs.peer_user_id || '';
+      return String(rawId).startsWith('-');
+    },
     showDirectWhatsappActionMenu() {
       return (
         !this.isCommunicationThread &&
         !this.isNote &&
         !this.isOnPrivateNote &&
-        this.isAWhatsAppCloudChannel &&
+        (this.isAWhatsAppCloudChannel ||
+          (this.isATelegramPersonalChannel &&
+            !this.isTelegramGroupConversation)) &&
         Boolean(this.inbox?.calling_enabled)
       );
     },
     directWhatsappReplyChannels() {
       if (!this.showDirectWhatsappActionMenu) return [];
 
+      const isTelegramPersonal = this.isATelegramPersonalChannel;
+      const keyPrefix = isTelegramPersonal
+        ? 'direct-telegram-personal'
+        : 'direct-whatsapp';
       const baseChannel = {
-        channel: INBOX_TYPES.WHATSAPP,
+        channel: isTelegramPersonal
+          ? 'Channel::TelegramPersonal'
+          : INBOX_TYPES.WHATSAPP,
         inbox_id: this.inbox?.id,
-        inbox_name: this.inbox?.name || 'WhatsApp',
+        inbox_name:
+          this.inbox?.name || (isTelegramPersonal ? 'Telegram' : 'WhatsApp'),
         medium: this.inbox?.medium,
         can_call: true,
         can_reply: true,
@@ -335,13 +353,13 @@ export default {
           ...baseChannel,
           direct_reply_action: COMMUNICATION_CHANNEL_ACTIONS.MESSAGE,
           communication_action: COMMUNICATION_CHANNEL_ACTIONS.MESSAGE,
-          channel_key: `direct-whatsapp:${COMMUNICATION_CHANNEL_ACTIONS.MESSAGE}`,
+          channel_key: `${keyPrefix}:${COMMUNICATION_CHANNEL_ACTIONS.MESSAGE}`,
         },
         {
           ...baseChannel,
           direct_reply_action: COMMUNICATION_CHANNEL_ACTIONS.CALL,
           communication_action: COMMUNICATION_CHANNEL_ACTIONS.CALL,
-          channel_key: `direct-whatsapp:${COMMUNICATION_CHANNEL_ACTIONS.CALL}`,
+          channel_key: `${keyPrefix}:${COMMUNICATION_CHANNEL_ACTIONS.CALL}`,
           can_send_text: false,
           can_send_attachments: false,
           requires_template: false,
@@ -405,7 +423,7 @@ export default {
         !this.isNote &&
         !this.isOnPrivateNote &&
         this.isCommunicationThread &&
-        isCommunicationWhatsappCallChannel(this.activeReplyChannel)
+        isCommunicationMessengerCallChannel(this.activeReplyChannel)
       );
     },
     isDirectWhatsappCallReplyAction() {
@@ -599,15 +617,20 @@ export default {
     },
     replyChannelIcon(channel) {
       if (!channel?.channel) return '';
-      if (isCommunicationWhatsappCallChannel(channel)) {
+      if (isCommunicationMessengerCallChannel(channel)) {
         return 'i-ph-phone channel-icon-neutral';
       }
       return this.neutralChannelIcon(channel.channel, channel.medium);
     },
     replyChannelLabel(channel) {
       const label = getCommunicationChannelLabel(channel);
-      if (channel?.can_call && channel.channel === 'Channel::Whatsapp') {
-        const actionLabel = isCommunicationWhatsappCallChannel(channel)
+      if (
+        channel?.can_call &&
+        ['Channel::Whatsapp', 'Channel::TelegramPersonal'].includes(
+          channel.channel
+        )
+      ) {
+        const actionLabel = isCommunicationMessengerCallChannel(channel)
           ? this.$t('CONVERSATION.COMMUNICATION_THREAD.CALL_ACTION')
           : this.$t('CONVERSATION.COMMUNICATION_THREAD.WRITE_ACTION');
         return `${label} - ${actionLabel}`;

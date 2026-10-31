@@ -23,7 +23,7 @@ import {
   prewarmInboundAgentAnswerForCall,
   startCallRecording,
 } from 'dashboard/composables/useWhatsappCallSession';
-import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
+import { callsApiFor } from 'dashboard/api/telegramPersonalCalls';
 import types from 'dashboard/store/mutation-types';
 import {
   startFaviconBlinking,
@@ -177,6 +177,14 @@ class ActionCableConnector extends BaseActionCableConnector {
       'whatsapp_call.permission_granted': this.onWhatsappCallPermissionGranted,
       'whatsapp_call.agent_offer': this.onWhatsappCallAgentOffer,
       'whatsapp_call.agent_disconnected': this.onWhatsappCallAgentDisconnected,
+      'telegram_personal_call.incoming': this.onTelegramPersonalCallIncoming,
+      'telegram_personal_call.accepted': this.onWhatsappCallAccepted,
+      'telegram_personal_call.ended': this.onWhatsappCallEnded,
+      'telegram_personal_call.outbound_accepted':
+        this.onWhatsappCallOutboundAccepted,
+      'telegram_personal_call.agent_offer': this.onWhatsappCallAgentOffer,
+      'telegram_personal_call.agent_disconnected':
+        this.onWhatsappCallAgentDisconnected,
       'crm.deal.created': data =>
         this.onCrmDealRealtimeEvent('crm.deal.created', data),
       'crm.deal.updated': data =>
@@ -958,14 +966,20 @@ class ActionCableConnector extends BaseActionCableConnector {
   };
 
   // eslint-disable-next-line class-methods-use-this
+  onTelegramPersonalCallIncoming = data => {
+    this.onWhatsappCallIncoming({ ...data, provider: 'telegram_personal' });
+  };
+
+  // eslint-disable-next-line class-methods-use-this
   onWhatsappCallIncoming = data => {
     const whatsappCallsStore = useWhatsappCallsStore();
     const currentUserId = this.app.$store.getters.getCurrentUserID;
     // In server-relay mode, sdp_offer and ice_servers are absent — the media
-    // server handles WebRTC with Meta, and the browser only needs call metadata.
+    // server handles WebRTC with Meta/Telegram, and the browser only needs call metadata.
     const incomingCall = {
       id: data.id,
       callId: data.call_id,
+      provider: data.provider || 'whatsapp',
       direction: data.direction,
       inboxId: data.inbox_id,
       conversationId: data.conversation_id,
@@ -996,7 +1010,7 @@ class ActionCableConnector extends BaseActionCableConnector {
     const currentUserId = this.app.$store.getters.getCurrentUserID;
     // If accepted by a different agent, remove from incoming list for this agent
     if (data.accepted_by_agent_id !== currentUserId) {
-      whatsappCallsStore.handleCallAcceptedByOther(data.call_id);
+      whatsappCallsStore.handleCallAcceptedByOther(data.call_id, data.id);
       clearPreparedInboundAgentAnswer(data, {
         cleanupWebrtc: this.shouldCleanupPreparedInboundWebRTC(
           whatsappCallsStore,
@@ -1009,7 +1023,7 @@ class ActionCableConnector extends BaseActionCableConnector {
   // eslint-disable-next-line class-methods-use-this
   onWhatsappCallEnded = data => {
     const whatsappCallsStore = useWhatsappCallsStore();
-    whatsappCallsStore.handleCallEnded(data.call_id);
+    whatsappCallsStore.handleCallEnded(data.call_id, data.id);
     clearPreparedInboundAgentAnswer(data, {
       cleanupWebrtc: this.shouldCleanupPreparedInboundWebRTC(
         whatsappCallsStore,
@@ -1026,6 +1040,16 @@ class ActionCableConnector extends BaseActionCableConnector {
   }
 
   // eslint-disable-next-line class-methods-use-this
+  matchesActiveCall(activeCall, data) {
+    if (!activeCall || !data) return false;
+    return (
+      String(activeCall.callId) === String(data.call_id) ||
+      (data.id !== null &&
+        data.id !== undefined &&
+        String(activeCall.id) === String(data.id))
+    );
+  }
+
   onWhatsappCallOutboundConnected = data => {
     const whatsappCallsStore = useWhatsappCallsStore();
 
@@ -1033,7 +1057,7 @@ class ActionCableConnector extends BaseActionCableConnector {
     // for Peer B) instead of sdp_answer.
     if (data.sdp_offer) {
       const activeCall = whatsappCallsStore.activeCall;
-      if (!activeCall || String(activeCall.callId) !== String(data.call_id)) {
+      if (!this.matchesActiveCall(activeCall, data)) {
         whatsappCallsStore.storePendingAgentOffer(data);
         return;
       }
@@ -1046,6 +1070,7 @@ class ActionCableConnector extends BaseActionCableConnector {
           direction: 'outbound',
           context: 'outbound-connected',
           peerId: data.peer_id,
+          provider: activeCall.provider,
         })
           .then(() => {
             whatsappCallsStore.updateActiveCall({
@@ -1090,16 +1115,18 @@ class ActionCableConnector extends BaseActionCableConnector {
     }
   };
 
-  // eslint-disable-next-line class-methods-use-this
   onWhatsappCallOutboundAccepted = data => {
     const whatsappCallsStore = useWhatsappCallsStore();
     const activeCall = whatsappCallsStore.activeCall;
-    if (!activeCall || String(activeCall.callId) !== String(data.call_id)) {
+    if (!this.matchesActiveCall(activeCall, data)) {
       return;
     }
 
     if (activeCall.serverRelay) {
-      whatsappCallsStore.updateActiveCall({ metaAccepted: true });
+      whatsappCallsStore.updateActiveCall({
+        metaAccepted: true,
+        ...(data.call_id ? { callId: data.call_id } : {}),
+      });
       if (!activeCall.agentWebrtcConnected) {
         return;
       }
@@ -1172,6 +1199,7 @@ class ActionCableConnector extends BaseActionCableConnector {
         activeCall.direction === 'incoming' ||
         activeCall.direction === 'inbound',
       peerId: data.peer_id,
+      provider: activeCall.provider,
     })
       .then(() => {
         whatsappCallsStore.updateActiveCall({
@@ -1215,7 +1243,7 @@ class ActionCableConnector extends BaseActionCableConnector {
     });
 
     try {
-      const { data: reconnectData } = await WhatsappCallsAPI.reconnect(
+      const { data: reconnectData } = await callsApiFor(activeCall).reconnect(
         activeCall.id
       );
       if (!reconnectData?.sdp_offer)
@@ -1229,6 +1257,7 @@ class ActionCableConnector extends BaseActionCableConnector {
           direction: activeCall.direction || 'unknown',
           context: 'reconnect',
           peerId: reconnectData.peer_id,
+          provider: activeCall.provider,
         }
       );
       whatsappCallsStore.updateActiveCall({

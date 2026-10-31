@@ -3,6 +3,7 @@ import { useStore } from 'vuex';
 import { useI18n } from 'vue-i18n';
 
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
+import { callsApiFor } from 'dashboard/api/telegramPersonalCalls';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
@@ -83,9 +84,44 @@ export const useWhatsappCallInitiation = (options = {}) => {
     return (
       (inbox.value?.channel_type === INBOX_TYPES.WHATSAPP &&
         inbox.value?.provider === 'whatsapp_cloud') ||
-      selectedChannel.value?.can_call === true
+      (selectedChannel.value?.can_call === true &&
+        selectedChannel.value?.channel !== INBOX_TYPES.TELEGRAM_PERSONAL)
     );
   });
+  const isATelegramPersonalChannel = computed(() => {
+    return (
+      inbox.value?.channel_type === INBOX_TYPES.TELEGRAM_PERSONAL ||
+      selectedChannel.value?.channel === INBOX_TYPES.TELEGRAM_PERSONAL
+    );
+  });
+  const targetConversation = computed(() => {
+    const convId = selectedConversationId.value;
+    return (
+      (convId && store.getters.getConversationById?.(convId)) ||
+      currentChat.value ||
+      {}
+    );
+  });
+  const isTelegramGroupChat = computed(() => {
+    const conv = targetConversation.value;
+    const attrs =
+      conv?.additional_attributes ||
+      currentChat.value?.additional_attributes ||
+      {};
+    if (attrs.is_group === true) return true;
+    if (['group', 'supergroup', 'channel'].includes(attrs.chat_type)) {
+      return true;
+    }
+    const rawId =
+      attrs.chat_id ||
+      attrs.peer_user_id ||
+      conv?.meta?.sender?.identifier ||
+      '';
+    return String(rawId).startsWith('-');
+  });
+  const callProvider = computed(() =>
+    isATelegramPersonalChannel.value ? 'telegram_personal' : 'whatsapp'
+  );
   const callingEnabled = computed(() => {
     const optionCallingEnabled = unref(options.callingEnabled);
     if (optionCallingEnabled !== undefined) {
@@ -96,13 +132,17 @@ export const useWhatsappCallInitiation = (options = {}) => {
   });
 
   const canInitiateWhatsappCall = computed(() => {
-    if (!isAWhatsAppCloudChannel.value) return false;
+    const isCallableChannel =
+      isAWhatsAppCloudChannel.value ||
+      (isATelegramPersonalChannel.value && !isTelegramGroupChat.value);
+    if (!isCallableChannel) return false;
     if (!callingEnabled.value) return false;
     if (whatsappCallsStore.hasWhatsappCall) return false;
     return true;
   });
 
   const isMediaServerEnabled = computed(() => {
+    if (isATelegramPersonalChannel.value) return true;
     const optionMediaServerEnabled = unref(options.mediaServerEnabled);
     if (optionMediaServerEnabled !== undefined) {
       return Boolean(optionMediaServerEnabled);
@@ -119,7 +159,11 @@ export const useWhatsappCallInitiation = (options = {}) => {
     emitter.emit(BUS_EVENTS.SHOW_ALERT, { message, type: 'info' });
   };
 
-  const connectImmediateOutboundAgentOffer = async (callId, agentOffer) => {
+  const connectImmediateOutboundAgentOffer = async (
+    callId,
+    agentOffer,
+    provider
+  ) => {
     if (!agentOffer?.sdp_offer) return false;
 
     whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: true });
@@ -132,6 +176,7 @@ export const useWhatsappCallInitiation = (options = {}) => {
           direction: 'outbound',
           context: 'outbound-initiate-response',
           peerId: agentOffer.peer_id,
+          provider,
         }
       );
       whatsappCallsStore.updateActiveCall({
@@ -160,16 +205,21 @@ export const useWhatsappCallInitiation = (options = {}) => {
 
   const setOutboundActiveCall = response => {
     const outboundCallId = response.data?.call_id;
+    const username = currentChat.value?.additional_attributes?.username;
+    const fallbackHandle = username
+      ? `@${String(username).replace(/^@/, '')}`
+      : undefined;
     const activeCallData = {
       id: response.data?.id,
       callId: outboundCallId,
+      provider: response.data?.provider || callProvider.value,
       direction: 'outbound',
       status: 'ringing',
       serverRelay: isMediaServerEnabled.value,
       conversationId: selectedConversationId.value,
       caller: {
         name: currentContact.value?.name,
-        phone: currentContact.value?.phone_number,
+        phone: currentContact.value?.phone_number || fallbackHandle,
         avatar: currentContact.value?.thumbnail,
       },
     };
@@ -217,14 +267,14 @@ export const useWhatsappCallInitiation = (options = {}) => {
   const initiateServerRelayCall = async () => {
     if (isInitiatingCall.value || !selectedConversationId.value) return;
     isInitiatingCall.value = true;
+    const provider = callProvider.value;
+    const api = callsApiFor(provider);
     let preparedCallId = null;
     let dialStarted = false;
 
     try {
       showCallingAlert();
-      const response = await WhatsappCallsAPI.prepareOutbound(
-        selectedConversationId.value
-      );
+      const response = await api.prepareOutbound(selectedConversationId.value);
       if (handleInitiatePermissionStatus(response)) return;
       preparedCallId = response.data?.id;
 
@@ -237,26 +287,57 @@ export const useWhatsappCallInitiation = (options = {}) => {
       }
       const operatorLegReady = await connectImmediateOutboundAgentOffer(
         response.data?.id,
-        agentOffer
+        agentOffer,
+        provider
       );
       if (!operatorLegReady) {
         throw new Error(t('WHATSAPP_CALL.CALL_FAILED'));
       }
 
       dialStarted = true;
-      const dialResponse = await WhatsappCallsAPI.dial(response.data?.id);
+      const dialResponse = await api.dial(response.data?.id);
+      const currentActive = whatsappCallsStore.activeCall;
+      if (
+        !currentActive ||
+        String(currentActive.id) !== String(preparedCallId)
+      ) {
+        return;
+      }
       if (handleInitiatePermissionStatus(dialResponse)) {
         whatsappCallsStore.clearActiveCall();
         return;
       }
+      const dialStatus = dialResponse.data?.status;
+      if (['completed', 'failed', 'no_answer', 'busy'].includes(dialStatus)) {
+        whatsappCallsStore.clearActiveCall();
+        return;
+      }
+      const alreadyConnected =
+        currentActive.status === 'connected' ||
+        currentActive.metaAccepted === true ||
+        dialStatus === 'in_progress';
       whatsappCallsStore.updateActiveCall({
         id: dialResponse.data?.id || response.data?.id,
-        callId: dialResponse.data?.call_id || response.data?.call_id,
-        status: dialResponse.data?.status || 'ringing',
+        callId: dialResponse.data?.call_id || currentActive.callId,
+        ...(alreadyConnected
+          ? { metaAccepted: true, status: 'connected' }
+          : { status: dialStatus || 'ringing' }),
       });
+      if (alreadyConnected && currentActive.status !== 'connected') {
+        whatsappCallsStore.markActiveCallConnected();
+        emitter.emit('whatsapp_call:agent_webrtc_connected');
+      }
     } catch (err) {
       if (preparedCallId && !dialStarted) {
-        WhatsappCallsAPI.terminate(preparedCallId).catch(() => {});
+        api.terminate(preparedCallId).catch(() => {});
+      }
+      const activeAfterErr = whatsappCallsStore.activeCall;
+      if (
+        dialStarted &&
+        (!activeAfterErr ||
+          String(activeAfterErr.id) !== String(preparedCallId))
+      ) {
+        return;
       }
       whatsappCallsStore.clearActiveCall();
       handleInitiateError(err);

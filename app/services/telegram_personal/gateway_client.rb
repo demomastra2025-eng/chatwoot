@@ -1,5 +1,7 @@
 class TelegramPersonal::GatewayClient
-  class GatewayError < StandardError; end
+  include TelegramPersonal::GatewayCallMethods
+
+  GatewayError = TelegramPersonal::GatewayCallMethods::GatewayError
   RUNTIME_NOT_SYNCED_ERROR = /\bChannel\s+\d+\s+is not synced\b/i
 
   pattr_initialize [:channel!]
@@ -29,23 +31,12 @@ class TelegramPersonal::GatewayClient
   end
 
   def history_sync!(force: true, reset_cursor: false, include_contacts: false)
-    post(
-      "/internal/channels/#{channel.id}/history-sync",
-      body: {
-        force: force,
-        reset_cursor: reset_cursor,
-        include_contacts: include_contacts
-      }
-    )
+    body = { force: force, reset_cursor: reset_cursor, include_contacts: include_contacts }
+    post("/internal/channels/#{channel.id}/history-sync", body: body)
   end
 
   def contacts_sync!(force: true)
-    post(
-      "/internal/channels/#{channel.id}/contacts-sync",
-      body: {
-        force: force
-      }
-    )
+    post("/internal/channels/#{channel.id}/contacts-sync", body: { force: force })
   end
 
   def disconnect!
@@ -69,69 +60,35 @@ class TelegramPersonal::GatewayClient
 
   def send_message!(message)
     recipient_id, chat_id = outbound_target!(message)
-
-    post_with_runtime_retry(
-      "/internal/channels/#{channel.id}/messages",
-      body: {
-        recipient_id: recipient_id,
-        chat_id: chat_id,
-        text: message.outgoing_content,
-        reply_to_message_id: message.content_attributes['in_reply_to_external_id'],
-        attachments: serialize_attachments(message)
-      }
-    )
+    body = {
+      recipient_id: recipient_id, chat_id: chat_id, text: message.outgoing_content,
+      reply_to_message_id: message.content_attributes['in_reply_to_external_id'],
+      attachments: serialize_attachments(message)
+    }
+    post_with_runtime_retry("/internal/channels/#{channel.id}/messages", body: body)
   end
 
   def edit_message!(message:, content:)
     recipient_id, chat_id = outbound_target!(message)
-
-    post_with_runtime_retry(
-      "/internal/channels/#{channel.id}/messages/edit",
-      body: {
-        recipient_id: recipient_id,
-        chat_id: chat_id,
-        message_id: message.source_id,
-        text: content
-      }
-    )
+    body = { recipient_id: recipient_id, chat_id: chat_id, message_id: message.source_id, text: content }
+    post_with_runtime_retry("/internal/channels/#{channel.id}/messages/edit", body: body)
   end
 
   def delete_message!(message)
     recipient_id, chat_id = outbound_target!(message)
-
-    post_with_runtime_retry(
-      "/internal/channels/#{channel.id}/messages/delete",
-      body: {
-        recipient_id: recipient_id,
-        chat_id: chat_id,
-        message_ids: provider_message_ids_for(message)
-      }
-    )
+    body = { recipient_id: recipient_id, chat_id: chat_id, message_ids: provider_message_ids_for(message) }
+    post_with_runtime_retry("/internal/channels/#{channel.id}/messages/delete", body: body)
   end
 
   def react_message!(message:, emoji:)
     recipient_id, chat_id = outbound_target!(message)
-
-    post_with_runtime_retry(
-      "/internal/channels/#{channel.id}/messages/react",
-      body: {
-        recipient_id: recipient_id,
-        chat_id: chat_id,
-        message_id: message.source_id,
-        emoji: emoji.to_s
-      }
-    )
+    body = { recipient_id: recipient_id, chat_id: chat_id, message_id: message.source_id, emoji: emoji.to_s }
+    post_with_runtime_retry("/internal/channels/#{channel.id}/messages/react", body: body)
   end
 
   def mark_read!(recipient_id:, chat_id:, max_id:)
-    post_with_runtime_retry(
-      "/internal/channels/#{channel.id}/mark-read",
-      body: {
-        recipient_id: recipient_id,
-        chat_id: chat_id,
-        max_id: max_id
-      }
-    )
+    body = { recipient_id: recipient_id, chat_id: chat_id, max_id: max_id }
+    post_with_runtime_retry("/internal/channels/#{channel.id}/mark-read", body: body)
   end
 
   private
@@ -205,45 +162,14 @@ class TelegramPersonal::GatewayClient
     parsed = response.parsed_response.is_a?(Hash) ? response.parsed_response.with_indifferent_access : {}
     return parsed if response.success?
 
-    raise GatewayError, parsed[:error].presence || response.body.presence || 'Telegram Personal gateway request failed'
-  end
-
-  def parse_file_response(response)
-    if response.success?
-      return {
-        body: response.body,
-        content_type: response.headers['content-type'].to_s.split(';').first.presence || 'image/jpeg'
-      }
-    end
-
-    parsed = response.parsed_response.is_a?(Hash) ? response.parsed_response.with_indifferent_access : {}
-    raise GatewayError, parsed[:error].presence || response.body.presence || 'Telegram Personal gateway file request failed'
-  end
-
-  def get_file_with_runtime_retry(path, query:)
-    get_file(path, query: query)
-  rescue GatewayError => e
-    raise unless runtime_not_synced_error?(e)
-
-    sync_channel!
-    get_file(path, query: query)
-  end
-
-  def get_file(path, query:)
-    response = HTTParty.get(
-      "#{base_url}#{path}",
-      headers: headers.except('Content-Type'),
-      query: query,
-      timeout: 60
+    raise GatewayError.new(
+      parsed[:error].presence || response.body.presence || 'Telegram Personal gateway request failed',
+      http_status: response.code
     )
-    parse_file_response(response)
   end
 
   def headers
-    {
-      'Authorization' => "Bearer #{gateway_token}",
-      'Content-Type' => 'application/json'
-    }
+    { 'Authorization' => "Bearer #{gateway_token}", 'Content-Type' => 'application/json' }
   end
 
   def base_url

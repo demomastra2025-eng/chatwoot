@@ -27,6 +27,7 @@
 
 class Channel::TelegramPersonal < ApplicationRecord
   include Channelable
+  include TelegramPersonalRuntimeState
 
   self.table_name = 'channel_telegram_personal'
 
@@ -35,58 +36,12 @@ class Channel::TelegramPersonal < ApplicationRecord
     :api_hash,
     :phone_number,
     :string_session,
-    { runtime_state: [:sync_groups, { ignored_chat_ids: [] }] }
+    :calling_enabled,
+    { runtime_state: [:sync_groups, :calling_enabled, { ignored_chat_ids: [] }] }
   ].freeze
   CONNECTION_STATES = %w[disconnected connecting connected auth_required failed flood_wait].freeze
   LIFECYCLE_STATES = %w[pending_auth code_sent qr_ready qr_expired password_required connected disconnected failed].freeze
   IMMUTABLE_RUNTIME_ATTRS = %i[api_id phone_number].freeze
-  # The gateway's snapshot carries the hash of a pending login code, which only the gateway uses: it is never stored, so it is
-  # never shown in the inbox API nor sent back to the gateway
-  SECRET_RUNTIME_KEYS = %w[pending_phone_code_hash].freeze
-  DEFAULT_HISTORY_SYNC_CHECKPOINT = {
-    'version' => 1,
-    'requested_at' => nil,
-    'cutoff_at' => nil,
-    'dialog_user_ids' => [],
-    'next_dialog_index' => 0,
-    'last_completed_dialog_id' => nil,
-    'last_checkpoint_at' => nil
-  }.freeze
-  DEFAULT_RUNTIME_STATE = {
-    'qr_login_url' => nil,
-    'qr_login_expires_at' => nil,
-    'qr_login_state' => nil,
-    'qr_login_requested_at' => nil,
-    'qr_login_completed_at' => nil,
-    'qr_login_expired_at' => nil,
-    'qr_login_failed_at' => nil,
-    'history_sync_state' => nil,
-    'history_sync_reason' => nil,
-    'history_sync_mode' => nil,
-    'history_sync_requested_at' => nil,
-    'history_sync_started_at' => nil,
-    'history_sync_completed_at' => nil,
-    'history_sync_failed_at' => nil,
-    'history_sync_cancelled_at' => nil,
-    'history_sync_error' => nil,
-    'history_sync_count' => 0,
-    'history_dialog_count' => 0,
-    'history_sync_cutoff_at' => nil,
-    'history_synced_until' => nil,
-    'history_sync_checkpoint' => DEFAULT_HISTORY_SYNC_CHECKPOINT,
-    'contacts_sync_state' => nil,
-    'contacts_sync_reason' => nil,
-    'contacts_sync_requested_at' => nil,
-    'contacts_sync_started_at' => nil,
-    'contacts_sync_completed_at' => nil,
-    'contacts_sync_failed_at' => nil,
-    'contacts_sync_cancelled_at' => nil,
-    'contacts_sync_error' => nil,
-    'contacts_sync_count' => 0,
-    'contacts_synced_until' => nil,
-    'ignored_chat_ids' => [],
-    'sync_groups' => false
-  }.freeze
 
   has_secure_token :webhook_identifier
   has_secure_token :webhook_secret
@@ -95,10 +50,12 @@ class Channel::TelegramPersonal < ApplicationRecord
   encrypts :string_session if Chatwoot.encryption_configured?
 
   validates :api_id, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
+  # rubocop:disable Rails/I18nLocaleTexts
   validates :phone_number,
             presence: true,
             uniqueness: { scope: :account_id },
             format: { with: /\A\+\d{6,15}\z/, message: 'must be in E.164 format' }
+  # rubocop:enable Rails/I18nLocaleTexts
   validates :connection_state, inclusion: { in: CONNECTION_STATES }
   validates :lifecycle_state, inclusion: { in: LIFECYCLE_STATES }
   validates :webhook_identifier, presence: true, uniqueness: true
@@ -138,18 +95,6 @@ class Channel::TelegramPersonal < ApplicationRecord
 
   def uses_default_api_credentials?
     api_id.blank? || api_hash.blank?
-  end
-
-  def runtime_state_payload
-    normalize_runtime_state(runtime_state)
-  end
-
-  def sync_groups?
-    ActiveModel::Type::Boolean.new.cast(runtime_state_payload['sync_groups']) == true
-  end
-
-  def history_sync_checkpoint
-    runtime_state_payload['history_sync_checkpoint']
   end
 
   def update_message(message:, content:)
@@ -220,34 +165,5 @@ class Channel::TelegramPersonal < ApplicationRecord
 
   def frontend_url
     ENV.fetch('FRONTEND_URL', nil)
-  end
-
-  def normalize_runtime_state(value)
-    payload = (value || {}).deep_stringify_keys.except(*SECRET_RUNTIME_KEYS)
-
-    DEFAULT_RUNTIME_STATE.deep_merge(payload).tap do |runtime|
-      checkpoint = runtime['history_sync_checkpoint']
-      runtime['history_sync_checkpoint'] =
-        DEFAULT_HISTORY_SYNC_CHECKPOINT.deep_merge(
-          checkpoint.is_a?(Hash) ? checkpoint.deep_stringify_keys : {}
-        )
-      runtime['history_sync_checkpoint']['dialog_user_ids'] =
-        Array.wrap(runtime.dig('history_sync_checkpoint', 'dialog_user_ids'))
-             .filter_map { |item| item.to_s.presence }
-      runtime['history_sync_checkpoint']['next_dialog_index'] =
-        runtime.dig('history_sync_checkpoint', 'next_dialog_index').to_i
-      runtime['history_sync_count'] = runtime['history_sync_count'].to_i
-      runtime['history_dialog_count'] = runtime['history_dialog_count'].to_i
-      runtime['contacts_sync_count'] = runtime['contacts_sync_count'].to_i
-      ignored_chat_ids =
-        Array.wrap(runtime['ignored_chat_ids'])
-             .flat_map { |item| item.to_s.split(/[,\s;]+/) }
-             .filter_map(&:presence)
-             .uniq
-      sync_groups = ActiveModel::Type::Boolean.new.cast(runtime['sync_groups']) == true
-      runtime.compact_blank!
-      runtime['ignored_chat_ids'] = ignored_chat_ids
-      runtime['sync_groups'] = sync_groups
-    end
   end
 end

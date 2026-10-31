@@ -100,12 +100,20 @@ class Telephony::OperatorBusyService
     return nil if voice_agent_profile? || user.blank?
     return @busy_telephony_call if defined?(@busy_telephony_call)
 
-    scope = account.telephony_call_sessions.active
-    scope = scope.where.not(id: excluding_telephony_call.id) if excluding_telephony_call.present?
-
+    scope = active_telephony_scope
     binding_ids = account.telephony_agent_bindings.where(user_id: user.id).select(:id)
-    @busy_telephony_call = scope.where(agent_binding_id: binding_ids).first
-    @busy_telephony_call ||= scope.where(
+    @busy_telephony_call = scope.where(agent_binding_id: binding_ids).first ||
+                           claimed_metadata_call(scope) ||
+                           claimed_profile_call(scope)
+  end
+
+  def active_telephony_scope
+    scope = account.telephony_call_sessions.active
+    excluding_telephony_call.present? ? scope.where.not(id: excluding_telephony_call.id) : scope
+  end
+
+  def claimed_metadata_call(scope)
+    scope.where(
       <<~SQL.squish,
         telephony_call_sessions.metadata -> 'operator_claim' ->> 'user_id' = :user_id OR
         (
@@ -118,7 +126,6 @@ class Telephony::OperatorBusyService
       SQL
       user_id: user.id.to_s
     ).first
-    @busy_telephony_call ||= claimed_profile_call(scope)
   end
 
   def claimed_profile_call(scope)
@@ -156,7 +163,7 @@ class Telephony::OperatorBusyService
 
   def whatsapp_call_details(call)
     {
-      channel: 'whatsapp',
+      channel: call.respond_to?(:telegram_personal?) && call.telegram_personal? ? 'telegram_personal' : 'whatsapp',
       call_id: call.provider_call_id,
       status: call.status
     }

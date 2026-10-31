@@ -681,6 +681,21 @@ Rails.application.routes.draw do
             end
           end
 
+          resources :telegram_personal_calls, only: [:show] do
+            collection do
+              get :active
+              post :prepare_outbound
+            end
+            member do
+              post :accept
+              post :reject
+              post :terminate
+              post :dial
+              post :agent_answer
+              post :reconnect
+            end
+          end
+
           resources :webhooks, only: [:index, :create, :update, :destroy]
           namespace :integrations do
             resources :apps, only: [:index, :show]

@@ -94,8 +94,12 @@ export const useWhatsappCallsStore = defineStore('whatsappCalls', {
       this.incomingCalls.push(callData);
     },
 
-    removeIncomingCall(callId) {
-      this.incomingCalls = this.incomingCalls.filter(c => c.callId !== callId);
+    removeIncomingCall(callId, dbId = null) {
+      this.incomingCalls = this.incomingCalls.filter(
+        c =>
+          c.callId !== callId &&
+          (dbId === null || dbId === undefined || String(c.id) !== String(dbId))
+      );
     },
 
     setActiveCall(callData) {
@@ -196,15 +200,21 @@ export const useWhatsappCallsStore = defineStore('whatsappCalls', {
       this.pendingAgentOffers = next;
     },
 
-    handleCallAcceptedByOther(callId) {
-      this.removeIncomingCall(callId);
-      this.clearPendingAgentOffer({ callId });
+    handleCallAcceptedByOther(callId, dbId = null) {
+      this.removeIncomingCall(callId, dbId);
+      this.clearPendingAgentOffer({ id: dbId, callId });
     },
 
-    handleCallEnded(callId) {
-      this.removeIncomingCall(callId);
-      this.clearPendingAgentOffer({ callId });
-      if (this.activeCall?.callId === callId) {
+    handleCallEnded(callId, dbId = null) {
+      this.removeIncomingCall(callId, dbId);
+      this.clearPendingAgentOffer({ id: dbId, callId });
+      const matchesActive =
+        this.activeCall &&
+        (this.activeCall.callId === callId ||
+          (dbId !== null &&
+            dbId !== undefined &&
+            String(this.activeCall.id) === String(dbId)));
+      if (matchesActive) {
         // Invoke cleanup BEFORE clearing activeCall so the callback can
         // check isMediaServerEnabled (which depends on activeCall.serverRelay)
         if (this.cleanupCallback) {

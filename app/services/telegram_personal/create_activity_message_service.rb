@@ -2,20 +2,25 @@ class TelegramPersonal::CreateActivityMessageService
   pattr_initialize [:inbox!, :params!]
 
   def perform
-    return if chat_id.blank? || message_id.blank? || activity_content.blank?
-    return if inbox.messages.exists?(source_id: message_id)
+    return if skip_creation?
     return unless lock_message_source_id!
 
     set_contact
     return if @contact.blank?
 
     set_conversation
+    return if duplicate_voice_call_activity?
+
     create_activity_message
   rescue ActiveRecord::RecordNotUnique
     nil
   end
 
   private
+
+  def skip_creation?
+    chat_id.blank? || message_id.blank? || activity_content.blank? || inbox.messages.exists?(source_id: message_id)
+  end
 
   def set_contact
     @contact_inbox = TelegramPersonal::ContactSyncService.new(
@@ -92,5 +97,14 @@ class TelegramPersonal::CreateActivityMessageService
       inbox_id: inbox.id,
       source_id: message_id
     ).acquire!
+  end
+
+  def duplicate_voice_call_activity?
+    return false unless activity_type.to_s.end_with?('_voice_call')
+
+    @conversation.messages
+                 .where(content_type: :voice_call)
+                 .where('created_at >= ?', 2.hours.ago)
+                 .exists?(['updated_at >= ?', 5.minutes.ago])
   end
 end

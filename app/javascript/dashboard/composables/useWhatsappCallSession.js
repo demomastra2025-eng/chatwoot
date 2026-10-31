@@ -7,6 +7,10 @@ import {
   cleanupOutboundCall,
 } from 'dashboard/stores/whatsappCalls';
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
+import {
+  callsApiFor,
+  isTelegramPersonalProvider,
+} from 'dashboard/api/telegramPersonalCalls';
 import Auth from 'dashboard/api/auth';
 import Timer from 'dashboard/helper/Timer';
 import { emitter } from 'shared/helpers/mitt';
@@ -406,6 +410,7 @@ async function negotiateAgentOfferOnce(
     context,
     usePrewarmedStream,
     peerId,
+    provider,
     timing,
     deferPost = false,
     negotiationToken,
@@ -495,15 +500,13 @@ async function negotiateAgentOfferOnce(
       context,
       stages: timing.stages,
     };
+    const resolvedProvider =
+      provider || useWhatsappCallsStore().activeCall?.provider;
+    const api = callsApiFor(resolvedProvider);
     if (peerId) {
-      await WhatsappCallsAPI.agentAnswer(
-        callId,
-        completeSdp,
-        clientTiming,
-        peerId
-      );
+      await api.agentAnswer(callId, completeSdp, clientTiming, peerId);
     } else {
-      await WhatsappCallsAPI.agentAnswer(callId, completeSdp, clientTiming);
+      await api.agentAnswer(callId, completeSdp, clientTiming);
     }
     timing.mark('agent_answer_ok');
   };
@@ -533,6 +536,7 @@ async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
         context,
         usePrewarmedStream: usePrewarmedStream && attempt === 1,
         peerId: options.peerId,
+        provider: options.provider,
         timing,
         deferPost: options.deferPost === true,
         negotiationToken,
@@ -562,7 +566,7 @@ async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
 // Expose handleAgentOffer so ActionCable handler can invoke it
 export { handleAgentOffer };
 
-function prepareInboundAgentAnswer(callId, agentOffer) {
+function prepareInboundAgentAnswer(callId, agentOffer, provider = null) {
   if (!agentOffer?.sdp_offer) return null;
   return handleAgentOffer(
     callId,
@@ -573,6 +577,7 @@ function prepareInboundAgentAnswer(callId, agentOffer) {
       context: 'pre-accept-agent-answer',
       usePrewarmedStream: true,
       peerId: agentOffer.peer_id,
+      provider,
       deferPost: true,
     }
   );
@@ -603,7 +608,11 @@ export function prewarmInboundAgentAnswerForCall(call) {
   }
 
   clearPreparedInboundAgentAnswer(call);
-  const promise = prepareInboundAgentAnswer(call.id, call.agentOffer);
+  const promise = prepareInboundAgentAnswer(
+    call.id,
+    call.agentOffer,
+    call.provider
+  );
   const record = {
     agentOffer: call.agentOffer,
     promise,
@@ -651,7 +660,7 @@ async function doAcceptCall(
   if (isServerRelayCall(call)) {
     if (!preconnectedAgent && !skipPrewarm) prepareInboundAudioStream();
     try {
-      const { data } = await WhatsappCallsAPI.accept(call.id);
+      const { data } = await callsApiFor(call).accept(call.id);
       return {
         success: true,
         awaitingAgentOffer: !data?.agent_offer?.sdp_offer,
@@ -733,6 +742,7 @@ async function connectAgentOfferForActiveCall(
           usePrewarmedStream ??
           isInboundDirection(callsStore.activeCall?.direction),
         peerId: agentOffer.peer_id,
+        provider: callsStore.activeCall?.provider,
       }
     );
     callsStore.updateActiveCall({
@@ -810,7 +820,7 @@ async function connectPreparedOrFallbackAgentOffer({
  * Standalone function callable from VoiceCall bubble.
  * Fetches call data if needed, runs WebRTC accept, updates store.
  */
-export async function acceptWhatsappCallById(callId) {
+export async function acceptWhatsappCallById(callId, callSource = 'whatsapp') {
   const callsStore = useWhatsappCallsStore();
 
   if (callsStore.hasActiveCall) {
@@ -822,13 +832,19 @@ export async function acceptWhatsappCallById(callId) {
   );
 
   if (!call) {
-    const { data } = await WhatsappCallsAPI.show(callId);
+    const api = callsApiFor(callSource);
+    const { data } = await api.show(callId);
     if (data.status !== 'ringing') {
       return { success: false, error: 'not_ringing' };
     }
     call = {
       id: data.id,
       callId: data.call_id,
+      provider:
+        data.provider ||
+        (isTelegramPersonalProvider(callSource)
+          ? 'telegram_personal'
+          : 'whatsapp'),
       direction: data.direction,
       inboxId: data.inbox_id,
       conversationId: data.conversation_id,
@@ -869,7 +885,7 @@ export async function acceptWhatsappCallById(callId) {
         call.agentOffer || callsStore.consumePendingAgentOffer(activeCallData);
       preparedAgentAnswerPromise =
         consumePreparedInboundAgentAnswer(call, preparedAgentOffer) ||
-        prepareInboundAgentAnswer(call.id, preparedAgentOffer);
+        prepareInboundAgentAnswer(call.id, preparedAgentOffer, call.provider);
       preparedAgentAnswerPromise?.catch(() => {});
     }
 
@@ -1075,7 +1091,7 @@ export function useWhatsappCallSession() {
           callsStore.consumePendingAgentOffer(activeCallData);
         preparedAgentAnswerPromise =
           consumePreparedInboundAgentAnswer(call, preparedAgentOffer) ||
-          prepareInboundAgentAnswer(call.id, preparedAgentOffer);
+          prepareInboundAgentAnswer(call.id, preparedAgentOffer, call.provider);
         preparedAgentAnswerPromise?.catch(() => {});
       }
 
@@ -1159,7 +1175,7 @@ export function useWhatsappCallSession() {
 
   const rejectCall = async call => {
     try {
-      await WhatsappCallsAPI.reject(call.id);
+      await callsApiFor(call).reject(call.id);
     } catch {
       // Best effort
     } finally {
@@ -1177,7 +1193,7 @@ export function useWhatsappCallSession() {
     }
 
     try {
-      await WhatsappCallsAPI.terminate(call.id);
+      await callsApiFor(call).terminate(call.id);
     } catch {
       // Best effort
     } finally {
