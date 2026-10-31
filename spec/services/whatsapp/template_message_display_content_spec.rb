@@ -129,6 +129,12 @@ RSpec.describe Whatsapp::TemplateMessageDisplayContent do
     expect(render_content).to be_nil
   end
 
+  it 'does not load inbox associations for blank non-template messages' do
+    message.additional_attributes.delete('template_params')
+    expect(message).not_to receive(:inbox)
+    expect(message.content_for_display).to eq('')
+  end
+
   it 'ignores a malformed saved component list' do
     message.additional_attributes['delivery_policy']['template']['components'] = ['opaque']
     expect(render_content).to be_nil

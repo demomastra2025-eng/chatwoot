@@ -7,7 +7,7 @@ class Whatsapp::TemplateMessageDisplayContent
   end
 
   def render
-    return unless eligible? && attributes['template_params'].is_a?(Hash)
+    return unless attributes['template_params'].is_a?(Hash) && eligible?
 
     params = resolved_template_params
     return if params['name'].blank? || params['language'].blank?
