@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Telephony::BeelineEventsController < ActionController::API
+  before_action :ensure_provider_enabled!
   before_action :authenticate_token!
 
   def create
@@ -60,6 +61,10 @@ class Telephony::BeelineEventsController < ActionController::API
   end
 
   private
+
+  def ensure_provider_enabled!
+    head :not_found unless Telephony::ProviderPolicy.enabled?('beeline')
+  end
 
   def verification_request?
     return true if request.get? || request.head?

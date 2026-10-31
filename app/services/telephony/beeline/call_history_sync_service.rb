@@ -22,6 +22,8 @@ module Telephony
       end
 
       def perform
+        return { ok: true, reason: 'provider_disabled', synced: 0, skipped: 0 } unless Telephony::ProviderPolicy.enabled?('beeline')
+
         return { ok: false, reason: 'invalid_channel', synced: 0, skipped: 0 } unless valid_beeline_channel?
         return { ok: true, reason: 'sync_disabled', synced: 0, skipped: 0 } if sync_explicitly_disabled?
         return { ok: false, reason: 'api_token_not_configured', synced: 0, skipped: 0 } unless client.configured?

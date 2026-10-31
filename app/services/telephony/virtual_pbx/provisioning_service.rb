@@ -148,8 +148,7 @@ class Telephony::VirtualPbx::ProvisioningService
       }
     )
   rescue Telephony::Error => e
-    run&.mark_failed!(error: e)
-    wazo_failure_payload(config, include_diagnostics, plan, run, e)
+    handle_provision_failure(config, include_diagnostics, plan, run, e)
   end
 
   def reconcile(inbox_id:, include_diagnostics: false)
@@ -268,6 +267,7 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def create_channel(payload, dry_run: true, remote_commit: false, include_diagnostics: false)
     normalized = normalize_payload(payload)
+    Telephony::ProviderPolicy.ensure_enabled!(normalized[:provider_kind])
     remote_commit = remote_commit_for(normalized[:provider_kind], remote_commit)
     errors = validation_errors(normalized, require_profiles: normalized[:profiles_supplied])
 
@@ -293,6 +293,7 @@ class Telephony::VirtualPbx::ProvisioningService
     existing_config = config_builder.for_inbox(inbox_id)
     expected_configuration_version = payload.to_h.with_indifferent_access[:expected_configuration_version]
     normalized = normalize_payload(payload, fallback: existing_config)
+    Telephony::ProviderPolicy.ensure_enabled!(normalized[:provider_kind])
     remote_commit = remote_commit_for(normalized[:provider_kind] || existing_config[:provider_kind], remote_commit)
     errors = validation_errors(
       normalized,
@@ -377,6 +378,13 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   private
+
+  def handle_provision_failure(config, include_diagnostics, plan, run, exception)
+    raise if exception.code == Telephony::ProviderPolicy::DISABLED_CODE
+
+    run&.mark_failed!(error: exception)
+    wazo_failure_payload(config, include_diagnostics, plan, run, exception)
+  end
 
   attr_reader :account, :current_user, :config_builder
 

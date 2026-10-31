@@ -43,7 +43,10 @@ class Telephony::AiVoice::JanusSipProfileConfigService
   end
 
   def profile_payload(profile)
+    return unless Telephony::ProviderPolicy.enabled_for_profile?(profile)
+
     context = profile_context(profile)
+    return unless Telephony::ProviderPolicy.enabled?(context[:binding]&.provider || context[:connection]&.provider_kind)
     return unless registerable_profile?(profile, context)
 
     profile_identity_payload(profile, context)

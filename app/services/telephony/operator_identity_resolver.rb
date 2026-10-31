@@ -24,7 +24,7 @@ class Telephony::OperatorIdentityResolver
 
     def provider
       agent_binding&.provider ||
-        sip_profile&.inbox&.channel&.provider ||
+        sip_profile&.inbox&.channel&.try(:provider) ||
         sip_profile&.provider_connection&.provider_kind
     end
 
@@ -83,7 +83,12 @@ class Telephony::OperatorIdentityResolver
   attr_reader :account, :inbox, :user
 
   def sip_profile_identity
-    profile = sip_profile_scope.first
+    scope = sip_profile_scope
+    profile = if Telephony::ProviderPolicy.enabled?('beeline')
+                scope.first
+              else
+                scope.detect { |candidate| Telephony::ProviderPolicy.enabled_for_profile?(candidate) }
+              end
     return if profile.blank?
 
     Identity.new(source: :sip_profile, record: profile)

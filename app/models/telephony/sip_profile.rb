@@ -418,6 +418,7 @@ class Telephony::SipProfile < ApplicationRecord
 
   def registered_for_routing?
     return false unless enabled?
+    return false unless Telephony::ProviderPolicy.enabled_for_profile?(self)
     return false if status.in?(%w[disabled deleting failed])
     return browser_registered? if availability_mode == 'browser_webphone'
 

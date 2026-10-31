@@ -6,6 +6,8 @@ class Telephony::CallsService
   end
 
   def create_outbound!(inbox:, contact:, user:, conversation:)
+    Telephony::ProviderPolicy.ensure_enabled_for_inbox!(inbox)
+
     raise Telephony::Error.new(code: 'MISSING_PHONE_NUMBER', message: 'Contact phone number is required') if contact.phone_number.blank?
 
     Telephony::OperatorBusyService.new(account: account, user: user).with_lock do

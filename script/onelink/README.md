@@ -86,6 +86,27 @@ runtime из разных SHA.
 
 ## Поведение DEV
 
+### Изоляция Beeline
+
+`TELEPHONY_BEELINE_ENABLED` по умолчанию равен `true`. Значение `false` отключает
+Beeline в данном Rails runtime: browser bootstrap и новые/ранее выданные WS tickets,
+AI profile feed, маршрутизацию, native config и provisioning, provider API,
+историю/записи и приём webhook-событий. Другие провайдеры сохраняют своё поведение.
+Сохранённые SIP-профили и credentials не удаляются и не меняются; создание либо
+повторное включение профиля не обходит этот runtime gate. Пустой Beeline WS URL
+не заменяет этот флаг, поскольку использует общий Janus fallback.
+Явно включают провайдера только `true`, `1`, `yes`, `on` (без учёта регистра);
+пустые и неизвестные значения закрывают доступ.
+
+До применения `false` дождитесь отсутствия активных Beeline-звонков и закройте
+уже открытые DEV Janus WebSocket-соединения на edge: Rails ticket validation
+проверяет новый handshake, но не разрывает уже установленный WebSocket.
+Флаг нужно передать всем Rails web/worker процессам выбранного окружения.
+Не меняйте и не удаляйте webhook-подписки провайдера при отключении DEV:
+его credentials могут совпадать с PROD.
+
+### Проверка релиза
+
 DEV deploy принимает только текущий полный SHA ветки `origin/onelink-dev`:
 
 ```text

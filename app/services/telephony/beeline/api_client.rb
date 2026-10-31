@@ -45,7 +45,7 @@ module Telephony
       end
 
       def configured?
-        @api_token.present? && @base_url.present?
+        Telephony::ProviderPolicy.enabled?('beeline') && @api_token.present? && @base_url.present?
       end
 
       def abonents
@@ -214,6 +214,7 @@ module Telephony
       end
 
       def perform_raw_request(method, path, params: {}, body: nil)
+        Telephony::ProviderPolicy.ensure_enabled!('beeline')
         raise ApiError, 'Beeline API client is not configured' unless configured?
 
         uri = build_uri(path, params)
@@ -262,6 +263,7 @@ module Telephony
       end
 
       def execute_http(uri, request)
+        Telephony::ProviderPolicy.ensure_enabled!('beeline')
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = (uri.scheme == 'https')
         http.verify_mode = @verify_ssl ? OpenSSL::SSL::VERIFY_PEER : OpenSSL::SSL::VERIFY_NONE

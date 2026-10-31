@@ -13,6 +13,7 @@ class Telephony::JanusWebsocketTicket
   class << self
     def issue(server_url:, account:, user:, sip_profile:, registration_instance_id:)
       validate_scope!(account: account, user: user, sip_profile: sip_profile)
+      Telephony::ProviderPolicy.ensure_enabled_for_profile!(sip_profile)
       validate_registration_instance_id!(registration_instance_id)
       endpoint = endpoint_for(server_url)
 
@@ -106,7 +107,7 @@ class Telephony::JanusWebsocketTicket
         account_user_exists = AccountUser.exists?(account_id: payload[:account_id], user_id: payload[:user_id])
         lease_valid = payload[:registration_instance_id].present? &&
                       profile&.browser_registration_lease_valid?(payload[:registration_instance_id])
-        profile.present? && account_user_exists && lease_valid
+        profile.present? && Telephony::ProviderPolicy.enabled_for_profile?(profile) && account_user_exists && lease_valid
       end
     end
 

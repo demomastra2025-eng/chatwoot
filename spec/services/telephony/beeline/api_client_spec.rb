@@ -7,6 +7,33 @@ RSpec.describe Telephony::Beeline::ApiClient do
   let(:base_url) { 'https://cloudpbx.beeline.kz/apis/portal' }
   let(:client) { described_class.new(api_token: api_token, base_url: base_url) }
 
+  context 'when Beeline is disabled in this runtime' do
+    around do |example|
+      with_modified_env('TELEPHONY_BEELINE_ENABLED' => 'false') { example.run }
+    end
+
+    it 'reports unconfigured and rejects API operations before any HTTP connection' do
+      expect(client.configured?).to be(false)
+      expect(Net::HTTP).not_to receive(:new)
+
+      operations = [
+        -> { client.abonents },
+        -> { client.delete_subscription('test-subscription') },
+        -> { client.download_recording('test-record') }
+      ]
+      operations.each do |operation|
+        expect(&operation).to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TELEPHONY_PROVIDER_DISABLED') }
+      end
+    end
+
+    it 'also blocks the signed recording-reference URL boundary' do
+      allow(client).to receive(:record_reference).and_return('url' => 'https://recordings.example.test/test.mp3')
+      expect(Net::HTTP).not_to receive(:new)
+
+      expect { client.send(:download_from_reference_url, 'test-record') }.to raise_error(Telephony::Error)
+    end
+  end
+
   describe '#configured?' do
     it 'returns true when api_token is present and false when blank' do
       expect(client.configured?).to be(true)

@@ -79,6 +79,7 @@ class Telephony::AgentBinding < ApplicationRecord
 
   def registered_for_routing?
     return false unless enabled?
+    return false unless Telephony::ProviderPolicy.enabled?(provider)
 
     reported_online? && registration_fresh? && registration_stable?
   end

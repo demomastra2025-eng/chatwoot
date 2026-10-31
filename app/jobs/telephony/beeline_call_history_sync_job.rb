@@ -7,18 +7,23 @@ class Telephony::BeelineCallHistorySyncJob < ApplicationJob
   LOCK_KEY_PREFIX = 'TELEPHONY::BEELINE_CALL_HISTORY_SYNC_MUTEX'
 
   def perform(channel_id: nil, subscribe_webhook: :auto)
-    if channel_id.present?
-      channel = Channel::Voice.find_by(id: channel_id, provider: 'beeline')
-      return if channel.blank?
-      return unless sync_enabled_for_channel?(channel)
-      return unless Telephony::Beeline::ApiClient.for_channel(channel).configured?
+    return unless Telephony::ProviderPolicy.enabled?('beeline')
 
-      with_channel_lock(channel.id) do
-        sync_channel(channel, subscribe_webhook: subscribe_webhook)
-      end
-      return
+    return enqueue_channel_jobs(subscribe_webhook) if channel_id.blank?
+
+    channel = Channel::Voice.find_by(id: channel_id, provider: 'beeline')
+    return if channel.blank?
+    return unless sync_enabled_for_channel?(channel)
+    return unless Telephony::Beeline::ApiClient.for_channel(channel).configured?
+
+    with_channel_lock(channel.id) do
+      sync_channel(channel, subscribe_webhook: subscribe_webhook)
     end
+  end
 
+  private
+
+  def enqueue_channel_jobs(subscribe_webhook)
     Channel::Voice.where(provider: 'beeline').find_each do |channel|
       next unless sync_enabled_for_channel?(channel)
       next unless Telephony::Beeline::ApiClient.for_channel(channel).configured?
@@ -26,8 +31,6 @@ class Telephony::BeelineCallHistorySyncJob < ApplicationJob
       self.class.perform_later(channel_id: channel.id, subscribe_webhook: subscribe_webhook)
     end
   end
-
-  private
 
   def with_channel_lock(channel_id)
     lock_key = "#{LOCK_KEY_PREFIX}::#{channel_id}"

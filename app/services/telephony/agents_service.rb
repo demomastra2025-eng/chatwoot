@@ -8,6 +8,14 @@ class Telephony::AgentsService
   end
 
   def set_enabled!(binding:, enabled:)
+    if ActiveModel::Type::Boolean.new.cast(enabled)
+      if binding.is_a?(Telephony::SipProfile)
+        Telephony::ProviderPolicy.ensure_enabled_for_profile!(binding)
+      else
+        Telephony::ProviderPolicy.ensure_enabled!(binding.provider)
+      end
+    end
+
     binding.update!(enabled: enabled, last_synced_at: Time.current)
     {
       'provider' => 'janus_sip',

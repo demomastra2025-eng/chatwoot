@@ -105,6 +105,8 @@ class Telephony::VirtualPbx::ConfigBuilder
                                  status: :unprocessable_content)
     end
 
+    Telephony::ProviderPolicy.ensure_enabled!(channel.provider)
+
     build_config(inbox, channel)
   end
 
@@ -125,7 +127,7 @@ class Telephony::VirtualPbx::ConfigBuilder
   end
 
   def self.provider_templates
-    PROVIDER_TEMPLATES.deep_dup
+    PROVIDER_TEMPLATES.select { |provider, _template| Telephony::ProviderPolicy.enabled?(provider) }.deep_dup
   end
 
   def self.carrier_templates

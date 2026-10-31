@@ -580,6 +580,7 @@ class Telephony::WebphoneService
            .filter_map do |profile|
       provider = janus_sip_provider_for(profile.inbox, profile)
       next unless provider.to_s.in?(JANUS_SIP_WEBPHONE_PROVIDERS)
+      next unless Telephony::ProviderPolicy.enabled?(provider)
 
       operator_identity = Telephony::OperatorIdentityResolver::Identity.new(source: :sip_profile, record: profile)
       janus_sip_webphone_payload(profile.inbox, operator_identity, user, client_instance_id)
@@ -876,15 +877,18 @@ class Telephony::WebphoneService
     return false if user.blank?
     return false if operator_identity&.sip_profile.blank?
 
-    account.telephony_sip_profiles
-           .where(user_id: user.id, availability_mode: 'browser_webphone', enabled: true)
-           .where.not(status: %w[disabled deleting failed])
-           .limit(2)
-           .count > 1
+    profiles = account.telephony_sip_profiles
+                      .where(user_id: user.id, availability_mode: 'browser_webphone', enabled: true)
+                      .where.not(status: %w[disabled deleting failed])
+    return profiles.limit(2).count > 1 if Telephony::ProviderPolicy.enabled?('beeline')
+
+    profiles.count { |profile| Telephony::ProviderPolicy.enabled_for_profile?(profile) } > 1
   end
 
   def browser_sip_incoming_provider!(inbox)
     provider = inbox_voice_provider(inbox).to_s
+    Telephony::ProviderPolicy.ensure_enabled!(provider)
+
     return provider if provider.in?(JANUS_SIP_WEBPHONE_PROVIDERS)
 
     raise Telephony::Error.new(code: 'UNSUPPORTED_WEBPHONE_PROVIDER', message: 'Inbox does not use native browser SIP',

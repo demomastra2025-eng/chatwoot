@@ -23,7 +23,7 @@ class Telephony::ReadinessService
   def janus_sip_inboxes
     @janus_sip_inboxes ||= account.inboxes.includes(:channel, telephony_number_binding: :routing_policy).select do |inbox|
       channel = inbox.channel
-      channel.is_a?(Channel::Voice) && channel.provider.in?(JANUS_SIP_PROVIDERS)
+      channel.is_a?(Channel::Voice) && channel.provider.in?(JANUS_SIP_PROVIDERS) && Telephony::ProviderPolicy.enabled?(channel.provider)
     end
   end
 
@@ -31,7 +31,7 @@ class Telephony::ReadinessService
     {
       configured: ENV.fetch('TELEPHONY_JANUS_WS_URL', '').present? || ENV.fetch('JANUS_PUBLIC_WS_URL', '').present?,
       healthy: inboxes.present? && inboxes.all? { |inbox| inbox[:ready] },
-      providers: JANUS_SIP_PROVIDERS,
+      providers: enabled_providers,
       mode: 'browser_webphone'
     }
   end
@@ -41,7 +41,7 @@ class Telephony::ReadinessService
       feature_enabled: account.feature_enabled?('channel_voice'),
       janus_sip_inboxes_count: inboxes.size,
       ready_inboxes_count: inboxes.count { |inbox| inbox[:ready] },
-      number_bindings_count: account.telephony_number_bindings.where(provider: JANUS_SIP_PROVIDERS).count,
+      number_bindings_count: account.telephony_number_bindings.where(provider: enabled_providers).count,
       sip_profiles_count: account.telephony_sip_profiles.joins(:inbox).where(inboxes: { id: janus_sip_inboxes.map(&:id) }).count,
       enabled_browser_sip_profiles_count: account.telephony_sip_profiles.joins(:inbox).where(
         inboxes: { id: janus_sip_inboxes.map(&:id) },
@@ -56,6 +56,10 @@ class Telephony::ReadinessService
       warnings << warning('no_janus_sip_inboxes', 'No Janus SIP voice inboxes are configured for this account') if inboxes.empty?
       warnings.concat(unready_inboxes_warning(inboxes))
     end
+  end
+
+  def enabled_providers
+    JANUS_SIP_PROVIDERS.select { |provider| Telephony::ProviderPolicy.enabled?(provider) }
   end
 
   def build_inbox_payload(inbox)

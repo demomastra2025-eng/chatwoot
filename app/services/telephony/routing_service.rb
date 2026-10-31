@@ -23,7 +23,7 @@ class Telephony::RoutingService
   def capabilities
     {
       provider: 'janus_sip',
-      providers: JANUS_SIP_PROVIDERS,
+      providers: JANUS_SIP_PROVIDERS.select { |provider| Telephony::ProviderPolicy.enabled?(provider) },
       browser_calling: true,
       remote_bridge: false
     }
@@ -60,6 +60,8 @@ class Telephony::RoutingService
   end
 
   def update_number_route!(number_binding:, attributes:)
+    Telephony::ProviderPolicy.ensure_enabled!(number_binding.provider)
+
     attributes = normalized_route_attributes(attributes)
     sync_voice_channel_route_config!(number_binding, attributes)
 
@@ -79,6 +81,8 @@ class Telephony::RoutingService
   end
 
   def toggle_ai!(number_binding:, enabled:, ai_app_ref: nil)
+    Telephony::ProviderPolicy.ensure_enabled!(number_binding.provider)
+
     policy = number_binding.routing_policy || number_binding.build_routing_policy(account: account)
     settings = (policy.settings || {}).deep_dup
 

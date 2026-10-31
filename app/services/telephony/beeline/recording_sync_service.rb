@@ -13,6 +13,8 @@ module Telephony
       end
 
       def perform
+        return false unless Telephony::ProviderPolicy.enabled?('beeline')
+
         return false if @call_session.blank? || @record_id.blank?
         return false if @api_client.blank? || !@api_client.configured?
         return false if recording_already_persisted?
