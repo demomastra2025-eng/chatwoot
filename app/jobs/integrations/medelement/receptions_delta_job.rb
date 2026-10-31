@@ -17,9 +17,10 @@ class Integrations::Medelement::ReceptionsDeltaJob < ApplicationJob
     return unless delta_lock.lock(delta_key, LOCK_TIMEOUT)
 
     begin
-      poll_under_full_sync_lock(hook, configuration, delta_lock, delta_key)
+      run_poll(hook, configuration, -> { renew!(delta_lock, delta_key) })
     ensure
       delta_lock.unlock(delta_key)
+      schedule_next(hook, configuration)
     end
   end
 
@@ -38,25 +39,8 @@ class Integrations::Medelement::ReceptionsDeltaJob < ApplicationJob
     cursor.last_poll_at + interval.seconds <= Time.current
   end
 
-  def poll_under_full_sync_lock(hook, configuration, delta_lock, delta_key)
-    full_key = format(::Redis::Alfred::MEDELEMENT_SYNC_MUTEX, account_id: hook.account_id)
-    full_lock = Redis::LockManager.new
-    if full_lock.lock(full_key, LOCK_TIMEOUT)
-      begin
-        run_poll(hook, configuration, -> { renew!(delta_lock, delta_key, full_lock, full_key) })
-      ensure
-        full_lock.unlock(full_key)
-      end
-    else
-      Rails.logger.info("[MEDELEMENT::DELTA] hook=#{hook.id} full_sync_busy=true")
-      pause_for_full_sync!(hook)
-    end
-  ensure
-    schedule_next(hook, configuration)
-  end
-
-  def renew!(delta_lock, delta_key, full_lock, full_key)
-    return if delta_lock.renew(delta_key, LOCK_TIMEOUT) && full_lock.renew(full_key, LOCK_TIMEOUT)
+  def renew!(delta_lock, delta_key)
+    return if delta_lock.renew(delta_key, LOCK_TIMEOUT)
 
     raise 'Medelement delta lock lease lost'
   end
@@ -65,6 +49,11 @@ class Integrations::Medelement::ReceptionsDeltaJob < ApplicationJob
     Integrations::Medelement::ReceptionsDeltaService.new(
       hook: hook, configuration: configuration, renew_locks: renew_locks
     ).perform
+  rescue Integrations::Medelement::ReceptionsDeltaService::IntegrationChangedError
+    # Abort without advancing the cursor after a disable/configuration change.
+    nil
+  rescue ActiveRecord::RecordNotFound
+    raise
   rescue StandardError => e
     record_error!(hook, configuration, e)
   end
@@ -79,13 +68,6 @@ class Integrations::Medelement::ReceptionsDeltaJob < ApplicationJob
       "[MEDELEMENT::DELTA] hook=#{hook.id} error=#{error.class.name} " \
       "status=#{error.respond_to?(:status) ? error.status : 'none'} interval=#{interval}"
     )
-  end
-
-  FULL_SYNC_BUSY_RETRY_SECONDS = 15
-
-  def pause_for_full_sync!(hook)
-    cursor = Integrations::Medelement::SyncCursor.find_or_create_by!(hook: hook, name: 'receptions_delta')
-    cursor.update!(current_interval_seconds: FULL_SYNC_BUSY_RETRY_SECONDS, last_poll_at: Time.current)
   end
 
   def retryable?(error)

@@ -21,10 +21,17 @@ RSpec.describe Integrations::Medelement::DeltaMissAudit do
     )
   end
 
+  def complete_delta_poll!
+    Integrations::Medelement::SyncCursor.find_by!(hook: hook, name: 'receptions_delta').update!(
+      value: Time.current, last_success_at: Time.current, last_poll_at: Time.current
+    )
+  end
+
   it 'records one unexplained miss after a complete poll and the grace period' do
     record_change
     record_change
     travel 2.minutes + 1.second do
+      complete_delta_poll!
       audit.resolve_candidates!(poll_completed_at: Time.current)
     end
 
@@ -41,6 +48,7 @@ RSpec.describe Integrations::Medelement::DeltaMissAudit do
     )
     record_change
     travel 2.minutes + 1.second do
+      complete_delta_poll!
       audit.resolve_candidates!(poll_completed_at: Time.current)
     end
 
@@ -53,6 +61,7 @@ RSpec.describe Integrations::Medelement::DeltaMissAudit do
       hook: hook, reception_code: 'reception-1', change_marker: 'marker-1', processed_at: Time.current
     )
     travel 2.minutes + 1.second do
+      complete_delta_poll!
       audit.resolve_candidates!(poll_completed_at: Time.current)
     end
 
@@ -95,6 +104,7 @@ RSpec.describe Integrations::Medelement::DeltaMissAudit do
 
     record_change
     travel 2.minutes + 1.second do
+      complete_delta_poll!
       audit.resolve_candidates!(poll_completed_at: Time.current)
     end
     expect(config.receptions_full_sweep_interval_minutes).to eq(2)
@@ -113,5 +123,53 @@ RSpec.describe Integrations::Medelement::DeltaMissAudit do
         hook: hook, kind: 'poll_error', classification: 'provider_error', reception_code: 'poll_error:http_401'
       )
     ).to exist
+  end
+
+  it 'keeps a candidate pending while a full sync finishes ahead of a paused delta cursor' do
+    cursor = Integrations::Medelement::SyncCursor.find_by!(hook: hook, name: 'receptions_delta')
+    cursor.update!(value: 25.minutes.ago, last_success_at: 25.minutes.ago,
+                   last_poll_at: Time.current, current_interval_seconds: 15)
+    run = Integrations::Medelement::SyncRun.create!(
+      hook: hook, account: account, trigger: 'scheduled', status: 'running', started_at: 20.minutes.ago
+    )
+    audit.record_change!(reception_code: 'reception-1', change_marker: 'marker-1', kind: 'changed',
+                         changed_fields: ['status'], full_sweep_run: run)
+
+    travel 3.minutes do
+      audit.record_full_sweep_result!
+      expect(Integrations::Medelement::DeltaMiss.where(hook: hook)).to be_empty
+      expect(Integrations::Medelement::DeltaMissCandidate.where(hook: hook).count).to eq(1)
+
+      Integrations::Medelement::DeltaSeenReception.create!(
+        hook: hook, reception_code: 'reception-1', change_marker: 'marker-1', processed_at: Time.current
+      )
+      complete_delta_poll!
+      expect(audit.resolve_candidates!(poll_completed_at: Time.current)).to eq(0)
+    end
+
+    expect(Integrations::Medelement::DeltaMiss.where(hook: hook)).to be_empty
+    expect(Integrations::Medelement::DeltaMissCandidate.where(hook: hook)).to be_empty
+  end
+
+  it 'ignores source creation metadata without losing real fields from a mixed change' do
+    fields = ['custom_attributes.medelement_source_created_at']
+    audit.record_change!(reception_code: 'metadata-only', change_marker: 'marker-1', kind: 'changed', changed_fields: fields)
+    expect(Integrations::Medelement::DeltaMissCandidate.where(hook: hook)).to be_empty
+
+    audit.record_change!(reception_code: 'real-change', change_marker: 'marker-2', kind: 'changed',
+                         changed_fields: fields + ['status'])
+    expect(Integrations::Medelement::DeltaMissCandidate.find_by!(hook: hook).changed_fields).to eq(['status'])
+  end
+
+  it 'discards an already queued metadata-only candidate after a completed delta poll' do
+    Integrations::Medelement::DeltaMissCandidate.create!(
+      hook: hook, reception_code: 'metadata-only', change_marker: 'marker-1', kind: 'changed',
+      detected_at: 3.minutes.ago, changed_fields: ['custom_attributes.medelement_source_created_at']
+    )
+    complete_delta_poll!
+
+    expect(audit.resolve_candidates!(poll_completed_at: Time.current)).to eq(0)
+    expect(Integrations::Medelement::DeltaMiss.where(hook: hook)).to be_empty
+    expect(Integrations::Medelement::DeltaMissCandidate.where(hook: hook)).to be_empty
   end
 end

@@ -5,6 +5,7 @@ class Integrations::Medelement::DeltaMissAudit
   BACKOFF_CURSOR_NAME = Integrations::Medelement::Configuration::FULL_SWEEP_BACKOFF_CURSOR_NAME
   DEFAULT_SWEEP_SECONDS = Integrations::Medelement::Configuration::RECEPTIONS_SYNC_INTERVAL_MINUTES * 60
   DELTA_HEALTH_MAX_AGE = 5.minutes
+  TECHNICAL_CHANGE_FIELDS = %w[custom_attributes.medelement_source_created_at].freeze
 
   def initialize(hook:)
     @hook = hook
@@ -13,6 +14,9 @@ class Integrations::Medelement::DeltaMissAudit
 
   def record_change!(reception_code:, change_marker:, kind:, changed_fields:, full_sweep_run: nil)
     return unless configuration.incremental_receptions_enabled?
+
+    changed_fields -= TECHNICAL_CHANGE_FIELDS
+    return if technical_only_change_fields?(kind, changed_fields)
 
     cursor = cursor_scope.first
     return unless cursor&.last_success_at
@@ -30,10 +34,10 @@ class Integrations::Medelement::DeltaMissAudit
   end
 
   def resolve_candidates!(poll_completed_at:)
-    grace = 2 * configuration.incremental_receptions_interval_seconds
     unexplained = 0
-    candidates.where('detected_at <= ?', poll_completed_at - grace.seconds).find_each do |candidate|
-      unexplained += 1 if candidate_missed?(candidate) && record_miss!(candidate) == 'unexplained'
+    candidates_after_delta_opportunity(poll_completed_at).find_each do |candidate|
+      missed = !technical_only_change?(candidate) && candidate_missed?(candidate)
+      unexplained += 1 if missed && record_miss!(candidate) == 'unexplained'
       candidate.destroy!
     end
     prune_seen!
@@ -98,6 +102,25 @@ class Integrations::Medelement::DeltaMissAudit
 
   def candidate_missed?(candidate)
     !seen_scope.exists?(reception_code: candidate.reception_code, change_marker: candidate.change_marker)
+  end
+
+  def candidates_after_delta_opportunity(poll_completed_at)
+    cursor = cursor_scope.first
+    return candidates.none unless cursor&.last_success_at && cursor.value
+
+    # A finished full sweep cannot prove that a paused delta saw this change.
+    # The completed poll watermark must cover the candidate and the normal grace.
+    grace = 2 * configuration.incremental_receptions_interval_seconds
+    covered_at = [cursor.value, poll_completed_at].min - grace.seconds
+    candidates.where('detected_at <= ?', covered_at)
+  end
+
+  def technical_only_change?(candidate)
+    technical_only_change_fields?(candidate.kind, candidate.changed_fields - TECHNICAL_CHANGE_FIELDS)
+  end
+
+  def technical_only_change_fields?(kind, fields)
+    kind == 'changed' && fields.empty?
   end
 
   def delta_cursor_healthy?

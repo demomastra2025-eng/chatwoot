@@ -24,6 +24,30 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaService do
     }
   end
 
+  it 'does not import a fetched reception after the hook is disabled during the provider read' do
+    allow(client).to receive(:receptions_by_update_date).and_return([{ 'RECEPTION_CODE' => 'reception-1' }])
+    allow(client).to receive(:get_reception) do
+      Integrations::Hook.find(hook.id).update!(status: 'disabled')
+      detail_for('reception-1')
+    end
+
+    expect { service.perform }.to raise_error(described_class::IntegrationChangedError)
+    expect(importer).not_to have_received(:import_reported_reception!)
+    expect(Integrations::Medelement::SyncCursor.find_by!(hook: hook, name: 'receptions_delta').last_success_at).to be_nil
+  end
+
+  it 'does not import a detail fetched under settings that changed while reading the provider' do
+    allow(client).to receive(:receptions_by_update_date).and_return([{ 'RECEPTION_CODE' => 'reception-1' }])
+    allow(client).to receive(:get_reception) do
+      record = Integrations::Hook.find(hook.id)
+      record.update!(settings: record.settings.merge('sync_receptions' => false))
+      detail_for('reception-1')
+    end
+
+    expect { service.perform }.to raise_error(described_class::IntegrationChangedError)
+    expect(importer).not_to have_received(:import_reported_reception!)
+  end
+
   it 'fetches full details and advances the durable cursor only after applying every code' do
     allow(client).to receive(:receptions_by_update_date).and_return([{ 'receptionCode' => 'reception-1' }])
 
@@ -34,7 +58,115 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaService do
     expect(cursor.value).to be_present
     expect(client).to have_received(:get_reception).with(reception_code: 'reception-1', version: :v2)
     expect(importer).to have_received(:import_reported_reception!)
-      .with(hash_including('RECEPTION_CODE' => 'reception-1'), entry_cabinet_code: nil)
+      .with(hash_including('RECEPTION_CODE' => 'reception-1'), entry_cabinet_code: nil,
+                                                               snapshot_version: { exists: false, updated_at: nil })
+  end
+
+  describe 'an integration that changes before the poll can finish' do
+    let!(:cursor) do
+      Integrations::Medelement::SyncCursor.create!(
+        hook: hook, name: 'receptions_delta', value: 10.minutes.ago, last_success_at: 10.minutes.ago
+      )
+    end
+
+    it 'keeps the old watermark when an empty response arrives after disable' do
+      original = cursor.attributes.slice('value', 'last_success_at')
+      allow(client).to receive(:receptions_by_update_date) do
+        Integrations::Hook.find(hook.id).update!(status: 'disabled')
+        []
+      end
+
+      expect { service.perform }.to raise_error(described_class::IntegrationChangedError)
+      expect(cursor.reload.attributes.slice('value', 'last_success_at')).to eq(original)
+    end
+
+    it 'keeps the old watermark when settings change during an empty response' do
+      original = cursor.attributes.slice('value', 'last_success_at')
+      allow(client).to receive(:receptions_by_update_date) do
+        record = Integrations::Hook.find(hook.id)
+        record.update!(settings: record.settings.merge('sync_receptions' => false))
+        []
+      end
+
+      expect { service.perform }.to raise_error(described_class::IntegrationChangedError)
+      expect(cursor.reload.attributes.slice('value', 'last_success_at')).to eq(original)
+    end
+
+    it 'also fences a poll that skips every already seen detail' do
+      original = cursor.attributes.slice('value', 'last_success_at')
+      Integrations::Medelement::DeltaSeenReception.create!(
+        hook: hook, reception_code: 'reception-1',
+        change_marker: Integrations::Medelement::ReceptionChangeMarker.call(detail_for('reception-1')),
+        processed_at: Time.current
+      )
+      allow(client).to receive(:receptions_by_update_date).and_return([{ 'RECEPTION_CODE' => 'reception-1' }])
+      allow(client).to receive(:get_reception) do
+        Integrations::Hook.find(hook.id).update!(status: 'disabled')
+        detail_for('reception-1')
+      end
+
+      expect { service.perform }.to raise_error(described_class::IntegrationChangedError)
+      expect(cursor.reload.attributes.slice('value', 'last_success_at')).to eq(original)
+      expect(importer).not_to have_received(:import_reported_reception!)
+    end
+  end
+
+  describe 'a newer full snapshot committed while the delta detail was in flight' do
+    let!(:resource) do
+      create(:scheduling_resource, account: account, timezone: 'Asia/Almaty',
+                                   custom_attributes: { 'medelement_specialist_code' => 'doctor-1',
+                                                        'medelement_cabinets' => [{ 'company_cabinet_code' => 'cabinet-1' }] })
+    end
+    let(:date) { Time.current.in_time_zone('Asia/Almaty').strftime('%Y-%m-%d') }
+    let(:old_detail) { detail_for('reception-1').merge('STARTTIME' => "#{date} 10:00:00", 'ENDTIME' => "#{date} 10:20:00", 'ACTIVE' => 1) }
+    let(:new_detail) { old_detail.merge('PATIENT_CODE' => 'patient-1', 'STARTTIME' => "#{date} 12:00:00", 'ENDTIME' => "#{date} 12:20:00") }
+    let(:full_client) { instance_double(Integrations::Medelement::Client) }
+
+    before do
+      hook.update!(settings: hook.settings.merge('sync_patients' => false))
+      allow(Integrations::Medelement::ReceptionsSyncService).to receive(:new).and_call_original
+      allow(full_client).to receive(:get_receptions).and_return([new_detail])
+      allow(full_client).to receive(:get_reception).and_return(new_detail)
+      allow(client).to receive(:receptions_by_update_date).and_return([{ 'RECEPTION_CODE' => 'reception-1' }])
+      allow(client).to receive(:get_reception) do
+        Integrations::Medelement::ReceptionsSyncService.new(
+          account: account, client: full_client, configuration: Integrations::Medelement::Configuration.new(hook: hook)
+        ).perform
+        old_detail
+      end
+    end
+
+    def expect_newer_snapshot_to_survive
+      expect(service.perform).to include(applied: 0, skipped: 1, complete: true)
+      appointments = account.scheduling_appointments.where(external_ref: 'medelement:reception:reception-1')
+      expect(appointments.count).to eq(1)
+      expect(appointments.first.starts_at.in_time_zone('Asia/Almaty').strftime('%H:%M')).to eq('12:00')
+    end
+
+    it 'does not overwrite an existing appointment with the older detail' do
+      create(:scheduling_appointment, account: account, resource: resource, source: 'medelement',
+                                      external_ref: 'medelement:reception:reception-1',
+                                      starts_at: Time.zone.parse("#{date} 10:00:00"), ends_at: Time.zone.parse("#{date} 10:20:00"))
+      expect_newer_snapshot_to_survive
+    end
+
+    it 'does not overwrite an appointment that the full snapshot created during the read' do
+      expect_newer_snapshot_to_survive
+    end
+
+    it 'does not cancel the newer appointment from an older removal detail' do
+      create(:scheduling_appointment, account: account, resource: resource, source: 'medelement',
+                                      external_ref: 'medelement:reception:reception-1',
+                                      starts_at: Time.zone.parse("#{date} 10:00:00"), ends_at: Time.zone.parse("#{date} 10:20:00"))
+      allow(client).to receive(:get_reception) do
+        Integrations::Medelement::ReceptionsSyncService.new(
+          account: account, client: full_client, configuration: Integrations::Medelement::Configuration.new(hook: hook)
+        ).perform
+        old_detail.merge('REMOVED' => 1)
+      end
+      expect_newer_snapshot_to_survive
+      expect(account.scheduling_appointments.find_by!(external_ref: 'medelement:reception:reception-1').status).not_to eq('cancelled')
+    end
   end
 
   describe 'the cabinet of the update list' do
@@ -50,9 +182,11 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaService do
       )
 
       expect(importer).to have_received(:import_reported_reception!)
-        .with(hash_including('RECEPTION_CODE' => 'reception-1'), entry_cabinet_code: 'cabinet-2')
+        .with(hash_including('RECEPTION_CODE' => 'reception-1'), entry_cabinet_code: 'cabinet-2',
+                                                                 snapshot_version: { exists: false, updated_at: nil })
       expect(importer).to have_received(:import_reported_reception!)
-        .with(hash_including('RECEPTION_CODE' => 'reception-2'), entry_cabinet_code: 'cabinet-3')
+        .with(hash_including('RECEPTION_CODE' => 'reception-2'), entry_cabinet_code: 'cabinet-3',
+                                                                 snapshot_version: { exists: false, updated_at: nil })
     end
 
     it 'passes the cabinet that several entries of one code agree on, and none when they disagree or give none' do
@@ -66,11 +200,14 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaService do
       )
 
       expect(importer).to have_received(:import_reported_reception!)
-        .with(hash_including('RECEPTION_CODE' => 'reception-1'), entry_cabinet_code: 'cabinet-2')
+        .with(hash_including('RECEPTION_CODE' => 'reception-1'), entry_cabinet_code: 'cabinet-2',
+                                                                 snapshot_version: { exists: false, updated_at: nil })
       expect(importer).to have_received(:import_reported_reception!)
-        .with(hash_including('RECEPTION_CODE' => 'reception-2'), entry_cabinet_code: nil)
+        .with(hash_including('RECEPTION_CODE' => 'reception-2'), entry_cabinet_code: nil,
+                                                                 snapshot_version: { exists: false, updated_at: nil })
       expect(importer).to have_received(:import_reported_reception!)
-        .with(hash_including('RECEPTION_CODE' => 'reception-3'), entry_cabinet_code: nil)
+        .with(hash_including('RECEPTION_CODE' => 'reception-3'), entry_cabinet_code: nil,
+                                                                 snapshot_version: { exists: false, updated_at: nil })
     end
 
     it 'imports a reception of a multi-cabinet specialist with the cabinet of its entry, through the real import' do

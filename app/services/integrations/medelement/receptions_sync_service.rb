@@ -17,7 +17,8 @@ class Integrations::Medelement::ReceptionsSyncService
   LIST_FINGERPRINT_KEY = 'medelement_list_fingerprint'.freeze
   DETAIL_SYNCED_AT_KEY = 'medelement_detail_synced_at'.freeze
   DETAIL_RETRY_AT_KEY = 'medelement_detail_retry_at'.freeze
-  AUDIT_METADATA_KEYS = [LIST_FINGERPRINT_KEY, DETAIL_SYNCED_AT_KEY, DETAIL_RETRY_AT_KEY, 'provider_status_audit'].freeze
+  AUDIT_METADATA_KEYS = [LIST_FINGERPRINT_KEY, DETAIL_SYNCED_AT_KEY, DETAIL_RETRY_AT_KEY,
+                         'provider_status_audit', 'medelement_source_created_at'].freeze
   DETAIL_STATE_KEY = '_MEDELEMENT_DETAIL_STATE'.freeze
   DETAIL_RETRY_INTERVAL = 15.minutes
   REALTIME_DAYS_BACK = 1
@@ -61,17 +62,8 @@ class Integrations::Medelement::ReceptionsSyncService
   # A reported delta code does not authorize absence reconciliation for any other reception. The single-reception detail has
   # no cabinet (the list has), so a cabinet that the update list reported for the code can be passed in; it is used only for a
   # reception that is new to OneLink.
-  def import_reported_reception!(detail, entry_cabinet_code: nil)
-    code = detail.fetch('RECEPTION_CODE').to_s
-    external_ref = importer.external_ref_for(code)
-    appointment = account.scheduling_appointments.find_by(external_ref: external_ref)
-    return reconcile_reported_removal(appointment) if detail['REMOVED'].to_i == 1
-
-    resource, cabinet_code = delta_scope!(detail, appointment, entry_cabinet_code)
-    reception = delta_reception(detail, cabinet_code)
-    @appointment_snapshot_versions = { external_ref => appointment&.updated_at }.compact
-    contacts = synced_contacts([reception.merge(DETAIL_STATE_KEY => 'fetched')])
-    sync_reception(reception, resource, contacts)
+  def import_reported_reception!(detail, entry_cabinet_code: nil, snapshot_version: nil)
+    import_delta_reception!(detail, entry_cabinet_code, snapshot_version)
   end
 
   # The status apply_reported_status! would give the appointment of this reception, from the importer's own status mapping
@@ -108,11 +100,30 @@ class Integrations::Medelement::ReceptionsSyncService
 
   attr_reader :account, :client, :configuration, :conflict_tracker, :importer, :appointment_snapshot_versions, :window_mode
 
-  def reconcile_reported_removal(appointment)
+  def import_delta_reception!(detail, entry_cabinet_code, snapshot_version)
+    external_ref = importer.external_ref_for(detail.fetch('RECEPTION_CODE').to_s)
+    appointment = account.scheduling_appointments.find_by(external_ref: external_ref)
+    snapshot_version ||= { exists: appointment.present?, updated_at: appointment&.updated_at }
+    if detail['REMOVED'].to_i == 1
+      return with_reception_write { reconcile_reported_removal(appointment, snapshot_version: snapshot_version[:updated_at]) }
+    end
+
+    resource, cabinet_code = delta_scope!(detail, appointment, entry_cabinet_code)
+    reception = delta_reception(detail, cabinet_code)
+    @appointment_snapshot_versions = snapshot_version[:exists] ? { external_ref => snapshot_version[:updated_at] } : {}
+    contacts = synced_contacts([reception.merge(DETAIL_STATE_KEY => 'fetched')])
+    with_reception_write { sync_reception(reception, resource, contacts) }
+  end
+
+  def with_reception_write(&)
+    Integrations::Medelement::ReceptionWriteLock.with_account(account_id: account.id, &)
+  end
+
+  def reconcile_reported_removal(appointment, snapshot_version: appointment&.updated_at)
     return :absent unless appointment
 
     Integrations::Medelement::MissingAppointmentReconciler.new(
-      appointment: appointment, snapshot_version: appointment.updated_at, provider_removal_confirmed: true
+      appointment: appointment, snapshot_version: snapshot_version, provider_removal_confirmed: true
     ).perform
   end
 
@@ -410,7 +421,7 @@ class Integrations::Medelement::ReceptionsSyncService
       next if appointment.status == 'cancelled' && !Integrations::Medelement::LocalCancellation.marked?(appointment)
       next if desired_external_refs.include?(appointment.external_ref)
 
-      ApplicationRecord.transaction do
+      with_reception_write do
         previous_status = appointment.status
         Integrations::Medelement::MissingAppointmentReconciler.new(
           appointment: appointment,
@@ -614,7 +625,7 @@ class Integrations::Medelement::ReceptionsSyncService
       return
     end
 
-    ApplicationRecord.transaction do
+    with_reception_write do
       appointment = sync_reception(reception, resource, contacts_by_patient_code)
       audit_change!(appointment, reception)
     end

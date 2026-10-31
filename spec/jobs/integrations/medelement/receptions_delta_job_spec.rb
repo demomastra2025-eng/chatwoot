@@ -4,25 +4,21 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaJob do
   let(:account) { create(:account).tap { |record| record.enable_features!('scheduling') } }
   let(:hook) { create(:integrations_hook, :medelement, account: account) }
   let(:delta_lock) { instance_double(Redis::LockManager, lock: true, unlock: true, renew: true) }
-  let(:full_lock) { instance_double(Redis::LockManager, lock: true, unlock: true, renew: true) }
   let(:poller) { instance_double(Integrations::Medelement::ReceptionsDeltaService, perform: true) }
 
   before do
     hook.update!(settings: hook.settings.merge('incremental_receptions_enabled' => true))
-    allow(Redis::LockManager).to receive(:new).and_return(delta_lock, full_lock)
+    allow(Redis::LockManager).to receive(:new).and_return(delta_lock)
     allow(Integrations::Medelement::ReceptionsDeltaService).to receive(:new).and_return(poller)
   end
 
-  it 'holds both the delta and full sync locks while polling' do
+  it 'keeps one poll per hook without acquiring the long full-sync mutex' do
     described_class.perform_now(hook.id)
 
     expect(delta_lock).to have_received(:lock).with("MEDELEMENT_RECEPTIONS_DELTA_MUTEX::#{hook.id}", 30.minutes)
-    expect(full_lock).to have_received(:lock).with(
-      format(Redis::Alfred::MEDELEMENT_SYNC_MUTEX, account_id: account.id), 30.minutes
-    )
+    expect(delta_lock).to have_received(:lock).once
     expect(poller).to have_received(:perform).once
     expect(delta_lock).to have_received(:unlock).once
-    expect(full_lock).to have_received(:unlock).once
   end
 
   it 'does not start a second poll when the per-hook lock is held' do
@@ -31,7 +27,7 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaJob do
     described_class.perform_now(hook.id)
 
     expect(poller).not_to have_received(:perform)
-    expect(full_lock).not_to have_received(:lock)
+    expect(delta_lock).not_to have_received(:unlock)
   end
 
   it 'backs off on rate limiting and restores the interval after a successful poll' do
@@ -56,24 +52,25 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaJob do
     expect(cursor.reload.current_interval_seconds).to eq(60)
   end
 
-  it 'pauses briefly (15 seconds) while the full sync lock is held so delta resumes quickly' do
-    allow(full_lock).to receive(:lock).and_return(false)
+  it 'continues polling while another full sync holds the account mutex' do
+    key = format(Redis::Alfred::MEDELEMENT_SYNC_MUTEX, account_id: account.id)
+    Redis::Alfred.set(key, 'full-sync-test-owner', ex: 60)
 
     described_class.perform_now(hook.id)
 
-    expect(poller).not_to have_received(:perform)
-    expect(Integrations::Medelement::SyncCursor.find_by!(hook: hook).current_interval_seconds).to eq(15)
+    expect(poller).to have_received(:perform).once
+    expect(Redis::Alfred.get(key)).to eq('full-sync-test-owner')
+  ensure
+    Redis::Alfred.delete_if_value(key, 'full-sync-test-owner') if key
   end
 
-  it 'preserves an existing cursor while the full sync lock is held' do
-    value = 10.minutes.ago
-    cursor = Integrations::Medelement::SyncCursor.create!(hook: hook, name: 'receptions_delta', value: value)
-    allow(full_lock).to receive(:lock).and_return(false)
+  it 'does not report a provider error when the integration changes during a poll' do
+    allow(poller).to receive(:perform).and_raise(Integrations::Medelement::ReceptionsDeltaService::IntegrationChangedError)
 
     described_class.perform_now(hook.id)
 
-    expect(cursor.reload.value).to be_within(1.second).of(value)
-    expect(cursor.current_interval_seconds).to eq(15)
+    expect(Integrations::Medelement::DeltaMiss.where(hook: hook)).to be_empty
+    expect(Integrations::Medelement::SyncCursor.where(hook: hook)).to be_empty
   end
 
   it 'caps repeated retryable failures at five minutes' do

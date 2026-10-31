@@ -225,6 +225,7 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
           {},
           {
             'medelement_detail_synced_at' => Time.current.iso8601,
+            'medelement_source_created_at' => Time.current.iso8601,
             'provider_status_audit' => { 'observed_at' => Time.current.iso8601 }
           }
         ],

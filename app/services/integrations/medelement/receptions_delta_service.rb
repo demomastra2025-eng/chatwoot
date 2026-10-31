@@ -2,6 +2,7 @@ class Integrations::Medelement::ReceptionsDeltaService
   OVERLAP = 3.minutes
   MAX_CHANGED = 200
   CURSOR_NAME = 'receptions_delta'.freeze
+  IntegrationChangedError = Integrations::Medelement::DeltaPollGuard::IntegrationChangedError
   # The refusals of the importer for a single reception. The regular sync skips such a reception, the stale status
   # reconciliation too, and so does this poll: one bad reception must not stall the others.
   SKIPPED_ERRORS = [
@@ -16,6 +17,7 @@ class Integrations::Medelement::ReceptionsDeltaService
 
   def initialize(hook:, client: nil, configuration: nil, renew_locks: nil)
     @hook = hook
+    @poll_guard = Integrations::Medelement::DeltaPollGuard.new(hook: hook)
     @configuration = configuration || Integrations::Medelement::Configuration.new(hook: hook)
     @client = client || Integrations::Medelement::Client.new(configuration: @configuration, lane: :sync_near)
     @renew_locks = renew_locks
@@ -29,9 +31,7 @@ class Integrations::Medelement::ReceptionsDeltaService
     initialize_lower_bound!(cursor)
     changes = changed_codes(cursor)
     counts = apply_codes(changes)
-    complete = counts[:complete]
-    update_cursor!(cursor, started_at, complete)
-    Integrations::Medelement::DeltaMissAudit.new(hook: hook).resolve_candidates!(poll_completed_at: Time.current) if complete
+    finish_poll!(cursor, started_at, counts[:complete])
     log_poll(cursor, changes, counts)
     counts.merge(changed_codes: changes.size)
   end
@@ -49,10 +49,12 @@ class Integrations::Medelement::ReceptionsDeltaService
 
   # The detail has no cabinet. entry_cabinet_code is the cabinet the update list reported for the code, if it did.
   # An OutOfScope (with its reason) is returned for a reception the import refuses because its specialist or cabinet is not mapped.
-  def apply_detail!(detail, entry_cabinet_code: nil)
-    Integrations::Medelement::ReceptionsSyncService.new(
-      account: hook.account, client: client, configuration: configuration
-    ).import_reported_reception!(detail, entry_cabinet_code: entry_cabinet_code)
+  def apply_detail!(detail, entry_cabinet_code: nil, snapshot_version: nil)
+    @poll_guard.synchronize do
+      Integrations::Medelement::ReceptionsSyncService.new(
+        account: hook.account, client: client, configuration: configuration
+      ).import_reported_reception!(detail, entry_cabinet_code: entry_cabinet_code, snapshot_version: snapshot_version)
+    end
   rescue Integrations::Medelement::ReceptionsSyncService::OutOfScopeReception => e
     Integrations::Medelement::ReceptionsSyncService::OutOfScope.new(reason: e.reason)
   end
@@ -60,6 +62,13 @@ class Integrations::Medelement::ReceptionsDeltaService
   private
 
   attr_reader :hook, :client, :configuration
+
+  def finish_poll!(cursor, started_at, complete)
+    @poll_guard.synchronize do
+      update_cursor!(cursor, started_at, complete)
+      Integrations::Medelement::DeltaMissAudit.new(hook: hook).resolve_candidates!(poll_completed_at: Time.current) if complete
+    end
+  end
 
   def enabled?
     hook.enabled? && hook.feature_allowed? && configuration.sync_receptions? &&
@@ -106,10 +115,10 @@ class Integrations::Medelement::ReceptionsDeltaService
     return :seen if entries.all? { |entry| (marker = update_marker(entry)) && seen?(code, marker) }
     return :cap if processed >= MAX_CHANGED
 
-    detail, marker = fetch_detail(code)
+    detail, marker, snapshot_version = fetch_detail(code)
     return :seen if seen?(code, marker)
 
-    result = apply_or_skip(code, detail, entries)
+    result = apply_or_skip(code, detail, entries, snapshot_version)
     mark_seen!(code, marker)
     Integrations::Medelement::ScheduleChangeTracker.new(hook: hook).mark_reception!(detail) unless refused?(result)
     result
@@ -121,8 +130,9 @@ class Integrations::Medelement::ReceptionsDeltaService
 
   # A reception that the importer refuses is logged and counted as skipped, and the poll goes on with the next code. It is marked
   # as handled for this change marker like any other: it is read again only when MedElement changes the reception.
-  def apply_or_skip(code, detail, entries)
-    apply_detail!(detail, entry_cabinet_code: entry_cabinet_code(entries))
+  def apply_or_skip(code, detail, entries, snapshot_version)
+    result = apply_detail!(detail, entry_cabinet_code: entry_cabinet_code(entries), snapshot_version: snapshot_version)
+    result == :stale_snapshot ? Skipped.new(reason: :stale_snapshot) : result
   rescue *SKIPPED_ERRORS => e
     Rails.logger.warn(
       "[MEDELEMENT::DELTA] Skipping reception for hook=#{hook.id} " \
@@ -164,9 +174,16 @@ class Integrations::Medelement::ReceptionsDeltaService
   end
 
   def fetch_detail(code)
+    snapshot_version = appointment_snapshot_version(code)
     detail = client.get_reception(reception_code: code, version: :v2)
     validate_detail!(detail, code)
-    [detail, Integrations::Medelement::ReceptionChangeMarker.call(detail)]
+    [detail, Integrations::Medelement::ReceptionChangeMarker.call(detail), snapshot_version]
+  end
+
+  def appointment_snapshot_version(code)
+    prefix = Integrations::Medelement::AppointmentImporterService::RECEPTION_EXTERNAL_REF_PREFIX
+    version = hook.account.scheduling_appointments.where(external_ref: "#{prefix}#{code}").pick(:updated_at)
+    { exists: version.present?, updated_at: version }
   end
 
   def prioritize_unseen_changes(changes)
