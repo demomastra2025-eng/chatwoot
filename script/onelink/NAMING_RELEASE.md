@@ -21,6 +21,8 @@ This application change is part of the combined Beeline, Naming, MedElement and 
 
 Locale changes preserve JSON keys, value types and template parameters. Existing module/class names, package identities, iframe messages, browser storage keys, DOM/CSS contracts, Redis keys, persisted InstallationConfig names and serialized job payloads remain compatible. `LICENSE` and upstream attribution are retained.
 
+An existing non-configurable host global remains the shared anchor. If it has a readonly value or a getter without a setter, aliases read that host value and safely ignore replacement attempts; SDK initialization does not overwrite it. A writable value or accessor setter continues to support canonical/legacy writes.
+
 ## Environment contract
 
 The application reads canonical names before legacy fallbacks. Presence is authoritative: an explicitly empty canonical value must not reactivate an older credential or endpoint. It does not rewrite the process environment or database configuration identities.
@@ -53,7 +55,7 @@ The accompanying infrastructure package must cover the remaining owner scope wit
 | Required surface | Migration stage and preservation requirement |
 | --- | --- |
 | `/root/crafty` → `/srv/onelink` | Copy/verify bytes, ownership and modes; update every Compose bind path, systemd unit, backup wrapper, timer/cron and operational consumer; retain a verified rollback path until retirement |
-| Compose project `crafty-prod` → `onelink` | Map all 33 defined / 30 live services, dependencies, DNS aliases and lifecycle scripts; avoid duplicate writers or simultaneous ownership of a database |
+| Compose project `crafty-prod` → `onelink` | Map all 34 defined / 30 live services including the Pipecat profile, dependencies, DNS aliases and lifecycle scripts; avoid duplicate writers or simultaneous ownership of a database |
 | `chatwoot_*` containers/services | Use explicit old/new service mapping; update health, metrics/log labels and automation selectors; rolling web/worker application release must not be confused with a full project/network migration |
 | 13 existing persistent volumes and 4 networks | Preserve the existing physical volume names as explicit external resources until a separately verified data migration; never create empty replacement volumes or run volume deletion as cleanup; verify network consumers and aliases before retirement |
 | `chatwoot_production` / `chatwoot_app` | Separate database/role maintenance stage with a measured downtime gate, stopped writers/connections, identity/ownership/grant and row-count/byte checks, backup/restore rehearsal and exact reversal; no promise of zero downtime or a fixed two-minute window |

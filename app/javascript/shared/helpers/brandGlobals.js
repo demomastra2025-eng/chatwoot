@@ -7,11 +7,20 @@ export const aliasGlobal = (target, canonicalName, legacyNames) => {
     const descriptor = Object.getOwnPropertyDescriptor(target, name);
     return descriptor && !descriptor.configurable;
   });
+  const fixedDescriptor = fixedName
+    ? Object.getOwnPropertyDescriptor(target, fixedName)
+    : undefined;
+  const canWriteFixed = fixedDescriptor
+    ? fixedDescriptor.writable === true ||
+      typeof fixedDescriptor.set === 'function'
+    : false;
   let value = initialValue;
   const getValue = fixedName ? () => target[fixedName] : () => value;
   const setValue = nextValue => {
     if (fixedName) {
-      target[fixedName] = nextValue;
+      // A host-owned immutable value/getter remains authoritative. Its aliases
+      // stay readable and safely ignore replacement rather than breaking boot.
+      if (canWriteFixed) target[fixedName] = nextValue;
     } else {
       value = nextValue;
     }

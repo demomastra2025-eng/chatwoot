@@ -47,16 +47,76 @@ describe('OneLink public globals', () => {
   });
 
   it('supports a legacy global declared with a non-configurable writable property', () => {
-    const target = {};
+    const target = { onelinkSettings: { locale: 'ru' } };
     Object.defineProperty(target, 'chatwootSettings', {
       value: { locale: 'kk' },
       writable: true,
       configurable: false,
     });
     aliasGlobal(target, 'onelinkSettings', ['chatwootSettings']);
+    expect(target.chatwootSettings.locale).toBe('ru');
     target.onelinkSettings = { locale: 'ru' };
     expect(target.chatwootSettings.locale).toBe('ru');
     target.chatwootSettings = { locale: 'en' };
     expect(target.onelinkSettings.locale).toBe('en');
+  });
+
+  it('honors a non-configurable readonly host value without breaking canonical boot', () => {
+    const settings = { locale: 'en' };
+    const target = { onelinkSettings: { locale: 'kk' } };
+    Object.defineProperty(target, 'chatwootSettings', {
+      value: settings,
+      writable: false,
+      configurable: false,
+    });
+
+    expect(() => installOneLinkGlobals(target)).not.toThrow();
+    expect(target.onelinkSettings).toBe(settings);
+    expect(() => {
+      target.onelinkSettings = { locale: 'ru' };
+      target.chatonelinkSettings = { locale: 'kk' };
+    }).not.toThrow();
+    expect(target.onelinkSettings).toBe(settings);
+    expect(target.chatwootSettings).toBe(settings);
+    expect(() => installOneLinkGlobals(target)).not.toThrow();
+  });
+
+  it('reads a getter-only host global and does not call a missing setter', () => {
+    let settings = { locale: 'en' };
+    const target = { onelinkSettings: { locale: 'kk' } };
+    Object.defineProperty(target, 'chatwootSettings', {
+      get: () => settings,
+      configurable: false,
+    });
+
+    expect(() => installOneLinkGlobals(target)).not.toThrow();
+    expect(target.onelinkSettings).toBe(settings);
+    expect(() => {
+      target.onelinkSettings = { locale: 'ru' };
+    }).not.toThrow();
+    settings = { locale: 'kk' };
+    expect(target.onelinkSettings).toBe(settings);
+    expect(
+      Object.getOwnPropertyDescriptor(target, 'chatwootSettings').set
+    ).toBeUndefined();
+  });
+
+  it('forwards writes to an existing non-configurable accessor setter', () => {
+    let settings = { locale: 'en' };
+    const target = { onelinkSettings: { locale: 'kk' } };
+    const setter = vi.fn(next => {
+      settings = next;
+    });
+    Object.defineProperty(target, 'chatwootSettings', {
+      get: () => settings,
+      set: setter,
+      configurable: false,
+    });
+
+    installOneLinkGlobals(target);
+    expect(settings.locale).toBe('kk');
+    target.onelinkSettings = { locale: 'ru' };
+    expect(setter).toHaveBeenCalledTimes(2);
+    expect(target.chatwootSettings.locale).toBe('ru');
   });
 });
