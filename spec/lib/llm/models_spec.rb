@@ -71,8 +71,8 @@ RSpec.describe Llm::Models do
     it 'selects independent Decision defaults for the outcome classifier, the custom guardrail and the language' do
       expect(described_class.default_model_for('outcome_classification')).to eq('inception/mercury-decide')
       expect(described_class.default_model_for('custom_guardrail')).to eq('perplexity/pplx-decider-v1.2')
-      expect(described_class.default_model_for('language_detection')).to eq('openai/gpt-6-luna-decisions')
-      expect(described_class.models_for('language_detection')).to include('respan/span-02')
+      expect(described_class.default_model_for('language_detection')).to eq('inception/mercury-decide')
+      expect(described_class.models_for('language_detection')).to include('microsoft/microsoft-decision-1')
     end
 
     it 'keeps native transport metadata authoritative even when a refreshed chat catalog claims chat capabilities' do
@@ -93,7 +93,7 @@ RSpec.describe Llm::Models do
       models = %w[inception/mercury-decide microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009]
 
       expect(described_class.models_for('outcome_classification')).to include(*models)
-      expect(described_class.models_for('custom_guardrail')).to include('openai/gpt-6-luna-decisions')
+      expect(described_class.models_for('custom_guardrail')).to include('perplexity/pplx-decider-v1.2')
       models.each { |model| expect(described_class.model_allowed_for_feature?('custom_guardrail', model)).to be(true) }
       (described_class.feature_keys - Llm::FeatureProfile.decision_feature_keys).each do |feature|
         expect(described_class.models_for(feature)).not_to include(*models)
@@ -111,7 +111,7 @@ RSpec.describe Llm::Models do
     end
 
     it 'allows the platform chain of Decision models for the other decisions of a patient turn' do
-      chain = %w[inception/mercury-decide microsoft/microsoft-decision-1 openai/gpt-6-luna-decisions]
+      chain = %w[inception/mercury-decide microsoft/microsoft-decision-1 perplexity/pplx-decider-v1.2]
 
       %w[fact_check_gate inbound_triage].each do |feature|
         expect(described_class.configured_default_model_for(feature)).to eq('inception/mercury-decide')

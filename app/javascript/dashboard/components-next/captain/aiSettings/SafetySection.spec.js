@@ -57,9 +57,10 @@ describe('SafetySection', () => {
     expect(wrapper.text()).toContain(`${SAFETY}.STANDARD`);
     expect(wrapper.text()).toContain(`${FORM}.SAFETY_SETTINGS.DESCRIPTION`);
     expect(standard.text()).toContain(`${SAFETY}.MODERATION`);
+    expect(standard.text()).toContain(`${SAFETY}.EXPLICIT_AI_CONSENT`);
     expect(standard.text()).toContain(`${SAFETY}.INJECTION`);
     expect(standard.text()).toContain(`${SAFETY}.SENSITIVE`);
-    expect(standard.findAll('[role="switch"]')).toHaveLength(1);
+    expect(standard.findAll('[role="switch"]')).toHaveLength(2);
     ['prompt_injection_action', 'sensitive_info_action'].forEach(field => {
       expect(optionValues(wrapper, `ai-settings-${field}`)).toEqual([
         'block',

@@ -37,11 +37,29 @@ class Telephony::StoredRecordingReadyService
   end
 
   def enqueue_recording_compression(session)
-    return unless session&.recording_ref.to_s.match?(/\.(wav|wave|pcm)\z/i)
-
-    Telephony::CompressRecordingsJob.perform_later(call_session_id: session.id)
+    if session&.recording_ref.to_s.match?(/\.(wav|wave|pcm)\z/i)
+      Telephony::CompressRecordingsJob.perform_later(call_session_id: session.id)
+    else
+      offload_ready_compressed_recording!(session)
+    end
   rescue StandardError => e
-    Rails.logger.warn("[StoredRecordingReadyService] Could not schedule compression for call session #{session&.id}: #{e.class.name}")
+    Rails.logger.warn("[StoredRecordingReadyService] Could not finalize recording for call session #{session&.id}: #{e.class.name}")
+  end
+
+  def offload_ready_compressed_recording!(session)
+    return if session.blank? || !File.file?(recording_path)
+    return unless Storage::VoiceRecordingRemoteStorage.offload_file!(storage_key, recording_path, content_type: content_type)
+
+    meta = session.metadata.to_h.deep_dup
+    rec = (meta['recording'].is_a?(Hash) ? meta['recording'].deep_dup : {}).merge(
+      'storage_provider' => 's3',
+      'storage_key' => storage_key,
+      'byte_size' => actual_size_bytes,
+      'content_type' => content_type,
+      'remote_stored_at' => Time.current.iso8601
+    )
+    session.update!(recording_ref: storage_key, metadata: meta.merge('recording' => rec))
+    sync_voice_message_recording!(session)
   end
 
   def validate!

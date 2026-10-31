@@ -118,7 +118,7 @@ class Llm::OpenRouterDecisionClient
     # The Decisions endpoint rejects `"provider": null` (HTTP 400), so a blank preference is left out of the body.
     def build_request(uri, state, questions, options)
       redacted_state = Llm::OutboundIinRedactor.redact_payload(state)
-      redacted_questions = Llm::OutboundIinRedactor.redact_payload(question_bodies(questions))
+      redacted_questions = Llm::OutboundIinRedactor.redact_iin_only(question_bodies(questions))
       body = JSON.generate({ model: options[:model], state: redacted_state, questions: redacted_questions,
                              provider: options[:provider].presence }.compact)
       raise ArgumentError, 'Decision request too large.' if body.bytesize > (options[:max_request_bytes] || MAX_REQUEST_BYTES)

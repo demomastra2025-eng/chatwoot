@@ -18,6 +18,7 @@ en:
         moved: that a visit is moved
         no_appointment: that there is no appointment or nothing to cancel
       reasons:
+        consent_required: The patient has not confirmed AI data-processing consent yet — please answer yourself or wait for consent.
         safety_blocked: The safety check stopped the AI reply, please answer the customer yourself.
         agent_rule: 'An agent rule applied: %{reason}. Please answer the customer yourself.'
         patient_requested_human: The patient asks for a live staff member, please answer yourself.

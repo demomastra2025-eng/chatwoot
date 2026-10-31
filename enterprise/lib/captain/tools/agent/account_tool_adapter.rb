@@ -40,7 +40,7 @@ class Captain::Tools::Agent::AccountToolAdapter < Captain::Runtime::Tool
   def execute(tool_context, **params)
     ensure_tool_execution_allowed!
     scope = patient_scope(tool_context)
-    exec_params = detokenize_iin_arguments? ? Llm::IinTokenVault.detokenize_deep(params) : params
+    exec_params = detokenize_iin_arguments? ? Llm::PiiSessionPseudonymizer.unmask_deep(Llm::IinTokenVault.detokenize_deep(params)) : params
     scope.authorize_adapter_tool!(tool_id, exec_params)
     raw_result = invoke_delegate(tool_context, exec_params, scope)
     result = Llm::OutboundIinRedactor.redact_payload(raw_result)

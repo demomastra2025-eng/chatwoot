@@ -4083,6 +4083,8 @@
         "STANDARD": "Standard checks",
         "MODERATION": "Content moderation",
         "MODERATION_DESCRIPTION": "The AI provider checks messages for prohibited content.",
+        "EXPLICIT_AI_CONSENT": "Require explicit consent before AI replies",
+        "EXPLICIT_AI_CONSENT_DESCRIPTION": "Before the first AI call, sends a local consent prompt ('1' to continue with AI, '0' to connect to human staff). Disabled by default.",
         "INJECTION": "Attempts to change the agent's instructions",
         "INJECTION_DESCRIPTION": "Messages in which the customer tries to rewrite the agent's rules.",
         "SENSITIVE": "Keys and credentials",

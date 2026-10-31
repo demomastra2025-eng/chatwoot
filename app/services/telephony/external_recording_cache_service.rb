@@ -50,12 +50,13 @@ class Telephony::ExternalRecordingCacheService
 
     recording_result = result || fetch_external_recording
     storage_key = external_recording_cache_storage_key(recording_result)
-    path = write_cached_recording!(recording_result, storage_key)
-    update_cached_recording_metadata!(recording_result, storage_key)
+    path, offloaded = write_cached_recording!(recording_result, storage_key)
+    update_cached_recording_metadata!(recording_result, storage_key, offloaded: offloaded)
+    enqueue_wav_compression!(storage_key)
 
     Result.new(
       storage_key: storage_key,
-      path: path.to_s,
+      path: offloaded ? nil : path.to_s,
       byte_size: recording_result.data.bytesize,
       content_type: recording_result.content_type
     )
@@ -83,12 +84,21 @@ class Telephony::ExternalRecordingCacheService
     return unless storage_key.start_with?('voice-recordings/')
 
     path = cached_recording_path(storage_key)
-    return unless path.present? && File.file?(path)
+    if path.present? && File.file?(path)
+      return Result.new(
+        storage_key: storage_key,
+        path: path.to_s,
+        byte_size: File.size(path),
+        content_type: recording_content_type
+      )
+    end
+
+    return unless Storage::RecordingMetadata.remote_stored?(recording_metadata)
 
     Result.new(
       storage_key: storage_key,
-      path: path.to_s,
-      byte_size: File.size(path),
+      path: nil,
+      byte_size: recording_metadata['byte_size'].to_i,
       content_type: recording_content_type
     )
   end
@@ -106,8 +116,10 @@ class Telephony::ExternalRecordingCacheService
     tmp_path = path.dirname.join(".#{path.basename}.tmp-#{SecureRandom.hex(8)}")
     File.binwrite(tmp_path, recording_result.data)
     FileUtils.mv(tmp_path, path)
-    Storage::VoiceRecordingRemoteStorage.upload_file(storage_key, path, content_type: recording_result.content_type)
-    path
+    offloaded = Storage::VoiceRecordingRemoteStorage.offload_file!(
+      storage_key, path, content_type: recording_result.content_type
+    )
+    [path, offloaded]
   ensure
     FileUtils.rm_f(tmp_path) if defined?(tmp_path) && tmp_path.present?
   end
@@ -148,7 +160,7 @@ class Telephony::ExternalRecordingCacheService
     '.wav'
   end
 
-  def update_cached_recording_metadata!(recording_result, storage_key)
+  def update_cached_recording_metadata!(recording_result, storage_key, offloaded: false)
     call_session.with_lock do
       call_session.reload
       metadata = call_session.metadata.to_h.deep_dup
@@ -161,10 +173,20 @@ class Telephony::ExternalRecordingCacheService
       recording['byte_size'] = recording_result.data.bytesize
       recording['cached_at'] = Time.current.iso8601
       recording['cache_source'] = source
+      if offloaded
+        recording['storage_provider'] = 's3'
+        recording['remote_stored_at'] = Time.current.iso8601
+      end
       metadata['recording'] = recording.compact
 
       call_session.update!(recording_ref: storage_key, metadata: metadata)
     end
+  end
+
+  def enqueue_wav_compression!(storage_key)
+    return unless Storage::VoiceRecordingRemoteStorage.raw_wav_key?(storage_key)
+
+    Telephony::CompressRecordingsJob.perform_later(call_session_id: call_session.id)
   end
 
   def resolved_external_recording_url

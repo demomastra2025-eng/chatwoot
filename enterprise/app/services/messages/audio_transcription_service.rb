@@ -15,8 +15,9 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
   end
 
   def perform
-    return { error: 'Transcription limit exceeded' } unless can_transcribe?
     return { error: 'Message not found' } if message.blank?
+    return { error: 'AI consent required' } if message.conversation && Compliance::ExplicitAiConsentGate.blocked?(message.conversation)
+    return { error: 'Transcription limit exceeded' } unless can_transcribe?
     return { success: true, transcriptions: cached_transcription } if cached_transcription.present?
     return unsupported_audio_format_result unless supported_attachment_format?
 

@@ -133,8 +133,8 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
     end
 
     {
-      custom_guardrail: %w[perplexity/pplx-decider-v1.2 openai/gpt-6-luna-decisions],
-      language_detection: %w[openai/gpt-6-luna-decisions respan/span-02],
+      custom_guardrail: %w[perplexity/pplx-decider-v1.2 inception/mercury-decide],
+      language_detection: %w[inception/mercury-decide microsoft/microsoft-decision-1],
       outcome_classification: %w[inception/mercury-decide microsoft/microsoft-decision-1]
     }.each do |feature, (primary, fallback)|
       it "asks #{fallback} for #{feature} when #{primary} fails, and records both attempts" do
@@ -160,7 +160,7 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
                                              options: { decision_criteria: criteria, decision_instructions: instructions,
                                                         decision_fallback: false }))
       end.to raise_error(Llm::OpenRouterDecisionClient::Error)
-      expect(a_request(:post, endpoint).with { |request| JSON.parse(request.body)['model'] == 'openai/gpt-6-luna-decisions' })
+      expect(a_request(:post, endpoint).with { |request| JSON.parse(request.body)['model'] == 'inception/mercury-decide' })
         .not_to have_been_made
 
       stub_decider('perplexity/pplx-decider-v1.2', { status: 200, body: body_for('perplexity/pplx-decider-v1.2') })

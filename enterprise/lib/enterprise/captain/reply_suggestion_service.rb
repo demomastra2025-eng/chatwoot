@@ -173,7 +173,7 @@ module Enterprise::Captain::ReplySuggestionService
     end
 
     def sanitize_text(value)
-      text = Llm::IinTokenVault.strip_tokens(value.to_s).strip
+      text = Llm::PiiSessionPseudonymizer.unmask_customer_text(Llm::IinTokenVault.strip_tokens(value.to_s)).strip
       return if text.blank?
 
       sanitized = Captain::ToolTraceBuilder.sanitize_payload(text)
@@ -596,6 +596,14 @@ module Enterprise::Captain::ReplySuggestionService
 
   def perform_reply_suggestion
     chosen = @engine.presence || suggestion_engine[:engine]
+    if Compliance::ExplicitAiConsentGate.blocked?(conversation)
+      return Captain::ReplySuggestion::Outcome.human_needed(
+        reason: I18n.t('captain.reply_suggestion.reasons.consent_required',
+                       default: 'Пациент ещё не подтвердил согласие на обработку данных ИИ.'),
+        reason_source: 'safety',
+        engine: chosen
+      )
+    end
     return super unless chosen == 'agent'
 
     reason = suggestion_graph.unavailable_reason

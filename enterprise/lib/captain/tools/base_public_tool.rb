@@ -17,7 +17,7 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
   def execute(tool_context, **params)
     ensure_tool_execution_allowed!
     ensure_captain_control_current!(tool_context)
-    exec_params = detokenize_iin_arguments? ? Llm::IinTokenVault.detokenize_deep(params) : params
+    exec_params = detokenize_iin_arguments? ? Llm::PiiSessionPseudonymizer.unmask_deep(Llm::IinTokenVault.detokenize_deep(params)) : params
     patient_scope_for(tool_context.state).authorize_public_tool!(name, exec_params, tool_context.state)
     raw_result = super(tool_context, **exec_params)
     result = Llm::OutboundIinRedactor.redact_payload(raw_result)

@@ -82,9 +82,16 @@ class Integrations::Medelement::AppointmentImporterService
     validate_import!(appointment, reception, import_context)
     return appointment if stale_after_acknowledged_move?(appointment, import_context)
 
-    subject = import_subject(appointment, contact, reception)
+    tombstoned = tombstoned_reception?(reception)
+    subject = if tombstoned
+                ImportSubject.new(patient_contact: nil, contact: nil,
+                                  preserve_identity: false)
+              else
+                import_subject(appointment,
+                               contact, reception)
+              end
     contact = subject.contact
-    record_unresolved_patient_conflict(reception) if contact.blank?
+    record_unresolved_patient_conflict(reception) if contact.blank? && !tombstoned
     attributes = appointment_attributes(
       appointment: appointment,
       resource: resource,
@@ -95,8 +102,35 @@ class Integrations::Medelement::AppointmentImporterService
     restore_paid_local_cancellation_expense = restore_paid_local_cancellation_expense?(appointment, attributes)
     appointment.assign_attributes(attributes)
     assign_import_subject!(appointment, subject)
+    anonymize_tombstoned_appointment!(appointment) if tombstoned
     persist_imported_appointment!(appointment, restore_paid_local_cancellation_expense)
     appointment
+  end
+
+  def tombstoned_reception?(reception)
+    Compliance::DeletedSubjectTombstone.blocked_medelement_patient?(
+      account_id: account.id,
+      reception: reception,
+      patient_code: reception['PATIENT_CODE'].presence || reception['PROFILE_CODE'].presence
+    )
+  end
+
+  def anonymize_tombstoned_appointment!(appointment)
+    appointment.contact = nil
+    appointment.patient_contact = nil
+    appointment.conversation = nil
+    appointment.client_name = Compliance::SubjectErasureService::ANONYMIZED_NAME
+    appointment.client_first_name = nil
+    appointment.client_last_name = nil
+    appointment.client_middle_name = nil
+    appointment.client_phone = nil
+    appointment.client_identifier = nil
+    appointment.client_birth_date = nil
+    appointment.client_gender = nil
+    appointment.client_comment = nil if appointment.respond_to?(:client_comment=)
+    appointment.custom_attributes = appointment.custom_attributes.to_h.except(
+      *Compliance::SubjectErasureService::APPOINTMENT_PII_CUSTOM_KEYS
+    )
   end
 
   def validate_import!(appointment, reception, import_context)

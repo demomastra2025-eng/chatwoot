@@ -54,7 +54,11 @@ module Telephony
 
         updated_session = Telephony::EventsIngestionService.new(payload: ready_payload).perform || @call_session.reload
         Telephony::VoiceMessageRecordingSyncService.new(call_session: updated_session).perform
-        Telephony::CompressRecordingsJob.perform_later(call_session_id: updated_session.id)
+        if Storage::VoiceRecordingRemoteStorage.raw_wav_key?(storage_key)
+          Telephony::CompressRecordingsJob.perform_later(call_session_id: updated_session.id)
+        else
+          offload_beeline_recording!(updated_session, storage_key, content_type)
+        end
         true
       rescue StandardError => e
         Rails.logger.warn(
@@ -104,6 +108,25 @@ module Telephony
 
         FileUtils.mkdir_p(File.dirname(path))
         File.binwrite(path, raw_audio)
+      end
+
+      def offload_beeline_recording!(session, storage_key, content_type)
+        storage_root = Rails.root.join('storage').cleanpath
+        path = storage_root.join(storage_key).cleanpath
+        return unless path.to_s.start_with?("#{storage_root}/") && File.file?(path)
+        return unless Storage::VoiceRecordingRemoteStorage.offload_file!(storage_key, path, content_type: content_type)
+
+        session.with_lock do
+          session.reload
+          return unless session.recording_ref == storage_key
+
+          meta = session.metadata.to_h.deep_dup
+          recording = meta['recording'].is_a?(Hash) ? meta['recording'].deep_dup : {}
+          recording['storage_provider'] = 's3'
+          recording['remote_stored_at'] = Time.current.iso8601
+          meta['recording'] = recording
+          session.update!(metadata: meta)
+        end
       end
     end
   end

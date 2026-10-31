@@ -290,9 +290,10 @@ class Llm::OpenRouterRequestCompiler
   end
 
   def merged_provider_preferences(existing, profile_preferences)
-    return profile_preferences.deep_merge(existing) if @trusted_provider_params
-
-    existing.deep_merge(profile_preferences)
+    merged = @trusted_provider_params ? profile_preferences.deep_merge(existing) : existing.deep_merge(profile_preferences)
+    merged[:zdr] = true if profile_preferences[:zdr] == true
+    merged[:data_collection] = 'deny' if profile_preferences[:data_collection] == 'deny'
+    merged
   end
 
   def merged_plugins(_params, profile, feature_policy, transform_plan:)

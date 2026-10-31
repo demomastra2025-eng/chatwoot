@@ -266,6 +266,8 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   def parsed_external_recording_url
+    return if call_session_metadata['trash'].present?
+
     candidate = recording_metadata['recording_url'].presence || recording_metadata['recording_ref'].presence || @call_session.recording_ref.presence
     return if candidate.blank?
 
@@ -297,6 +299,8 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   def recording_storage_key
+    return if call_session_metadata['trash'].present?
+
     recording_metadata['storage_key'].presence || recording_metadata['recording_ref'].presence || @call_session.recording_ref.presence
   end
 

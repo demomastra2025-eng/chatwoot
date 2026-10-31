@@ -1,8 +1,13 @@
 class Captain::Tools::Agent::PatientBookingContext
+  PATRONYMIC_SUFFIX = /(?:ович|евич|овна|евна|ична|қызы|кызы|ұлы|улы|ovich|evna|kyzy|uly)\z/iu
+  SURNAME_ONLY_SUFFIX = /(?:ова|ева|ёва|ина|ов|ев|ёв|ин|ская|ский|цкая|цкий|ко|дзе|швили|ян|ova|eva|ina|ov|ev|skaya|skiy)\z/iu
+
   def initialize(assistant:, conversation:, patient:)
     @assistant = assistant
     @conversation = conversation
-    @patient = patient.to_h.deep_symbolize_keys.slice(:first_name, :last_name, :middle_name, :iin, :birth_date, :gender, :phone)
+    @patient = normalize_unmasked_patient_names(
+      patient.to_h.deep_symbolize_keys.slice(:first_name, :last_name, :middle_name, :iin, :birth_date, :gender, :phone)
+    )
   end
 
   def perform
@@ -23,6 +28,37 @@ class Captain::Tools::Agent::PatientBookingContext
   private
 
   attr_reader :assistant, :conversation, :patient
+
+  def normalize_unmasked_patient_names(attrs)
+    combined = single_field_multiword_name(attrs[:first_name].to_s.squish, attrs[:last_name].to_s.squish)
+    return attrs if combined.blank?
+
+    parts = combined.split(/\s+/)
+    assign_split_name_parts!(attrs, parts) if parts.size >= 2
+    attrs
+  end
+
+  def single_field_multiword_name(first, last)
+    return first if first.include?(' ') && (last.blank? || last.casecmp?(first))
+    return last if last.include?(' ') && first.blank?
+
+    nil
+  end
+
+  def assign_split_name_parts!(attrs, parts)
+    return assign_two_part_name!(attrs, parts) if parts.size == 2
+
+    first_idx, last_idx = parts[2].match?(PATRONYMIC_SUFFIX) ? [1, 0] : [0, 1]
+    attrs[:first_name] = parts[first_idx]
+    attrs[:last_name] = parts[last_idx]
+    attrs[:middle_name] = parts[2..].join(' ') if attrs[:middle_name].blank?
+  end
+
+  def assign_two_part_name!(attrs, parts)
+    surname_first = parts[0].match?(SURNAME_ONLY_SUFFIX) && !parts[1].match?(SURNAME_ONLY_SUFFIX)
+    attrs[:first_name] = surname_first ? parts[1] : parts[0]
+    attrs[:last_name] = surname_first ? parts[0] : parts[1]
+  end
 
   def policy = Integrations::Medelement::AppointmentPatientIdentity
 
@@ -45,6 +81,7 @@ class Captain::Tools::Agent::PatientBookingContext
     if patient[:birth_date].present? && recorded_birth_date.present? && patient[:birth_date] != recorded_birth_date.to_s
       raise ArgumentError, 'Patient birth date does not match the recorded card'
     end
+
     card
   end
 

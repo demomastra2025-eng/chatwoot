@@ -99,7 +99,7 @@ class Llm::FeatureProfile
       cost_policy: 'speed_cost',
       fallback_strategy: 'skip',
       decisions: true,
-      decision_fallback_models: %w[respan/span-02]
+      decision_fallback_models: %w[microsoft/microsoft-decision-1]
     },
     'custom_guardrail' => {
       config_feature_key: 'custom_guardrail',
@@ -115,7 +115,7 @@ class Llm::FeatureProfile
       cost_policy: 'guardrail',
       fallback_strategy: 'skip',
       decisions: true,
-      decision_fallback_models: %w[openai/gpt-6-luna-decisions]
+      decision_fallback_models: %w[inception/mercury-decide]
     },
     'agent_routing' => TURN_DECISION_DEFINITION.merge(config_feature_key: 'agent_routing'),
     'reply_claim_check' => TURN_DECISION_DEFINITION.merge(config_feature_key: 'reply_claim_check', timeout_seconds: 1.5,

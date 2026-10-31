@@ -62,11 +62,10 @@ class Llm::OpenRouterHeaders
       options = normalize_cache_options(cache_options)
       policy = cache_policy.to_s.presence || 'disabled'
       return disabled_cache('runtime_disabled') if boolean_value(options[:enabled]) == false
-      return disabled_cache('zdr_required') if provider_params.to_h.with_indifferent_access[:zdr] == true
-      return disabled_cache('privacy_sensitive') if privacy_sensitive_cache?(privacy_profile, trace_capture_allowed)
       return disabled_cache('unsupported_endpoint') unless CACHEABLE_ENDPOINTS.include?(native_endpoint)
-
       return disabled_cache("policy_#{policy}") unless CACHEABLE_POLICIES.include?(policy)
+      return disabled_cache('privacy_sensitive') if privacy_sensitive_cache?(privacy_profile, trace_capture_allowed)
+      return disabled_cache('zdr_required') if provider_params.to_h.with_indifferent_access[:zdr] == true
 
       ttl = cache_ttl(options[:ttl], policy)
       headers = {

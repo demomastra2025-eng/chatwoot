@@ -65,7 +65,11 @@ class Captain::Playground::RealToolExecutor
     end
 
     raw_args = arguments.to_h.deep_symbolize_keys.compact
-    arguments = Llm::IinTokenVault.detokenizable_tool?(definition.assistant_tool_class) ? Llm::IinTokenVault.detokenize_deep(raw_args) : raw_args
+    arguments = if Llm::IinTokenVault.detokenizable_tool?(definition.assistant_tool_class)
+                  Llm::PiiSessionPseudonymizer.unmask_deep(Llm::IinTokenVault.detokenize_deep(raw_args))
+                else
+                  raw_args
+                end
     validate_arguments!(definition, arguments)
     records = resolve_references(arguments)
     records['patient'] = existing_real_patient!(arguments[:patient]) if tool_id == 'create_appointment'

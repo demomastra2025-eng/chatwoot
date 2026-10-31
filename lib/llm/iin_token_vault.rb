@@ -109,6 +109,17 @@ module Llm::IinTokenVault
     text.is_a?(String) && text.include?('[IIN_TOKEN_') ? text.gsub(TOKEN_PATTERN, replacement) : text
   end
 
+  def purge_scope!(account_id:, scope_id:)
+    return 0 if account_id.blank? || scope_id.blank? || !defined?(Redis::Alfred)
+
+    pattern = "#{REDIS_KEY_PREFIX}:#{scope_digest("acct:#{account_id.to_i}:#{scope_id}")}:*"
+    keys = []
+    Redis::Alfred.scan_each(match: pattern) { |key| keys << key }
+    keys.sum { |key| Redis::Alfred.delete(key).to_i }
+  rescue StandardError
+    0
+  end
+
   def same_scope?(previous, account_id, scope_id)
     previous.present? && previous[:account_id] == account_id.to_i && previous[:scope_id] == scope_id.to_s
   end

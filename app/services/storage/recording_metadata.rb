@@ -11,6 +11,11 @@ module Storage::RecordingMetadata
     value.to_i if value.to_s.match?(SIZE_PATTERN)
   end
 
+  def remote_stored?(recording)
+    payload = hash(recording)
+    payload['storage_provider'].to_s == 's3' || payload['remote_stored_at'].present?
+  end
+
   def hash(value)
     value.is_a?(Hash) ? value : {}
   end
@@ -64,7 +69,7 @@ module Storage::RecordingMetadata
   end
 
   def legacy_basename?(reference)
-    reference.is_a?(String) && reference.present? && reference.match?(/\A[^\/\\:]+\z/) && %w[. ..].exclude?(reference)
+    reference.is_a?(String) && reference.present? && reference.match?(%r{\A[^/\\:]+\z}) && %w[. ..].exclude?(reference)
   end
 
   def recent?(timestamp)

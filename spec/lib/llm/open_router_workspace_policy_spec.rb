@@ -4,7 +4,7 @@ require 'rails_helper'
 
 RSpec.describe Llm::OpenRouterWorkspacePolicy do
   describe '.resolve' do
-    it 'defaults to a standard dev-safe OpenRouter policy' do
+    it 'defaults to a standard strict-ZDR OpenRouter policy' do
       policy = described_class.resolve
 
       expect(policy.privacy_profile).to eq('standard')
@@ -12,7 +12,7 @@ RSpec.describe Llm::OpenRouterWorkspacePolicy do
       expect(policy.provider_preferences).to include(
         allow_fallbacks: true,
         data_collection: 'deny',
-        zdr: false
+        zdr: true
       )
       expect(policy.guardrails).to include(
         budget: include(status: 'workspace_required'),
@@ -23,14 +23,14 @@ RSpec.describe Llm::OpenRouterWorkspacePolicy do
       )
     end
 
-    it 'turns sensitive runtime preferences into explicit no-training policy without requiring ZDR' do
+    it 'turns sensitive runtime preferences into explicit no-training ZDR policy with fallbacks allowed' do
       policy = described_class.resolve(preferences: { 'privacy_profile' => 'sensitive' })
 
       expect(policy.privacy_profile).to eq('sensitive')
       expect(policy.provider_preferences).to include(
         allow_fallbacks: true,
         data_collection: 'deny',
-        zdr: false
+        zdr: true
       )
       expect(policy.trace_capture_allowed?).to be(false)
     end

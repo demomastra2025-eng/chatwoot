@@ -76,11 +76,11 @@ RSpec.describe Llm::DecisionChain do
     first = stub_decision_model('inception/mercury-decide', { status: 503, body: { error: { message: "#{api_key} provider text" } }.to_json })
     second = stub_request(:post, endpoint).with { |request| JSON.parse(request.body)['model'] == 'microsoft/microsoft-decision-1' }
                                           .to_timeout
-    third = stub_decision_model('openai/gpt-6-luna-decisions', answer('openai/gpt-6-luna-decisions', choice: 'human', confidence: 0.81))
+    third = stub_decision_model('perplexity/pplx-decider-v1.2', answer('perplexity/pplx-decider-v1.2', choice: 'human', confidence: 0.81))
 
     result = decide
 
-    expect(result).to have_attributes(choice: 'human', confidence: 0.81, model: 'openai/gpt-6-luna-decisions', position: 3)
+    expect(result).to have_attributes(choice: 'human', confidence: 0.81, model: 'perplexity/pplx-decider-v1.2', position: 3)
     expect(result).to be_fallback
     expect([first, second, third]).to all(have_been_requested.once)
     expect(a_request(:post, endpoint).with do |request|
@@ -89,7 +89,7 @@ RSpec.describe Llm::DecisionChain do
     end).to have_been_made.times(3)
     expect(chain_events.map { |event| [event.payload['requested_model'], event.status, event.payload['decision_chain_position']] })
       .to eq([['inception/mercury-decide', 'error', 1], ['microsoft/microsoft-decision-1', 'error', 2],
-              ['openai/gpt-6-luna-decisions', 'success', 3]])
+              ['perplexity/pplx-decider-v1.2', 'success', 3]])
     expect(chain_events.map(&:payload).to_json).not_to include('SYNTHETIC_PRIVATE', api_key)
   end
 
@@ -188,7 +188,7 @@ RSpec.describe Llm::DecisionChain do
   describe '.models' do
     it 'is the built-in chain while the platform setting is absent, blank or unreadable' do
       InstallationConfig.where(name: described_class::CONFIG_NAME).delete_all
-      expect(described_class.models).to eq(%w[inception/mercury-decide microsoft/microsoft-decision-1 openai/gpt-6-luna-decisions])
+      expect(described_class.models).to eq(%w[inception/mercury-decide microsoft/microsoft-decision-1 perplexity/pplx-decider-v1.2])
 
       ['', '[not json', '["openai/gpt-6-luna", "vendor/unknown-decision"]'].each do |value|
         upsert_installation_config(described_class::CONFIG_NAME, value)

@@ -22,11 +22,15 @@ class Captain::ReplySuggestionService < Captain::BaseTaskService
 
   # Returns an outcome (see Captain::ReplySuggestion::Outcome), never a bare text.
   def perform
-    Llm::IinTokenVault.with_scope(
-      account_id: account&.id,
-      scope_id: Llm::IinTokenVault.conversation_scope_id(conversation)
-    ) do
-      perform_reply_suggestion
+    scope_id = Llm::IinTokenVault.conversation_scope_id(conversation)
+    Llm::IinTokenVault.with_scope(account_id: account&.id, scope_id: scope_id) do
+      Llm::PiiSessionPseudonymizer.with_scope(
+        account_id: account&.id,
+        scope_id: scope_id,
+        conversation: conversation
+      ) do
+        perform_reply_suggestion
+      end
     end
   end
 
@@ -75,7 +79,8 @@ class Captain::ReplySuggestionService < Captain::BaseTaskService
   end
 
   def legacy_draft(result)
-    redacted_message = Scheduling::IinValidator.redact_customer_text(result[:message].to_s)
+    unmasked_message = Llm::PiiSessionPseudonymizer.unmask_customer_text(result[:message].to_s)
+    redacted_message = Scheduling::IinValidator.redact_customer_text(unmasked_message)
     claim_check = Captain::ReplySuggestion::DraftClaims.check(draft: redacted_message, context: {}, account: account)
     if claim_check == :unavailable
       return Captain::ReplySuggestion::Outcome.human_needed(

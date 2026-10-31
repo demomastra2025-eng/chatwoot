@@ -8,7 +8,7 @@ class Captain::AccountSettings
     'understanding' => %w[voice_messages images documents web_search web_page_reading],
     'handoff' => %w[auto_completion_enabled auto_reply_on_last_incoming],
     'faq' => %w[generate_from_resolved],
-    'safety' => %w[moderation_enabled],
+    'safety' => %w[moderation_enabled require_explicit_ai_consent],
     'routing' => %w[ai_enabled]
   }.freeze
   MESSAGE_FIELDS = %w[handoff_message resolution_message].freeze
@@ -82,8 +82,8 @@ class Captain::AccountSettings
       # and the two actions are read at run time by
       # Captain::AssistantSafetyPreferences, the custom_rules by
       # Captain::Safety::CustomRulesEvaluator (runtime_rules).
-      'safety' => { 'moderation_enabled' => false, 'prompt_injection_action' => 'block',
-                    'sensitive_info_action' => 'block', 'custom_rules' => [] }
+      'safety' => { 'moderation_enabled' => false, 'require_explicit_ai_consent' => false,
+                    'prompt_injection_action' => 'block', 'sensitive_info_action' => 'block', 'custom_rules' => [] }
     }
     result['availability'] = { 'web_access_configured' => web_access_configured? } if include_availability
     result

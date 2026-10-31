@@ -28,6 +28,8 @@ class Messages::ImageDescriptionService
       return false unless attachment&.image? && switched_on?
 
       message = attachment.message
+      return false if message&.conversation && Compliance::ExplicitAiConsentGate.blocked?(message.conversation)
+
       describable_message?(message) && agent_inbox?(message.inbox) && ai_images_enabled?(message.account)
     end
 

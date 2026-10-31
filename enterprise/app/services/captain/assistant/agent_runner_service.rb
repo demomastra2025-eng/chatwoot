@@ -119,11 +119,17 @@ class Captain::Assistant::AgentRunnerService
     return response if response['response_suppressed'] || response['response_cancelled']
     return response if ['conversation_handoff', PROVIDER_ERROR_RESPONSE, 'response_cancelled'].include?(response['response'])
 
+    response['response'] = Llm::PiiSessionPseudonymizer.unmask_customer_text(response['response'])
     response['response'] = Scheduling::IinValidator.redact_customer_text(response['response'])
 
-    Captain::Safety::CustomRulesRuntime.check_output!(
+    checked = Captain::Safety::CustomRulesRuntime.check_output!(
       account: account, agent_id: acting_agent_id, context: @custom_guardrail_context.to_h, response: response
     )
+    if checked.is_a?(Hash) && checked['response'].is_a?(String)
+      checked['response'] = Llm::PiiSessionPseudonymizer.unmask_customer_text(checked['response'])
+      checked['response'] = Scheduling::IinValidator.redact_customer_text(checked['response'])
+    end
+    checked
   rescue Captain::Safety::CustomRulesRuntime::HandoffRequired => e
     @acting_assistant_id = e.assistant_id
     Captain::Safety::CustomRulesRuntime.response_for(e)
@@ -136,7 +142,15 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def with_iin_token_vault(&)
-    Llm::IinTokenVault.with_scope(account_id: account&.id, scope_id: iin_vault_scope_id, &)
+    scope_id = iin_vault_scope_id
+    Llm::IinTokenVault.with_scope(account_id: account&.id, scope_id: scope_id) do
+      Llm::PiiSessionPseudonymizer.with_scope(
+        account_id: account&.id,
+        scope_id: scope_id,
+        conversation: @conversation,
+        &
+      )
+    end
   end
 
   def iin_vault_scope_id
@@ -588,7 +602,10 @@ class Captain::Assistant::AgentRunnerService
       return final_error_response(error, result.context, handoff_tool_called: handoff_tool_called)
     end
 
-    response['response'] = Scheduling::IinValidator.redact_customer_text(response['response']) if response['response'].is_a?(String)
+    if response['response'].is_a?(String)
+      response['response'] = Llm::PiiSessionPseudonymizer.unmask_customer_text(response['response'])
+      response['response'] = Scheduling::IinValidator.redact_customer_text(response['response'])
+    end
     flag_draft!(response, result.context) if suggestion_run? && !council_turn?
     publish_tool_omission_event(response, result.context)
     moderate_output!(response, result.context&.dig(:state, :captain_runtime))

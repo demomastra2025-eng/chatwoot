@@ -111,6 +111,7 @@ class Messages::DocumentParsingService
 
   def perform
     return { error: 'Message not found' } if message.blank?
+    return mark_skipped('consent_required') if message.conversation && Compliance::ExplicitAiConsentGate.blocked?(message.conversation)
     return { success: true, text: cached_text } if cached_text.present?
     return mark_skipped('disabled') unless self.class.enabled_for_account?(account)
     return mark_skipped('unsupported') unless self.class.supported_attachment?(attachment)

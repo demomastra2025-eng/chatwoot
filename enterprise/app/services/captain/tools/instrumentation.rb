@@ -22,7 +22,7 @@ module Captain::Tools::Instrumentation
         account: tool_safety_account,
         preferences: tool_safety_preferences
       )
-      exec_args = detokenize_iin_arguments? ? Llm::IinTokenVault.detokenize_deep(args) : args
+      exec_args = detokenize_iin_arguments? ? Llm::PiiSessionPseudonymizer.unmask_deep(Llm::IinTokenVault.detokenize_deep(args)) : args
       raw_result = exec_args.equal?(args) ? super : super(**exec_args)
       result = Llm::OutboundIinRedactor.redact_payload(raw_result)
       Captain::ToolSafety.check_result!(

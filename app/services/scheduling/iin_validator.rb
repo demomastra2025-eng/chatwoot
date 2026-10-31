@@ -63,7 +63,8 @@ module Scheduling::IinValidator
   def redact_customer_text(text)
     return text unless text.is_a?(String)
 
-    stripped = defined?(Llm::IinTokenVault) ? Llm::IinTokenVault.strip_tokens(text, REDACTED_PLACEHOLDER) : text
+    unmasked = defined?(Llm::PiiSessionPseudonymizer) ? Llm::PiiSessionPseudonymizer.unmask_customer_text(text) : text
+    stripped = defined?(Llm::IinTokenVault) ? Llm::IinTokenVault.strip_tokens(unmasked, REDACTED_PLACEHOLDER) : unmasked
     redact_text(stripped)
   end
 

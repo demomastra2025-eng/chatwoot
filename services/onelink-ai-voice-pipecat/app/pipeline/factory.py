@@ -659,6 +659,7 @@ def build_pipeline(
                 "allow_fallbacks": True,
                 "require_parameters": True,
                 "data_collection": "deny",
+                "zdr": True,
                 "preferred_max_latency": {"p90": 1.0, "p99": 2.5},
             },
         }

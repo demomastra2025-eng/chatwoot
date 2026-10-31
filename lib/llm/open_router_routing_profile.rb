@@ -333,9 +333,9 @@ class Llm::OpenRouterRoutingProfile
   def enforce_workspace_privacy!(provider_preferences)
     workspace_preferences = workspace_policy.provider_preferences
     provider_preferences[:data_collection] = workspace_preferences[:data_collection] if workspace_preferences[:data_collection].present?
+    provider_preferences[:zdr] = true if workspace_preferences[:zdr] == true
     return unless workspace_policy.zdr_required?
 
-    provider_preferences[:zdr] = true
     provider_preferences[:allow_fallbacks] = false
   end
 

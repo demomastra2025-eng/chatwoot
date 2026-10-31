@@ -64,6 +64,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
     ensure_response_fence_current!(stage: 'job_start')
     return unless current_buffer_state_valid? && conversation_allows_captain_response?
+    return if Compliance::ExplicitAiConsentGate.blocked?(conversation)
 
     Current.executed_by = input_assistant
 

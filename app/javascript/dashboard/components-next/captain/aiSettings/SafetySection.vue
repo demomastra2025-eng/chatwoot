@@ -79,6 +79,9 @@ const customRules = computed({
 });
 
 const moderationError = computed(() => props.errors.moderation_enabled || '');
+const explicitConsentError = computed(
+  () => props.errors.require_explicit_ai_consent || ''
+);
 </script>
 
 <template>
@@ -131,6 +134,35 @@ const moderationError = computed(() => props.errors.moderation_enabled || '');
             class="mb-0 text-body-main text-n-ruby-11"
           >
             {{ moderationError }}
+          </p>
+        </div>
+
+        <div class="flex flex-col gap-1 border-t border-n-weak pt-4">
+          <div class="flex items-center justify-between gap-3">
+            <span class="min-w-0 text-heading-3 text-n-slate-12">
+              {{ t('CAPTAIN.AI_SETTINGS.SAFETY.EXPLICIT_AI_CONSENT') }}
+            </span>
+            <Switch
+              :model-value="model.require_explicit_ai_consent === true"
+              :disabled="disabled"
+              :aria-label="t('CAPTAIN.AI_SETTINGS.SAFETY.EXPLICIT_AI_CONSENT')"
+              data-testid="safety-explicit-ai-consent"
+              @update:model-value="
+                update('require_explicit_ai_consent', $event)
+              "
+            />
+          </div>
+          <p class="mb-0 text-body-main text-n-slate-11">
+            {{
+              t('CAPTAIN.AI_SETTINGS.SAFETY.EXPLICIT_AI_CONSENT_DESCRIPTION')
+            }}
+          </p>
+          <p
+            v-if="explicitConsentError"
+            role="alert"
+            class="mb-0 text-body-main text-n-ruby-11"
+          >
+            {{ explicitConsentError }}
           </p>
         </div>
 

@@ -472,7 +472,8 @@ class Telephony::AiVoice::ToolDispatchService
   attr_reader :tool_name, :payload
 
   def perform_find_contact
-    query = arguments['phone_number'].presence || arguments['query'].presence || call_session&.from_number
+    raw_query = arguments['phone_number'].presence || arguments['query'].presence || call_session&.from_number
+    query = Llm::PiiSessionPseudonymizer.unmask_text(raw_query.to_s).presence
     scope = account.contacts
     contacts = if arguments['contact_id'].present?
                  scope.where(id: arguments['contact_id'])
@@ -496,7 +497,8 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def perform_create_contact
-    explicit_phone_number = arguments['phone_number'].presence
+    explicit_phone_number = Llm::PiiSessionPseudonymizer.unmask_text(arguments['phone_number'].to_s).strip.presence
+    unmasked_name = Llm::PiiSessionPseudonymizer.unmask_text(arguments['name'].to_s).strip.presence
     phone_number = explicit_phone_number || call_session&.from_number
     if phone_number.blank?
       raise Telephony::Error.new(code: 'PHONE_NUMBER_REQUIRED', message: 'phone_number is required',
@@ -511,7 +513,7 @@ class Telephony::AiVoice::ToolDispatchService
 
     contact = Contacts::PhoneLookup.find_owner_contact(account, phone_number) ||
               account.contacts.find_or_initialize_by(phone_number: phone_number)
-    contact.name = arguments['name'].presence || phone_number if contact.name.blank? || arguments['name'].present?
+    contact.name = unmasked_name || phone_number if contact.name.blank? || unmasked_name.present?
     contact.email = arguments['email'] if arguments['email'].present?
     contact.save!
     { contact: contact_payload(contact) }
@@ -519,7 +521,7 @@ class Telephony::AiVoice::ToolDispatchService
 
   def perform_create_note
     ensure_conversation!
-    content = Llm::IinTokenVault.detokenize_text(arguments['content'].to_s).strip
+    content = Llm::PiiSessionPseudonymizer.unmask_text(Llm::IinTokenVault.detokenize_text(arguments['content'].to_s)).strip
     raise Telephony::Error.new(code: 'NOTE_CONTENT_REQUIRED', message: 'content is required', status: :unprocessable_content) if content.blank?
 
     message = conversation.messages.create!(

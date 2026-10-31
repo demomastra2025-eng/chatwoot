@@ -298,7 +298,7 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
       expect(profile.provider_preferences).to include(
         allow_fallbacks: true,
         data_collection: 'deny',
-        zdr: false
+        zdr: true
       )
     end
 

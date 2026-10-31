@@ -283,6 +283,7 @@ describe('captainAiSettings helper', () => {
     expect(patch.faq).toEqual({ generate_from_resolved: true });
     expect(patch.safety).toEqual({
       moderation_enabled: true,
+      require_explicit_ai_consent: false,
       prompt_injection_action: 'block',
       sensitive_info_action: 'off',
       custom_rules: [

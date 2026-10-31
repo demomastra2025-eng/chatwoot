@@ -85,6 +85,7 @@ class Captain::AccountSettingsSnapshot
     moderation = assistant.account.captain_runtime_preferences['assistant_moderation'] if moderation.nil?
     {
       'moderation_enabled' => boolean(moderation),
+      'require_explicit_ai_consent' => false,
       'prompt_injection_action' => Captain::AccountSettings::ACTION_TO_API.fetch(old['prompt_injection_action'], 'block'),
       'sensitive_info_action' => Captain::AccountSettings::ACTION_TO_API.fetch(old['sensitive_info_action'], 'block'),
       'custom_rules' => Array(old['custom_rules']).grep(Hash).map { |rule| api_rule(rule) }

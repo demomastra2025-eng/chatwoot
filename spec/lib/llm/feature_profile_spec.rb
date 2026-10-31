@@ -72,7 +72,7 @@ RSpec.describe Llm::FeatureProfile do
   it 'derives the decision features from the profiles instead of a fixed list' do
     expect(described_class.decision_feature_keys).to contain_exactly(
       'outcome_classification', 'language_detection', 'custom_guardrail', 'agent_routing', 'fact_check_gate', 'inbound_triage',
-      'image_routing'
+      'image_routing', 'reply_claim_check'
     )
     expect(described_class.decision_feature?(:agent_routing)).to be(true)
     expect(described_class.decision_feature?('custom_guardrail')).to be(true)
@@ -84,8 +84,8 @@ RSpec.describe Llm::FeatureProfile do
   end
 
   it 'gives the background decision features one fallback decision model each, and the turn decisions none (their chain falls back)' do
-    expect(described_class.for(:custom_guardrail).decision_fallback_models).to eq(%w[openai/gpt-6-luna-decisions])
-    expect(described_class.for(:language_detection).decision_fallback_models).to eq(%w[respan/span-02])
+    expect(described_class.for(:custom_guardrail).decision_fallback_models).to eq(%w[inception/mercury-decide])
+    expect(described_class.for(:language_detection).decision_fallback_models).to eq(%w[microsoft/microsoft-decision-1])
     expect(described_class.for(:outcome_classification).decision_fallback_models).to eq(%w[microsoft/microsoft-decision-1])
     %i[agent_routing fact_check_gate inbound_triage assistant].each do |feature|
       expect(described_class.for(feature).decision_fallback_models).to eq([])

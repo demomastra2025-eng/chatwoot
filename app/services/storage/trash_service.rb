@@ -517,6 +517,8 @@ class Storage::TrashService
         role: 'current', storage_key: session.recording_ref, original_path: current_path.to_s,
         byte_size: File.size(current_path)
       }
+    elsif (remote_entry = remote_recording_entry(session))
+      entries << remote_entry
     end
 
     retained = session.metadata.to_h.dig('recording', 'retained_original')
@@ -536,6 +538,32 @@ class Storage::TrashService
   end
 
   # rubocop:enable Metrics/CyclomaticComplexity, Metrics/MethodLength
+  def remote_recording_entry(session)
+    recording = session.metadata.to_h['recording']
+    key = Storage::RecordingMetadata.local_key(session.recording_ref, account_id: session.account_id)
+    return nil if key.blank? || key.start_with?('trash/')
+    return nil unless Storage::RecordingMetadata.remote_stored?(recording) || Storage::VoiceRecordingRemoteStorage.exist?(key)
+
+    ensure_remote_tenant_root!(key, session.account_id)
+    {
+      role: 'current',
+      storage_key: key,
+      original_path: Storage::RecordingPaths.root.join(key).to_s,
+      byte_size: Storage::RecordingMetadata.declared_primary_size(session).to_i,
+      remote: true
+    }
+  end
+
+  def ensure_remote_tenant_root!(storage_key, account_id)
+    parts = storage_key.to_s.split('/')
+    tenant_dir = if parts[0] == 'voice-recordings' && parts[1] == account_id.to_s
+                   Storage::RecordingPaths.root.join('voice-recordings', account_id.to_s)
+                 elsif parts[0] == 'voice-recordings' && parts[2] == account_id.to_s
+                   Storage::RecordingPaths.root.join('voice-recordings', parts[1], account_id.to_s)
+                 end
+    FileUtils.mkdir_p(tenant_dir) if tenant_dir && !File.symlink?(tenant_dir)
+  end
+
   def recordings_scope(cutoff_date, inbox_id)
     scope = Telephony::CallSession.where(account_id: @account.id)
                                   .where.not(recording_ref: [nil, ''])
@@ -610,7 +638,9 @@ class Storage::TrashService
 
       entries = recording_file_entries(session)
       reference_keys = entries.flat_map do |entry|
-        Storage::RecordingPaths.reference_aliases(entry[:original_path], account_id: @account.id)
+        Storage::RecordingPaths.reference_aliases(
+          entry[:original_path], account_id: @account.id, allow_missing: entry[:remote] == true
+        )
       end.uniq
 
       source_paths = entries.map { |entry| entry[:original_path] }
@@ -621,6 +651,11 @@ class Storage::TrashService
       end
 
       entries.each do |entry|
+        if entry[:remote] == true
+          manifest << entry.merge(trash_path: nil, remote: true)
+          next
+        end
+
         trash_path = trash_dir.join("#{session.id}_#{entry[:role]}_#{File.basename(entry[:original_path])}").to_s
         raise InvalidParams, I18n.t('storage_management.errors.trash_target_exists') if File.exist?(trash_path) || File.symlink?(trash_path)
         unless Storage::RecordingPaths.within_account?(
@@ -654,6 +689,8 @@ class Storage::TrashService
     moved_bytes
   rescue StandardError => e
     manifest.to_a.reverse_each do |entry|
+      next if entry[:remote] == true || entry[:trash_path].blank?
+
       move_file_exclusively(entry[:trash_path], entry[:original_path]) if File.exist?(entry[:trash_path]) && !File.exist?(entry[:original_path])
     rescue StandardError
       Rails.logger.error("[Storage::TrashService] Could not roll back recording move for call session #{session.id}")
@@ -668,7 +705,9 @@ class Storage::TrashService
   def shared_recording_reference?(session, entries, include_current_conversation: false)
     entries.any? do |entry|
       path = entry[:original_path]
-      keys = Storage::RecordingPaths.reference_aliases(path, account_id: @account.id)
+      keys = Storage::RecordingPaths.reference_aliases(
+        path, account_id: @account.id, allow_missing: entry[:remote] == true
+      )
       next false if keys.empty?
 
       other_sessions = Telephony::CallSession.where(account_id: @account.id).where.not(id: session.id)
@@ -696,9 +735,7 @@ class Storage::TrashService
       end
 
       conversations = conversation_recording_references(keys)
-      if session.conversation_id.present? && !include_current_conversation
-        conversations = conversations.where.not(id: session.conversation_id)
-      end
+      conversations = conversations.where.not(id: session.conversation_id) if session.conversation_id.present? && !include_current_conversation
       conversations.find_each.any? do |conversation|
         values = conversation_recording_values(conversation)
         values.any? do |reference|
@@ -846,10 +883,11 @@ class Storage::TrashService
   def detach_recording_payload!(data, keys, source_paths, source_entries)
     prior = recording_reference_snapshot(data)
     qualified_references = payload_recording_values(data)
+    remote_entry = source_entries.any? { |entry| entry[:remote] == true }
     changed = false
     %w[recording_ref storage_key].each do |key|
       next unless recording_reference_matches_paths?(
-        data[key], keys, source_paths, qualified_references: qualified_references
+        data[key], keys, source_paths, qualified_references: qualified_references, conservative: remote_entry
       )
 
       data.delete(key)
@@ -859,7 +897,7 @@ class Storage::TrashService
     recording = data['recording']
     recording = recording.is_a?(Hash) ? recording.deep_dup : {}
     changed = clear_recording_path_fields!(
-      recording, keys, source_paths, qualified_references: qualified_references
+      recording, keys, source_paths, qualified_references: qualified_references, conservative: remote_entry
     ) || changed
     return unless changed
 
@@ -892,15 +930,20 @@ class Storage::TrashService
         original_path = entry[:original_path]
         next if original_path.blank?
 
-        aliases = Storage::RecordingPaths.reference_aliases(original_path, account_id: @account.id)
+        remote_entry = entry[:remote] == true
+        aliases = Storage::RecordingPaths.reference_aliases(
+          original_path, account_id: @account.id, allow_missing: remote_entry
+        )
         canonical_reference = aliases[1]
         next if canonical_reference.blank? || !Storage::RecordingPaths.qualified_reference?(canonical_reference)
         next unless recording_reference_matches_paths?(
-          reference, aliases, [original_path], qualified_references: qualified_references
+          reference, aliases, [original_path], qualified_references: qualified_references, conservative: remote_entry
         )
-        next unless Storage::RecordingPaths.same_physical_file?(
+        unless remote_entry || Storage::RecordingPaths.same_physical_file?(
           canonical_reference, original_path, account_id: @account.id
         )
+          next
+        end
 
         canonical_reference
       end
@@ -965,7 +1008,7 @@ class Storage::TrashService
   )
     Storage::RecordingPaths.reference_matches_paths?(
       reference, source_paths, account_id: @account.id, aliases: keys,
-      qualified_references: qualified_references, conservative: conservative
+                               qualified_references: qualified_references, conservative: conservative
     )
   end
 
@@ -978,11 +1021,11 @@ class Storage::TrashService
     ].compact_blank
   end
 
-  def clear_recording_path_fields!(recording, keys, source_paths, qualified_references: [])
+  def clear_recording_path_fields!(recording, keys, source_paths, qualified_references: [], conservative: false)
     changed = false
     %w[storage_key recording_ref].each do |key|
       next unless recording_reference_matches_paths?(
-        recording[key], keys, source_paths, qualified_references: qualified_references
+        recording[key], keys, source_paths, qualified_references: qualified_references, conservative: conservative
       )
 
       recording.delete(key)
@@ -990,7 +1033,7 @@ class Storage::TrashService
     end
     retained = recording['retained_original']
     if retained.is_a?(Hash) && recording_reference_matches_paths?(
-      retained['storage_key'], keys, source_paths, qualified_references: qualified_references
+      retained['storage_key'], keys, source_paths, qualified_references: qualified_references, conservative: conservative
     )
       retained = retained.deep_dup
       retained.delete('storage_key')
@@ -1137,23 +1180,21 @@ class Storage::TrashService
     moved_entries = []
     Storage::RecordingLock.synchronize(account_id: @account.id, storage_keys: expected_keys) do
       session.with_lock do
-        begin
-          session.reload
-          trash_meta = session.metadata.to_h['trash']&.deep_dup
-          next unless trash_meta.is_a?(Hash) && session.recording_ref.blank?
-          next unless trash_storage_keys(session) == expected_keys
-          next unless restore_recording_files(trash_meta, moved_entries)
+        session.reload
+        trash_meta = session.metadata.to_h['trash']&.deep_dup
+        next unless trash_meta.is_a?(Hash) && session.recording_ref.blank?
+        next unless trash_storage_keys(session) == expected_keys
+        next unless restore_recording_files(trash_meta, moved_entries)
 
-          session.metadata = (session.metadata || {}).deep_dup
-          session.recording_ref = trash_meta['original_recording_ref']
-          session.metadata.delete('trash')
-          session.save!(validate: false)
-          restore_recording_references!(session, trash_meta, moved_entries)
-          restored = true
-        rescue StandardError
-          rollback_restored_recording_files(moved_entries)
-          raise
-        end
+        session.metadata = (session.metadata || {}).deep_dup
+        session.recording_ref = trash_meta['original_recording_ref']
+        session.metadata.delete('trash')
+        session.save!(validate: false)
+        restore_recording_references!(session, trash_meta, moved_entries)
+        restored = true
+      rescue StandardError
+        rollback_restored_recording_files(moved_entries)
+        raise
       end
     end
     { count: restored ? 1 : 0, bytes: restored ? trash_meta['bytes'].to_i : 0 }
@@ -1194,6 +1235,24 @@ class Storage::TrashService
         next unless recording_reference_field_paths.include?(field)
         next unless reference.is_a?(String) && Storage::RecordingPaths.qualified_reference?(reference)
 
+        remote_key = Storage::RecordingMetadata.local_key(reference, account_id: @account.id)
+        remote_original = remote_key ? Storage::RecordingPaths.root.join(remote_key).to_s : nil
+        manifest_matches = Array(trash_meta['files']).select do |entry|
+          entry.is_a?(Hash) && remote_original.present? && entry['original_path'].to_s == remote_original
+        end
+        moved_matches = restored_entries.select do |entry|
+          remote_original.present? && entry['original_path'].to_s == remote_original
+        end
+        if manifest_matches.one? && moved_matches.one? && manifest_matches.first['remote'] == true
+          next unless moved_matches.first['restored_identity'] == ['remote', manifest_matches.first['storage_key'].to_s]
+          next unless Storage::RecordingPaths.reference_aliases(
+            remote_original, account_id: @account.id, allow_missing: true
+          )[1] == reference
+
+          validated[field] = reference
+          next
+        end
+
         path = Storage::RecordingPaths.resolve(reference, account_id: @account.id)
         next unless path
 
@@ -1202,11 +1261,6 @@ class Storage::TrashService
           original_path, account_id: @account.id, include_trash: false
         )
         next unless Storage::RecordingPaths.reference_aliases(original_path, account_id: @account.id)[1] == reference
-
-        manifest_matches = Array(trash_meta['files']).select do |entry|
-          entry.is_a?(Hash) && entry['original_path'].to_s == original_path
-        end
-        moved_matches = restored_entries.select { |entry| entry['original_path'].to_s == original_path }
         next unless manifest_matches.one? && moved_matches.one?
         next unless File.file?(original_path) && !File.symlink?(original_path)
 
@@ -1269,15 +1323,28 @@ class Storage::TrashService
     return false if manifest.empty?
 
     valid = manifest.all? do |entry|
-      trash_path = entry['trash_path']
       original_path = entry['original_path']
-      trash_path_deletable?(trash_path) &&
-        Storage::RecordingPaths.within_account?(original_path, account_id: @account.id) &&
-        File.exist?(trash_path) && !File.exist?(original_path) && !File.symlink?(original_path)
+      if entry['remote'] == true
+        key = Storage::RecordingMetadata.local_key(entry['storage_key'], account_id: @account.id)
+        ensure_remote_tenant_root!(key, @account.id) if key.present?
+        key.present? &&
+          Storage::RecordingPaths.within_account?(original_path, account_id: @account.id) &&
+          !File.symlink?(original_path.to_s)
+      else
+        trash_path = entry['trash_path']
+        trash_path_deletable?(trash_path) &&
+          Storage::RecordingPaths.within_account?(original_path, account_id: @account.id) &&
+          File.exist?(trash_path) && !File.exist?(original_path) && !File.symlink?(original_path)
+      end
     end
     return false unless valid
 
     manifest.each do |entry|
+      if entry['remote'] == true
+        moved_entries << entry.merge('restored_identity' => ['remote', entry['storage_key'].to_s])
+        next
+      end
+
       FileUtils.mkdir_p(File.dirname(entry['original_path']))
       unless Storage::RecordingPaths.within_account?(entry['original_path'], account_id: @account.id)
         raise InvalidParams, I18n.t('storage_management.errors.invalid_path')
@@ -1295,6 +1362,8 @@ class Storage::TrashService
   # be the file this restore moved while the row/advisory locks remain held.
   def rollback_restored_recording_files(moved_entries)
     Array(moved_entries).reverse_each do |entry|
+      next if entry['remote'] == true
+
       begin
         original_path = entry['original_path']
         trash_path = entry['trash_path']
@@ -1494,10 +1563,12 @@ class Storage::TrashService
 
         manifest.each do |entry|
           path = entry['trash_path']
-          next unless path.present? && File.exist?(path)
-          raise InvalidParams, I18n.t('storage_management.errors.trash_path_rejected') unless trash_path_deletable?(path)
+          if path.present? && File.exist?(path)
+            raise InvalidParams, I18n.t('storage_management.errors.trash_path_rejected') unless trash_path_deletable?(path)
 
-          File.delete(path)
+            File.delete(path)
+          end
+          Storage::VoiceRecordingRemoteStorage.delete_key(entry['storage_key']) if entry['storage_key'].present?
         end
 
         purged_bytes = trash_meta['bytes'].to_i
@@ -1510,6 +1581,7 @@ class Storage::TrashService
     end
     { count: purged ? 1 : 0, bytes: purged ? purged_bytes : 0 }
   end
+
   # Every same-account reference holder is checked before irreversible trash deletion.
   def purge_recording_references_safe?(session, manifest)
     return false if session.recording_ref.present?

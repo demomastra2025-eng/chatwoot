@@ -37,6 +37,26 @@ module Storage::VoiceRecordingRemoteStorage
     false
   end
 
+  def exist?(storage_key)
+    return false unless valid_key?(storage_key) && !raw_wav_key?(storage_key) && enabled?
+
+    active_storage_service.exist?(storage_key.to_s)
+  rescue StandardError => e
+    Rails.logger.warn("[VoiceRecordingRemoteStorage] Exist check failed key=#{storage_key} error=#{e.class.name}: #{e.message}")
+    false
+  end
+
+  def offload_file!(storage_key, local_path, content_type: nil)
+    return false unless upload_file(storage_key, local_path, content_type: content_type)
+    return false unless exist?(storage_key)
+
+    FileUtils.rm_f(local_path.to_s)
+    true
+  rescue StandardError => e
+    Rails.logger.warn("[VoiceRecordingRemoteStorage] Offload failed key=#{storage_key} error=#{e.class.name}: #{e.message}")
+    false
+  end
+
   def delete_key(storage_key)
     return false unless valid_key?(storage_key) && enabled?
 

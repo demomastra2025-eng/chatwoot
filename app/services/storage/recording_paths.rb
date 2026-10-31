@@ -193,9 +193,17 @@ module Storage::RecordingPaths
     reference_id = physical_identity(value, account_id: account_id)
     return source_ids.include?(reference_id) if reference_id
 
+    if source_ids.empty?
+      return true if qualified_reference?(value)
+
+      remote_qualified = Array(qualified_references).map(&:to_s).select { |candidate| qualified_reference?(candidate) }
+      return false if remote_qualified.any? && !remote_qualified.intersect?(keys)
+      return true if remote_qualified.any?
+    end
+
     qualified_ids = Array(qualified_references).map(&:to_s)
-      .select { |candidate| qualified_reference?(candidate) }
-      .filter_map { |candidate| physical_identity(candidate, account_id: account_id) }.uniq
+                                               .select { |candidate| qualified_reference?(candidate) }
+                                               .filter_map { |candidate| physical_identity(candidate, account_id: account_id) }.uniq
     return false if source_ids.any? && qualified_ids.any? && (source_ids & qualified_ids).empty?
     return true if source_ids.any? && qualified_ids.any?
 
@@ -373,6 +381,7 @@ module Storage::RecordingPaths
 
     relative = Pathname.new(ref.to_s)
     return if relative.each_filename.any? { |part| part == '..' || part == '.' }
+
     relative = configured_path(relative) if relative.absolute?
     return relative if relative.absolute? && tenant_roots.any? { |base| contained?(relative, base) }
     return if relative.absolute?
@@ -383,7 +392,7 @@ module Storage::RecordingPaths
     return unless relative.each_filename.count == 1
 
     basename_candidates = tenant_roots.flat_map { |base| safe_files_under(base) }
-                                     .select { |path| path.basename.to_s == relative.basename.to_s }
+                                      .select { |path| path.basename.to_s == relative.basename.to_s }
     unique_contained_file(basename_candidates, tenant_roots)
   end
   private_class_method :resolve_in_roots

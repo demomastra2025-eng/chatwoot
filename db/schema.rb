@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_30_133000) do
+ActiveRecord::Schema[7.2].define(version: 2026_11_01_014500) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1359,6 +1359,23 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_30_133000) do
     t.index ["account_id", "domain"], name: "index_companies_on_account_and_domain", unique: true, where: "(domain IS NOT NULL)"
     t.index ["account_id"], name: "index_companies_on_account_id"
     t.index ["name", "account_id"], name: "index_companies_on_name_and_account_id"
+  end
+
+  create_table "compliance_deleted_subject_tombstones", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "identifier_kind", null: false
+    t.string "identifier_hmac", null: false
+    t.string "certificate_uid", null: false
+    t.string "reason", default: "subject_request", null: false
+    t.datetime "erased_at", null: false
+    t.datetime "revoked_at"
+    t.datetime "remote_synced_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "certificate_uid"], name: "idx_compliance_tombstones_certificate"
+    t.index ["account_id", "identifier_kind", "identifier_hmac"], name: "idx_compliance_tombstones_unique_lookup", unique: true
+    t.index ["account_id"], name: "index_compliance_deleted_subject_tombstones_on_account_id"
   end
 
   create_table "confirmation_requests", force: :cascade do |t|
@@ -4375,6 +4392,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_30_133000) do
   add_foreign_key "communication_threads", "contacts"
   add_foreign_key "communication_threads", "teams"
   add_foreign_key "communication_threads", "users", column: "assignee_id"
+  add_foreign_key "compliance_deleted_subject_tombstones", "accounts", on_delete: :cascade
   add_foreign_key "confirmation_requests", "accounts"
   add_foreign_key "confirmation_requests", "contacts"
   add_foreign_key "confirmation_requests", "conversations"
