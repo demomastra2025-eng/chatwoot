@@ -37,7 +37,10 @@ module Integrations::KaspiPay::EntranceCookies
   end
 
   def extract_entrance_error(body)
-    body.dig('view', 'onOpenAlarm', 'error') || body['error'] || body.dig('data', 'error') || {}
+    return {} unless body.is_a?(Hash)
+
+    err = body.dig('view', 'onOpenAlarm', 'error') || body['error'] || body.dig('data', 'error')
+    err.is_a?(Hash) ? err : {}
   end
 
   def extract_entrance_error_code(body)
@@ -45,6 +48,8 @@ module Integrations::KaspiPay::EntranceCookies
   end
 
   def extract_entrance_error_message(body)
+    return nil unless body.is_a?(Hash)
+
     err = extract_entrance_error(body)
     err['label'].presence || err['desc'].presence || err['description'].presence || body.dig('data', 'desc').presence
   end

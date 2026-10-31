@@ -11,32 +11,37 @@ module Integrations::KaspiPay::HttpTransport
                'X-Platform-Type,X-Call,X-Kb-TokenSnMac,X-Kb-TokenSn'
 
   APP_ENV_MAP = {
-    version: ['KASPI_PAY_APP_VERSION', VERSION_RESOLVER::FALLBACK_VERSION], build: %w[KASPI_PAY_APP_BUILD 1115],
-    platform: %w[KASPI_PAY_APP_PLATFORM iOS], platform_ver: ['KASPI_PAY_APP_PLATFORM_VER', '18.4'],
-    model: ['KASPI_PAY_APP_MODEL', 'iPhone16,2'], cf_network: ['KASPI_PAY_APP_CFNETWORK', 'CFNetwork/3826.400.120'],
-    darwin: ['KASPI_PAY_APP_DARWIN', 'Darwin/24.4.0']
+    version: ['KASPI_PAY_APP_VERSION', VERSION_RESOLVER::FALLBACK_VERSION], build: ['KASPI_PAY_APP_BUILD', VERSION_RESOLVER::FALLBACK_BUILD],
+    platform: %w[KASPI_PAY_APP_PLATFORM iOS], platform_ver: ['KASPI_PAY_APP_PLATFORM_VER', '18.4'], model: ['KASPI_PAY_APP_MODEL', 'iPhone16,2'],
+    cf_network: ['KASPI_PAY_APP_CFNETWORK', 'CFNetwork/3826.400.120'], darwin: ['KASPI_PAY_APP_DARWIN', 'Darwin/24.4.0']
   }.freeze
   STATIC_APP_DEFAULTS = { locale: 'ru-RU', brand: 'Apple', device_name: 'iPhone', screen_w: '430.0', screen_h: '932.0' }.freeze
 
   def app_version = @app[:version]
+  def app_build = @app[:build]
 
   private
 
   def build_app_config(overrides = {})
     ovr = (overrides || {}).symbolize_keys
-    resolved = APP_ENV_MAP.to_h { |k, (env, fb)| [k, ovr[k].presence || ENV[env].presence || (k == :version ? VERSION_RESOLVER.resolve : fb)] }
+    resolved = APP_ENV_MAP.to_h { |k, (env, fb)| [k, resolve_override(k, ovr[k]) || resolve_env_or_default(k, env, fb)] }
     STATIC_APP_DEFAULTS.merge(resolved).merge(locale: ovr[:locale].presence || 'ru-RU')
   end
 
-  def qrpay_get(url)
-    _resp, body = request_json(:get, url, headers: signed_qrpay_headers(url))
-    validate_qrpay_response!(body)
+  def resolve_override(key, val) = %i[version build].include?(key) ? VERSION_RESOLVER.sanitize_format(key, val) : val.presence
+
+  def resolve_env_or_default(key, env_name, fallback)
+    return VERSION_RESOLVER.sanitize_saved_version(ENV.fetch(env_name, nil)) || VERSION_RESOLVER.resolve if key == :version
+    return VERSION_RESOLVER.sanitize_saved_build(ENV.fetch(env_name, nil)) || VERSION_RESOLVER.resolve_build if key == :build
+
+    ENV[env_name].presence || fallback
   end
+
+  def qrpay_get(url) = validate_qrpay_response!(request_json(:get, url, headers: signed_qrpay_headers(url)).last)
 
   def qrpay_post(url, json_body)
     headers = signed_qrpay_headers(url, body: json_body).merge('Content-Type' => 'application/json')
-    _resp, body = request_json(:post, url, headers: headers, body: json_body)
-    validate_qrpay_response!(body)
+    validate_qrpay_response!(request_json(:post, url, headers: headers, body: json_body).last)
   end
 
   def validate_qrpay_response!(body)
@@ -49,14 +54,12 @@ module Integrations::KaspiPay::HttpTransport
   end
 
   def build_session_evicted_error(body)
-    msg = body['Message'].presence ||
-          'Сессия кассира Kaspi Pay завершена (выполнен вход с другого устройства). Переподключите кассира по SMS.'
+    msg = body['Message'].presence || 'Сессия кассира Kaspi Pay завершена (выполнен вход с другого устройства). Переподключите кассира по SMS.'
     Integrations::KaspiPay::ApiClient::SessionEvictedError.new(msg, code: SESSION_EVICTED_CODE)
   end
 
   def signed_qrpay_headers(url, body: nil)
-    token_sn, raw_secret = require_qrpay_session!
-    headers = base_qrpay_headers(token_sn, raw_secret)
+    headers = base_qrpay_headers(*require_qrpay_session!)
     headers['X-Sign'] = Integrations::KaspiPay::Crypto.compute_x_sign(
       @device['ec_private_key'], url: url, headers: headers, x_sh: QRPAY_X_SH, body: body
     )
@@ -91,8 +94,7 @@ module Integrations::KaspiPay::HttpTransport
   end
 
   def perform_http_request(method, uri, headers, body)
-    http = Net::HTTP.new(uri.host, uri.port)
-    http.use_ssl = (uri.scheme == 'https')
+    http = Net::HTTP.new(uri.host, uri.port).tap { |h| h.use_ssl = (uri.scheme == 'https') }
     http.open_timeout = 8
     http.read_timeout = 15
     req = (method == :post ? Net::HTTP::Post : Net::HTTP::Get).new(uri.request_uri)
