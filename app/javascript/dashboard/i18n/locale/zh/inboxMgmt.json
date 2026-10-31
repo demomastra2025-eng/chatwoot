@@ -654,7 +654,7 @@
       "AUTO_ASSIGNMENT_SUB_TEXT": "启用或禁用添加到此收件箱的代理人自动分配新的会话。",
       "ALLOWED_DOMAINS": {
         "TITLE": "Allowed Domains",
-        "SUBTITLE": "Add wildcard or regular domains separated by commas (leave blank to allow all), e.g. *.chatwoot.dev, chatwoot.com.",
+        "SUBTITLE": "Add wildcard or regular domains separated by commas (leave blank to allow all), e.g. *.example.com, example.com.",
         "PLACEHOLDER": "example.com, www.example.com, app.example.com"
       },
       "AGENT_ASSIGNMENT": "对话分配",
@@ -1117,7 +1117,7 @@
         "AGENT_MESSAGE": "您好"
       },
       "BRANDING_TEXT": "由 OneLink 支持",
-      "SCRIPT_SETTINGS": "\n      window.chatwootSettings = {options};"
+      "SCRIPT_SETTINGS": "\n      window.onelinkSettings = {options};\n      window.chatwootSettings = window.onelinkSettings;"
     },
     "EMAIL_PROVIDERS": {
       "MICROSOFT": {

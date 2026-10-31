@@ -114,7 +114,7 @@ module Concerns::Toolable
     appointment_context = state.key?(:prompt_context) ? prompt_context[:appointment] : state[:appointment]
     communication_thread_context = state.key?(:prompt_context) ? prompt_context[:communication_thread] : state[:communication_thread]
 
-    {}.tap do |headers|
+    headers = {}.tap do |headers|
       add_base_headers(headers, state)
       add_conversation_headers(headers, conversation_context) if conversation_context
       add_communication_thread_headers(headers, communication_thread_context) if communication_thread_context
@@ -124,57 +124,58 @@ module Concerns::Toolable
       add_appointment_headers(headers, appointment_context) if appointment_context
       add_contact_inbox_headers(headers, state[:contact_inbox])
     end
+    Onelink::ExternalHeaders.with_legacy_aliases(headers)
   end
 
   def add_base_headers(headers, state)
-    headers['X-Chatwoot-Account-Id'] = state[:account_id].to_s if state[:account_id]
-    headers['X-Chatwoot-Assistant-Id'] = state[:assistant_id].to_s if state[:assistant_id]
-    headers['X-Chatwoot-Tool-Slug'] = slug if slug.present?
+    headers['X-OneLink-Account-Id'] = state[:account_id].to_s if state[:account_id]
+    headers['X-OneLink-Assistant-Id'] = state[:assistant_id].to_s if state[:assistant_id]
+    headers['X-OneLink-Tool-Slug'] = slug if slug.present?
   end
 
   def add_conversation_headers(headers, conversation)
-    headers['X-Chatwoot-Conversation-Id'] = conversation[:id].to_s if conversation[:id]
-    headers['X-Chatwoot-Conversation-Display-Id'] = conversation[:display_id].to_s if conversation[:display_id]
+    headers['X-OneLink-Conversation-Id'] = conversation[:id].to_s if conversation[:id]
+    headers['X-OneLink-Conversation-Display-Id'] = conversation[:display_id].to_s if conversation[:display_id]
   end
 
   def add_communication_thread_headers(headers, communication_thread)
-    headers['X-Chatwoot-Communication-Thread-Id'] = communication_thread[:id].to_s if communication_thread[:id]
-    headers['X-Chatwoot-Communication-Thread-Display-Id'] = communication_thread[:display_id].to_s if communication_thread[:display_id]
+    headers['X-OneLink-Communication-Thread-Id'] = communication_thread[:id].to_s if communication_thread[:id]
+    headers['X-OneLink-Communication-Thread-Display-Id'] = communication_thread[:display_id].to_s if communication_thread[:display_id]
 
     conversation_ids = Array(communication_thread[:conversation_ids]).compact
-    headers['X-Chatwoot-Communication-Thread-Conversation-Ids'] = conversation_ids.join(',') if conversation_ids.present?
+    headers['X-OneLink-Communication-Thread-Conversation-Ids'] = conversation_ids.join(',') if conversation_ids.present?
 
     channel_key = communication_thread[:current_channel_key] || communication_thread.dig(:current_channel, :channel_key)
-    headers['X-Chatwoot-Communication-Thread-Channel-Key'] = channel_key.to_s if channel_key.present?
+    headers['X-OneLink-Communication-Thread-Channel-Key'] = channel_key.to_s if channel_key.present?
   end
 
   def add_contact_headers(headers, contact)
-    headers['X-Chatwoot-Contact-Id'] = contact[:id].to_s if contact[:id]
-    headers['X-Chatwoot-Contact-Email'] = contact[:email].to_s if contact[:email].present?
-    headers['X-Chatwoot-Contact-Phone'] = contact[:phone_number].to_s if contact[:phone_number].present?
+    headers['X-OneLink-Contact-Id'] = contact[:id].to_s if contact[:id]
+    headers['X-OneLink-Contact-Email'] = contact[:email].to_s if contact[:email].present?
+    headers['X-OneLink-Contact-Phone'] = contact[:phone_number].to_s if contact[:phone_number].present?
   end
 
   def add_deal_headers(headers, deal)
-    headers['X-Chatwoot-Deal-Id'] = deal[:id].to_s if deal[:id]
-    headers['X-Chatwoot-Deal-Title'] = deal[:title].to_s if deal[:title].present?
-    headers['X-Chatwoot-Deal-Stage'] = deal[:stage_name].to_s if deal[:stage_name].present?
+    headers['X-OneLink-Deal-Id'] = deal[:id].to_s if deal[:id]
+    headers['X-OneLink-Deal-Title'] = deal[:title].to_s if deal[:title].present?
+    headers['X-OneLink-Deal-Stage'] = deal[:stage_name].to_s if deal[:stage_name].present?
   end
 
   def add_task_headers(headers, task)
-    headers['X-Chatwoot-Task-Id'] = task[:id].to_s if task[:id]
-    headers['X-Chatwoot-Task-Title'] = task[:title].to_s if task[:title].present?
-    headers['X-Chatwoot-Task-Status'] = task[:status_name].to_s if task[:status_name].present?
+    headers['X-OneLink-Task-Id'] = task[:id].to_s if task[:id]
+    headers['X-OneLink-Task-Title'] = task[:title].to_s if task[:title].present?
+    headers['X-OneLink-Task-Status'] = task[:status_name].to_s if task[:status_name].present?
   end
 
   def add_appointment_headers(headers, appointment)
-    headers['X-Chatwoot-Appointment-Id'] = appointment[:id].to_s if appointment[:id]
-    headers['X-Chatwoot-Appointment-Status'] = appointment[:status].to_s if appointment[:status].present?
-    headers['X-Chatwoot-Appointment-Starts-At'] = appointment[:starts_at].to_s if appointment[:starts_at].present?
+    headers['X-OneLink-Appointment-Id'] = appointment[:id].to_s if appointment[:id]
+    headers['X-OneLink-Appointment-Status'] = appointment[:status].to_s if appointment[:status].present?
+    headers['X-OneLink-Appointment-Starts-At'] = appointment[:starts_at].to_s if appointment[:starts_at].present?
   end
 
   def add_contact_inbox_headers(headers, contact_inbox)
-    headers['X-Chatwoot-Contact-Inbox-Id'] = contact_inbox[:id].to_s if contact_inbox&.[](:id)
-    headers['X-Chatwoot-Contact-Inbox-Verified'] = (contact_inbox&.[](:hmac_verified) || false).to_s
+    headers['X-OneLink-Contact-Inbox-Id'] = contact_inbox[:id].to_s if contact_inbox&.[](:id)
+    headers['X-OneLink-Contact-Inbox-Verified'] = (contact_inbox&.[](:hmac_verified) || false).to_s
   end
 
   def format_response(raw_response_body)

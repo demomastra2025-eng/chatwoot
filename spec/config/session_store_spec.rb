@@ -11,7 +11,7 @@ describe 'Session Store Configuration' do
   end
 
   it 'sets the session key' do
-    expect(session_options[:key]).to eq('_chatwoot_session')
+    expect(session_options[:key]).to eq(ENV.fetch('ONELINK_SESSION_COOKIE_NAME', '_chatwoot_session'))
   end
 
   it 'sets same_site to lax' do

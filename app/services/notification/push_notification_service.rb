@@ -125,7 +125,7 @@ class Notification::PushNotificationService
   end
 
   def chatwoot_hub_enabled?
-    ActiveModel::Type::Boolean.new.cast(ENV.fetch('ENABLE_PUSH_RELAY_SERVER', true))
+    ChatwootHub.requests_enabled? && ActiveModel::Type::Boolean.new.cast(ENV.fetch('ENABLE_PUSH_RELAY_SERVER', true))
   end
 
   def remove_subscription_if_error(subscription, response)

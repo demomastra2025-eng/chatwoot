@@ -10,6 +10,12 @@ export const createEvent = ({ eventName, data = null }) => {
 };
 
 export const dispatchWindowEvent = ({ eventName, data }) => {
-  const event = createEvent({ eventName, data });
-  window.dispatchEvent(event);
+  // Keep the iframe wire protocol stable for cached SDKs. Public events use
+  // OneLink and retain the previous event name for existing website listeners.
+  const publicName = String(eventName).replace(/^chatwoot:/, 'onelink:');
+  const legacyName = publicName.replace(/^onelink:/, 'chatwoot:');
+  const eventNames = [...new Set([publicName, legacyName])];
+  eventNames.forEach(name => {
+    window.dispatchEvent(createEvent({ eventName: name, data }));
+  });
 };

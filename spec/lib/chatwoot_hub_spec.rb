@@ -1,6 +1,42 @@
 require 'rails_helper'
 
 describe ChatwootHub do
+  around do |example|
+    with_modified_env('ONELINK_UPSTREAM_HUB_ENABLED' => 'true', 'ONELINK_HUB_URL' => nil,
+                      'ONELINK_ENABLE_HUB_SYNC' => nil) { example.run }
+  end
+
+  it 'uses an explicitly configured OneLink relay in every runtime' do
+    with_modified_env('ONELINK_HUB_URL' => 'https://relay.example.test') do
+      expect(described_class.base_url).to eq('https://relay.example.test')
+    end
+  end
+
+  it 'blocks every vendor request and billing link after the upstream dependency is retired' do
+    with_modified_env('ONELINK_UPSTREAM_HUB_ENABLED' => 'false', 'ENABLE_CHATWOOT_HUB_SYNC' => 'true') do
+      expect(RestClient).not_to receive(:post)
+      expect(described_class.sync_enabled?).to be(false)
+      expect(described_class.sync_with_hub).to be_nil
+      expect(described_class.register_instance('test', 'test', 'test@example.test')).to be_nil
+      expect(described_class.emit_event('test', {})).to be_nil
+      expect(described_class.billing_url).to be_nil
+      expect { described_class.send_push_with_response({}) }.to raise_error(ChatwootHub::DisabledError)
+    end
+  end
+
+  it 'keeps an explicit canonical false authoritative over a legacy opt-in' do
+    with_modified_env('ONELINK_ENABLE_HUB_SYNC' => 'false', 'ENABLE_CHATWOOT_HUB_SYNC' => 'true') do
+      expect(described_class.sync_enabled?).to be(false)
+    end
+  end
+
+  it 'does not fall back to the vendor when the canonical endpoint is explicitly empty' do
+    with_modified_env('ONELINK_HUB_URL' => '') do
+      expect(described_class.base_url).to be_nil
+      expect(described_class.requests_enabled?).to be(false)
+    end
+  end
+
   describe '.base_url' do
     it 'uses the static hub url' do
       expect(described_class::DEFAULT_BASE_URL).to eq('https://hub.2.chatwoot.com')

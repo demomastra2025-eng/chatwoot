@@ -1,9 +1,4 @@
 module Enterprise::ChatwootHub
-  ENTERPRISE_BASE_URL = 'https://hub.2.chatwoot.com'.freeze
-
-  def base_url
-    return ENV.fetch('CHATWOOT_HUB_URL', ENTERPRISE_BASE_URL) if Rails.env.development?
-
-    ENTERPRISE_BASE_URL
-  end
+  # Endpoint and request policy are shared with the main implementation.
+  ENTERPRISE_BASE_URL = ::ChatwootHub::DEFAULT_BASE_URL
 end

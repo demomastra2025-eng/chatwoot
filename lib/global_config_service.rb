@@ -5,7 +5,7 @@ class GlobalConfigService
 
     # To support migrating existing instance relying on env variables
     # TODO: deprecate this later down the line
-    config_value = ENV.fetch(config_key) { default_value }
+    config_value = Onelink::Environment.fetch(config_key, default_value)
 
     return if config_value.blank?
 

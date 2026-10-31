@@ -162,10 +162,11 @@ describe Webhooks::Trigger do
       trigger.execute(url, payload, webhook_type)
     end
 
-    it 'adds X-Chatwoot-Delivery header' do
+    it 'adds canonical delivery and its compatible legacy alias' do
       expect_safe_fetch(
         payload: payload,
-        headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json', 'X-Chatwoot-Delivery' => 'test-uuid' }
+        headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json',
+                   'X-OneLink-Delivery' => 'test-uuid', 'X-Chatwoot-Delivery' => 'test-uuid' }
       )
 
       trigger.execute(url, payload, webhook_type, delivery_id: 'test-uuid')
@@ -181,6 +182,8 @@ describe Webhooks::Trigger do
         wrong_sig = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', secret, body)}"
         expect(headers['X-Chatwoot-Signature']).to eq(expected_sig)
         expect(headers['X-Chatwoot-Signature']).not_to eq(wrong_sig)
+        expect(headers['X-OneLink-Timestamp']).to eq(ts)
+        expect(headers['X-OneLink-Signature']).to eq(expected_sig)
       end.and_yield(nil)
 
       trigger.execute(url, payload, webhook_type, secret: secret)
@@ -190,11 +193,27 @@ describe Webhooks::Trigger do
       expect(SafeFetch).to receive(:fetch) do |_url, options|
         headers = options[:headers]
         expect(headers['X-Chatwoot-Delivery']).to eq('abc-123')
+        expect(headers['X-OneLink-Delivery']).to eq('abc-123')
         expect(headers['X-Chatwoot-Timestamp']).to be_present
         expect(headers['X-Chatwoot-Signature']).to start_with('sha256=')
       end.and_yield(nil)
 
       trigger.execute(url, payload, webhook_type, secret: '[REDACTED]', delivery_id: 'abc-123')
+    end
+
+    it 'retires legacy headers without changing the signed body' do
+      with_modified_env('ONELINK_LEGACY_EXTERNAL_HEADERS_ENABLED' => 'false') do
+        expect(SafeFetch).to receive(:fetch) do |_url, options|
+          headers = options[:headers]
+          expect(options[:body]).to eq(body)
+          expect(headers['X-OneLink-Delivery']).to eq('test-delivery')
+          expect(headers['X-OneLink-Signature']).to eq(
+            "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', 'test-secret', "#{headers['X-OneLink-Timestamp']}.#{body}")}"
+          )
+          expect(headers.keys.grep(/Chatwoot/i)).to be_empty
+        end.and_yield(nil)
+        trigger.execute(url, payload, webhook_type, secret: 'test-secret', delivery_id: 'test-delivery')
+      end
     end
   end
 

@@ -1065,7 +1065,7 @@
         "AGENT_MESSAGE": "Hello"
       },
       "BRANDING_TEXT": "சாட்வுட் மூலம் இயக்கபடுகிறது",
-      "SCRIPT_SETTINGS": "\n      window.chatonelinkSettings = {options};"
+      "SCRIPT_SETTINGS": "\n      window.onelinkSettings = {options};\n      window.chatwootSettings = window.onelinkSettings;"
     },
     "EMAIL_PROVIDERS": {
       "MICROSOFT": {

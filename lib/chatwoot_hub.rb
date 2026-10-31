@@ -1,9 +1,15 @@
 # TODO: lets use HTTParty instead of RestClient
 class ChatwootHub
   DEFAULT_BASE_URL = 'https://hub.2.chatwoot.com'.freeze
+  DisabledError = Class.new(StandardError)
 
   def self.base_url
-    DEFAULT_BASE_URL
+    aliases = Rails.env.development? ? ['CHATWOOT_HUB_URL'] : []
+    Onelink::Environment.fetch('ONELINK_HUB_URL', DEFAULT_BASE_URL, aliases: aliases).to_s.strip.presence
+  end
+
+  def self.requests_enabled?
+    %w[1 true yes on].include?(ENV.fetch('ONELINK_UPSTREAM_HUB_ENABLED', 'true').to_s.strip.downcase) && base_url.present?
   end
 
   # The Hub is the server of the vendor of the open source base (hub.2.chatwoot.com). OneLink does not talk to it for
@@ -14,7 +20,9 @@ class ChatwootHub
   def self.sync_enabled?
     # Only an explicit yes counts: a typo or an unknown word must not switch the telemetry on (ActiveModel would read
     # «maybe» as true)
-    %w[1 true yes on].include?(ENV.fetch('ENABLE_CHATWOOT_HUB_SYNC', '').to_s.strip.downcase)
+    requests_enabled? && %w[1 true yes on].include?(
+      Onelink::Environment.fetch('ONELINK_ENABLE_HUB_SYNC', '', aliases: ['ENABLE_CHATWOOT_HUB_SYNC']).to_s.strip.downcase
+    )
   end
 
   def self.ping_url
@@ -44,6 +52,8 @@ class ChatwootHub
   end
 
   def self.billing_url
+    return unless requests_enabled?
+
     "#{billing_base_url}?installation_identifier=#{installation_identifier}"
   end
 
@@ -129,6 +139,8 @@ class ChatwootHub
   end
 
   def self.send_push_with_response(fcm_options)
+    raise DisabledError, 'Mobile push relay is unavailable' unless requests_enabled?
+
     info = { fcm_options: fcm_options }
     RestClient.post(push_notification_url, info.merge(instance_config).to_json, { content_type: :json, accept: :json })
   end

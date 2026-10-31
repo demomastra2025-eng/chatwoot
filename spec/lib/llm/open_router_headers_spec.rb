@@ -4,6 +4,27 @@ require 'rails_helper'
 require 'net/http'
 
 RSpec.describe Llm::OpenRouterHeaders do
+  describe 'canonical installation attribution' do
+    around do |example|
+      with_modified_env('OPENROUTER_HTTP_REFERER' => nil, 'OPENROUTER_APP_URL' => nil, 'FRONTEND_URL' => nil,
+                        'INSTALLATION_URL' => nil, 'APP_URL' => nil, 'CHATWOOT_INSTALLATION_URL' => 'https://legacy.example.test') do
+        example.run
+      end
+    end
+
+    it 'uses the canonical installation URL before its legacy alias' do
+      with_modified_env('ONELINK_INSTALLATION_URL' => 'https://canonical.example.test') do
+        expect(described_class.attribution_headers['HTTP-Referer']).to eq('https://canonical.example.test')
+      end
+    end
+
+    it 'does not reactivate the legacy URL when the canonical value is explicitly blank' do
+      with_modified_env('ONELINK_INSTALLATION_URL' => '') do
+        expect(described_class.attribution_headers['HTTP-Referer']).to eq(described_class::DEFAULT_APP_URL)
+      end
+    end
+  end
+
   describe '.build' do
     it 'disables response cache for privacy-sensitive requests even when the feature is cacheable' do
       result = described_class.build(

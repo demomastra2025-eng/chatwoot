@@ -1065,7 +1065,7 @@
         "AGENT_MESSAGE": "سلام"
       },
       "BRANDING_TEXT": "قدرت گرفته از چت ووت",
-      "SCRIPT_SETTINGS": "\n      window.chatonelinkSettings = {options};"
+      "SCRIPT_SETTINGS": "\n      window.onelinkSettings = {options};\n      window.chatwootSettings = window.onelinkSettings;"
     },
     "EMAIL_PROVIDERS": {
       "MICROSOFT": {

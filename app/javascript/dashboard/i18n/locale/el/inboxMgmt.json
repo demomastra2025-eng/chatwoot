@@ -1065,7 +1065,7 @@
         "AGENT_MESSAGE": "Γειά σας"
       },
       "BRANDING_TEXT": "με την δύναμη του OneLink",
-      "SCRIPT_SETTINGS": "\n      window.chatonelinkSettings = {options};"
+      "SCRIPT_SETTINGS": "\n      window.onelinkSettings = {options};\n      window.chatwootSettings = window.onelinkSettings;"
     },
     "EMAIL_PROVIDERS": {
       "MICROSOFT": {

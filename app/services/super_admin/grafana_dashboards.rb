@@ -5,16 +5,18 @@
 # (GRAFANA_OVERVIEW_DASHBOARD, GRAFANA_LOGS_DASHBOARD: the page of the general settings, or the environment variable of
 # the same name); an installation that sets nothing gets the dashboards of the production stack it was built for.
 #
-#   SuperAdmin::GrafanaDashboards.uid(:overview)  # => "crafty-production-overview"
-#   SuperAdmin::GrafanaDashboards.path(:logs)     # => "/monitoring/grafana/d/crafty-production-logs/crafty-production-logs?orgId=1&..."
+# Canonical dashboards must be provisioned before this application release.
+# Existing dashboard UIDs remain available to old bookmarks and rollback code.
 module SuperAdmin::GrafanaDashboards
   BASE_PATH = '/monitoring/grafana'
   # The uid of a Grafana dashboard: letters, digits, dashes and underscores, at most 40 characters
   UID_FORMAT = /\A[A-Za-z0-9_-]{1,40}\z/
   DASHBOARDS = {
-    overview: { config: 'GRAFANA_OVERVIEW_DASHBOARD', default: 'crafty-production-overview', refresh: '30s' },
-    logs: { config: 'GRAFANA_LOGS_DASHBOARD', default: 'crafty-production-logs', refresh: '10s' }
+    overview: { config: 'GRAFANA_OVERVIEW_DASHBOARD', default: 'onelink-production-overview', refresh: '30s' },
+    logs: { config: 'GRAFANA_LOGS_DASHBOARD', default: 'onelink-production-logs', refresh: '10s' }
   }.freeze
+  LEGACY_UIDS = { 'crafty-production-overview' => 'onelink-production-overview',
+                  'crafty-production-logs' => 'onelink-production-logs' }.freeze
 
   module_function
 
@@ -22,7 +24,8 @@ module SuperAdmin::GrafanaDashboards
   def uid(kind)
     dashboard = DASHBOARDS.fetch(kind)
     configured = GlobalConfigService.load(dashboard[:config], dashboard[:default]).to_s.strip
-    configured.match?(UID_FORMAT) ? configured : dashboard[:default]
+    selected = configured.match?(UID_FORMAT) ? configured : dashboard[:default]
+    LEGACY_UIDS.fetch(selected, selected)
   end
 
   # The address of the dashboard for the last 24 hours, as it is opened in a new tab

@@ -180,6 +180,8 @@ RSpec.describe 'Accounts API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(response).to conform_schema(200)
+        expect(response.parsed_body).to have_key('latest_onelink_version')
+        expect(response.parsed_body['latest_onelink_version']).to eq(response.parsed_body['latest_chatwoot_version'])
         expect(response.body).to include(account.name)
         expect(response.body).to include(account.locale)
         expect(response.body).to include(account.locale)

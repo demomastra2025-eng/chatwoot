@@ -4,6 +4,15 @@ describe GlobalConfigService do
   subject(:trigger) { described_class }
 
   describe 'execute' do
+    it 'reads canonical environment names without renaming persisted config identities' do
+      GlobalConfig.clear_cache
+      with_modified_env('ONELINK_NAMING_TEST_VALUE' => 'canonical', 'CHATWOOT_NAMING_TEST_VALUE' => 'legacy') do
+        expect(described_class.load('CHATWOOT_NAMING_TEST_VALUE', 'default')).to eq('canonical')
+        expect(InstallationConfig.find_by(name: 'CHATWOOT_NAMING_TEST_VALUE').value).to eq('canonical')
+        expect(InstallationConfig.find_by(name: 'ONELINK_NAMING_TEST_VALUE')).to be_nil
+      end
+    end
+
     context 'when called with default options' do
       before do
         # to clear redis cache

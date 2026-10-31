@@ -24,7 +24,7 @@
     <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg?v=onelink-brand">
     <%= csrf_meta_tags %>
     <script>
-      window.chatwootConfig = {
+      window.onelinkConfig = {
         hostURL: '<%= ENV.fetch('FRONTEND_URL', '') %>',
         helpCenterURL: '<%= ENV.fetch('HELPCENTER_URL', '') %>',
         fbAppId: '<%= @global_config['FB_APP_ID'] %>',
@@ -54,6 +54,11 @@
         selectedLocale: '<%= I18n.locale %>',
         wazoSipHost: '<%= ENV.fetch('TELEPHONY_WAZO_SIP_HOST', '188.241.217.162') %>'
       }
+      Object.defineProperty(window, 'chatwootConfig', {
+        configurable: true,
+        get: function() { return window.onelinkConfig; },
+        set: function(value) { window.onelinkConfig = value; }
+      });
       window.globalConfig = <%= raw @global_config.to_json %>
       window.browserConfig = {
         browser_name: '<%= browser.name %>',

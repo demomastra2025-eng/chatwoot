@@ -1065,7 +1065,7 @@
         "AGENT_MESSAGE": "Olá"
       },
       "BRANDING_TEXT": "Desenvolvido por OneLink",
-      "SCRIPT_SETTINGS": "\n      window.chatonelinkSettings = {options};"
+      "SCRIPT_SETTINGS": "\n      window.onelinkSettings = {options};\n      window.chatwootSettings = window.onelinkSettings;"
     },
     "EMAIL_PROVIDERS": {
       "MICROSOFT": {

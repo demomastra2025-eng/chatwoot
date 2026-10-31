@@ -169,7 +169,7 @@ class Llm::OpenRouterHeaders
     end
 
     def first_env(*keys)
-      keys.filter_map { |key| ENV[key].to_s.strip.presence }.first
+      keys.filter_map { |key| Onelink::Environment.fetch(key).to_s.strip.presence }.first
     end
   end
 end

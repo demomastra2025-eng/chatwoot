@@ -1063,6 +1063,25 @@ RSpec.describe Captain::CustomTool, type: :model do
         expect(headers['X-Chatwoot-Assistant-Id']).to eq('123')
       end
 
+      it 'sends the same canonical and legacy metadata for installed receivers' do
+        headers = tool.build_metadata_headers(state)
+        canonical = headers.select { |name, _value| name.start_with?('X-OneLink-') }
+
+        expect(canonical).to include('X-OneLink-Account-Id' => account.id.to_s, 'X-OneLink-Tool-Slug' => 'custom_test_tool')
+        canonical.each do |name, value|
+          expect(headers[name.sub('X-OneLink-', 'X-Chatwoot-')]).to eq(value)
+        end
+      end
+
+      it 'retires only the legacy metadata names after receivers migrate' do
+        with_modified_env('ONELINK_LEGACY_EXTERNAL_HEADERS_ENABLED' => 'false') do
+          headers = tool.build_metadata_headers(state)
+
+          expect(headers['X-OneLink-Account-Id']).to eq(account.id.to_s)
+          expect(headers.keys.grep(/^X-Chatwoot-/)).to be_empty
+        end
+      end
+
       it 'includes tool slug' do
         headers = tool.build_metadata_headers(state)
 
