@@ -5,10 +5,11 @@ class Whatsapp::TemplateMessageRenderer
   RESERVED_PARAM_KEYS = %w[body header footer buttons media carousel].freeze
   MEDIA_META_KEYS = %w[media_url media_type media_name].freeze
 
-  def initialize(channel:, template_params:, strict_language: false)
+  def initialize(channel:, template_params:, strict_language: false, templates: nil)
     @channel = channel
     @template_params = normalize_hash(template_params)
     @strict_language = strict_language
+    @templates = templates
   end
 
   def render_text
@@ -39,7 +40,7 @@ class Whatsapp::TemplateMessageRenderer
 
   def resolve_matched_template
     name = @template_params['name'].to_s.strip
-    return nil if name.blank? || !@channel.respond_to?(:message_templates)
+    return nil if name.blank? || (@templates.nil? && !@channel.respond_to?(:message_templates))
 
     templates = normalized_templates
     target_lang = normalize_lang(@template_params['language'] || @template_params['language_code'])
@@ -74,7 +75,7 @@ class Whatsapp::TemplateMessageRenderer
   end
 
   def normalized_templates
-    Array(@channel.message_templates).filter_map do |tpl|
+    Array(@templates || @channel.message_templates).filter_map do |tpl|
       tpl.is_a?(Hash) ? tpl.deep_stringify_keys : nil
     end
   end

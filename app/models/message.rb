@@ -222,16 +222,24 @@ class Message < ApplicationRecord
   end
 
   def push_event_data(include_communication_thread: true, conversation_unread_count: CONVERSATION_UNREAD_COUNT_UNSET)
-    data = attributes.symbolize_keys.merge(
+    data = {
+      **attributes.symbolize_keys,
+      content: content_for_display,
       created_at: created_at.to_i,
       message_type: message_type_before_type_cast,
       conversation_id: conversation&.display_id,
       conversation: conversation.present? ? conversation_push_event_data(conversation_unread_count) : nil
-    )
+    }
     data.merge!(communication_thread_push_event_data) if include_communication_thread && communication_threads_enabled?
     data[:echo_id] = echo_id if echo_id.present?
     data[:attachments] = attachments.map(&:push_event_data) if attachments.present?
     merge_sender_attributes(data)
+  end
+
+  def content_for_display
+    return content if content.present?
+
+    Whatsapp::TemplateMessageDisplayContent.new(self).render.presence || content
   end
 
   def external_push_event_data(**)
