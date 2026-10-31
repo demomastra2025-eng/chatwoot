@@ -182,12 +182,17 @@ class Integrations::Medelement::SchedulesSyncService
       kind, windows = classify_day(day, date)
       kind == :unverified ? mark_unverified(resource, date, stored) : persist_day(resource, date, stored, windows, day)
     end
-  rescue Integrations::Medelement::Client::ApiError
-    record_api_failure(days, resource)
+  rescue Integrations::Medelement::Client::ApiError => e
+    record_api_failure(days, resource, e)
     raise
   end
 
-  def record_api_failure(days, resource)
+  def record_api_failure(days, resource, error = nil)
+    if error.is_a?(Integrations::Medelement::Client::RateLimitedError)
+      @counters[:skipped_count] += days.size
+      return
+    end
+
     days.each do |_day_resource, date, stored|
       if stored&.status.in?(%w[confirmed empty_confirmed])
         stored.update!(last_attempted_at: now)

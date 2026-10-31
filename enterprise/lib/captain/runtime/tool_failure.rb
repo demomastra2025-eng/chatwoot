@@ -44,7 +44,7 @@ module Captain::Runtime::ToolFailure
   # staff_will_help are deliberately absent: they are technical.
   BUSINESS_REASONS = %w[
     time_taken not_found validation_error schedule_not_open invalid_date invalid_date_range invalid_duration
-    invalid_service_id unknown_service pending_provider_confirmation
+    invalid_service_id unknown_service service_resource_mismatch pending_provider_confirmation
   ].freeze
   PENDING_REASON = 'pending_provider_confirmation'
   # Codes of failures that are answers: a record that is not available to this patient, and the Playground's own policy

@@ -12,8 +12,8 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
   before do
     account.enable_features!('scheduling')
     allow(Integrations::Medelement::ScheduleChangeTracker).to receive(:new).and_return(instance_double(
-      Integrations::Medelement::ScheduleChangeTracker, changes_for: {}
-    ))
+                                                                                         Integrations::Medelement::ScheduleChangeTracker, changes_for: {}
+                                                                                       ))
   end
 
   def specialist(owner, code, seen_at, active: true)
@@ -202,16 +202,23 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
     expect(requests.last).to eq([date + 7, date + 13])
   end
 
-  it 'stops the hook when the local budget refuses a window' do
+  it 'stops the hook when the local budget refuses a window without marking days unverified or losing skipped_count' do
     resource
+    confirmed_day = Integrations::Medelement::ScheduleDay.create!(
+      account: account, hook: hook, resource: resource, specialist_code: 'doctor-1', date: date,
+      status: 'confirmed', windows: [{ 'start_minute' => 540, 'end_minute' => 600, 'working' => true }],
+      source_checked_at: now - 2.hours
+    )
     requests = []
     stub_timetable do |starts_on:, ends_on:, **|
       requests << [starts_on, ends_on]
       raise Integrations::Medelement::Client::RateLimitedError.new(operation: 'timetable', retry_after_ms: 30_000)
     end
 
-    expect(sync).to include(request_count: 1, skipped_count: 83)
-    expect(requests).to eq([[date, date + 6]])
+    expect(sync).to include(request_count: 1, unverified_count: 0, skipped_count: 90)
+    expect(requests).to eq([[date, date]])
+    expect(confirmed_day.reload).to have_attributes(status: 'confirmed', last_attempted_at: nil)
+    expect(Integrations::Medelement::ScheduleDay.where(resource: resource, status: 'unverified').count).to eq(0)
   end
 
   it 'serves near windows before the oldest checked far window when capped' do
@@ -358,8 +365,8 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
         when 1 then working_day(day, [])
         when 2
           working_day(day).merge('specialistWorkingHours' => {
-            'start' => day.strftime('%d.%m.%Y 08:00'), 'end' => day.strftime('%d.%m.%Y 00:00')
-          })
+                                   'start' => day.strftime('%d.%m.%Y 08:00'), 'end' => day.strftime('%d.%m.%Y 00:00')
+                                 })
         else working_day(day)
         end
       end.except((date + 3).strftime('%d.%m.%Y'))

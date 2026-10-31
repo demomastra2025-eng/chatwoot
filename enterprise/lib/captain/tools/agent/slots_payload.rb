@@ -24,6 +24,9 @@ module Captain::Tools::Agent::SlotsPayload
   DEGRADED_NOTE = 'The MedElement schedule could not be checked, so it is not known whether there is free time. ' \
                   'Do not tell the patient that there is none. A price from search_scheduling_services does not depend on the ' \
                   'schedule: give it.'
+  PARTIAL_DEGRADED_NOTE = 'Listed times are confirmed and can be offered and booked. Some other days or specialists in this range ' \
+                          'could not be checked in MedElement; do not tell the patient that unlisted days or specialists have no ' \
+                          'free time. A price from search_scheduling_services does not depend on the schedule: give it.'
 
   module_function
 
@@ -109,7 +112,8 @@ module Captain::Tools::Agent::SlotsPayload
   def degraded(payload)
     return {} unless payload.dig(:availability, :status) == 'degraded'
 
-    { availability: 'degraded', availability_note: DEGRADED_NOTE }
+    note = Array(payload[:slots]).empty? ? DEGRADED_NOTE : PARTIAL_DEGRADED_NOTE
+    { availability: 'degraded', availability_note: note }
   end
   private_class_method :degraded
 

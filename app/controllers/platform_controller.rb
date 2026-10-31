@@ -19,7 +19,9 @@ class PlatformController < ActionController::API
   private
 
   def ensure_access_token
-    token = request.headers[:api_access_token] || request.headers[:HTTP_API_ACCESS_TOKEN]
+    token = request.headers[:api_access_token].presence ||
+            request.headers[:HTTP_API_ACCESS_TOKEN].presence ||
+            request.authorization.to_s[AccessTokenAuthHelper::BEARER_TOKEN_PATTERN, 1]
     @access_token = AccessToken.find_by(token: token) if token.present?
   end
 

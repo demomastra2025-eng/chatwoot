@@ -71,7 +71,7 @@ RSpec.describe Captain::Runtime::ToolFailure do
       end
 
       it 'treats the compact answers of the scheduling tools by their reason' do
-        %w[time_taken not_found validation_error schedule_not_open invalid_date unknown_service].each do |reason|
+        %w[time_taken not_found validation_error schedule_not_open invalid_date unknown_service service_resource_mismatch].each do |reason|
           expect(described_class.classify(JSON.generate(success: false, reason: reason))).to eq('business')
         end
         %w[provider_unavailable internal_failure staff_will_help].each do |reason|
@@ -158,14 +158,17 @@ RSpec.describe Captain::Runtime::ToolFailure do
     it 'is true for a failure that is an answer of the tool and changed nothing' do
       expect(described_class.business_answer?(JSON.generate(success: false, reason: 'time_taken'))).to be(true)
       expect(described_class.business_answer?(failure(retryable: false, audit: { error_class: 'business' }))).to be(true)
-      expect(described_class.business_answer?(Captain::ToolResult.failure_output(error: 'Taken', data: { code: 'SLOT_CONFLICT' }, retryable: false))).to be(true)
+      expect(described_class.business_answer?(Captain::ToolResult.failure_output(error: 'Taken', data: { code: 'SLOT_CONFLICT' },
+                                                                                 retryable: false))).to be(true)
     end
 
     it 'is false for a success, a pending write, a technical failure and a bare rejection stage' do
       expect(described_class.business_answer?(Captain::ToolResult.success(data: { id: 1 }))).to be(false)
       expect(described_class.business_answer?(JSON.generate(success: false, reason: 'pending_provider_confirmation'))).to be(false)
       expect(described_class.business_answer?(JSON.generate(success: false, reason: 'staff_will_help'))).to be(false)
-      expect(described_class.business_answer?(failure(retryable: false, audit: { error_class: 'technical', failure_reason: 'time_taken' }))).to be(false)
+      expect(described_class.business_answer?(failure(retryable: false,
+                                                      audit: { error_class: 'technical',
+                                                               failure_reason: 'time_taken' }))).to be(false)
       expect(described_class.business_answer?(failure(retryable: false, audit: { failure_stage: 'tool_arguments' }))).to be(false)
     end
   end
@@ -179,7 +182,9 @@ RSpec.describe Captain::Runtime::ToolFailure do
     end
 
     it 'is not_executed for a call that was rejected and for a business answer' do
-      expect(described_class.outcome(failure(retryable: false, audit: { mutation_executed: false, failure_stage: 'tool_execution' }))).to eq('not_executed')
+      expect(described_class.outcome(failure(retryable: false,
+                                             audit: { mutation_executed: false,
+                                                      failure_stage: 'tool_execution' }))).to eq('not_executed')
       expect(described_class.outcome(JSON.generate(success: false, reason: 'time_taken'))).to eq('not_executed')
       expect(described_class.outcome(failure(retryable: false, audit: { error_class: 'business' }))).to eq('not_executed')
     end
@@ -201,7 +206,8 @@ RSpec.describe Captain::Runtime::ToolFailure do
 
   describe '.summary' do
     it 'names the tool, the kind and the codes and nothing else' do
-      result = failure(retryable: false, error: 'Patient Айгуль Нурлан, +7 701 000 00 00 rejected', audit: { failure_stage: 'tool_execution', failure_reason: 'provider_unavailable' })
+      result = failure(retryable: false, error: 'Patient Айгуль Нурлан, +7 701 000 00 00 rejected',
+                       audit: { failure_stage: 'tool_execution', failure_reason: 'provider_unavailable' })
 
       summary = described_class.summary('mcp__medelement__create_appointment', result)
 

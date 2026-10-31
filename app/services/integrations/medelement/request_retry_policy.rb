@@ -3,6 +3,7 @@ class Integrations::Medelement::RequestRetryPolicy
   READ_RETRY_LIMIT = 7
   BASE_RETRY_DELAY_SECONDS = 5
   MAX_RETRY_DELAY_SECONDS = 5.minutes.to_i
+  MAX_ROLLOVER_WAIT_MS = 60_000
   # A command (a write and the reads right before it) has someone waiting for the answer, so a failing read is retried
   # only twice and quickly. Background reads and syncs keep the patient default above.
   COMMAND_PROFILE = { read_retry_limit: 2, base_delay_seconds: 1, max_delay_seconds: 5 }.freeze
@@ -78,11 +79,15 @@ class Integrations::Medelement::RequestRetryPolicy
   end
 
   def wait_for_busy_slot?(error:, write:, retry_429:, lane:, busy_retries:)
-    return false if write || !retry_429 || @deadline.present?
-    return false if lane.to_s == 'live'
+    return false if write || @deadline.present? || lane.to_s == 'live'
+    return false if !retry_429 && !rollover_wait_allowed?(error, busy_retries)
     return false if error.retry_after_ms.to_f > max_delay_seconds.to_f * 1000
 
     busy_retries < read_retry_limit
+  end
+
+  def rollover_wait_allowed?(error, busy_retries)
+    !error.paused? && busy_retries.zero? && error.retry_after_ms.to_f <= MAX_ROLLOVER_WAIT_MS
   end
 
   def wait_for_busy_slot(operation, error, busy_retries)

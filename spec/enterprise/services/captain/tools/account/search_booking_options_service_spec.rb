@@ -233,6 +233,23 @@ RSpec.describe Captain::Tools::Account::SearchBookingOptionsService do
       expect(answer['results'].first).not_to have_key('days')
     end
 
+    it 'narrows specialty matches to compatible doctors and keeps catalog prices on multi-service doctor mismatches' do
+      ultrasound = service('УЗИ щитовидной железы', 4, base_price: 9000, duration_min: 20)
+      ultrasound_doctor = doctor('Сеитова Алия', specialty: 'терапевт')
+      link(ultrasound, ultrasound_doctor)
+
+      specialty_answer = search(services: ['узи'], doctor: 'терапевт', from: '2026-04-22', to: '2026-04-23')
+      expect(specialty_answer['results'].first['days'].pluck('resource_id').uniq).to eq([ultrasound_doctor.id])
+
+      multi_answer = search(services: %w[узи терапевт], doctor: 'Асланова', from: '2026-04-22', to: '2026-04-23')
+      expect(multi_answer['results'].first).to include(
+        'slots_status' => 'service_resource_mismatch',
+        'eligible_resources' => [{ 'id' => ultrasound_doctor.id, 'name' => 'Сеитова Алия' }]
+      )
+      expect(multi_answer['results'].first['services'].first['price']).to eq(9000)
+      expect(multi_answer['results'].second['days'].pluck('resource_id')).to eq([aigerim.id])
+    end
+
     it 'still gives a named specialist\'s availability when the service is not in the catalog' do
       answer = search(services: ['нет такой'], doctor: 'Асланова', from: '2026-04-22', to: '2026-04-23')
 

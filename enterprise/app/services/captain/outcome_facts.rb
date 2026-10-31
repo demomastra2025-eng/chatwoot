@@ -5,9 +5,14 @@ class Captain::OutcomeFacts
   LIMIT = 20
   NOTE_LIMIT = 1000
   INSTRUCTION_LIMIT = 12_000
+  AVAILABILITY_TOOLS = %w[
+    search_available_slots search_booking_options get_scheduling_resource_availability
+  ].freeze
   FAILURE_KINDS = {
     'time_taken' => 'slot_taken', 'slot_taken' => 'slot_taken', 'validation_error' => 'validation_error',
-    'invalid_tool_arguments' => 'validation_error', 'provider_unavailable' => 'calendar_unavailable',
+    'invalid_tool_arguments' => 'validation_error', 'service_resource_mismatch' => 'validation_error',
+    'provider_unavailable' => 'calendar_unavailable', 'schedule_not_confirmed' => 'calendar_unavailable',
+    'medelement_availability_unverified' => 'calendar_unavailable',
     'permission_denied' => 'permission', 'forbidden' => 'permission', 'tool_not_bound' => 'permission'
   }.freeze
   SAFETY_KINDS = %w[moderation prompt_injection credentials custom_rule].freeze
@@ -48,7 +53,7 @@ class Captain::OutcomeFacts
     facts = context[:outcome_facts] ||= { 'faq_lookups' => [], 'tool_failures' => [], 'safety_blocks' => [] }
     name = Captain::Runtime::ToolFailure.canonical_name(tool_name)
     record_faq(facts, result, context) if name == 'faq_lookup'
-    record_failure(facts, result)
+    record_failure(facts, result, name)
     facts.each_value { |items| items.replace(items.last(LIMIT)) }
   rescue StandardError
     # Missing classification facts must not alter a tool's result.
@@ -75,9 +80,12 @@ class Captain::OutcomeFacts
   end
   private_class_method :faq_unavailable?
 
-  def self.record_failure(facts, result)
+  def self.record_failure(facts, result, tool_name = nil)
     info = Captain::Runtime::ToolFailure.describe(result)
-    return unless info[:failure]
+    unless info[:failure]
+      facts['tool_failures'] << 'calendar_unavailable' if degraded_availability?(tool_name, result)
+      return
+    end
 
     code = info[:failure_reason] || info[:reason] || info[:code]
     kind = FAILURE_KINDS[code] || (info[:stage] == 'tool_results' ? 'policy' : 'tool_error')
@@ -85,6 +93,23 @@ class Captain::OutcomeFacts
     record_safety(facts, info[:stage], code)
   end
   private_class_method :record_failure
+
+  def self.degraded_availability?(tool_name, result)
+    return false unless AVAILABILITY_TOOLS.include?(tool_name.to_s)
+
+    details = Captain::Runtime::ToolFailure.facts(result)
+    degraded_block?(details) ||
+      degraded_block?(details['specialists']) ||
+      Array(details['results']).any? { |item| degraded_block?(item) }
+  end
+  private_class_method :degraded_availability?
+
+  def self.degraded_block?(block)
+    return false unless block.is_a?(Hash)
+
+    block['availability'] == 'degraded' || block.dig('availability', 'status') == 'degraded'
+  end
+  private_class_method :degraded_block?
 
   def self.record_safety(facts, stage, code)
     return unless stage.in?(%w[tool_arguments tool_results])

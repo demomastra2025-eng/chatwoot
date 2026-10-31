@@ -33,6 +33,7 @@ class Captain::Tools::Account::SearchBookingOptionsService < Captain::Tools::Acc
   NOT_SEARCHED = 'not_searched'
   SPECIALIST_REQUIRED = 'specialist_required'
   SPECIALIST_NOT_FOUND = 'specialist_not_found'
+  SERVICE_RESOURCE_MISMATCH = 'service_resource_mismatch'
   # What the answer keeps of an answer of search_available_slots besides its days.
   SLOT_FIELDS = %w[duration_min total times_note availability availability_note requested_range_status requested_range_note].freeze
   QUERY_REQUIRED_MESSAGE = 'Pass services (the service mentions of the request) or doctor (a specialist name or a specialty).'
@@ -213,10 +214,17 @@ class Captain::Tools::Account::SearchBookingOptionsService < Captain::Tools::Acc
                    limit: Captain::Tools::Agent::SlotsPayload::MAX_DAYS }.compact)
     return fields_of(JSON.parse(raw)) unless failed?(raw)
 
-    body = failure_body(raw)
-    return raw unless body.dig('data', 'code') == 'RESOURCE_REQUIRED'
+    recoverable_slot_failure(failure_body(raw)) || raw
+  end
 
-    { 'slots_status' => SPECIALIST_REQUIRED, 'slots_note' => body['error'] }.compact
+  def recoverable_slot_failure(body)
+    case body.dig('data', 'code')
+    when 'RESOURCE_REQUIRED'
+      { 'slots_status' => SPECIALIST_REQUIRED, 'slots_note' => body['error'] }.compact
+    when 'SERVICE_RESOURCE_MISMATCH'
+      { 'slots_status' => SERVICE_RESOURCE_MISMATCH, 'slots_note' => body['error'],
+        'eligible_resources' => body.dig('data', 'details', 'eligible_resources') }.compact
+    end
   end
 
   def fields_of(answer)
