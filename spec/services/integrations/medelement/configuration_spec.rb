@@ -89,17 +89,22 @@ RSpec.describe Integrations::Medelement::Configuration do
   end
 
   describe '#receptions_sync_cron_expression' do
-    it 'uses a fixed two-minute refresh in the configured timezone' do
+    it 'staggers two-minute refreshes deterministically by hook id in the configured timezone' do
       allow(hook).to receive(:settings).and_return('timezone' => 'UTC')
-
       expect(configuration.receptions_sync_cron_expression).to eq('*/2 * * * * UTC')
+
+      odd_hook = instance_double(Integrations::Hook, id: 46, secret_settings: {}, settings: { 'timezone' => 'UTC' })
+      expect(described_class.new(hook: odd_hook).receptions_sync_cron_expression).to eq('1-59/2 * * * * UTC')
     end
 
-    it 'keeps the default full sweep and accepts the configured longer intervals' do
+    it 'staggers hourly and daily full sweeps deterministically off minute :00' do
       expect(configuration.receptions_full_sweep_interval_minutes).to eq(2)
       allow(hook).to receive(:settings).and_return('receptions_full_sweep_interval_minutes' => 60)
 
-      expect(configuration.receptions_sync_cron_expression).to eq('0 */1 * * * Asia/Almaty')
+      expect(configuration.receptions_sync_cron_expression).to eq('18 */1 * * * Asia/Almaty')
+
+      allow(hook).to receive(:settings).and_return('receptions_full_sweep_interval_minutes' => 1440)
+      expect(configuration.receptions_sync_cron_expression).to eq('18 9 * * * Asia/Almaty')
     end
   end
 
@@ -129,15 +134,35 @@ RSpec.describe Integrations::Medelement::Configuration do
       expect(configuration.stale_status_apply_enabled?).to be(false)
     end
 
-    it 'accepts only the supported intervals and uses minute cron when appropriate' do
+    it 'accepts only the supported intervals and scopes daytime vs staggered night delta crons' do
       allow(hook).to receive(:settings).and_return(
         'incremental_receptions_enabled' => true,
         'incremental_receptions_interval_seconds' => 120
       )
-      expect(configuration.receptions_delta_cron_expression).to eq('*/2 * * * * Asia/Almaty')
+      expect(configuration.receptions_delta_cron_expression).to eq('*/2 7-20 * * * Asia/Almaty')
+      expect(configuration.receptions_delta_night_cron_expression).to eq('0,15,30,45 0-6,21-23 * * * Asia/Almaty')
+
+      allow(hook).to receive(:settings).and_return(
+        'incremental_receptions_enabled' => true,
+        'incremental_receptions_interval_seconds' => 60,
+        'night_delta_throttle_enabled' => false
+      )
+      expect(configuration.receptions_delta_cron_expression).to eq('* * * * * Asia/Almaty')
+      expect(configuration.receptions_delta_night_cron_expression).to be_nil
 
       allow(hook).to receive(:settings).and_return('incremental_receptions_interval_seconds' => 11)
       expect(configuration.incremental_receptions_interval_seconds).to eq(60)
+    end
+
+    it 'detects clinic off-hours (21:00..06:59) in the configured timezone and scales effective interval' do
+      daytime = ActiveSupport::TimeZone['Asia/Almaty'].parse('2026-11-02 10:30:00')
+      nighttime = ActiveSupport::TimeZone['Asia/Almaty'].parse('2026-11-02 22:15:00')
+
+      expect(configuration.off_hours?(daytime)).to be(false)
+      expect(configuration.effective_incremental_receptions_interval_seconds(daytime)).to eq(60)
+
+      expect(configuration.off_hours?(nighttime)).to be(true)
+      expect(configuration.effective_incremental_receptions_interval_seconds(nighttime)).to eq(900)
     end
   end
 
@@ -158,8 +183,10 @@ RSpec.describe Integrations::Medelement::Configuration do
       )
       real_config = described_class.new(hook: real_hook)
 
+      expected_offset = ((real_hook.id * 7) + 3) % 15
+      expected_minutes = [0, 15, 30, 45].map { |m| (m + expected_offset) % 60 }.sort.join(',')
       expect(real_config.receptions_full_sweep_interval_minutes).to eq(15)
-      expect(real_config.receptions_sync_cron_expression).to eq('*/15 * * * * Asia/Almaty')
+      expect(real_config.receptions_sync_cron_expression).to eq("#{expected_minutes} * * * * Asia/Almaty")
     end
   end
 

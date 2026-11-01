@@ -13,6 +13,10 @@ class Integrations::Medelement::Configuration # rubocop:disable Metrics/ClassLen
   RECEPTIONS_SYNC_INTERVAL_MINUTES = 2
   DELTA_INTERVAL_SECONDS = 60
   DELTA_INTERVAL_OPTIONS = [10, 30, 60, 120].freeze
+  WORKING_HOURS_RANGE = (7..20)
+  NIGHT_DELTA_INTERVAL_ENV = 'MEDELEMENT_NIGHT_DELTA_INTERVAL_MINUTES'.freeze
+  DEFAULT_NIGHT_DELTA_INTERVAL_MINUTES = 15
+  NIGHT_DELTA_INTERVAL_OPTIONS = [5, 10, 15, 30].freeze
   ADAPTIVE_FULL_SWEEP_STEPS_MINUTES = [2, 4, 8, 15, 30, 60].freeze
   FULL_SWEEP_INTERVAL_OPTIONS = [2, 4, 8, 15, 30, 60, 1440].freeze
   FULL_SWEEP_BACKOFF_CURSOR_NAME = 'receptions_full_sweep_backoff'.freeze
@@ -121,30 +125,70 @@ class Integrations::Medelement::Configuration # rubocop:disable Metrics/ClassLen
     DEFAULT_SYNC_TIME_OF_DAY
   end
 
+  def night_delta_throttle_enabled?
+    boolean_setting('night_delta_throttle_enabled', true)
+  end
+
+  def night_delta_interval_minutes
+    raw = hook.settings['night_delta_interval_minutes'].presence || ENV.fetch(NIGHT_DELTA_INTERVAL_ENV, nil).presence
+    return DEFAULT_NIGHT_DELTA_INTERVAL_MINUTES if raw.blank?
+
+    parsed = raw.to_i
+    NIGHT_DELTA_INTERVAL_OPTIONS.include?(parsed) ? parsed : DEFAULT_NIGHT_DELTA_INTERVAL_MINUTES
+  end
+
+  def off_hours?(at = Time.current)
+    return false unless night_delta_throttle_enabled?
+
+    local_hour = at.in_time_zone(time_zone).hour
+    !WORKING_HOURS_RANGE.cover?(local_hour)
+  end
+
+  def effective_incremental_receptions_interval_seconds(at = Time.current)
+    base = incremental_receptions_interval_seconds
+    return base unless off_hours?(at)
+
+    [base, night_delta_interval_minutes * 60].max
+  end
+
   def sync_cron_expression
-    cron_expression(interval_hours: sync_interval_hours)
+    offset = default_sync_anchor? ? hook_stagger_offset(60, multiplier: 11) : 0
+    cron_expression(interval_hours: sync_interval_hours, minute_offset: offset)
   end
 
   def catalog_sync_cron_expression
-    cron_expression(interval_hours: CATALOG_SYNC_INTERVAL_HOURS, minute_offset: 5)
+    # Spread default catalog syncs across the full 6-hour (360-minute) window via coprime step 77.
+    extra_offset = default_sync_anchor? ? hook_stagger_offset(360, multiplier: 77) : 0
+    cron_expression(interval_hours: CATALOG_SYNC_INTERVAL_HOURS, minute_offset: 5 + extra_offset)
   end
 
   def receptions_sync_cron_expression
     interval = receptions_full_sweep_interval_minutes
-    return "0 */#{interval / 60} * * * #{time_zone}" if interval >= 60
+    return daily_receptions_sync_cron_expression if interval >= 1440
+    return "#{realtime_stagger_offset(60)} */#{interval / 60} * * * #{time_zone}" if interval >= 60
 
-    "*/#{interval} * * * * #{time_zone}"
+    sub_hour_step_cron_expression(interval, hours: '*')
   end
 
   def receptions_delta_cron_expression
+    hours = night_delta_throttle_enabled? ? '7-20' : '*'
     interval = incremental_receptions_interval_seconds
-    return "*/#{interval / 60} * * * * #{time_zone}" if interval >= 60
+    return sub_hour_step_cron_expression(interval / 60, hours: hours) if interval >= 120
 
-    "* * * * * #{time_zone}"
+    "* #{hours} * * * #{time_zone}"
+  end
+
+  def receptions_delta_night_cron_expression
+    return unless night_delta_throttle_enabled?
+
+    step = night_delta_interval_minutes
+    offset = hook_stagger_offset(step, multiplier: 19)
+    minutes = cron_minutes(offset, step / 60.0).join(',')
+    "#{minutes} 0-6,21-23 * * * #{time_zone}"
   end
 
   def contacts_sync_cron_expression
-    minute = (hook.id * 13) % 60
+    minute = (hook.id.to_i * 13) % 60
     "#{minute} * * * * #{time_zone}"
   end
 
@@ -231,6 +275,42 @@ class Integrations::Medelement::Configuration # rubocop:disable Metrics/ClassLen
   private
 
   attr_reader :hook
+
+  def default_sync_anchor?
+    sync_time_of_day == DEFAULT_SYNC_TIME_OF_DAY && hook.id.to_i.positive?
+  end
+
+  def hook_stagger_offset(modulus, multiplier:, shift: 0)
+    id = hook.id.to_i
+    return 0 unless id.positive?
+
+    ((id * multiplier) + shift) % modulus
+  end
+
+  # (id * 7 + 3) mod 60 never collides with contacts (id * 13) mod 60 because 6*id is even and 3 is odd.
+  def realtime_stagger_offset(modulus)
+    hook_stagger_offset(modulus, multiplier: 7, shift: 3)
+  end
+
+  def daily_receptions_sync_cron_expression
+    minute = realtime_stagger_offset(60)
+    hour = hook_stagger_offset(24, multiplier: 5)
+    "#{minute} #{hour} * * * #{time_zone}"
+  end
+
+  def sub_hour_step_cron_expression(interval_minutes, hours:)
+    return "* #{hours} * * * #{time_zone}" if interval_minutes <= 1
+
+    offset = realtime_stagger_offset(interval_minutes)
+    minute_expr = if [15, 30].include?(interval_minutes)
+                    cron_minutes(offset, interval_minutes / 60.0).join(',')
+                  elsif offset.zero?
+                    "*/#{interval_minutes}"
+                  else
+                    "#{offset}-59/#{interval_minutes}"
+                  end
+    "#{minute_expr} #{hours} * * * #{time_zone}"
+  end
 
   def adaptive_full_sweep_interval_minutes
     return unless hook.id

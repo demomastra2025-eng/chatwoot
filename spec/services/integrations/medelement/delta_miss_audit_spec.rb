@@ -172,4 +172,51 @@ RSpec.describe Integrations::Medelement::DeltaMissAudit do
     expect(Integrations::Medelement::DeltaMiss.where(hook: hook)).to be_empty
     expect(Integrations::Medelement::DeltaMissCandidate.where(hook: hook)).to be_empty
   end
+
+  it 'treats a 12-minute-old delta cursor as healthy during off-hours and the 07:05 morning transition' do
+    schedule_service = instance_double(Integrations::Medelement::CronScheduleService, sync!: true)
+    allow(Integrations::Medelement::CronScheduleService).to receive(:new).with(hook: hook).and_return(schedule_service)
+    Integrations::Medelement::SyncCursor.create!(
+      hook: hook,
+      name: Integrations::Medelement::Configuration::FULL_SWEEP_BACKOFF_CURSOR_NAME,
+      current_interval_seconds: 3600
+    )
+
+    [
+      ActiveSupport::TimeZone['Asia/Almaty'].parse('2026-11-02 02:30:00'),
+      ActiveSupport::TimeZone['Asia/Almaty'].parse('2026-11-02 07:05:00')
+    ].each do |check_time|
+      travel_to check_time do
+        Integrations::Medelement::SyncCursor.find_by!(hook: hook, name: 'receptions_delta').update!(
+          value: 12.minutes.ago,
+          last_poll_at: 12.minutes.ago,
+          last_success_at: 12.minutes.ago
+        )
+
+        audit.record_full_sweep_result!
+
+        backoff = Integrations::Medelement::SyncCursor.find_by!(
+          hook: hook,
+          name: Integrations::Medelement::Configuration::FULL_SWEEP_BACKOFF_CURSOR_NAME
+        )
+        expect(backoff.current_interval_seconds).to eq(3600)
+      end
+    end
+
+    travel_to ActiveSupport::TimeZone['Asia/Almaty'].parse('2026-11-02 14:00:00') do
+      Integrations::Medelement::SyncCursor.find_by!(hook: hook, name: 'receptions_delta').update!(
+        value: 12.minutes.ago,
+        last_poll_at: 12.minutes.ago,
+        last_success_at: 12.minutes.ago
+      )
+
+      audit.record_full_sweep_result!
+
+      backoff = Integrations::Medelement::SyncCursor.find_by!(
+        hook: hook,
+        name: Integrations::Medelement::Configuration::FULL_SWEEP_BACKOFF_CURSOR_NAME
+      )
+      expect(backoff.current_interval_seconds).to eq(120)
+    end
+  end
 end

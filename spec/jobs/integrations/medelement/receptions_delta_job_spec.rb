@@ -86,4 +86,18 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaJob do
 
     expect(Integrations::Medelement::SyncCursor.find_by!(hook: hook).current_interval_seconds).to eq(300)
   end
+
+  it 'self-schedules sub-minute polls during working hours and pauses self-chaining during clinic off-hours' do
+    hook.update!(settings: hook.settings.merge('incremental_receptions_interval_seconds' => 30))
+
+    travel_to ActiveSupport::TimeZone['Asia/Almaty'].parse('2026-11-02 14:10:00') do
+      expect { described_class.perform_now(hook.id) }.to have_enqueued_job(described_class).with(hook.id)
+    end
+
+    ActiveJob::Base.queue_adapter.enqueued_jobs.clear
+
+    travel_to ActiveSupport::TimeZone['Asia/Almaty'].parse('2026-11-02 22:10:00') do
+      expect { described_class.perform_now(hook.id) }.not_to have_enqueued_job(described_class)
+    end
+  end
 end
