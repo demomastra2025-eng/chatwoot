@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router';
 import WhatsappUsageAPI from 'dashboard/api/whatsappUsage';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
+import DsStatGroup from 'dashboard/components-next/ds/DsStatGroup.vue';
 import ReportHeader from './components/ReportHeader.vue';
 
 const { t, locale } = useI18n();
@@ -111,6 +112,50 @@ const consecutiveSummary = computed(
   () => usage.value?.consecutive_summary || {}
 );
 
+const kpiItems = computed(() => {
+  if (!usage.value) return [];
+  const data = usage.value;
+  return [
+    {
+      key: 'amount-with-vat',
+      label: t('WHATSAPP_USAGE.REPORT.KPI_TOTAL_WITH_VAT'),
+      value: formatKzt(
+        data.estimated_amount_with_vat_kzt ?? data.estimated_amount_kzt
+      ),
+      note: `${t('WHATSAPP_USAGE.REPORT.VAT_NOTE', { rate: data.vat_rate_percent || 12 })} · ${t('WHATSAPP_USAGE.REPORT.KPI_BASE_BREAKDOWN', { baseKzt: formatKzt(data.estimated_amount_kzt), usd: formatUsd(data.estimated_amount_usd), rate: formattedRate.value })}`,
+    },
+    {
+      key: 'delivered-count',
+      label: t('WHATSAPP_USAGE.REPORT.KPI_DELIVERED'),
+      value: formatCount(data.delivered_count),
+      note: t('WHATSAPP_USAGE.REPORT.KPI_DELIVERED_SUB', {
+        paid: formatCount(data.chargeable_message_count),
+        service: formatCount(data.service_delivered_count),
+        templates: formatCount(data.template_delivered_count),
+      }),
+    },
+    {
+      key: 'free-quota',
+      label: t('WHATSAPP_USAGE.REPORT.KPI_FREE_QUOTA'),
+      value: `${formatCount(data.free_service_quota_count)} / ${formatCount(data.free_service_quota_limit)}`,
+      note: t('WHATSAPP_USAGE.REPORT.KPI_FREE_QUOTA_SUB', {
+        phones: formatCount(data.official_cloud_phone_count),
+        perPhone: formatCount(data.free_service_quota_limit_per_phone),
+      }),
+    },
+    {
+      key: 'consecutive-kpi',
+      label: t('WHATSAPP_USAGE.REPORT.KPI_CONSECUTIVE_TITLE'),
+      value: formatKzt(
+        consecutiveSummary.value.estimated_overpayment_with_vat_kzt ??
+          consecutiveSummary.value.estimated_overpayment_kzt ??
+          0
+      ),
+      note: `${t('WHATSAPP_USAGE.REPORT.KPI_CONSECUTIVE_SUB', { total: formatCount(consecutiveSummary.value.consecutive_service_count || 0), paid: formatCount(consecutiveSummary.value.chargeable_consecutive_count || 0) })}${consecutiveSummary.value.consecutive_ratio_percent > 0 ? ` · ${consecutiveSummary.value.consecutive_ratio_percent}%` : ''}`,
+    },
+  ];
+});
+
 const phones = computed(() =>
   Array.isArray(usage.value?.phones) ? usage.value.phones : []
 );
@@ -194,136 +239,18 @@ onBeforeUnmount(() => {
     </div>
 
     <template v-else-if="usage">
-      <!-- KPI Cards -->
-      <div
-        class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
-        data-testid="whatsapp-report-kpis"
-      >
-        <!-- Card 1: Total with VAT -->
-        <div
-          class="flex flex-col justify-between gap-2 rounded-xl bg-n-solid-2 p-5 shadow outline outline-1 outline-n-container"
-        >
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-xs font-medium text-n-slate-11">
-              {{ t('WHATSAPP_USAGE.REPORT.KPI_TOTAL_WITH_VAT') }}
-            </span>
-            <span
-              class="rounded-full bg-n-teal-3 px-2 py-0.5 text-[11px] font-medium text-n-teal-11"
-            >
-              +{{ usage.vat_rate_percent || 12 }}% НДС
-            </span>
-          </div>
-          <div
-            class="text-2xl font-semibold tabular-nums text-n-slate-12"
-            data-testid="whatsapp-report-amount-with-vat"
-          >
-            {{
-              formatKzt(
-                usage.estimated_amount_with_vat_kzt ??
-                  usage.estimated_amount_kzt
-              )
-            }}
-          </div>
-          <p class="m-0 text-xs text-n-slate-10">
-            {{
-              t('WHATSAPP_USAGE.REPORT.KPI_BASE_BREAKDOWN', {
-                baseKzt: formatKzt(usage.estimated_amount_kzt),
-                usd: formatUsd(usage.estimated_amount_usd),
-                rate: formattedRate,
-              })
-            }}
-          </p>
-        </div>
-
-        <!-- Card 2: Total Delivered -->
-        <div
-          class="flex flex-col justify-between gap-2 rounded-xl bg-n-solid-2 p-5 shadow outline outline-1 outline-n-container"
-        >
-          <span class="text-xs font-medium text-n-slate-11">
-            {{ t('WHATSAPP_USAGE.REPORT.KPI_DELIVERED') }}
-          </span>
-          <div
-            class="text-2xl font-semibold tabular-nums text-n-slate-12"
-            data-testid="whatsapp-report-delivered-count"
-          >
-            {{ formatCount(usage.delivered_count) }}
-          </div>
-          <p class="m-0 text-xs text-n-slate-10">
-            {{
-              t('WHATSAPP_USAGE.REPORT.KPI_DELIVERED_SUB', {
-                paid: formatCount(usage.chargeable_message_count),
-                service: formatCount(usage.service_delivered_count),
-                templates: formatCount(usage.template_delivered_count),
-              })
-            }}
-          </p>
-        </div>
-
-        <!-- Card 3: Free Service Allowance -->
-        <div
-          class="flex flex-col justify-between gap-2 rounded-xl bg-n-solid-2 p-5 shadow outline outline-1 outline-n-container"
-        >
-          <span class="text-xs font-medium text-n-slate-11">
-            {{ t('WHATSAPP_USAGE.REPORT.KPI_FREE_QUOTA') }}
-          </span>
-          <div class="text-2xl font-semibold tabular-nums text-n-slate-12">
-            {{ formatCount(usage.free_service_quota_count) }} /
-            {{ formatCount(usage.free_service_quota_limit) }}
-          </div>
-          <p class="m-0 text-xs text-n-slate-10">
-            {{
-              t('WHATSAPP_USAGE.REPORT.KPI_FREE_QUOTA_SUB', {
-                phones: formatCount(usage.official_cloud_phone_count),
-                perPhone: formatCount(usage.free_service_quota_limit_per_phone),
-              })
-            }}
-          </p>
-        </div>
-
-        <!-- Card 4: Consecutive / Double Messages Overpayment -->
-        <div
-          class="flex flex-col justify-between gap-2 rounded-xl bg-n-solid-2 p-5 shadow outline outline-1"
-          :class="
-            consecutiveSummary.chargeable_consecutive_count > 0
-              ? 'outline-n-amber-6'
-              : 'outline-n-container'
-          "
-          data-testid="whatsapp-report-consecutive-kpi"
-        >
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-xs font-medium text-n-slate-11">
-              {{ t('WHATSAPP_USAGE.REPORT.KPI_CONSECUTIVE_TITLE') }}
-            </span>
-            <span
-              v-if="consecutiveSummary.consecutive_ratio_percent > 0"
-              class="rounded-full bg-n-amber-3 px-2 py-0.5 text-[11px] font-semibold text-n-amber-11"
-            >
-              {{ consecutiveSummary.consecutive_ratio_percent }}%
-            </span>
-          </div>
-          <div class="text-2xl font-semibold tabular-nums text-n-amber-11">
-            {{
-              formatKzt(
-                consecutiveSummary.estimated_overpayment_with_vat_kzt ??
-                  consecutiveSummary.estimated_overpayment_kzt ??
-                  0
-              )
-            }}
-          </div>
-          <p class="m-0 text-xs text-n-slate-10">
-            {{
-              t('WHATSAPP_USAGE.REPORT.KPI_CONSECUTIVE_SUB', {
-                total: formatCount(
-                  consecutiveSummary.consecutive_service_count || 0
-                ),
-                paid: formatCount(
-                  consecutiveSummary.chargeable_consecutive_count || 0
-                ),
-              })
-            }}
-          </p>
-        </div>
-      </div>
+      <DsStatGroup :items="kpiItems" data-testid="whatsapp-report-kpis">
+        <template #value="{ item }">
+          <span :data-testid="`whatsapp-report-${item.key}`">{{
+            item.value
+          }}</span>
+        </template>
+        <template #note="{ item }">
+          <span :data-testid="`whatsapp-report-${item.key}-note`">{{
+            item.note
+          }}</span>
+        </template>
+      </DsStatGroup>
 
       <!-- Formula & Why Card Charges Are Higher Explanation -->
       <section

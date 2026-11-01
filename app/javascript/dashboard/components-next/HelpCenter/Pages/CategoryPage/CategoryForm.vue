@@ -151,14 +151,12 @@ onMounted(() => {
   }
 });
 
-defineExpose({ state, isSubmitDisabled });
+defineExpose({ state, isSubmitDisabled, submit: handleSubmit });
 </script>
 
 <template>
   <div class="flex flex-col gap-4">
-    <div
-      class="flex items-center justify-start gap-8 px-4 py-2 border rounded-lg border-n-strong"
-    >
+    <div class="grid grid-cols-2 gap-4 border-b border-n-weak pb-4">
       <div class="flex flex-col items-start w-full gap-2 py-2">
         <span class="text-sm font-medium text-n-slate-11">
           {{ t('HELP_CENTER.CATEGORY_PAGE.CATEGORY_DIALOG.HEADER.PORTAL') }}
@@ -167,7 +165,6 @@ defineExpose({ state, isSubmitDisabled });
           {{ portalName }}
         </span>
       </div>
-      <div class="justify-start w-px h-10 bg-n-strong" />
       <div class="flex flex-col w-full gap-2 py-2">
         <span class="text-sm font-medium text-n-slate-11">
           {{ t('HELP_CENTER.CATEGORY_PAGE.CATEGORY_DIALOG.HEADER.LOCALE') }}
@@ -181,9 +178,10 @@ defineExpose({ state, isSubmitDisabled });
       </div>
     </div>
     <div class="flex flex-col gap-4">
-      <div class="relative">
+      <div class="flex items-end gap-3">
         <Input
           v-model="state.name"
+          class="flex-1"
           :label="
             t('HELP_CENTER.CATEGORY_PAGE.CATEGORY_DIALOG.FORM.NAME.LABEL')
           "
@@ -192,28 +190,26 @@ defineExpose({ state, isSubmitDisabled });
           "
           :message="nameError"
           :message-type="nameError ? 'error' : 'info'"
-          custom-input-class="!h-10 ltr:!pl-12 rtl:!pr-12"
-        >
-          <template #prefix>
-            <OnClickOutside @trigger="isEmojiPickerOpen = false">
-              <Button
-                :label="state.icon"
-                color="slate"
-                size="sm"
-                type="button"
-                :icon="!state.icon ? 'i-lucide-smile-plus' : ''"
-                class="!h-[2.4rem] !w-[2.375rem] absolute top-[1.94rem] !outline-none !rounded-[0.438rem] border-0 ltr:left-px rtl:right-px ltr:!rounded-r-none rtl:!rounded-l-none"
-                @click="isEmojiPickerOpen = !isEmojiPickerOpen"
-              />
-              <EmojiInput
-                v-if="isEmojiPickerOpen"
-                class="left-0 top-16"
-                show-remove-button
-                :on-click="onClickInsertEmoji"
-              />
-            </OnClickOutside>
-          </template>
-        </Input>
+        />
+        <OnClickOutside class="relative" @trigger="isEmojiPickerOpen = false">
+          <Button
+            :label="state.icon"
+            color="slate"
+            variant="outline"
+            type="button"
+            :aria-label="
+              t('HELP_CENTER.CATEGORY_PAGE.CATEGORY_DIALOG.FORM.ICON')
+            "
+            :icon="!state.icon ? 'i-lucide-smile-plus' : ''"
+            @click="isEmojiPickerOpen = !isEmojiPickerOpen"
+          />
+          <EmojiInput
+            v-if="isEmojiPickerOpen"
+            class="right-0 top-12"
+            show-remove-button
+            :on-click="onClickInsertEmoji"
+          />
+        </OnClickOutside>
       </div>
       <Input
         v-model="state.slug"
@@ -224,9 +220,9 @@ defineExpose({ state, isSubmitDisabled });
         :disabled="isEditMode"
         :message="slugError ? slugError : slugHelpText"
         :message-type="slugError ? 'error' : 'info'"
-        custom-input-class="!h-10"
       />
       <TextArea
+        id="category-description"
         v-model="state.description"
         :label="
           t('HELP_CENTER.CATEGORY_PAGE.CATEGORY_DIALOG.FORM.DESCRIPTION.LABEL')
@@ -243,10 +239,11 @@ defineExpose({ state, isSubmitDisabled });
         class="flex items-center justify-between w-full gap-3"
       >
         <Button
-          variant="faded"
+          type="button"
+          variant="ghost"
           color="slate"
           :label="t('HELP_CENTER.CATEGORY_PAGE.CATEGORY_DIALOG.BUTTONS.CANCEL')"
-          class="w-full bg-n-alpha-2 text-n-blue-11 hover:bg-n-alpha-3"
+          class="w-full"
           @click="handleCancel"
         />
         <Button

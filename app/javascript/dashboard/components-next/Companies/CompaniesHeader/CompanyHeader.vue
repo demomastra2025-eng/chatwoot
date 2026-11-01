@@ -20,14 +20,14 @@ const emit = defineEmits(['search', 'update:sort', 'create']);
 <template>
   <header class="sticky top-0 z-10 px-6">
     <div
-      class="flex items-start sm:items-center justify-between w-full py-6 gap-2 mx-auto max-w-5xl"
+      class="flex min-w-0 flex-col justify-between w-full py-6 gap-4 mx-auto max-w-5xl lg:flex-row lg:items-center"
     >
       <div class="flex min-w-0 items-center gap-0.5">
         <span class="text-heading-1 truncate text-n-slate-12">
           {{ headerTitle }}
         </span>
       </div>
-      <div class="flex items-center flex-row flex-shrink-0 gap-2">
+      <div class="flex min-w-0 w-full flex-wrap items-center gap-2 lg:w-auto">
         <div class="flex items-center">
           <CompanySortMenu
             :active-sort="activeSort"
@@ -38,18 +38,19 @@ const emit = defineEmits(['search', 'update:sort', 'create']);
         <Button
           v-if="showCreateButton"
           size="sm"
-          class="!min-w-max shrink-0"
+          class="shrink-0"
           :label="createButtonLabel || $t('COMPANIES.ACTIONS.ADD')"
           @click="emit('create')"
         />
-        <div v-if="showSearch" class="flex items-center gap-2 w-full">
+        <div
+          v-if="showSearch"
+          class="flex min-w-0 w-full items-center gap-2 sm:flex-1 lg:w-64"
+        >
           <Input
             :model-value="searchValue"
             type="search"
+            :aria-label="$t('COMPANIES.SEARCH_PLACEHOLDER')"
             :placeholder="$t('COMPANIES.SEARCH_PLACEHOLDER')"
-            :custom-input-class="[
-              'h-8 [&:not(.focus)]:!border-transparent bg-n-alpha-2 dark:bg-n-solid-1 ltr:!pr-8 !py-1 rtl:!pl-8',
-            ]"
             class="w-full"
             @input="emit('search', $event.target.value)"
           >

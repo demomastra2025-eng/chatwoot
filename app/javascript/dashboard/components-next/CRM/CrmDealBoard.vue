@@ -1,4 +1,5 @@
 <script setup>
+import DsStatusDot from 'dashboard/components-next/ds/DsStatusDot.vue';
 import {
   computed,
   nextTick,
@@ -488,7 +489,11 @@ const handleColumnChange = (event, stageId) => {
           <template #item="{ element }">
             <article
               class="rounded-xl bg-n-solid-2 px-2.5 py-2 outline outline-1 -outline-offset-1 transition-colors hover:outline-n-strong motion-reduce:transition-none"
-              :class="isDealSelected(element.id) ? 'outline-n-brand bg-n-brand/5' : 'outline-n-weak'"
+              :class="
+                isDealSelected(element.id)
+                  ? 'outline-n-brand bg-n-brand/5'
+                  : 'outline-n-weak'
+              "
               @click="emit('selectDeal', element)"
             >
               <div class="flex items-start justify-between gap-2">
@@ -512,12 +517,11 @@ const handleColumnChange = (event, stageId) => {
                     >
                       {{ element.title }}
                     </h4>
-                    <span
+                    <DsStatusDot
                       v-if="element.dialogStatus === 'pending'"
-                      class="shrink-0 rounded-full bg-n-violet-3 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-n-violet-9 ring-1 ring-inset ring-n-violet-6/20"
-                    >
-                      {{ $t('CRM.DEALS.AI_BADGE') }}
-                    </span>
+                      status="neutral"
+                      :label="$t('CRM.DEALS.AI_BADGE')"
+                    />
                   </div>
                   <p class="mb-0 mt-0.5 truncate text-[10px] text-n-slate-11">
                     {{ dealSubtitle(element) || $t('CRM.GENERAL.EMPTY_VALUE') }}

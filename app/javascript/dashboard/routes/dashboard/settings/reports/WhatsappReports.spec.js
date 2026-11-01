@@ -161,7 +161,7 @@ describe('WhatsappReports.vue', () => {
       true
     );
     expect(
-      wrapper.get('[data-testid="whatsapp-report-consecutive-kpi"]').text()
+      wrapper.get('[data-testid="whatsapp-report-consecutive-kpi-note"]').text()
     ).toContain('28.5%');
 
     const managerRows = wrapper.findAll(

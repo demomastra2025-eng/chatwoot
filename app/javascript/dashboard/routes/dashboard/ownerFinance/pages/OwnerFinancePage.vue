@@ -1,8 +1,13 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import OwnerFinanceAPI from 'dashboard/api/ownerFinance';
 import { useAlert } from 'dashboard/composables';
 import Button from 'dashboard/components-next/button/Button.vue';
+import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
+import Input from 'dashboard/components-next/input/Input.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
+import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import {
   ACCOUNT_KIND_OPTIONS,
@@ -79,6 +84,15 @@ const obligationFilter = ref('open');
 
 // Modals
 const activeModal = ref('');
+const modalRef = ref(null);
+watch(
+  activeModal,
+  value => {
+    if (value) modalRef.value?.open();
+    else modalRef.value?.close();
+  },
+  { flush: 'post' }
+);
 
 const deadlineForm = reactive({
   id: null,
@@ -327,19 +341,8 @@ const closeModal = () => {
   activeModal.value = '';
 };
 
-const onKeydown = event => {
-  if (event.key === 'Escape' && activeModal.value) {
-    closeModal();
-  }
-};
-
 onMounted(() => {
-  window.addEventListener('keydown', onKeydown);
   fetchDashboard();
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeydown);
 });
 
 // Statement Upload
@@ -427,6 +430,7 @@ const openEditDeadline = dl => {
 };
 
 const saveDeadline = async () => {
+  if (isSaving.value) return;
   isSaving.value = true;
   try {
     const remindDays = String(deadlineForm.remind_days_text || '7,3,2,1,0')
@@ -541,6 +545,7 @@ const onAccountKindChange = () => {
 };
 
 const saveAccount = async () => {
+  if (isSaving.value) return;
   isSaving.value = true;
   try {
     const payload = {
@@ -605,6 +610,7 @@ const openEditTransaction = tx => {
 };
 
 const saveTransaction = async () => {
+  if (isSaving.value) return;
   isSaving.value = true;
   try {
     const payload = {
@@ -747,6 +753,7 @@ const onContractTariffChange = () => {
 };
 
 const saveContract = async () => {
+  if (isSaving.value) return;
   isSaving.value = true;
   try {
     const payload = {
@@ -848,6 +855,7 @@ const onObligationBaseChange = () => {
 };
 
 const saveObligation = async () => {
+  if (isSaving.value) return;
   isSaving.value = true;
   try {
     const payload = {
@@ -923,6 +931,36 @@ const runOnecSync = async () => {
   } finally {
     isSyncingOnec.value = false;
   }
+};
+const modalTitle = computed(() => {
+  const forms = {
+    deadline: deadlineForm,
+    account: accountForm,
+    transaction: txForm,
+    contract: contractForm,
+    obligation: obligationForm,
+  };
+  const keys = {
+    deadline: 'DEADLINE',
+    account: 'ACCOUNT',
+    transaction: 'TX',
+    contract: 'CONTRACT',
+    obligation: 'OBLIGATION',
+  };
+  if (!activeModal.value) return '';
+  return UI.MODALS[
+    `${keys[activeModal.value]}_${forms[activeModal.value].id ? 'EDIT' : 'NEW'}`
+  ];
+});
+const saveModal = () => {
+  const save = {
+    deadline: saveDeadline,
+    account: saveAccount,
+    transaction: saveTransaction,
+    contract: saveContract,
+    obligation: saveObligation,
+  }[activeModal.value];
+  return save?.();
 };
 </script>
 
@@ -2558,43 +2596,44 @@ const runOnecSync = async () => {
       </div>
     </div>
 
-    <!-- MODALS OVERLAY -->
-    <div
-      v-if="activeModal"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      @click.self="closeModal"
+    <Dialog
+      ref="modalRef"
+      type="edit"
+      :width="activeModal === 'account' ? 'md' : 'lg'"
+      overflow-y-auto
+      :title="modalTitle"
+      :confirm-button-label="UI.SAVE"
+      :cancel-button-label="UI.CANCEL"
+      :is-loading="isSaving"
+      :disable-confirm-button="isSaving"
+      @confirm="saveModal"
+      @close="closeModal"
     >
       <!-- Deadline Modal -->
-      <div
-        v-if="activeModal === 'deadline'"
-        class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl border border-n-weak bg-n-solid-2 p-5 space-y-4"
-      >
-        <h3 class="text-base font-semibold text-n-slate-12">
-          {{
-            deadlineForm.id ? UI.MODALS.DEADLINE_EDIT : UI.MODALS.DEADLINE_NEW
-          }}
-        </h3>
-
-        <div class="space-y-3 text-xs">
+      <div v-if="activeModal === 'deadline'">
+        <div class="flex flex-col gap-4">
           <div>
-            <label class="block mb-1 font-medium text-n-slate-11">
-              {{ UI.MODALS.FIELD_TITLE }}
-            </label>
-            <input
+            <Input
+              id="finance-deadlineForm-title"
               v-model="deadlineForm.title"
               type="text"
-              class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-3 text-sm text-n-slate-12"
+              :label="UI.MODALS.FIELD_TITLE"
+              :disabled="isSaving"
             />
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_CATEGORY }}
-              </label>
-              <select
+              <label
+                for="finance-deadlineForm-category"
+                class="text-heading-3 text-n-slate-12"
+                >{{ UI.MODALS.FIELD_CATEGORY }}</label
+              >
+              <Select
+                id="finance-deadlineForm-category"
                 v-model="deadlineForm.category"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                class="w-full"
+                :disabled="isSaving"
               >
                 <option
                   v-for="(label, code) in DEADLINE_CATEGORY_LABELS"
@@ -2603,16 +2642,20 @@ const runOnecSync = async () => {
                 >
                   {{ label }}
                 </option>
-              </select>
+              </Select>
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_PAYER_MODE }}
-              </label>
-              <select
+              <label
+                for="finance-deadlineForm-payer_mode"
+                class="text-heading-3 text-n-slate-12"
+                >{{ UI.MODALS.FIELD_PAYER_MODE }}</label
+              >
+              <Select
+                id="finance-deadlineForm-payer_mode"
                 v-model="deadlineForm.payer_mode"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                class="w-full"
+                :disabled="isSaving"
               >
                 <option
                   v-for="opt in PAYER_MODE_OPTIONS"
@@ -2621,92 +2664,95 @@ const runOnecSync = async () => {
                 >
                   {{ opt.label }}
                 </option>
-              </select>
+              </Select>
             </div>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_DUE_ON }}
-              </label>
-              <input
+              <Input
+                id="finance-deadlineForm-due_on"
                 v-model="deadlineForm.due_on"
                 type="date"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                :label="UI.MODALS.FIELD_DUE_ON"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_AMOUNT }}
-              </label>
-              <input
-                v-model.number="deadlineForm.amount"
+              <Input
+                id="finance-deadlineForm-amount"
+                v-model="deadlineForm.amount"
                 type="number"
                 step="0.01"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12 tabular-nums"
+                :label="UI.MODALS.FIELD_AMOUNT"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_CURRENCY }}
-              </label>
-              <select
+              <label
+                for="finance-deadlineForm-currency"
+                class="text-heading-3 text-n-slate-12"
+                >{{ UI.MODALS.FIELD_CURRENCY }}</label
+              >
+              <Select
+                id="finance-deadlineForm-currency"
                 v-model="deadlineForm.currency"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                class="w-full"
+                :disabled="isSaving"
               >
                 <option v-for="cur in CURRENCY_OPTIONS" :key="cur" :value="cur">
                   {{ cur }}
                 </option>
-              </select>
+              </Select>
             </div>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_DOMAIN }}
-              </label>
-              <input
+              <Input
+                id="finance-deadlineForm-related_domain"
                 v-model="deadlineForm.related_domain"
                 type="text"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                :label="UI.MODALS.FIELD_DOMAIN"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_CLIENT }}
-              </label>
-              <input
+              <Input
+                id="finance-deadlineForm-client_name"
                 v-model="deadlineForm.client_name"
                 type="text"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                :label="UI.MODALS.FIELD_CLIENT"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_PROVIDER }}
-              </label>
-              <input
+              <Input
+                id="finance-deadlineForm-provider"
                 v-model="deadlineForm.provider"
                 type="text"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                :label="UI.MODALS.FIELD_PROVIDER"
+                :disabled="isSaving"
               />
             </div>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_RECURRENCE }}
-              </label>
-              <select
+              <label
+                for="finance-deadlineForm-recurrence"
+                class="text-heading-3 text-n-slate-12"
+                >{{ UI.MODALS.FIELD_RECURRENCE }}</label
+              >
+              <Select
+                id="finance-deadlineForm-recurrence"
                 v-model="deadlineForm.recurrence"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                class="w-full"
+                :disabled="isSaving"
               >
                 <option
                   v-for="opt in RECURRENCE_OPTIONS"
@@ -2715,78 +2761,56 @@ const runOnecSync = async () => {
                 >
                   {{ opt.label }}
                 </option>
-              </select>
+              </Select>
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_REMIND_DAYS }}
-              </label>
-              <input
+              <Input
+                id="finance-deadlineForm-remind_days_text"
                 v-model="deadlineForm.remind_days_text"
                 type="text"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12 tabular-nums"
+                :label="UI.MODALS.FIELD_REMIND_DAYS"
+                :disabled="isSaving"
               />
             </div>
           </div>
 
           <div>
-            <label class="block mb-1 font-medium text-n-slate-11">
-              {{ UI.MODALS.FIELD_NOTES }}
-            </label>
-            <textarea
+            <TextArea
+              id="finance-deadlineForm-notes"
               v-model="deadlineForm.notes"
               rows="2"
-              class="!mb-0 w-full rounded-lg border border-n-weak bg-n-surface-1 p-2.5 text-sm text-n-slate-12"
+              :label="UI.MODALS.FIELD_NOTES"
+              :disabled="isSaving"
             />
           </div>
-        </div>
-
-        <div class="flex justify-end gap-2 pt-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            color="slate"
-            :label="UI.CANCEL"
-            @click="closeModal"
-          />
-          <Button
-            size="sm"
-            :label="UI.SAVE"
-            :is-loading="isSaving"
-            @click="saveDeadline"
-          />
         </div>
       </div>
 
       <!-- Account Modal -->
-      <div
-        v-else-if="activeModal === 'account'"
-        class="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-xl border border-n-weak bg-n-solid-2 p-5 space-y-4"
-      >
-        <h3 class="text-base font-semibold text-n-slate-12">
-          {{ accountForm.id ? UI.MODALS.ACCOUNT_EDIT : UI.MODALS.ACCOUNT_NEW }}
-        </h3>
-
-        <div class="space-y-3 text-xs">
+      <div v-else-if="activeModal === 'account'">
+        <div class="flex flex-col gap-4">
           <div>
-            <label class="block mb-1 font-medium text-n-slate-11">
-              {{ UI.MODALS.FIELD_ACC_NAME }}
-            </label>
-            <input
+            <Input
+              id="finance-accountForm-name"
               v-model="accountForm.name"
               type="text"
-              class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-3 text-sm text-n-slate-12"
+              :label="UI.MODALS.FIELD_ACC_NAME"
+              :disabled="isSaving"
             />
           </div>
 
           <div>
-            <label class="block mb-1 font-medium text-n-slate-11">
-              {{ UI.MODALS.FIELD_ACC_KIND }}
-            </label>
-            <select
+            <label
+              for="finance-accountForm-account_kind"
+              class="text-heading-3 text-n-slate-12"
+              >{{ UI.MODALS.FIELD_ACC_KIND }}</label
+            >
+            <Select
+              id="finance-accountForm-account_kind"
               v-model="accountForm.account_kind"
-              class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+              class="w-full"
+              :disabled="isSaving"
               @change="onAccountKindChange"
             >
               <option
@@ -2796,16 +2820,20 @@ const runOnecSync = async () => {
               >
                 {{ opt.label }}
               </option>
-            </select>
+            </Select>
           </div>
 
           <div>
-            <label class="block mb-1 font-medium text-n-slate-11">
-              {{ UI.MODALS.FIELD_ACC_SCOPE }}
-            </label>
-            <select
+            <label
+              for="finance-accountForm-scope"
+              class="text-heading-3 text-n-slate-12"
+              >{{ UI.MODALS.FIELD_ACC_SCOPE }}</label
+            >
+            <Select
+              id="finance-accountForm-scope"
               v-model="accountForm.scope"
-              class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+              class="w-full"
+              :disabled="isSaving"
             >
               <option
                 v-for="opt in ACCOUNT_SCOPE_OPTIONS"
@@ -2814,84 +2842,67 @@ const runOnecSync = async () => {
               >
                 {{ opt.label }}
               </option>
-            </select>
+            </Select>
           </div>
 
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_ACC_BALANCE }}
-              </label>
-              <input
-                v-model.number="accountForm.current_balance"
+              <Input
+                id="finance-accountForm-current_balance"
+                v-model="accountForm.current_balance"
                 type="number"
                 step="0.01"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12 tabular-nums"
+                :label="UI.MODALS.FIELD_ACC_BALANCE"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_CURRENCY }}
-              </label>
-              <select
+              <label
+                for="finance-accountForm-currency"
+                class="text-heading-3 text-n-slate-12"
+                >{{ UI.MODALS.FIELD_CURRENCY }}</label
+              >
+              <Select
+                id="finance-accountForm-currency"
                 v-model="accountForm.currency"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                class="w-full"
+                :disabled="isSaving"
               >
                 <option v-for="cur in CURRENCY_OPTIONS" :key="cur" :value="cur">
                   {{ cur }}
                 </option>
-              </select>
+              </Select>
             </div>
           </div>
-        </div>
-
-        <div class="flex justify-end gap-2 pt-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            color="slate"
-            :label="UI.CANCEL"
-            @click="closeModal"
-          />
-          <Button
-            size="sm"
-            :label="UI.SAVE"
-            :is-loading="isSaving"
-            @click="saveAccount"
-          />
         </div>
       </div>
 
       <!-- Transaction Modal -->
-      <div
-        v-else-if="activeModal === 'transaction'"
-        class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl border border-n-weak bg-n-solid-2 p-5 space-y-4"
-      >
-        <h3 class="text-base font-semibold text-n-slate-12">
-          {{ txForm.id ? UI.MODALS.TX_EDIT : UI.MODALS.TX_NEW }}
-        </h3>
-
-        <div class="space-y-3 text-xs">
+      <div v-else-if="activeModal === 'transaction'">
+        <div class="flex flex-col gap-4">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_DATE }}
-              </label>
-              <input
+              <Input
+                id="finance-txForm-occurred_on"
                 v-model="txForm.occurred_on"
                 type="date"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                :label="UI.MODALS.FIELD_DATE"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_DIRECTION }}
-              </label>
-              <select
+              <label
+                for="finance-txForm-direction"
+                class="text-heading-3 text-n-slate-12"
+                >{{ UI.MODALS.FIELD_DIRECTION }}</label
+              >
+              <Select
+                id="finance-txForm-direction"
                 v-model="txForm.direction"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                class="w-full"
+                :disabled="isSaving"
               >
                 <option
                   v-for="opt in TX_DIRECTION_OPTIONS"
@@ -2900,57 +2911,63 @@ const runOnecSync = async () => {
                 >
                   {{ opt.label }}
                 </option>
-              </select>
+              </Select>
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_AMOUNT }}
-              </label>
-              <input
-                v-model.number="txForm.amount"
+              <Input
+                id="finance-txForm-amount"
+                v-model="txForm.amount"
                 type="number"
                 step="0.01"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12 tabular-nums"
+                :label="UI.MODALS.FIELD_AMOUNT"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_CURRENCY }}
-              </label>
-              <select
+              <label
+                for="finance-txForm-currency"
+                class="text-heading-3 text-n-slate-12"
+                >{{ UI.MODALS.FIELD_CURRENCY }}</label
+              >
+              <Select
+                id="finance-txForm-currency"
                 v-model="txForm.currency"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                class="w-full"
+                :disabled="isSaving"
               >
                 <option v-for="cur in CURRENCY_OPTIONS" :key="cur" :value="cur">
                   {{ cur }}
                 </option>
-              </select>
+              </Select>
             </div>
           </div>
 
           <div>
-            <label class="block mb-1 font-medium text-n-slate-11">
-              {{ UI.MODALS.FIELD_MERCHANT }}
-            </label>
-            <input
+            <Input
+              id="finance-txForm-merchant"
               v-model="txForm.merchant"
               type="text"
-              class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-3 text-sm text-n-slate-12"
+              :label="UI.MODALS.FIELD_MERCHANT"
+              :disabled="isSaving"
             />
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_CATEGORY }}
-              </label>
-              <select
+              <label
+                for="finance-txForm-category"
+                class="text-heading-3 text-n-slate-12"
+                >{{ UI.MODALS.FIELD_CATEGORY }}</label
+              >
+              <Select
+                id="finance-txForm-category"
                 v-model="txForm.category"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                class="w-full"
+                :disabled="isSaving"
               >
                 <option
                   v-for="cat in categoryOptions"
@@ -2959,16 +2976,20 @@ const runOnecSync = async () => {
                 >
                   {{ cat.label }}
                 </option>
-              </select>
+              </Select>
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_PNL_TREATMENT }}
-              </label>
-              <select
+              <label
+                for="finance-txForm-pnl_treatment"
+                class="text-heading-3 text-n-slate-12"
+                >{{ UI.MODALS.FIELD_PNL_TREATMENT }}</label
+              >
+              <Select
+                id="finance-txForm-pnl_treatment"
                 v-model="txForm.pnl_treatment"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                class="w-full"
+                :disabled="isSaving"
               >
                 <option
                   v-for="opt in TX_PNL_OPTIONS"
@@ -2977,105 +2998,80 @@ const runOnecSync = async () => {
                 >
                   {{ opt.label }}
                 </option>
-              </select>
+              </Select>
             </div>
           </div>
 
           <div>
-            <label class="block mb-1 font-medium text-n-slate-11">
-              {{ UI.MODALS.FIELD_DESCRIPTION }}
-            </label>
-            <input
+            <Input
+              id="finance-txForm-description"
               v-model="txForm.description"
               type="text"
-              class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-3 text-sm text-n-slate-12"
+              :label="UI.MODALS.FIELD_DESCRIPTION"
+              :disabled="isSaving"
             />
           </div>
 
           <label class="inline-flex items-center gap-2 cursor-pointer pt-1">
-            <input
+            <Checkbox
+              id="finance-txForm-learn_vendor"
               v-model="txForm.learn_vendor"
-              type="checkbox"
-              class="rounded border-n-weak"
+              :disabled="isSaving"
             />
             <span class="text-xs text-n-slate-11">
               {{ UI.MODALS.FIELD_LEARN_VENDOR }}
             </span>
           </label>
         </div>
-
-        <div class="flex justify-end gap-2 pt-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            color="slate"
-            :label="UI.CANCEL"
-            @click="closeModal"
-          />
-          <Button
-            size="sm"
-            :label="UI.SAVE"
-            :is-loading="isSaving"
-            @click="saveTransaction"
-          />
-        </div>
       </div>
 
       <!-- Contract Modal -->
-      <div
-        v-else-if="activeModal === 'contract'"
-        class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl border border-n-weak bg-n-solid-2 p-5 space-y-4"
-      >
-        <h3 class="text-base font-semibold text-n-slate-12">
-          {{
-            contractForm.id ? UI.MODALS.CONTRACT_EDIT : UI.MODALS.CONTRACT_NEW
-          }}
-        </h3>
-
-        <div class="space-y-3 text-xs">
+      <div v-else-if="activeModal === 'contract'">
+        <div class="flex flex-col gap-4">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_CLIENT }}
-              </label>
-              <input
+              <Input
+                id="finance-contractForm-client_name"
                 v-model="contractForm.client_name"
                 type="text"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-3 text-sm text-n-slate-12"
+                :label="UI.MODALS.FIELD_CLIENT"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_CONTRACT_NUM }}
-              </label>
-              <input
+              <Input
+                id="finance-contractForm-contract_number"
                 v-model="contractForm.contract_number"
                 type="text"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-3 text-sm text-n-slate-12"
+                :label="UI.MODALS.FIELD_CONTRACT_NUM"
+                :disabled="isSaving"
               />
             </div>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_TITLE }}
-              </label>
-              <input
+              <Input
+                id="finance-contractForm-title"
                 v-model="contractForm.title"
                 type="text"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-3 text-sm text-n-slate-12"
+                :label="UI.MODALS.FIELD_TITLE"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_STATUS }}
-              </label>
-              <select
+              <label
+                for="finance-contractForm-status"
+                class="text-heading-3 text-n-slate-12"
+                >{{ UI.MODALS.FIELD_STATUS }}</label
+              >
+              <Select
+                id="finance-contractForm-status"
                 v-model="contractForm.status"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                class="w-full"
+                :disabled="isSaving"
               >
                 <option
                   v-for="opt in CONTRACT_STATUS_OPTIONS"
@@ -3084,17 +3080,21 @@ const runOnecSync = async () => {
                 >
                   {{ opt.label }}
                 </option>
-              </select>
+              </Select>
             </div>
           </div>
 
           <div>
-            <label class="block mb-1 font-medium text-n-slate-11">
-              {{ UI.MODALS.FIELD_TARIFF }}
-            </label>
-            <select
+            <label
+              for="finance-contractForm-tariff_code"
+              class="text-heading-3 text-n-slate-12"
+              >{{ UI.MODALS.FIELD_TARIFF }}</label
+            >
+            <Select
+              id="finance-contractForm-tariff_code"
               v-model="contractForm.tariff_code"
-              class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+              class="w-full"
+              :disabled="isSaving"
               @change="onContractTariffChange"
             >
               <option
@@ -3104,131 +3104,102 @@ const runOnecSync = async () => {
               >
                 {{ opt.label }}
               </option>
-            </select>
+            </Select>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_MONTHLY_AMOUNT }}
-              </label>
-              <input
-                v-model.number="contractForm.monthly_amount"
+              <Input
+                id="finance-contractForm-monthly_amount"
+                v-model="contractForm.monthly_amount"
                 type="number"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12 tabular-nums"
+                :label="UI.MODALS.FIELD_MONTHLY_AMOUNT"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_ONE_TIME_AMOUNT }}
-              </label>
-              <input
-                v-model.number="contractForm.one_time_amount"
+              <Input
+                id="finance-contractForm-one_time_amount"
+                v-model="contractForm.one_time_amount"
                 type="number"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12 tabular-nums"
+                :label="UI.MODALS.FIELD_ONE_TIME_AMOUNT"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_BILLING_DAY }}
-              </label>
-              <input
-                v-model.number="contractForm.billing_day"
+              <Input
+                id="finance-contractForm-billing_day"
+                v-model="contractForm.billing_day"
                 type="number"
                 min="1"
                 max="31"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12 tabular-nums"
+                :label="UI.MODALS.FIELD_BILLING_DAY"
+                :disabled="isSaving"
               />
             </div>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_STARTS_ON }}
-              </label>
-              <input
+              <Input
+                id="finance-contractForm-starts_on"
                 v-model="contractForm.starts_on"
                 type="date"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                :label="UI.MODALS.FIELD_STARTS_ON"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_ENDS_ON }}
-              </label>
-              <input
+              <Input
+                id="finance-contractForm-ends_on"
                 v-model="contractForm.ends_on"
                 type="date"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                :label="UI.MODALS.FIELD_ENDS_ON"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_ONELINK_ACC_ID }}
-              </label>
-              <input
+              <Input
+                id="finance-contractForm-onelink_account_id"
                 v-model="contractForm.onelink_account_id"
                 type="number"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12 tabular-nums"
+                :label="UI.MODALS.FIELD_ONELINK_ACC_ID"
+                :disabled="isSaving"
               />
             </div>
           </div>
 
           <label class="inline-flex items-center gap-2 cursor-pointer pt-1">
-            <input
+            <Checkbox
+              id="finance-contractForm-medelement_commission_enabled"
               v-model="contractForm.medelement_commission_enabled"
-              type="checkbox"
-              class="rounded border-n-weak"
+              :disabled="isSaving"
             />
             <span class="text-xs text-n-slate-11">
               {{ UI.MODALS.FIELD_MEDELEMENT_ENABLED }}
             </span>
           </label>
         </div>
-
-        <div class="flex justify-end gap-2 pt-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            color="slate"
-            :label="UI.CANCEL"
-            @click="closeModal"
-          />
-          <Button
-            size="sm"
-            :label="UI.SAVE"
-            :is-loading="isSaving"
-            @click="saveContract"
-          />
-        </div>
       </div>
 
       <!-- Obligation Modal -->
-      <div
-        v-else-if="activeModal === 'obligation'"
-        class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl border border-n-weak bg-n-solid-2 p-5 space-y-4"
-      >
-        <h3 class="text-base font-semibold text-n-slate-12">
-          {{
-            obligationForm.id
-              ? UI.MODALS.OBLIGATION_EDIT
-              : UI.MODALS.OBLIGATION_NEW
-          }}
-        </h3>
-
-        <div class="space-y-3 text-xs">
+      <div v-else-if="activeModal === 'obligation'">
+        <div class="flex flex-col gap-4">
           <div>
-            <label class="block mb-1 font-medium text-n-slate-11">
-              {{ UI.MODALS.FIELD_OB_KIND }}
-            </label>
-            <select
+            <label
+              for="finance-obligationForm-entry_kind"
+              class="text-heading-3 text-n-slate-12"
+              >{{ UI.MODALS.FIELD_OB_KIND }}</label
+            >
+            <Select
+              id="finance-obligationForm-entry_kind"
               v-model="obligationForm.entry_kind"
-              class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+              class="w-full"
+              :disabled="isSaving"
             >
               <option
                 v-for="opt in OBLIGATION_KIND_OPTIONS"
@@ -3237,113 +3208,90 @@ const runOnecSync = async () => {
               >
                 {{ opt.label }}
               </option>
-            </select>
+            </Select>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_TITLE }}
-              </label>
-              <input
+              <Input
+                id="finance-obligationForm-title"
                 v-model="obligationForm.title"
                 type="text"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-3 text-sm text-n-slate-12"
+                :label="UI.MODALS.FIELD_TITLE"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_COUNTERPARTY }}
-              </label>
-              <input
+              <Input
+                id="finance-obligationForm-counterparty_name"
                 v-model="obligationForm.counterparty_name"
                 type="text"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-3 text-sm text-n-slate-12"
+                :label="UI.MODALS.FIELD_COUNTERPARTY"
+                :disabled="isSaving"
               />
             </div>
           </div>
 
           <div
             v-if="obligationForm.entry_kind === 'medelement_commission'"
-            class="grid grid-cols-2 gap-3"
+            class="grid grid-cols-1 sm:grid-cols-2 gap-3"
           >
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_BASE_AMOUNT }}
-              </label>
-              <input
-                v-model.number="obligationForm.base_amount"
+              <Input
+                id="finance-obligationForm-base_amount"
+                v-model="obligationForm.base_amount"
                 type="number"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12 tabular-nums"
-                @input="onObligationBaseChange"
+                :label="UI.MODALS.FIELD_BASE_AMOUNT"
+                :disabled="isSaving"
+                @update:model-value="onObligationBaseChange"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_OVERAGE_EXCLUDED }}
-              </label>
-              <input
-                v-model.number="obligationForm.overage_excluded_amount"
+              <Input
+                id="finance-obligationForm-overage_excluded_amount"
+                v-model="obligationForm.overage_excluded_amount"
                 type="number"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12 tabular-nums"
+                :label="UI.MODALS.FIELD_OVERAGE_EXCLUDED"
+                :disabled="isSaving"
               />
             </div>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_AMOUNT }}
-              </label>
-              <input
-                v-model.number="obligationForm.amount"
+              <Input
+                id="finance-obligationForm-amount"
+                v-model="obligationForm.amount"
                 type="number"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12 tabular-nums"
+                :label="UI.MODALS.FIELD_AMOUNT"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_PAID_AMOUNT }}
-              </label>
-              <input
-                v-model.number="obligationForm.paid_amount"
+              <Input
+                id="finance-obligationForm-paid_amount"
+                v-model="obligationForm.paid_amount"
                 type="number"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12 tabular-nums"
+                :label="UI.MODALS.FIELD_PAID_AMOUNT"
+                :disabled="isSaving"
               />
             </div>
 
             <div>
-              <label class="block mb-1 font-medium text-n-slate-11">
-                {{ UI.MODALS.FIELD_DUE_ON }}
-              </label>
-              <input
+              <Input
+                id="finance-obligationForm-due_on"
                 v-model="obligationForm.due_on"
                 type="date"
-                class="!mb-0 !h-9 w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 text-sm text-n-slate-12"
+                :label="UI.MODALS.FIELD_DUE_ON"
+                :disabled="isSaving"
               />
             </div>
           </div>
         </div>
-
-        <div class="flex justify-end gap-2 pt-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            color="slate"
-            :label="UI.CANCEL"
-            @click="closeModal"
-          />
-          <Button
-            size="sm"
-            :label="UI.SAVE"
-            :is-loading="isSaving"
-            @click="saveObligation"
-          />
-        </div>
       </div>
-    </div>
+    </Dialog>
   </section>
 </template>

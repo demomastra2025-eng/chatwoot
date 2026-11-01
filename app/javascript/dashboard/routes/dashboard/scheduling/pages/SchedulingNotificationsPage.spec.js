@@ -101,7 +101,17 @@ const rule = overrides => ({
 });
 const mountPage = async () => {
   const wrapper = shallowMount(SchedulingNotificationsPage, {
-    global: { stubs: { RouterLink: true } },
+    global: {
+      stubs: {
+        RouterLink: true,
+        Select: false,
+        Switch: {
+          props: ['modelValue', 'disabled'],
+          emits: ['update:modelValue'],
+          template: `<button role="switch" :aria-checked="Boolean(modelValue)" :disabled="disabled" @click="$emit('update:modelValue', !modelValue)" />`,
+        },
+      },
+    },
   });
   await flushPromises();
   return wrapper;
@@ -154,7 +164,9 @@ describe('SchedulingNotificationsPage', () => {
     expect(wrapper.text()).toContain('WhatsApp Clinic');
     expect(wrapper.text()).toContain('SCHEDULING.NOTIFICATIONS.TEMPLATE_PACK');
     expect(
-      wrapper.findAll('[data-testid^="reminder-preset-card-"] input:disabled')
+      wrapper.findAll(
+        '[data-testid^="reminder-preset-card-"] button[role="switch"]:disabled'
+      )
     ).toHaveLength(6);
   });
 
@@ -250,7 +262,7 @@ describe('SchedulingNotificationsPage', () => {
       'SCHEDULING.NOTIFICATIONS.TEMPLATE_STATUS.PENDING'
     );
     expect(
-      card.find('input[type="checkbox"]').attributes('disabled')
+      card.find('button[role="switch"]').attributes('disabled')
     ).toBeDefined();
   });
 
@@ -332,9 +344,9 @@ describe('SchedulingNotificationsPage', () => {
     const wrapper = await mountPage();
     await wrapper
       .find(
-        '[data-testid="reminder-preset-card-appointment_created"] input[type="checkbox"]'
+        '[data-testid="reminder-preset-card-appointment_created"] button[role="switch"]'
       )
-      .trigger('change');
+      .trigger('click');
     await flushPromises();
     expect(AutomationAPI.update).not.toHaveBeenCalled();
     expect(mocks.alert).toHaveBeenCalled();
@@ -345,11 +357,11 @@ describe('SchedulingNotificationsPage', () => {
     AutomationAPI.update.mockRejectedValue(new Error('network'));
     const wrapper = await mountPage();
     const toggle = wrapper.find(
-      '[data-testid="reminder-preset-card-appointment_created"] input[type="checkbox"]'
+      '[data-testid="reminder-preset-card-appointment_created"] button[role="switch"]'
     );
-    await toggle.trigger('change');
+    await toggle.trigger('click');
     await flushPromises();
-    expect(toggle.element.checked).toBe(false);
+    expect(toggle.attributes('aria-checked')).toBe('false');
     expect(mocks.alert).toHaveBeenCalledWith(
       'SCHEDULING.NOTIFICATIONS.SAVE_ERROR'
     );
@@ -366,7 +378,7 @@ describe('SchedulingNotificationsPage', () => {
     );
     const otherCard = wrapper.find('[data-testid="other-rule-card-2"]');
     expect(otherCard.exists()).toBe(true);
-    await otherCard.find('input[type="checkbox"]').trigger('change');
+    await otherCard.find('button[role="switch"]').trigger('click');
     await flushPromises();
     expect(AutomationAPI.update).toHaveBeenCalledWith(2, {
       active: true,
@@ -391,10 +403,10 @@ describe('SchedulingNotificationsPage', () => {
     AutomationAPI.create.mockResolvedValue({ data: {} });
     const wrapper = await mountPage();
     const toggle = wrapper.find(
-      '[data-testid="reminder-preset-card-appointment_created"] input[type="checkbox"]'
+      '[data-testid="reminder-preset-card-appointment_created"] button[role="switch"]'
     );
     expect(toggle.attributes('disabled')).toBeUndefined();
-    await toggle.trigger('change');
+    await toggle.trigger('click');
     await flushPromises();
     expect(AutomationAPI.create).toHaveBeenCalledWith(
       expect.objectContaining({

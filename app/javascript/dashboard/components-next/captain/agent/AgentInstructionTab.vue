@@ -8,12 +8,10 @@ import {
   resolveAgentToolAccess,
 } from 'dashboard/components-next/captain/pageComponents/assistant/toolAccessDefaults';
 import AgentToolChips from './AgentToolChips.vue';
-import AgentModelBlock from './AgentModelBlock.vue';
 import AgentFollowUpsSummary from './AgentFollowUpsSummary.vue';
 
 // «Инструкция» tab: the instruction editor with the @ tools / $ fields
-// pickers and the read-only tool chips; side column with the «Модель»
-// and «Дожимы» blocks. The page owns the draft and the save.
+// pickers and the read-only tool chips; side column with follow-ups. The page owns the draft and the save.
 const props = defineProps({
   assistant: { type: Object, required: true },
   draft: { type: Object, required: true },
@@ -34,19 +32,6 @@ const instruction = computed({
   get: () => props.draft.instruction || '',
   set: value => updateDraft({ instruction: value || '' }),
 });
-const model = computed({
-  get: () => props.draft.model || '',
-  set: value => updateDraft({ model: value || '' }),
-});
-const temperature = computed({
-  get: () => props.draft.temperature ?? null,
-  set: value => updateDraft({ temperature: value ?? null }),
-});
-const thinkingEffort = computed({
-  get: () => props.draft.thinkingEffort || '',
-  set: value => updateDraft({ thinkingEffort: value || '' }),
-});
-
 const toolAccess = computed(() =>
   resolveAgentToolAccess(props.assistant?.config?.tool_access || {})
 );
@@ -144,13 +129,6 @@ const instructionError = computed(() => {
     </div>
 
     <aside class="flex min-w-0 flex-col gap-6">
-      <AgentModelBlock
-        v-model:model="model"
-        v-model:temperature="temperature"
-        v-model:effort="thinkingEffort"
-        :assistant="assistant"
-        :disabled="!canEdit"
-      />
       <AgentFollowUpsSummary
         :assistant="assistant"
         @open="emit('openFollowUps')"

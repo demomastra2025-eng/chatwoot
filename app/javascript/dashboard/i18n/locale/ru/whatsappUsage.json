@@ -50,7 +50,8 @@
       "CATEGORIES_TITLE": "Разбивка по категориям Meta",
       "COL_CATEGORY": "Категория",
       "PHONES_TITLE": "Подключённые номера WhatsApp Cloud",
-      "COL_PHONE": "Номер телефона"
+      "COL_PHONE": "Номер телефона",
+      "VAT_NOTE": "+{rate}% НДС"
     }
   }
 }

@@ -141,7 +141,9 @@
         "CONFIRM_RESET": "Are you sure?",
         "CONFIRM_HINT": "Click again to confirm",
         "RESET_SUCCESS": "Access token regenerated successfully",
-        "RESET_ERROR": "Unable to regenerate access token. Please try again"
+        "RESET_ERROR": "Unable to regenerate access token. Please try again",
+        "SHOW": "Show token",
+        "HIDE": "Hide token"
       },
       "MCP_CONFIGURATION": {
         "TITLE": "MCP configuration",

@@ -73,11 +73,12 @@ onMounted(() => {
       </div>
       <Button
         v-if="allowDelete"
-        variant="faded"
+        variant="ghost"
         color="ruby"
-        size="xs"
+        size="sm"
         icon="i-lucide-trash"
-        class="opacity-0 group-hover/note:opacity-100"
+        :aria-label="t('CONTACTS_LAYOUT.SIDEBAR.NOTES.DELETE')"
+        type="button"
         @click="handleDelete"
       />
     </div>

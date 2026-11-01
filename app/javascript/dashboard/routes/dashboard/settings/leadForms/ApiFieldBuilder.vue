@@ -265,7 +265,8 @@ watch(
 
     <Button
       type="button"
-      variant="secondary"
+      variant="outline"
+      color="slate"
       size="sm"
       icon="i-lucide-plus"
       :label="$t('LEAD_FORMS.API_FORMS.ADD_FIELD')"

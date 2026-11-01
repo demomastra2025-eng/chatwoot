@@ -50,7 +50,8 @@
       "CATEGORIES_TITLE": "Meta санаттары бойынша",
       "COL_CATEGORY": "Санат",
       "PHONES_TITLE": "Қосылған WhatsApp Cloud нөмірлері",
-      "COL_PHONE": "Телефон нөмірі"
+      "COL_PHONE": "Телефон нөмірі",
+      "VAT_NOTE": "+{rate}% ҚҚС"
     }
   }
 }
