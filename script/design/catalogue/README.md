@@ -28,9 +28,9 @@ The plain page heading belongs to this isolated catalogue host. The product's
 application router. This does not change the header rule for product pages.
 The host supplies only the `accounts/isRTL` getter required by Teleport.
 
-Existing component limits remain visible: `PaginationFooter` has icon controls
-without individual accessible names, and `RadioCard` uses per-item radio names.
-This gallery does not silently fork or restyle those components. Browser checks
+The gallery uses the components from the current checkout, including their
+accessible action labels and shared radio group names. It does not fork or
+restyle those components. Browser checks
 must cover desktop/mobile, both themes, controls, error/loading/empty states and
 the actual generated files. A catalogue is a reference for owner review, not
 automatic approval of every existing component or production screen.
