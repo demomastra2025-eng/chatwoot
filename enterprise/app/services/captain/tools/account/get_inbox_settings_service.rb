@@ -38,7 +38,7 @@ class Captain::Tools::Account::GetInboxSettingsService < Captain::Tools::Account
       timezone: account.workspace_working_hours_timezone,
       enable_auto_assignment: account.conversation_auto_assignment_enabled?,
       working_hours_enabled: account.workspace_working_hours_configured?,
-      out_of_office_message: inbox.out_of_office_message,
+      out_of_office_message: inbox.workspace_out_of_office_message,
       allow_messages_after_resolved: inbox.allow_messages_after_resolved
     }.compact
   end

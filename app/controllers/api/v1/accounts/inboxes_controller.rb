@@ -11,6 +11,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   before_action :validate_limit, only: [:create]
   # we are already handling the authorization in fetch inbox
   before_action :check_authorization, except: [:show]
+  before_action :ensure_company_managed_settings!, only: [:create, :update]
   # Creating an inbox of a channel the clinic does not have (hidden by the platform, flag off) is refused with 403.
   # Updating or reconnecting an existing inbox never asks.
   before_action :ensure_requested_channel_available!, only: [:create]
@@ -77,7 +78,6 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
         inbox_params = permitted_params.except(:channel, :csat_config)
         inbox_params[:csat_config] = format_csat_config(permitted_params[:csat_config]) if permitted_params[:csat_config].present?
         @inbox.update!(inbox_params)
-        update_inbox_working_hours
         update_channel if channel_update_required?
       end
     end
@@ -243,10 +243,6 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     types = %w[web_widget api email line telegram telegram_personal weixin whatsapp whatsapp_web sms vk_community]
     types << 'voice' if defined?(Channel::Voice)
     types
-  end
-
-  def update_inbox_working_hours
-    @inbox.update_working_hours(params.permit(working_hours: Inbox::OFFISABLE_ATTRS)[:working_hours]) if params[:working_hours]
   end
 
   def update_channel
@@ -457,12 +453,20 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def inbox_attributes
-    [:name, :avatar, :greeting_enabled, :greeting_message, :enable_email_collect, :csat_survey_enabled,
-     :enable_auto_assignment, :working_hours_enabled, :out_of_office_message, :timezone, :allow_messages_after_resolved,
+    [:name, :avatar, :enable_email_collect, :csat_survey_enabled,
+     :enable_auto_assignment, :allow_messages_after_resolved,
      :lock_to_single_conversation, :portal_id, :sender_name_type, :business_name,
      { csat_config: [:display_type, :message, :button_text, :language,
                      { survey_rules: [:operator, { values: [] }],
                        template: [:name, :template_id, :friendly_name, :content_sid, :approval_sid, :created_at, :language, :status] }] }]
+  end
+
+  def ensure_company_managed_settings!
+    retired = %i[greeting_enabled greeting_message out_of_office_message working_hours working_hours_enabled timezone]
+    fields = retired.select { |key| params.key?(key) }
+    return if fields.empty?
+
+    render json: { error: 'company_managed_settings', fields: fields }, status: :unprocessable_content
   end
 
   def permitted_params(channel_attributes = [])

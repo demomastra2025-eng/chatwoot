@@ -11,8 +11,8 @@ class Inbox::EventDataPresenter < SimpleDelegator
 
       # Feature flag for message events
       enable_email_collect: enable_email_collect,
-      greeting_enabled: greeting_enabled,
-      greeting_message: greeting_message,
+      greeting_enabled: workspace_greeting_enabled?,
+      greeting_message: workspace_greeting_message,
       csat_survey_enabled: csat_survey_enabled,
 
       # Outbound email sender config
@@ -21,7 +21,7 @@ class Inbox::EventDataPresenter < SimpleDelegator
 
       # Business hour config
       timezone: account.workspace_working_hours_timezone,
-      out_of_office_message: out_of_office_message,
+      out_of_office_message: workspace_out_of_office_message,
       working_hours_enabled: account.workspace_working_hours_configured?,
       working_hours: account.workspace_working_hours_configured? ? account.workspace_working_hours_schedule : [],
 

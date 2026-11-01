@@ -1288,11 +1288,15 @@ class Telephony::InboundRoutingService
   end
 
   def reject_message(prefer_out_of_office_message: false)
-    return inbox.out_of_office_message if prefer_out_of_office_message && inbox&.out_of_office_message.present?
+    offline = applicable_workspace_offline_message
+    return offline if prefer_out_of_office_message && offline.present?
     return routing_policy.fallback_message if routing_policy&.fallback_message.present?
-    return inbox.out_of_office_message if inbox&.out_of_office_message.present?
 
-    DEFAULT_REJECT_MESSAGE
+    offline.presence || DEFAULT_REJECT_MESSAGE
+  end
+
+  def applicable_workspace_offline_message
+    inbox.workspace_out_of_office_message if inbox&.out_of_office?
   end
 
   def recursive_runtime_call_active_decision

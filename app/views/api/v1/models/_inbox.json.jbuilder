@@ -5,15 +5,15 @@ json.avatar_url resource.try(:avatar_url)
 json.channel_id resource.channel_id
 json.name resource.name
 json.channel_type resource.display_channel_type
-json.greeting_enabled resource.greeting_enabled
-json.greeting_message resource.greeting_message
+json.greeting_enabled resource.workspace_greeting_enabled?
+json.greeting_message resource.workspace_greeting_message
 json.working_hours_enabled resource.account.workspace_working_hours_configured?
 json.enable_email_collect resource.enable_email_collect
 json.csat_survey_enabled resource.csat_survey_enabled
 json.csat_config resource.csat_config
 json.enable_auto_assignment resource.enable_auto_assignment?
 json.auto_assignment_config resource.auto_assignment_config
-json.out_of_office_message resource.out_of_office_message
+json.out_of_office_message resource.workspace_out_of_office_message
 json.working_hours resource.account.workspace_working_hours_configured? ? resource.account.workspace_working_hours_schedule : []
 json.timezone resource.account.workspace_working_hours_timezone
 json.callback_webhook_url resource.callback_webhook_url

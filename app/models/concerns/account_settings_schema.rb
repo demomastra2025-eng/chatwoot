@@ -36,6 +36,25 @@ module AccountSettingsSchema
         'conversation_assign_on_first_reply_enabled': { 'type': %w[boolean null] },
         'conversation_assign_on_note_or_resolve_enabled': { 'type': %w[boolean null] },
         'workspace_timezone': { 'type': %w[string null] },
+        'workspace_greeting': {
+          'type': 'object',
+          'properties': {
+            'enabled': { 'type': 'boolean' },
+            'message': { 'type': 'string', 'maxLength': Limits::GREETING_MESSAGE_MAX_LENGTH },
+            'excluded_inbox_ids': { 'type': 'array', 'items': { 'type': 'integer' }, 'uniqueItems': true }
+          },
+          'required': %w[enabled message excluded_inbox_ids],
+          'additionalProperties': false
+        },
+        'workspace_out_of_office': {
+          'type': 'object',
+          'properties': {
+            'enabled': { 'type': 'boolean' },
+            'message': { 'type': 'string', 'maxLength': Limits::OUT_OF_OFFICE_MESSAGE_MAX_LENGTH }
+          },
+          'required': %w[enabled message],
+          'additionalProperties': false
+        },
         'workspace_working_hours': {
           'type': %w[array null],
           'items': {

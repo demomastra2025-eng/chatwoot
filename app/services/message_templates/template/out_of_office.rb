@@ -4,12 +4,14 @@ class MessageTemplates::Template::OutOfOffice
   def self.perform_if_applicable(conversation)
     inbox = conversation.inbox
     return unless inbox.out_of_office?
-    return if inbox.out_of_office_message.blank?
+    return if inbox.workspace_out_of_office_message.blank?
 
     new(conversation: conversation).perform
   end
 
   def perform
+    return unless conversation.inbox.out_of_office? && conversation.inbox.workspace_out_of_office_message.present?
+
     ActiveRecord::Base.transaction do
       conversation.messages.create!(out_of_office_message_params)
     end
@@ -24,7 +26,7 @@ class MessageTemplates::Template::OutOfOffice
   delegate :inbox, to: :message
 
   def out_of_office_message_params
-    content = @conversation.inbox&.out_of_office_message
+    content = @conversation.inbox&.workspace_out_of_office_message
 
     {
       account_id: @conversation.account_id,

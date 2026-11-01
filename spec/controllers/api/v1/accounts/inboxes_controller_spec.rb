@@ -1845,19 +1845,17 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(inbox.avatar.attached?).to be(true)
       end
 
-      it 'updates working hours when administrator' do
+      it 'rejects retired per-channel hours when administrator' do
         params = {
           working_hours: [{ 'day_of_week' => 0, 'open_hour' => 9, 'open_minutes' => 0, 'close_hour' => 17, 'close_minutes' => 0 }],
-          working_hours_enabled: true,
-          out_of_office_message: 'hello'
+          working_hours_enabled: true
         }
         patch "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}",
               params: valid_params.merge(params),
               headers: admin.create_new_auth_token
 
-        expect(response).to have_http_status(:success)
-        inbox.reload
-        expect(inbox.reload.weekly_schedule.find { |schedule| schedule['day_of_week'] == 0 }['open_hour']).to eq 9
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq('company_managed_settings')
       end
 
       it 'updates the webwidget inbox to disallow the messages after conversation is resolved' do

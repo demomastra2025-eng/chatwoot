@@ -17,26 +17,29 @@ RSpec.describe Captain::Tools::Account::UpdateInboxSettingsService do
     payload = JSON.parse(service.execute(
                            inbox_id: inbox.id,
                            name: 'New Support',
-                           timezone: 'Asia/Almaty',
                            enable_auto_assignment: false,
-                           working_hours_enabled: true,
-                           out_of_office_message: 'We are closed',
                            allow_messages_after_resolved: false
                          ))
 
     expect(payload['action']).to eq('update_inbox_settings')
     expect(payload['updated_fields']).to include(
-      'name', 'timezone', 'enable_auto_assignment', 'out_of_office_message', 'allow_messages_after_resolved'
+      'name', 'enable_auto_assignment', 'allow_messages_after_resolved'
     )
     expect(inbox.reload).to have_attributes(
       name: 'New Support',
       timezone: 'Asia/Almaty',
-      out_of_office_message: 'We are closed',
       allow_messages_after_resolved: false
     )
     expect(account.reload.conversation_auto_assignment_enabled?).to be(false)
     expect(inbox.enable_auto_assignment?).to be(false)
     expect(inbox[:enable_auto_assignment]).to be(true)
+  end
+
+  it 'rejects retired company-managed fields without partially mutating the channel' do
+    inbox = create(:inbox, account: account, name: 'Unchanged')
+    result = service.execute(inbox_id: inbox.id, name: 'Must not apply', out_of_office_message: 'Legacy')
+    expect(result).to include('Company-managed settings')
+    expect(inbox.reload.name).to eq('Unchanged')
   end
 
   it 'rejects inboxes outside the assistant account' do
