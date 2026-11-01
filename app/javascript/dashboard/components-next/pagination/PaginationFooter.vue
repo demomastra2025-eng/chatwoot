@@ -71,35 +71,39 @@ const pageInfo = computed(() => {
 
 <template>
   <div
-    class="flex justify-between h-[3.375rem] w-full border-t border-n-weak mx-auto bg-n-surface-1 py-3 px-6 items-center before:absolute before:inset-x-0 before:-top-4 before:bg-gradient-to-t before:from-n-surface-1 before:from-0% before:to-transparent before:h-4 before:pointer-events-none"
+    class="flex flex-col sm:flex-row justify-between min-h-[3.375rem] sm:h-[3.375rem] w-full border-t border-n-weak mx-auto bg-n-surface-1 py-3 px-6 gap-2 items-stretch sm:items-center before:absolute before:inset-x-0 before:-top-4 before:bg-gradient-to-t before:from-n-surface-1 before:from-0% before:to-transparent before:h-4 before:pointer-events-none"
   >
-    <div class="flex items-center gap-3">
+    <div class="flex min-w-0 items-center gap-3">
       <span class="min-w-0 text-body-main line-clamp-1 text-n-slate-11">
         {{ currentPageInformation }}
       </span>
     </div>
-    <div class="flex items-center gap-2">
+    <div
+      class="flex min-w-0 max-w-full items-center justify-end gap-1 sm:gap-2"
+    >
       <Button
         icon="i-lucide-chevrons-left"
+        :aria-label="$t('GENERAL.PAGINATION.FIRST_PAGE')"
         variant="ghost"
         size="sm"
         color="slate"
-        class="!w-8 !h-6"
+        class="shrink-0 !w-8 !h-6"
         :disabled="isFirstPage"
         @click="changePage(1)"
       />
       <Button
         icon="i-lucide-chevron-left"
+        :aria-label="$t('GENERAL.PAGINATION.PREVIOUS_PAGE')"
         variant="ghost"
         color="slate"
         size="sm"
-        class="!w-8 !h-6"
+        class="shrink-0 !w-8 !h-6"
         :disabled="isFirstPage"
         @click="changePage(currentPage - 1)"
       />
-      <div class="inline-flex items-center gap-2 text-sm">
+      <div class="inline-flex min-w-0 items-center gap-2 text-sm">
         <span
-          class="px-3 tabular-nums py-0.5 font-420 bg-n-input-background text-body-main text-n-slate-12 rounded-md"
+          class="shrink-0 px-3 tabular-nums py-0.5 font-420 bg-n-input-background text-body-main text-n-slate-12 rounded-md"
         >
           {{ formatFullNumber(currentPage) }}
         </span>
@@ -109,19 +113,21 @@ const pageInfo = computed(() => {
       </div>
       <Button
         icon="i-lucide-chevron-right"
+        :aria-label="$t('GENERAL.PAGINATION.NEXT_PAGE')"
         variant="ghost"
         color="slate"
         size="sm"
-        class="!w-8 !h-6"
+        class="shrink-0 !w-8 !h-6"
         :disabled="isLastPage"
         @click="changePage(currentPage + 1)"
       />
       <Button
         icon="i-lucide-chevrons-right"
+        :aria-label="$t('GENERAL.PAGINATION.LAST_PAGE')"
         variant="ghost"
         color="slate"
         size="sm"
-        class="!w-8 !h-6"
+        class="shrink-0 !w-8 !h-6"
         :disabled="isLastPage"
         @click="changePage(totalPages)"
       />

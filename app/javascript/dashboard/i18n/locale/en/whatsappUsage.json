@@ -50,7 +50,8 @@
       "CATEGORIES_TITLE": "Meta Category Breakdown",
       "COL_CATEGORY": "Category",
       "PHONES_TITLE": "Connected WhatsApp Cloud Numbers",
-      "COL_PHONE": "Phone Number"
+      "COL_PHONE": "Phone Number",
+      "VAT_NOTE": "+{rate}% VAT"
     }
   }
 }

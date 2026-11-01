@@ -96,12 +96,14 @@ export default {
     <button
       v-if="showPopoutButton"
       class="button transparent compact new-window--button"
+      :aria-label="$t('CHAT_ACTIONS.OPEN_WINDOW')"
       @click="popoutWindow"
     >
       <FluentIcon icon="open" size="22" class="text-n-slate-12" />
     </button>
     <button
       class="button transparent compact close-button"
+      :aria-label="$t('CHAT_ACTIONS.CLOSE')"
       :class="{
         'rn-close-button': isRNWebView,
       }"

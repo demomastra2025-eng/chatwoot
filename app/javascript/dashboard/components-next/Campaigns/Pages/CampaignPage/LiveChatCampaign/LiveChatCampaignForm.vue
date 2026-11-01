@@ -155,7 +155,7 @@ const handleSubmit = async () => {
   if (!isFormValid) return;
 
   emit('submit', prepareCampaignDetails());
-  if (props.mode === 'create') {
+  if (props.mode === 'create' && props.showActionButtons) {
     resetState();
     handleCancel();
   }
@@ -216,11 +216,19 @@ watch(
   { immediate: true }
 );
 
-defineExpose({ prepareCampaignDetails, isSubmitDisabled });
+defineExpose({
+  prepareCampaignDetails,
+  isSubmitDisabled,
+  submit: handleSubmit,
+});
 </script>
 
 <template>
-  <form class="flex flex-col gap-4" @submit.prevent="handleSubmit">
+  <component
+    :is="showActionButtons ? 'form' : 'div'"
+    class="flex flex-col gap-4"
+    @submit.prevent="handleSubmit"
+  >
     <Input
       v-model="state.title"
       :label="t('CAMPAIGN.LIVE_CHAT.CREATE.FORM.TITLE.LABEL')"
@@ -249,7 +257,6 @@ defineExpose({ prepareCampaignDetails, isSubmitDisabled });
         :disabled="!!lockedInboxId"
         :placeholder="t('CAMPAIGN.LIVE_CHAT.CREATE.FORM.INBOX.PLACEHOLDER')"
         :message="formErrors.inbox"
-        class="[&>div>button]:bg-n-alpha-black2 [&>div>button:not(.focused)]:dark:outline-n-weak [&>div>button:not(.focused)]:hover:!outline-n-slate-6"
       />
     </div>
 
@@ -264,7 +271,6 @@ defineExpose({ prepareCampaignDetails, isSubmitDisabled });
         :has-error="!!formErrors.sender"
         :disabled="!state.inboxId"
         :placeholder="t('CAMPAIGN.LIVE_CHAT.CREATE.FORM.SENT_BY.PLACEHOLDER')"
-        class="[&>div>button]:bg-n-alpha-black2 [&>div>button:not(.focused)]:dark:outline-n-weak [&>div>button:not(.focused)]:hover:!outline-n-slate-6"
         :message="formErrors.sender"
       />
     </div>
@@ -319,10 +325,10 @@ defineExpose({ prepareCampaignDetails, isSubmitDisabled });
     >
       <Button
         type="button"
-        variant="faded"
+        variant="ghost"
         color="slate"
         :label="t('CAMPAIGN.LIVE_CHAT.CREATE.FORM.BUTTONS.CANCEL')"
-        class="w-full bg-n-alpha-2 text-n-blue-11 hover:bg-n-alpha-3"
+        class="w-full"
         @click="handleCancel"
       />
       <Button
@@ -335,5 +341,5 @@ defineExpose({ prepareCampaignDetails, isSubmitDisabled });
         :disabled="isCreating || isSubmitDisabled"
       />
     </div>
-  </form>
+  </component>
 </template>

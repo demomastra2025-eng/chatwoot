@@ -218,9 +218,11 @@ export default {
           type="text"
           class="focus:box-shadow-blue dark:focus:box-shadow-dark !mb-0 !h-8 !text-sm w-full bg-n-alpha-black2 dark:bg-n-solid-1 rounded-lg px-2.5 text-n-slate-12 border-0"
           :placeholder="$t('EMOJI.PLACEHOLDER')"
+          @keydown.enter.prevent
         />
         <NextButton
           v-if="showRemoveButton"
+          type="button"
           faded
           sm
           slate

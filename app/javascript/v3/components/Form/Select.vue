@@ -1,4 +1,5 @@
 <script>
+import { useId } from 'vue';
 import WithLabel from './WithLabel.vue';
 import BaseSelect from 'dashboard/components-next/select/Select.vue';
 export default {
@@ -45,7 +46,13 @@ export default {
     },
   },
   emits: ['update:modelValue'],
+  setup() {
+    return { generatedId: useId() };
+  },
   computed: {
+    inputId() {
+      return this.id || this.generatedId;
+    },
     selectedValue: {
       get() {
         return this.modelValue;
@@ -60,6 +67,7 @@ export default {
 
 <template>
   <WithLabel
+    :id="inputId"
     :label="label"
     :icon="icon"
     :name="name"
@@ -67,7 +75,7 @@ export default {
     :error-message="errorMessage"
   >
     <BaseSelect
-      :id="id"
+      :id="inputId"
       v-model="selectedValue"
       :name="name"
       :class="{

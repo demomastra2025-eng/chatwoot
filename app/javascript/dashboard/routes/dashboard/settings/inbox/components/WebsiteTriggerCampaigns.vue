@@ -32,7 +32,8 @@ const editDialogRef = ref(null);
 const selectedCampaign = ref(null);
 
 const isLoading = computed(() => uiFlags.value.isFetching);
-const isCreating = computed(() => uiFlags.value.isCreating);
+const isSaving = ref(false);
+const isCreating = computed(() => isSaving.value || uiFlags.value.isCreating);
 
 const websiteTriggerCampaigns = computed(() => {
   const liveChatCampaigns =
@@ -99,12 +100,11 @@ const fetchCampaigns = async () => {
   await store.dispatch('campaigns/get');
 };
 
-const createCampaign = async () => {
+const createCampaign = async campaignDetails => {
+  if (isSaving.value) return;
+  isSaving.value = true;
   try {
-    await store.dispatch(
-      'campaigns/create',
-      createFormRef.value.prepareCampaignDetails()
-    );
+    await store.dispatch('campaigns/create', campaignDetails);
 
     useAlert(t('INBOX_MGMT.WIDGET_TRIGGER_CAMPAIGNS.CREATE_SUCCESS'));
     createDialogRef.value.close();
@@ -113,6 +113,8 @@ const createCampaign = async () => {
       error?.response?.message ||
       t('CAMPAIGN.LIVE_CHAT.CREATE.FORM.API.ERROR_MESSAGE');
     useAlert(errorMessage);
+  } finally {
+    isSaving.value = false;
   }
 };
 
@@ -231,13 +233,14 @@ watch(
       :is-loading="isCreating"
       :disable-confirm-button="isCreateDisabled"
       overflow-y-auto
-      @confirm="createCampaign"
+      @confirm="createFormRef?.submit()"
     >
       <LiveChatCampaignForm
         ref="createFormRef"
         mode="create"
         :locked-inbox-id="inbox.id"
         :show-action-buttons="false"
+        @submit="createCampaign"
       />
     </Dialog>
 

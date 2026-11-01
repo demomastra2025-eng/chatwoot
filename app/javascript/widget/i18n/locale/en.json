@@ -9,7 +9,8 @@
     },
     "MESSAGE_BUBBLE": {
       "RETRY": "Send message again",
-      "ERROR_MESSAGE": "Couldn't send, try again"
+      "ERROR_MESSAGE": "Couldn't send, try again",
+      "REPLY": "Reply to message"
     }
   },
   "THUMBNAIL": {
@@ -150,5 +151,11 @@
   },
   "FOOTER_REPLY_TO": {
     "REPLY_TO": "Replying to:"
+  },
+  "CHAT_ACTIONS": {
+    "SEND": "Send message",
+    "OPEN_WINDOW": "Open chat in a new window",
+    "CLOSE": "Close chat",
+    "BACK": "Go back"
   }
 }

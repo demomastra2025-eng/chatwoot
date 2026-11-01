@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, useId } from 'vue';
 import { useI18n } from 'vue-i18n';
 import SettingsToggleSection from 'dashboard/components-next/Settings/SettingsToggleSection.vue';
 import RadioCard from 'dashboard/components-next/radioCard/RadioCard.vue';
@@ -11,10 +11,6 @@ import {
   statusMessageNeedsText,
 } from 'dashboard/helper/captainAiSettings';
 
-// A message sent to the customer on handoff or on resolution:
-// { enabled, mode: 'fixed' | 'generated', text, instruction }. A fixed message
-// is the text. An AI-written one is written by a separate model from the
-// short "how to write" instruction; the text stays as the fallback.
 const props = defineProps({
   kind: { type: String, required: true },
   title: { type: String, required: true },
@@ -25,6 +21,12 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
 });
 
+const radioGroupName = useId();
+
+// A message sent to the customer on handoff or on resolution:
+// { enabled, mode: 'fixed' | 'generated', text, instruction }. A fixed message
+// is the text. An AI-written one is written by a separate model from the
+// short "how to write" instruction; the text stays as the fallback.
 const model = defineModel({ type: Object, required: true });
 
 const { t } = useI18n();
@@ -93,6 +95,8 @@ const instructionMessage = computed(() => {
             v-for="option in modeOptions"
             :id="option.id"
             :key="option.id"
+            :name="radioGroupName"
+            :disabled="disabled"
             :label="option.label"
             :description="option.description"
             :is-active="(model.mode || 'fixed') === option.mode"

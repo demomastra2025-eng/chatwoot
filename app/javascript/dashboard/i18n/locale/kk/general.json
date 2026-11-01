@@ -1,5 +1,16 @@
 {
   "GENERAL": {
+    "PAGINATION": {
+      "FIRST_PAGE": "Бірінші бет",
+      "PREVIOUS_PAGE": "Алдыңғы бет",
+      "NEXT_PAGE": "Келесі бет",
+      "LAST_PAGE": "Соңғы бет"
+    },
+    "CALENDAR": {
+      "PREVIOUS": "Алдыңғы кезең",
+      "NEXT": "Келесі кезең"
+    },
+    "REMOVE_ITEM": "{name} алып тастау",
     "SHOWING_RESULTS": "Showing {firstIndex}-{lastIndex} of {totalCount} items",
     "PHONE_INPUT": {
       "PLACEHOLDER": "Іздеу",

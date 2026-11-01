@@ -668,7 +668,8 @@
             "LABEL": "Description",
             "PLACEHOLDER": "Give a short description about the category.",
             "ERROR": "Description is required"
-          }
+          },
+          "ICON": "Санат белгішесін таңдау"
         },
         "BUTTONS": {
           "CREATE": "Create",

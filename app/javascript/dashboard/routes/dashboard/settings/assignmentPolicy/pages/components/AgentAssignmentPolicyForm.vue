@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, useId, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
@@ -64,6 +64,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['submit', 'validationChange']);
+
+const radioGroupName = useId();
 
 const { t } = useI18n();
 const route = useRoute();
@@ -322,7 +324,7 @@ defineExpose({
                 v-for="option in section.options"
                 :id="option.key"
                 :key="option.key"
-                :name="section.key"
+                :name="`${radioGroupName}-${section.key}`"
                 :label="option.label"
                 :description="option.description"
                 :is-active="option.isActive"
@@ -397,10 +399,7 @@ defineExpose({
           </div>
         </div>
 
-        <p
-          v-if="!availableAgents.length"
-          class="m-0 text-sm text-n-slate-11"
-        >
+        <p v-if="!availableAgents.length" class="m-0 text-sm text-n-slate-11">
           {{ t(`${BASE_KEY}.FORM.AGENTS.EMPTY_STATE`) }}
         </p>
 

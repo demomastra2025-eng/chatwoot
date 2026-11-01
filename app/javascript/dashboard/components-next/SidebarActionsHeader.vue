@@ -32,6 +32,7 @@ const handleButtonClick = button => {
           :key="button.key"
           v-tooltip="button.tooltip"
           :icon="button.icon"
+          :aria-label="button.tooltip"
           ghost
           slate
           sm
@@ -40,6 +41,7 @@ const handleButtonClick = button => {
         <Button
           v-tooltip="$t('GENERAL.CLOSE')"
           icon="i-lucide-x"
+          :aria-label="$t('GENERAL.CLOSE')"
           ghost
           slate
           sm

@@ -1,10 +1,14 @@
 <script>
-import { ref, computed, nextTick } from 'vue';
+import { ref, computed, nextTick, watch } from 'vue';
 import { useKeyboardNavigableList } from 'dashboard/composables/useKeyboardNavigableList';
 import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
 
 export default {
   props: {
+    keyboardTarget: {
+      type: Object,
+      default: null,
+    },
     items: {
       type: Array,
       default: () => [],
@@ -32,7 +36,10 @@ export default {
     const { highlightContent } = useMessageFormatter();
     const adjustScroll = () => {
       nextTick(() => {
-        portalSearchSuggestionsRef.value.scrollTop = 102 * selectedIndex.value;
+        if (portalSearchSuggestionsRef.value) {
+          portalSearchSuggestionsRef.value.scrollTop =
+            102 * selectedIndex.value;
+        }
       });
     };
 
@@ -42,10 +49,27 @@ export default {
         : 'bg-white dark:bg-slate-900';
     };
 
+    const onSelect = () => {
+      const links =
+        portalSearchSuggestionsRef.value?.querySelectorAll('[role="option"] a');
+      links?.[selectedIndex.value]?.click();
+    };
+
+    watch(
+      () => props.items,
+      () => {
+        selectedIndex.value = -1;
+      }
+    );
+
     useKeyboardNavigableList({
-      items: computed(() => props.items),
+      items: computed(() => (props.isLoading ? [] : props.items)),
+      onSelect,
       adjustScroll,
       selectedIndex,
+      shouldHandleEvent: event =>
+        event.target === props.keyboardTarget &&
+        (event.key !== 'Enter' || selectedIndex.value >= 0),
     });
 
     return {
@@ -100,9 +124,10 @@ export default {
         class="flex items-center p-4 border border-solid rounded-lg cursor-pointer select-none group hover:bg-slate-25 dark:hover:bg-slate-800 border-slate-100 dark:border-slate-800"
         :class="isSearchItemActive(index)"
         role="option"
+        :aria-selected="index === selectedIndex"
         tabindex="-1"
-        @mouse-enter="onHover(index)"
-        @mouse-leave="onHover(-1)"
+        @mouseenter="selectedIndex = index"
+        @mouseleave="selectedIndex = -1"
       >
         <a class="flex flex-col gap-1 overflow-y-hidden" :href="article.link">
           <span

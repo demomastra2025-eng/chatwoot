@@ -21,7 +21,10 @@ const dialogRef = ref(null);
 const liveChatCampaignFormRef = ref(null);
 
 const uiFlags = useMapGetter('campaigns/getUIFlags');
-const isUpdatingCampaign = computed(() => uiFlags.value.isUpdating);
+const isSaving = ref(false);
+const isUpdatingCampaign = computed(
+  () => isSaving.value || uiFlags.value.isUpdating
+);
 
 const isInvalidForm = computed(
   () => liveChatCampaignFormRef.value?.isSubmitDisabled
@@ -30,6 +33,8 @@ const isInvalidForm = computed(
 const selectedCampaignId = computed(() => props.selectedCampaign.id);
 
 const updateCampaign = async campaignDetails => {
+  if (isSaving.value) return;
+  isSaving.value = true;
   try {
     await store.dispatch('campaigns/update', {
       id: selectedCampaignId.value,
@@ -43,12 +48,12 @@ const updateCampaign = async campaignDetails => {
       error?.response?.message ||
       t('CAMPAIGN.LIVE_CHAT.EDIT.FORM.API.ERROR_MESSAGE');
     useAlert(errorMessage);
+  } finally {
+    isSaving.value = false;
   }
 };
 
-const handleSubmit = () => {
-  updateCampaign(liveChatCampaignFormRef.value.prepareCampaignDetails());
-};
+const handleSubmit = () => liveChatCampaignFormRef.value?.submit();
 
 defineExpose({ dialogRef });
 </script>
@@ -68,7 +73,7 @@ defineExpose({ dialogRef });
       mode="edit"
       :selected-campaign="selectedCampaign"
       :show-action-buttons="false"
-      @submit="handleSubmit"
+      @submit="updateCampaign"
     />
   </Dialog>
 </template>

@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
+import Input from 'dashboard/components-next/input/Input.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import ConfirmButton from 'dashboard/components-next/button/ConfirmButton.vue';
 
@@ -17,7 +18,7 @@ const toggleMasked = () => {
 };
 
 const maskIcon = computed(() => {
-  return inputType.value === 'password' ? 'eye-hide' : 'eye-show';
+  return inputType.value === 'password' ? 'i-lucide-eye' : 'i-lucide-eye-off';
 });
 
 const onClick = () => {
@@ -30,29 +31,34 @@ const onReset = () => {
 </script>
 
 <template>
-  <div class="flex flex-row justify-between gap-4">
-    <woot-input
+  <div class="flex flex-col gap-4 sm:flex-row sm:justify-between">
+    <Input
+      id="access-token"
       name="access_token"
-      class="flex-1 [&>input]:!py-1.5 ltr:[&>input]:!pr-9 ltr:[&>input]:!pl-3 rtl:[&>input]:!pl-9 rtl:[&>input]:!pr-3 focus:[&>input]:!border-n-weak [&>input]:cursor-not-allowed relative"
-      :styles="{
-        borderRadius: '12px',
-        fontSize: '14px',
-        marginBottom: '2px',
-      }"
+      class="flex-1"
+      :aria-label="$t('PROFILE_SETTINGS.FORM.ACCESS_TOKEN.TITLE')"
       :type="inputType"
       :model-value="value"
       readonly
     >
-      <template #masked>
-        <button
-          class="absolute top-0 bottom-0 ltr:right-0.5 rtl:left-0.5"
+      <template #suffix>
+        <NextButton
+          class="absolute top-1/2 -translate-y-1/2 ltr:right-1 rtl:left-1"
           type="button"
+          variant="ghost"
+          color="slate"
+          size="sm"
+          :icon="maskIcon"
+          :aria-label="
+            $t(
+              `PROFILE_SETTINGS.FORM.ACCESS_TOKEN.${inputType === 'password' ? 'SHOW' : 'HIDE'}`
+            )
+          "
+          :aria-pressed="inputType === 'text'"
           @click="toggleMasked"
-        >
-          <fluent-icon :icon="maskIcon" :size="16" />
-        </button>
+        />
       </template>
-    </woot-input>
+    </Input>
     <div class="flex flex-row gap-2">
       <NextButton
         :label="$t('PROFILE_SETTINGS.FORM.ACCESS_TOKEN.COPY')"
@@ -60,7 +66,6 @@ const onReset = () => {
         outline
         type="button"
         icon="i-lucide-copy"
-        class="rounded-xl"
         @click="onClick"
       />
       <ConfirmButton
@@ -72,7 +77,6 @@ const onReset = () => {
         confirm-color="ruby"
         variant="outline"
         icon="i-lucide-key-round"
-        class="rounded-xl"
         @click="onReset"
       />
     </div>

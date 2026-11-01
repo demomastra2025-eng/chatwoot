@@ -22,7 +22,9 @@ defineProps({
       data-test-id="ds-stat"
     >
       <dt class="text-ds-caption text-n-slate-11">{{ item.label }}</dt>
-      <dd class="m-0 mt-1.5 truncate text-ds-figure text-n-slate-12">
+      <dd
+        class="m-0 mt-1.5 break-words whitespace-normal text-ds-figure text-n-slate-12"
+      >
         <slot name="value" :item="item">{{ item.value }}</slot>
       </dd>
       <dd

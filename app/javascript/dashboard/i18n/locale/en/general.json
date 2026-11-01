@@ -1,5 +1,16 @@
 {
   "GENERAL": {
+    "PAGINATION": {
+      "FIRST_PAGE": "First page",
+      "PREVIOUS_PAGE": "Previous page",
+      "NEXT_PAGE": "Next page",
+      "LAST_PAGE": "Last page"
+    },
+    "CALENDAR": {
+      "PREVIOUS": "Previous period",
+      "NEXT": "Next period"
+    },
+    "REMOVE_ITEM": "Remove {name}",
     "SHOWING_RESULTS": "Showing {firstIndex}-{lastIndex} of {totalCount} items",
     "PHONE_INPUT": {
       "PLACEHOLDER": "Search",

@@ -69,7 +69,7 @@ const handleChange = event => {
       :name="name || undefined"
       type="radio"
       :disabled="disabled"
-      class="peer absolute inset-0 z-10 h-4 w-4 cursor-pointer appearance-none rounded-full border border-n-slate-6 ring-transparent transition-all duration-200 checked:border-n-brand-solid checked:bg-n-brand-solid hover:enabled:border-n-brand-solid disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:checked:border-n-brand-solid"
+      class="peer absolute inset-0 z-10 h-4 w-4 cursor-pointer appearance-none rounded-full border border-n-slate-6 ring-transparent transition-all duration-200 checked:border-n-brand-solid checked:bg-n-brand-solid hover:enabled:border-n-brand-solid disabled:cursor-not-allowed disabled:opacity-50 dark:border-n-slate-6 dark:checked:border-n-brand-solid"
       @change="handleChange"
     />
     <span

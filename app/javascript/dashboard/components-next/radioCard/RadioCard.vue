@@ -1,10 +1,15 @@
 <script setup>
+import { ref, useId } from 'vue';
 import Label from 'dashboard/components-next/label/Label.vue';
 
 const props = defineProps({
   id: {
     type: String,
     required: true,
+  },
+  name: {
+    type: String,
+    default: '',
   },
   label: {
     type: String,
@@ -33,9 +38,12 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['select']);
+const inputId = useId();
+const radioRef = ref(null);
 
 const handleChange = () => {
   if (!props.isActive && !props.disabled) {
+    radioRef.value?.focus();
     emit('select', props.id);
   }
 };
@@ -54,23 +62,27 @@ const handleChange = () => {
     <div class="flex flex-col gap-2 items-start">
       <div class="flex items-center justify-between w-full gap-3">
         <div class="flex items-center gap-2">
-          <h3 class="text-heading-3 text-n-slate-12">
+          <h3 :id="`${inputId}-label`" class="text-heading-3 text-n-slate-12">
             {{ label }}
           </h3>
           <Label v-if="disabled" :label="disabledLabel" color="amber" compact />
         </div>
         <input
-          :id="`${id}`"
+          :id="inputId"
+          ref="radioRef"
+          :aria-labelledby="`${inputId}-label`"
+          :aria-describedby="`${inputId}-description`"
           :checked="isActive"
           :value="id"
-          :name="id"
+          :name="name || id"
           :disabled="disabled"
           type="radio"
           class="h-4 w-4 border-n-slate-6 text-n-brand focus:ring-n-brand focus:ring-offset-0 flex-shrink-0"
+          @click.stop
           @change="handleChange"
         />
       </div>
-      <p class="text-body-main text-n-slate-11">
+      <p :id="`${inputId}-description`" class="text-body-main text-n-slate-11">
         {{ disabled && disabledMessage ? disabledMessage : description }}
       </p>
       <slot />

@@ -37,7 +37,7 @@ defineProps({
         <div class="flex min-w-0 flex-wrap items-center gap-3 md:gap-4">
           <div class="flex min-w-0 items-center gap-0.5">
             <slot name="title">
-              <h1 class="mb-0 text-lg font-semibold text-n-slate-12">
+              <h1 class="mb-0 text-heading-1 text-n-slate-12">
                 {{ title }}
               </h1>
             </slot>
@@ -53,7 +53,7 @@ defineProps({
           </div>
         </div>
 
-        <p v-if="description" class="mb-0 text-xs text-n-slate-11">
+        <p v-if="description" class="mb-0 text-body-main text-n-slate-11">
           {{ description }}
         </p>
       </div>

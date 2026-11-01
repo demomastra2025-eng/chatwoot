@@ -690,7 +690,8 @@
             "LABEL": "Description",
             "PLACEHOLDER": "Give a short description about the category.",
             "ERROR": "Description is required"
-          }
+          },
+          "ICON": "Choose category icon"
         },
         "BUTTONS": {
           "CREATE": "Create",

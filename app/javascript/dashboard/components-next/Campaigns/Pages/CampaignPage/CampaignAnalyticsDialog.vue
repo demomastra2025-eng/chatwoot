@@ -283,15 +283,11 @@ defineExpose({ open, close });
     </div>
 
     <div v-else-if="analytics" class="space-y-6">
-      <div class="grid gap-3 md:grid-cols-5">
-        <article
-          v-for="stat in stats"
-          :key="stat.key"
-          class="rounded-2xl border border-n-weak bg-n-surface-2 px-4 py-4"
-        >
-          <p
-            class="mb-1 text-xs font-medium uppercase tracking-[0.12em] text-n-slate-11"
-          >
+      <div
+        class="grid grid-cols-2 gap-4 border-b border-n-weak pb-6 md:grid-cols-5"
+      >
+        <article v-for="stat in stats" :key="stat.key" class="min-w-0">
+          <p class="mb-1 text-body-main text-n-slate-11">
             {{ stat.label }}
           </p>
           <p class="mb-0 text-2xl font-semibold text-n-slate-12">
@@ -304,7 +300,7 @@ defineExpose({ open, close });
         <section class="min-w-0">
           <div class="mb-4 flex items-center justify-between gap-3">
             <div>
-              <p class="mb-1 text-base font-medium text-n-slate-12">
+              <p class="mb-1 text-heading-2 text-n-slate-12">
                 {{ t('CAMPAIGN.ANALYTICS.DELIVERIES_TITLE') }}
               </p>
               <p class="mb-0 text-sm text-n-slate-11">
@@ -323,9 +319,9 @@ defineExpose({ open, close });
             </div>
           </div>
 
-          <div class="overflow-hidden rounded-2xl border border-n-weak">
+          <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-n-weak text-sm">
-              <thead class="bg-white/80 text-left text-n-slate-11">
+              <thead class="text-left text-n-slate-11">
                 <tr>
                   <th class="px-4 py-3">
                     {{ t('CAMPAIGN.ANALYTICS.TABLE.CONTACT') }}
@@ -341,7 +337,7 @@ defineExpose({ open, close });
                   </th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-n-weak bg-white/70 text-n-slate-12">
+              <tbody class="divide-y divide-n-weak text-n-slate-12">
                 <tr v-for="delivery in analytics.deliveries" :key="delivery.id">
                   <td class="px-4 py-3">
                     <p class="mb-0 font-medium">{{ delivery.contact.name }}</p>
@@ -375,7 +371,7 @@ defineExpose({ open, close });
 
         <aside class="space-y-4">
           <section class="min-w-0">
-            <p class="mb-1 text-base font-medium text-n-slate-12">
+            <p class="mb-1 text-heading-2 text-n-slate-12">
               {{ t('CAMPAIGN.ANALYTICS.SUMMARY_TITLE') }}
             </p>
             <p class="mb-3 text-sm text-n-slate-11">
@@ -433,7 +429,7 @@ defineExpose({ open, close });
           </section>
 
           <section class="min-w-0">
-            <p class="mb-1 text-base font-medium text-n-slate-12">
+            <p class="mb-1 text-heading-2 text-n-slate-12">
               {{ t('CAMPAIGN.ANALYTICS.RUNS_TITLE') }}
             </p>
             <p class="mb-3 text-sm text-n-slate-11">
@@ -474,7 +470,7 @@ defineExpose({ open, close });
                 />
               </div>
 
-              <article class="rounded-2xl border border-n-weak bg-white/70 p-4">
+              <article class="border-t border-n-weak pt-6">
                 <div class="mb-3 flex items-start justify-between gap-3">
                   <div>
                     <p class="mb-1 text-sm font-medium text-n-slate-12">
@@ -578,7 +574,7 @@ defineExpose({ open, close });
                 <article
                   v-for="run in historicalRuns"
                   :key="run.id"
-                  class="rounded-2xl border border-n-weak bg-white/70 px-4 py-3"
+                  class="border-t border-n-weak py-3"
                 >
                   <div class="mb-2 flex items-center justify-between gap-3">
                     <div>
@@ -662,7 +658,7 @@ defineExpose({ open, close });
           </section>
 
           <section class="min-w-0">
-            <p class="mb-1 text-base font-medium text-n-slate-12">
+            <p class="mb-1 text-heading-2 text-n-slate-12">
               {{ t('CAMPAIGN.ANALYTICS.NOT_SENT_TITLE') }}
             </p>
             <p class="mb-3 text-sm text-n-slate-11">
@@ -673,7 +669,7 @@ defineExpose({ open, close });
               <article
                 v-for="contact in analytics.not_sent_contacts"
                 :key="contact.id"
-                class="rounded-2xl border border-n-weak bg-white/70 px-4 py-3"
+                class="border-t border-n-weak py-3"
               >
                 <p class="mb-1 text-sm font-medium text-n-slate-12">
                   {{ contact.name }}
@@ -689,7 +685,7 @@ defineExpose({ open, close });
           </section>
 
           <section class="min-w-0">
-            <p class="mb-1 text-base font-medium text-n-slate-12">
+            <p class="mb-1 text-heading-2 text-n-slate-12">
               {{ t('CAMPAIGN.ANALYTICS.ERRORS_TITLE') }}
             </p>
             <p class="mb-3 text-sm text-n-slate-11">
@@ -700,7 +696,7 @@ defineExpose({ open, close });
               <article
                 v-for="error in analytics.errors"
                 :key="error.message"
-                class="rounded-2xl border border-n-weak bg-white/70 px-4 py-3"
+                class="border-t border-n-weak py-3"
               >
                 <p class="mb-1 text-sm font-medium text-n-slate-12">
                   {{ error.message }}
@@ -722,7 +718,7 @@ defineExpose({ open, close });
 
     <div
       v-else
-      class="flex min-h-[16rem] items-center justify-center rounded-2xl border border-dashed border-n-weak bg-n-surface-2 px-6 text-center"
+      class="flex min-h-[16rem] items-center justify-center text-center"
     >
       <p class="mb-0 max-w-sm text-sm text-n-slate-11">
         {{ t('CAMPAIGN.ANALYTICS.UNAVAILABLE') }}

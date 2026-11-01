@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { getInboxIconByType } from 'dashboard/helper/inbox';
@@ -35,6 +35,13 @@ const emit = defineEmits(['select']);
 
 const { t } = useI18n();
 const openGroup = ref('');
+const rootRef = ref(null);
+const teleportTarget = ref('body');
+watch(openGroup, brand => {
+  if (!brand) return;
+  teleportTarget.value =
+    rootRef.value?.closest('dialog[open], [data-legacy-modal]') || 'body';
+});
 let longPressTimer;
 let closeTimer;
 
@@ -156,7 +163,11 @@ const handleChannelIdentityClick = async channelLabel => {
 </script>
 
 <template>
-  <div v-show="channelLabels.length" class="flex flex-col w-full gap-2">
+  <div
+    ref="rootRef"
+    v-show="channelLabels.length"
+    class="flex flex-col w-full gap-2"
+  >
     <span v-if="title" class="text-sm font-medium text-n-slate-10">
       {{ title }}
     </span>
@@ -186,7 +197,7 @@ const handleChannelIdentityClick = async channelLabel => {
         >
           <span class="size-4" :class="group.icon" aria-hidden="true" />
         </PopoverTrigger>
-        <PopoverPortal>
+        <PopoverPortal :to="teleportTarget">
           <PopoverContent
             side="bottom"
             align="start"

@@ -30,6 +30,7 @@ const onBackButtonClick = () => {
       <button
         v-if="showBackButton"
         class="px-2 ltr:-ml-3 rtl:-mr-3"
+        :aria-label="$t('CHAT_ACTIONS.BACK')"
         @click="onBackButtonClick"
       >
         <FluentIcon icon="chevron-left" size="24" class="text-n-slate-12" />

@@ -1,5 +1,16 @@
 {
   "GENERAL": {
+    "PAGINATION": {
+      "FIRST_PAGE": "Первая страница",
+      "PREVIOUS_PAGE": "Предыдущая страница",
+      "NEXT_PAGE": "Следующая страница",
+      "LAST_PAGE": "Последняя страница"
+    },
+    "CALENDAR": {
+      "PREVIOUS": "Предыдущий период",
+      "NEXT": "Следующий период"
+    },
+    "REMOVE_ITEM": "Убрать {name}",
     "SHOWING_RESULTS": "Показаны {firstIndex}-{lastIndex} из {totalCount} элементов",
     "PHONE_INPUT": {
       "PLACEHOLDER": "Поиск",

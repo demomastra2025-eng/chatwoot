@@ -669,7 +669,9 @@ const handlePlaceholderChange = nextValue => {
 };
 
 const resolveTeleportTarget = () => {
-  const overlayElement = rootRef.value?.closest('dialog[open], .modal-mask');
+  const overlayElement = rootRef.value?.closest(
+    'dialog[open], [data-legacy-modal], .modal-mask'
+  );
   teleportTarget.value = overlayElement || 'body';
 };
 

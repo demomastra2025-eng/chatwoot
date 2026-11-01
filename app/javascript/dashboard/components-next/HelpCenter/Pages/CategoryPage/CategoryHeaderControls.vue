@@ -162,40 +162,36 @@ const handleBreadcrumbClick = () => {
       @click="handleBreadcrumbClick"
     />
     <div v-if="!hasSelectedCategory" class="relative">
-      <OnClickOutside @trigger="isCreateCategoryDialogOpen = false">
-        <Button
-          :label="t('HELP_CENTER.CATEGORY_PAGE.CATEGORY_HEADER.NEW_CATEGORY')"
-          icon="i-lucide-plus"
-          size="sm"
-          @click="isCreateCategoryDialogOpen = !isCreateCategoryDialogOpen"
-        />
-        <CategoryDialog
-          v-if="isCreateCategoryDialogOpen"
-          mode="create"
-          :portal-name="currentPortalName"
-          :active-locale-name="activeLocaleName"
-          :active-locale-code="activeLocaleCode"
-          @close="isCreateCategoryDialogOpen = false"
-        />
-      </OnClickOutside>
+      <Button
+        :label="t('HELP_CENTER.CATEGORY_PAGE.CATEGORY_HEADER.NEW_CATEGORY')"
+        icon="i-lucide-plus"
+        size="sm"
+        @click="isCreateCategoryDialogOpen = !isCreateCategoryDialogOpen"
+      />
+      <CategoryDialog
+        v-if="isCreateCategoryDialogOpen"
+        mode="create"
+        :portal-name="currentPortalName"
+        :active-locale-name="activeLocaleName"
+        :active-locale-code="activeLocaleCode"
+        @close="isCreateCategoryDialogOpen = false"
+      />
     </div>
     <div v-else class="relative">
-      <OnClickOutside @trigger="isEditCategoryDialogOpen = false">
-        <Button
-          :label="t('HELP_CENTER.CATEGORY_PAGE.CATEGORY_HEADER.EDIT_CATEGORY')"
-          color="slate"
-          size="sm"
-          @click="isEditCategoryDialogOpen = !isEditCategoryDialogOpen"
-        />
-        <CategoryDialog
-          v-if="isEditCategoryDialogOpen"
-          :selected-category="selectedCategory"
-          :portal-name="currentPortalName"
-          :active-locale-name="activeLocaleName"
-          :active-locale-code="activeLocaleCode"
-          @close="isEditCategoryDialogOpen = false"
-        />
-      </OnClickOutside>
+      <Button
+        :label="t('HELP_CENTER.CATEGORY_PAGE.CATEGORY_HEADER.EDIT_CATEGORY')"
+        color="slate"
+        size="sm"
+        @click="isEditCategoryDialogOpen = !isEditCategoryDialogOpen"
+      />
+      <CategoryDialog
+        v-if="isEditCategoryDialogOpen"
+        :selected-category="selectedCategory"
+        :portal-name="currentPortalName"
+        :active-locale-name="activeLocaleName"
+        :active-locale-code="activeLocaleCode"
+        @close="isEditCategoryDialogOpen = false"
+      />
     </div>
   </div>
 </template>

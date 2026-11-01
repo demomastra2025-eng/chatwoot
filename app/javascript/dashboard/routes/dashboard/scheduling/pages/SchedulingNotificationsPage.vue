@@ -9,6 +9,8 @@ import ResourcesAPI from 'dashboard/api/scheduling/resources';
 import ServicesAPI from 'dashboard/api/scheduling/services';
 import CabinetsAPI from 'dashboard/api/scheduling/cabinets';
 import CrmFieldDefinitionsAPI from 'dashboard/api/crm/fieldDefinitions';
+import Select from 'dashboard/components-next/select/Select.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
 import AppointmentTemplatePackDialog from 'dashboard/components-next/Scheduling/AppointmentTemplatePackDialog.vue';
 import CreateWhatsAppTemplateDialog from 'dashboard/routes/dashboard/settings/inbox/settingsPage/components/CreateWhatsAppTemplateDialog.vue';
@@ -779,17 +781,21 @@ onMounted(async () => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-n-surface-1">
-    <SchedulingPageHeader :title="L('TITLE')" :subtitle="L('SUBTITLE')" />
+    <SchedulingPageHeader :title="L('TITLE')" :description="L('SUBTITLE')" />
     <div class="flex-1 overflow-y-auto p-3 sm:p-6">
       <div class="mx-auto max-w-5xl space-y-5">
         <section
           class="flex flex-wrap items-end gap-3 rounded-2xl border border-n-weak bg-n-solid-2 p-4"
         >
-          <label class="min-w-48 flex-1 text-sm text-n-slate-12">
+          <label
+            for="notifications-channel"
+            class="min-w-0 flex-1 text-sm text-n-slate-12"
+          >
             {{ L('CHANNEL') }}
-            <select
+            <Select
+              id="notifications-channel"
               v-model="selectedInboxId"
-              class="mt-1 w-full rounded-lg border border-n-weak bg-n-surface-1 p-2"
+              class="w-full"
             >
               <option value="">{{ L('CHOOSE') }}</option>
               <option
@@ -799,7 +805,7 @@ onMounted(async () => {
               >
                 {{ inbox.name }}
               </option>
-            </select>
+            </Select>
           </label>
           <p class="m-0 text-sm text-n-slate-11">
             {{ L('RULE_COUNT') }}: {{ notificationRules.length }}
@@ -957,24 +963,14 @@ onMounted(async () => {
                 </div>
 
                 <div class="flex items-center gap-3" @click.stop>
-                  <label
-                    class="relative inline-flex cursor-pointer items-center"
-                  >
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      class="peer sr-only"
-                      :aria-label="
-                        t(`SCHEDULING.REMINDERS.PRESETS.${preset.key}.TITLE`)
-                      "
-                      :checked="Boolean(presetRule(preset)?.active)"
-                      :disabled="!canTogglePreset(preset)"
-                      @change="handlePresetToggle(preset, $event)"
-                    />
-                    <span
-                      class="h-5 w-9 rounded-full bg-n-slate-6 transition-colors after:absolute after:left-[2px] after:top-[2px] after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:bg-n-brand peer-checked:after:translate-x-4 peer-disabled:cursor-not-allowed peer-disabled:opacity-50"
-                    />
-                  </label>
+                  <Switch
+                    :aria-label="
+                      t(`SCHEDULING.REMINDERS.PRESETS.${preset.key}.TITLE`)
+                    "
+                    :model-value="Boolean(presetRule(preset)?.active)"
+                    :disabled="!canTogglePreset(preset)"
+                    @update:model-value="handlePresetToggle(preset)"
+                  />
 
                   <span
                     class="size-4 block text-n-slate-11 transition-transform"
@@ -998,12 +994,16 @@ onMounted(async () => {
                 <div class="grid grid-cols-1 gap-6 lg:grid-cols-12">
                   <div class="space-y-4 lg:col-span-7">
                     <div class="space-y-1.5">
-                      <label class="block text-xs font-medium text-n-slate-12">
+                      <label
+                        :for="`preset-template-${preset.key}`"
+                        class="block text-xs font-medium text-n-slate-12"
+                      >
                         {{ t('SCHEDULING.REMINDERS.FIELDS.TEMPLATE') }}
                       </label>
-                      <select
-                        :value="presetStates[preset.key].templateKey"
-                        class="w-full rounded-lg border border-n-weak bg-n-surface-1 p-2 text-sm text-n-slate-12"
+                      <Select
+                        :id="`preset-template-${preset.key}`"
+                        :model-value="presetStates[preset.key].templateKey"
+                        class="w-full"
                         @change="
                           e =>
                             handleInlineTemplateChange(preset, e.target.value)
@@ -1025,7 +1025,7 @@ onMounted(async () => {
                             )
                           }})
                         </option>
-                      </select>
+                      </Select>
                     </div>
 
                     <div
@@ -1076,14 +1076,16 @@ onMounted(async () => {
                     </div>
 
                     <div v-if="preset.supportsReviewDelay" class="space-y-1.5">
-                      <label class="block text-xs font-medium text-n-slate-12">
+                      <label
+                        :for="`preset-review-delay-${preset.key}`"
+                        class="block text-xs font-medium text-n-slate-12"
+                      >
                         {{ t('SCHEDULING.REMINDERS.FIELDS.REVIEW_DELAY') }}
-                        <select
-                          v-model.number="
-                            presetStates[preset.key].reviewDelayHours
-                          "
+                        <Select
+                          :id="`preset-review-delay-${preset.key}`"
+                          v-model="presetStates[preset.key].reviewDelayHours"
                           data-testid="preset-review-delay-select"
-                          class="mt-1 w-full rounded-lg border border-n-weak bg-n-surface-1 p-2 text-sm text-n-slate-12"
+                          class="w-full"
                         >
                           <option :value="0">
                             {{
@@ -1099,7 +1101,7 @@ onMounted(async () => {
                           <option :value="3">
                             {{ t('SCHEDULING.REMINDERS.REVIEW_DELAY.HOURS_3') }}
                           </option>
-                        </select>
+                        </Select>
                       </label>
                     </div>
 
@@ -1154,14 +1156,18 @@ onMounted(async () => {
                           :key="`${preset.key}-var-${varKey}`"
                           class="flex flex-col gap-1"
                         >
-                          <span class="font-mono text-[11px] text-n-slate-11">
+                          <label
+                            :for="`preset-variable-${preset.key}-${varKey}`"
+                            class="font-mono text-xs text-n-slate-11"
+                          >
                             {{ `\{\{${varKey}\}\}` }}
-                          </span>
-                          <select
+                          </label>
+                          <Select
+                            :id="`preset-variable-${preset.key}-${varKey}`"
                             v-model="
                               presetStates[preset.key].variableBindings[varKey]
                             "
-                            class="rounded-lg border border-n-weak bg-n-surface-1 p-1.5 text-xs text-n-slate-12"
+                            class="w-full"
                           >
                             <option value="">{{ L('CHOOSE') }}</option>
                             <option
@@ -1172,7 +1178,7 @@ onMounted(async () => {
                               {{ t(field.labelKey, field.defaultLabel) }} —
                               {{ field.example }}
                             </option>
-                          </select>
+                          </Select>
                         </div>
                       </div>
                     </div>
@@ -1318,20 +1324,12 @@ onMounted(async () => {
               </div>
             </div>
             <template v-if="rule.calendar_managed || firstTouch(rule)">
-              <label class="relative inline-flex cursor-pointer items-center">
-                <input
-                  type="checkbox"
-                  role="switch"
-                  class="peer sr-only"
-                  :aria-label="rule.name"
-                  :checked="rule.active"
-                  :disabled="!rule.active && !canEnable(rule)"
-                  @change="toggle(rule, $event)"
-                />
-                <span
-                  class="h-5 w-9 rounded-full bg-n-slate-6 transition-colors after:absolute after:left-[2px] after:top-[2px] after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:bg-n-brand peer-checked:after:translate-x-4 peer-disabled:cursor-not-allowed peer-disabled:opacity-50"
-                />
-              </label>
+              <Switch
+                :aria-label="rule.name"
+                :model-value="Boolean(rule.active)"
+                :disabled="!rule.active && !canEnable(rule)"
+                @update:model-value="toggle(rule)"
+              />
             </template>
             <span v-else class="text-sm text-n-slate-11">{{
               L('MANAGE_IN_AUTOMATIONS')

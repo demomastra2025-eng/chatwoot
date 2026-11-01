@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils';
 import { ref } from 'vue';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import CopilotMenuBar from './CopilotMenuBar.vue';
 import { REPLY_EDITOR_MODES } from './constants';
@@ -35,8 +35,10 @@ const DropdownBodyStub = {
   template: '<div class="dropdown-body"><slot /></div>',
 };
 
-const mountMenu = props =>
-  mount(CopilotMenuBar, {
+const wrappers = [];
+const mountMenu = props => {
+  const wrapper = mount(CopilotMenuBar, {
+    attachTo: document.body,
     props,
     global: {
       stubs: {
@@ -46,6 +48,9 @@ const mountMenu = props =>
       },
     },
   });
+  wrappers.push(wrapper);
+  return wrapper;
+};
 
 const labels = wrapper =>
   wrapper.findAll('button').map(button => button.attributes('data-label'));
@@ -55,8 +60,11 @@ describe('CopilotMenuBar', () => {
     testState.replyMode = ref(REPLY_EDITOR_MODES.REPLY);
     testState.draftMessage = ref('');
   });
+  afterEach(() => {
+    wrappers.splice(0).forEach(wrapper => wrapper.unmount());
+  });
 
-  it('keeps the AI writing tools and has no Copilot chat entry', () => {
+  it('keeps the AI writing tools and opens tone options explicitly', async () => {
     const wrapper = mountMenu({
       conversationId: 12,
       editorContent: 'Hello, we will check it',
@@ -65,11 +73,6 @@ describe('CopilotMenuBar', () => {
     expect(labels(wrapper)).toEqual([
       'INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.IMPROVE_REPLY',
       'INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.CHANGE_TONE.TITLE',
-      'INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.CHANGE_TONE.OPTIONS.PROFESSIONAL',
-      'INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.CHANGE_TONE.OPTIONS.CASUAL',
-      'INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.CHANGE_TONE.OPTIONS.STRAIGHTFORWARD',
-      'INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.CHANGE_TONE.OPTIONS.CONFIDENT',
-      'INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.CHANGE_TONE.OPTIONS.FRIENDLY',
       'INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.GRAMMAR',
       'INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.SUGGESTION',
       'INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.SUMMARIZE',
@@ -78,6 +81,47 @@ describe('CopilotMenuBar', () => {
     expect(wrapper.find('.bg-n-strong').exists()).toBe(true);
     expect(wrapper.text()).not.toContain(
       'INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.EMPTY_HINT'
+    );
+    const trigger = wrapper.find(
+      '[data-label="INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.CHANGE_TONE.TITLE"]'
+    );
+    expect(trigger.attributes('aria-expanded')).toBe('false');
+    await trigger.trigger('click');
+    expect(trigger.attributes('aria-expanded')).toBe('true');
+    expect(labels(wrapper)).toContain(
+      'INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.CHANGE_TONE.OPTIONS.PROFESSIONAL'
+    );
+    expect(wrapper.emitted('executeCopilotAction')).toBeUndefined();
+    await trigger.trigger('click');
+    expect(trigger.attributes('aria-expanded')).toBe('false');
+  });
+
+  it('opens the tone choices with the keyboard and restores focus on Escape', async () => {
+    const wrapper = mountMenu({ editorContent: 'A synthetic draft' });
+    const trigger = wrapper.find('[aria-controls]');
+    trigger.element.focus();
+    await trigger.trigger('keydown', { key: 'ArrowDown' });
+    const option = wrapper.find(
+      '[data-label="INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.CHANGE_TONE.OPTIONS.PROFESSIONAL"]'
+    );
+    expect(document.activeElement).toBe(option.element);
+    await option.trigger('keydown', { key: 'Escape' });
+    expect(trigger.attributes('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(trigger.element);
+    expect(wrapper.emitted('executeCopilotAction')).toBeUndefined();
+  });
+
+  it('emits the selected tone once and closes its choices', async () => {
+    const wrapper = mountMenu({ editorContent: 'A synthetic draft' });
+    await wrapper.find('[aria-controls]').trigger('click');
+    await wrapper
+      .find(
+        '[data-label="INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.CHANGE_TONE.OPTIONS.CASUAL"]'
+      )
+      .trigger('click');
+    expect(wrapper.emitted('executeCopilotAction')).toEqual([['casual']]);
+    expect(wrapper.find('[aria-controls]').attributes('aria-expanded')).toBe(
+      'false'
     );
   });
 

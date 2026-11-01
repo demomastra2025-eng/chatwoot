@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, useId } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Avatar from 'next/avatar/Avatar.vue';
 import RadioCard from 'dashboard/components-next/radioCard/RadioCard.vue';
@@ -20,6 +20,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update']);
+
+const radioGroupName = useId();
 
 const { t } = useI18n();
 
@@ -69,6 +71,7 @@ const toggleSenderNameType = key => {
       v-for="keyOption in senderNameKeyOptions"
       :id="keyOption.key"
       :key="keyOption.key"
+      :name="radioGroupName"
       :label="keyOption.heading"
       :description="keyOption.content"
       :is-active="keyOption.key === props.senderNameType"

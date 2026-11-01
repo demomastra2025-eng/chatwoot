@@ -1,6 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import OwnerFinancePage from '../pages/OwnerFinancePage.vue';
+import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
+import { useAlert } from 'dashboard/composables';
+import { UI } from '../constants';
 import OwnerFinanceAPI from 'dashboard/api/ownerFinance';
 
 vi.mock('dashboard/api/ownerFinance', () => ({
@@ -10,6 +13,10 @@ vi.mock('dashboard/api/ownerFinance', () => ({
     updateTransaction: vi.fn(),
     hidePersonalTransaction: vi.fn(),
     createDeadline: vi.fn(),
+    createAccount: vi.fn(),
+    createTransaction: vi.fn(),
+    createContract: vi.fn(),
+    createObligation: vi.fn(),
     runDeadlineReminders: vi.fn(),
   },
 }));
@@ -126,6 +133,19 @@ const sampleDashboard = {
 describe('OwnerFinancePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+      configurable: true,
+      value: vi.fn(function showModal() {
+        this.open = true;
+      }),
+    });
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', {
+      configurable: true,
+      value: vi.fn(function close() {
+        this.open = false;
+        this.dispatchEvent(new Event('close'));
+      }),
+    });
     OwnerFinanceAPI.getDashboard.mockResolvedValue({ data: sampleDashboard });
     OwnerFinanceAPI.completeDeadline.mockResolvedValue({ data: {} });
     OwnerFinanceAPI.hidePersonalTransaction.mockResolvedValue({
@@ -133,15 +153,14 @@ describe('OwnerFinancePage', () => {
     });
   });
 
-  const mountPage = () =>
+  afterEach(() => vi.restoreAllMocks());
+
+  const mountPage = (options = {}) =>
     mount(OwnerFinancePage, {
+      ...options,
       global: {
         stubs: {
-          Button: {
-            props: ['label'],
-            template:
-              '<button type="button" @click="$emit(\'click\')">{{ label }}</button>',
-          },
+          TeleportWithDirection: { template: '<div><slot /></div>' },
           Spinner: { template: '<div class="spinner" />' },
         },
       },
@@ -182,4 +201,113 @@ describe('OwnerFinancePage', () => {
       hideMerchantAlways: false,
     });
   });
+  const clickLabel = async (wrapper, label) => {
+    const action = wrapper
+      .findAll('button')
+      .find(button => button.text() === label);
+    expect(action).toBeTruthy();
+    await action.trigger('click');
+    await flushPromises();
+  };
+
+  it.each([
+    ['deadline', UI.ADD_DEADLINE, null, 'title', 'createDeadline'],
+    ['account', UI.ADD_ACCOUNT, null, 'name', 'createAccount'],
+    [
+      'transaction',
+      UI.ADD_TRANSACTION,
+      'transactions',
+      'merchant',
+      'createTransaction',
+    ],
+    ['contract', UI.ADD_CONTRACT, 'contracts', 'client_name', 'createContract'],
+    ['obligation', UI.ADD_OBLIGATION, 'contracts', 'title', 'createObligation'],
+  ])(
+    'submits the %s form once, keeps failed data and closes after retry succeeds',
+    async (kind, label, tab, field, method) => {
+      const wrapper = mountPage();
+      await flushPromises();
+      if (tab) await wrapper.get(`[data-test="tab-${tab}"]`).trigger('click');
+      await clickLabel(wrapper, label);
+      expect(wrapper.get('dialog').element.open).toBe(true);
+      expect(wrapper.findAll('form')).toHaveLength(1);
+      const input = wrapper.get(
+        `#finance-${kind === 'transaction' ? 'tx' : kind}Form-${field}`
+      );
+      await input.setValue('Synthetic fixture');
+      let rejectSave;
+      OwnerFinanceAPI[method].mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectSave = reject;
+          })
+      );
+      const dialog = wrapper.getComponent(Dialog);
+      dialog.vm.$emit('confirm');
+      dialog.vm.$emit('confirm');
+      await flushPromises();
+      expect(OwnerFinanceAPI[method]).toHaveBeenCalledTimes(1);
+      expect(dialog.props('isLoading')).toBe(true);
+      expect(dialog.props('disableConfirmButton')).toBe(true);
+      rejectSave(new Error('synthetic failure'));
+      await flushPromises();
+      expect(wrapper.get('dialog').element.open).toBe(true);
+      expect(input.element.value).toBe('Synthetic fixture');
+      expect(useAlert).toHaveBeenCalled();
+      OwnerFinanceAPI[method].mockResolvedValueOnce({ data: {} });
+      await wrapper.get('form').trigger('submit');
+      await flushPromises();
+      expect(OwnerFinanceAPI[method]).toHaveBeenCalledTimes(2);
+      expect(wrapper.get('dialog').element.open).toBe(false);
+      wrapper.unmount();
+    }
+  );
+
+  it('cancels the native dialog without saving', async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    await clickLabel(wrapper, UI.ADD_DEADLINE);
+    await clickLabel(wrapper, UI.CANCEL);
+    expect(wrapper.get('dialog').element.open).toBe(false);
+    expect(OwnerFinanceAPI.createDeadline).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it.each([
+    [
+      'contract',
+      UI.ADD_CONTRACT,
+      'client_name',
+      'monthly_amount',
+      'createContract',
+    ],
+    [
+      'obligation',
+      UI.ADD_OBLIGATION,
+      'title',
+      'base_amount',
+      'createObligation',
+    ],
+  ])(
+    'saves decimal money through native form validation in the %s dialog',
+    async (kind, label, name, amount, method) => {
+      const wrapper = mountPage({ attachTo: document.body });
+      await flushPromises();
+      await wrapper.get('[data-test="tab-contracts"]').trigger('click');
+      await clickLabel(wrapper, label);
+      await wrapper
+        .get(`#finance-${kind}Form-${name}`)
+        .setValue('Synthetic fixture');
+      await wrapper.get(`#finance-${kind}Form-${amount}`).setValue('100001.23');
+      const form = wrapper.get('form').element;
+      expect(form.checkValidity()).toBe(true);
+      OwnerFinanceAPI[method].mockResolvedValueOnce({ data: {} });
+      wrapper.get('button[type="submit"]').element.click();
+      await flushPromises();
+      expect(OwnerFinanceAPI[method]).toHaveBeenCalledTimes(1);
+      expect(OwnerFinanceAPI[method].mock.calls[0][0][amount]).toBe(100001.23);
+      expect(wrapper.get('dialog').element.open).toBe(false);
+      wrapper.unmount();
+    }
+  );
 });

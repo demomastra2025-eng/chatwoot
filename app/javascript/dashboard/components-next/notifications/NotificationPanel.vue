@@ -335,7 +335,7 @@ defineExpose({ close, open, toggle });
             <li
               v-for="notification in notifications"
               :key="notification.id"
-              class="group flex items-start gap-3 py-4"
+              class="group relative flex items-start gap-3 py-4"
               :class="
                 notificationRoute(notification)
                   ? 'cursor-pointer'
@@ -344,6 +344,14 @@ defineExpose({ close, open, toggle });
               data-test="notification-item"
               @click="openNotification(notification)"
             >
+              <button
+                v-if="notificationRoute(notification)"
+                type="button"
+                data-test="open-notification"
+                class="reset-base absolute inset-0 p-0 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-brand"
+                :aria-label="notificationTitle(notification)"
+                @click.stop="openNotification(notification)"
+              />
               <span
                 class="grid size-10 shrink-0 place-items-center rounded-full"
                 :class="
@@ -377,7 +385,7 @@ defineExpose({ close, open, toggle });
                 <Button
                   v-if="!notification.readAt"
                   data-test="archive-notification"
-                  class="mt-2"
+                  class="relative mt-2"
                   color="slate"
                   variant="ghost"
                   size="sm"

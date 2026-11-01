@@ -12,6 +12,18 @@ describe('SchedulingPageHeader', () => {
     expect(wrapper.get('h1').text()).toBe('Sales');
   });
 
+  it('renders the public description prop', () => {
+    const wrapper = mount(SchedulingPageHeader, {
+      props: {
+        title: 'Notifications',
+        description: 'Choose the channel and reminder templates',
+      },
+    });
+    expect(wrapper.get('p').text()).toBe(
+      'Choose the channel and reminder templates'
+    );
+  });
+
   it('replaces the default heading with the title slot', () => {
     const wrapper = mount(SchedulingPageHeader, {
       props: { title: 'Sales' },

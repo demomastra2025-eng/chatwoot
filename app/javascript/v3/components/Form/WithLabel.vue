@@ -1,5 +1,6 @@
 <script setup>
 defineProps({
+  id: { type: String, default: '' },
   label: { type: String, default: '' },
   name: { type: String, default: '' },
   icon: { type: String, default: '' },
@@ -13,7 +14,7 @@ defineProps({
   <div class="space-y-1">
     <label
       v-if="label"
-      :for="name"
+      :for="id || name"
       class="flex justify-between text-sm font-medium leading-6 text-n-slate-12"
       :class="{ 'text-n-ruby-12': hasError }"
     >
