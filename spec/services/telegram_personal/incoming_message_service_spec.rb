@@ -359,5 +359,139 @@ RSpec.describe TelegramPersonal::IncomingMessageService do
         hash_including('filename' => 'retry.png', 'error' => 'StandardError')
       )
     end
+
+    it 'namespaces supergroup source_ids so two supergroups and private chats never collide on message_id' do
+      channel.update!(runtime_state: channel.runtime_state_payload.merge('sync_groups' => true))
+
+      described_class.new(
+        inbox: channel.inbox,
+        params: {
+          message_id: '42',
+          chat_id: '6002671687',
+          peer_user_id: '6002671687',
+          sender_id: '6002671687',
+          chat_type: 'private',
+          is_self: true,
+          text: 'saved note'
+        }
+      ).perform
+      described_class.new(
+        inbox: channel.inbox,
+        params: {
+          message_id: '42',
+          chat_id: '-100111',
+          chat_type: 'supergroup',
+          chat_title: 'Group A',
+          sender_id: '55',
+          text: 'group a msg 42'
+        }
+      ).perform
+      described_class.new(
+        inbox: channel.inbox,
+        params: {
+          message_id: '42',
+          chat_id: '-100222',
+          chat_type: 'supergroup',
+          chat_title: 'Group B',
+          sender_id: '66',
+          text: 'group b msg 42'
+        }
+      ).perform
+
+      expect(channel.inbox.messages.pluck(:source_id, :content)).to contain_exactly(
+        ['42', 'saved note'],
+        ['tg_group:-100111:42', 'group a msg 42'],
+        ['tg_group:-100222:42', 'group b msg 42']
+      )
+    end
+
+    it 'formats group reply_to_message_id with tg_group prefix and reconciles pending group reply echoes' do
+      channel = create(:channel_telegram_personal, runtime_state: { 'sync_groups' => true })
+      group_contact = create(:contact, account: channel.account, name: 'Clinic Group')
+      contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: group_contact, source_id: '-100777')
+      conversation = create(
+        :conversation,
+        account: channel.account,
+        inbox: channel.inbox,
+        contact: group_contact,
+        contact_inbox: contact_inbox,
+        additional_attributes: { 'chat_id' => '-100777', 'chat_type' => 'supergroup' }
+      )
+      parent_msg = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        source_id: 'tg_group:-100777:10',
+        content: 'Parent question'
+      )
+      pending_reply = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        sender: nil,
+        source_id: nil,
+        content: 'Agent reply in group',
+        content_attributes: { 'in_reply_to' => parent_msg.id }
+      )
+
+      described_class.new(
+        inbox: channel.inbox,
+        params: {
+          message_id: '11',
+          chat_id: '-100777',
+          chat_type: 'supergroup',
+          chat_title: 'Clinic Group',
+          outgoing_echo: true,
+          reply_to_message_id: '10',
+          text: 'Agent reply in group'
+        }
+      ).perform
+
+      expect(pending_reply.reload.source_id).to eq('tg_group:-100777:11')
+      expect(pending_reply.content_attributes['in_reply_to']).to eq(parent_msg.id)
+      expect(conversation.messages.count).to eq(2)
+    end
+
+    it 'rekeys legacy unprefixed group messages on collision so 1:1 private messages with the same id are imported' do
+      channel = create(:channel_telegram_personal, runtime_state: { 'sync_groups' => true })
+      group_contact = create(:contact, account: channel.account, name: 'Legacy Group')
+      group_ci = create(:contact_inbox, inbox: channel.inbox, contact: group_contact, source_id: '-100888')
+      group_conv = create(
+        :conversation,
+        account: channel.account,
+        inbox: channel.inbox,
+        contact: group_contact,
+        contact_inbox: group_ci,
+        additional_attributes: { 'chat_id' => '-100888', 'chat_type' => 'supergroup' }
+      )
+      legacy_group_msg = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: group_conv,
+        source_id: '55',
+        content: 'old unprefixed group msg'
+      )
+
+      described_class.new(
+        inbox: channel.inbox,
+        params: {
+          message_id: '55',
+          peer_user_id: '6002671687',
+          chat_id: '6002671687',
+          chat_type: 'private',
+          is_self: true,
+          outgoing_echo: true,
+          imported_history: true,
+          text: 'saved note 55'
+        }
+      ).perform
+
+      expect(legacy_group_msg.reload.source_id).to eq('tg_group:-100888:55')
+      expect(channel.inbox.messages.find_by(source_id: '55')&.content).to eq('saved note 55')
+    end
   end
 end

@@ -500,4 +500,22 @@ RSpec.describe TelegramPersonal::ContactSyncService do
 
     expect(profile.reload.profile_data).not_to have_key('avatar_fingerprint')
   end
+
+  it 'preserves existing self-chat contact name when is_self is true even without phone match' do
+    contact = create(:contact, account: account, name: 'Veritas Consult', identifier: 'telegram_personal:6002671687')
+    create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: '6002671687')
+
+    described_class.new(
+      inbox: channel.inbox,
+      params: {
+        peer_user_id: '6002671687',
+        chat_id: '6002671687',
+        first_name: 'Asset',
+        is_self: true,
+        sync_source: 'message_event'
+      }
+    ).perform
+
+    expect(contact.reload.name).to eq('Veritas Consult')
+  end
 end

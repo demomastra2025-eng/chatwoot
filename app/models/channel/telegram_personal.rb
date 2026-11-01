@@ -45,12 +45,18 @@ class Channel::TelegramPersonal < ApplicationRecord
   SECRET_RUNTIME_KEYS = %w[pending_phone_code_hash].freeze
   DEFAULT_HISTORY_SYNC_CHECKPOINT = {
     'version' => 1,
+    'mode' => nil,
     'requested_at' => nil,
+    'scan_started_at' => nil,
     'cutoff_at' => nil,
+    'total_dialog_count' => 0,
     'dialog_user_ids' => [],
+    'failed_dialog_ids' => [],
+    'last_dialog_error' => nil,
     'next_dialog_index' => 0,
     'last_completed_dialog_id' => nil,
-    'last_checkpoint_at' => nil
+    'last_checkpoint_at' => nil,
+    'dialog_cursors' => {}
   }.freeze
   DEFAULT_RUNTIME_STATE = {
     'qr_login_url' => nil,
@@ -66,6 +72,8 @@ class Channel::TelegramPersonal < ApplicationRecord
     'history_sync_requested_at' => nil,
     'history_sync_started_at' => nil,
     'history_sync_completed_at' => nil,
+    'full_history_sync_completed_at' => nil,
+    'last_deep_reconcile_at' => nil,
     'history_sync_failed_at' => nil,
     'history_sync_cancelled_at' => nil,
     'history_sync_error' => nil,
@@ -142,6 +150,10 @@ class Channel::TelegramPersonal < ApplicationRecord
 
   def runtime_state_payload
     normalize_runtime_state(runtime_state)
+  end
+
+  def normalize_runtime_state_payload(value)
+    normalize_runtime_state(value)
   end
 
   def sync_groups?
@@ -226,28 +238,27 @@ class Channel::TelegramPersonal < ApplicationRecord
     payload = (value || {}).deep_stringify_keys.except(*SECRET_RUNTIME_KEYS)
 
     DEFAULT_RUNTIME_STATE.deep_merge(payload).tap do |runtime|
-      checkpoint = runtime['history_sync_checkpoint']
-      runtime['history_sync_checkpoint'] =
-        DEFAULT_HISTORY_SYNC_CHECKPOINT.deep_merge(
-          checkpoint.is_a?(Hash) ? checkpoint.deep_stringify_keys : {}
-        )
-      runtime['history_sync_checkpoint']['dialog_user_ids'] =
-        Array.wrap(runtime.dig('history_sync_checkpoint', 'dialog_user_ids'))
-             .filter_map { |item| item.to_s.presence }
-      runtime['history_sync_checkpoint']['next_dialog_index'] =
-        runtime.dig('history_sync_checkpoint', 'next_dialog_index').to_i
-      runtime['history_sync_count'] = runtime['history_sync_count'].to_i
-      runtime['history_dialog_count'] = runtime['history_dialog_count'].to_i
-      runtime['contacts_sync_count'] = runtime['contacts_sync_count'].to_i
-      ignored_chat_ids =
-        Array.wrap(runtime['ignored_chat_ids'])
-             .flat_map { |item| item.to_s.split(/[,\s;]+/) }
-             .filter_map(&:presence)
-             .uniq
+      runtime['history_sync_checkpoint'] = normalize_history_sync_checkpoint(runtime['history_sync_checkpoint'])
+      %w[history_sync_count history_dialog_count contacts_sync_count].each { |key| runtime[key] = runtime[key].to_i }
+      ignored_chat_ids = normalize_ignored_chat_ids(runtime['ignored_chat_ids'])
       sync_groups = ActiveModel::Type::Boolean.new.cast(runtime['sync_groups']) == true
       runtime.compact_blank!
-      runtime['ignored_chat_ids'] = ignored_chat_ids
-      runtime['sync_groups'] = sync_groups
+      runtime.merge!('ignored_chat_ids' => ignored_chat_ids, 'sync_groups' => sync_groups)
     end
+  end
+
+  def normalize_history_sync_checkpoint(checkpoint)
+    raw = checkpoint.is_a?(Hash) ? checkpoint.deep_stringify_keys : {}
+    DEFAULT_HISTORY_SYNC_CHECKPOINT.deep_merge(raw).tap do |cp|
+      %w[dialog_user_ids failed_dialog_ids].each do |key|
+        cp[key] = Array.wrap(cp[key]).filter_map { |item| item.to_s.presence }
+      end
+      %w[next_dialog_index total_dialog_count].each { |key| cp[key] = cp[key].to_i }
+      cp['dialog_cursors'] = cp['dialog_cursors'].is_a?(Hash) ? cp['dialog_cursors'].deep_stringify_keys : {}
+    end
+  end
+
+  def normalize_ignored_chat_ids(value)
+    Array.wrap(value).flat_map { |item| item.to_s.split(/[,\s;]+/) }.filter_map(&:presence).uniq
   end
 end

@@ -54,6 +54,19 @@ RSpec.context 'with valid schedule.yml' do
     expect(schedule.dig('weixin_sync_channels_job', 'queue')).to eq('scheduled_jobs')
   end
 
+  it 'syncs Telegram Personal gateway channels every 5 minutes' do
+    schedule = YAML.safe_load(file.read)
+
+    expect(schedule['telegram_personal_sync_channels_job']).to include(
+      'cron' => '*/5 * * * *',
+      'class' => 'TelegramPersonal::SyncChannelsJob',
+      'queue' => 'scheduled_jobs',
+      'active_job' => true
+    )
+    job = Sidekiq::Cron::Job.new(schedule.fetch('telegram_personal_sync_channels_job').merge('name' => 'telegram_personal_sync_channels_job'))
+    expect(job.valid?).to be(true), job.errors.inspect
+  end
+
   it 'refreshes the shared OpenRouter model catalog on the scheduled jobs queue' do
     schedule = YAML.safe_load(file.read)
 

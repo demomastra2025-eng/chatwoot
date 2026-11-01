@@ -25,19 +25,29 @@ class TelegramPersonal::DeleteMessagesService
 
   def find_message(message_id)
     scope = scoped_messages
-    scope.find_by(source_id: message_id) ||
-      scope.find_each.find do |message|
-        Array.wrap(message.content_attributes&.dig('telegram_message_ids')).map(&:to_s).include?(message_id)
-      end
+    candidates = TelegramPersonal::MessageSourceId.candidates(message_id, chat_id: target_chat_id)
+    raw_id = TelegramPersonal::MessageSourceId.provider_id(message_id)
+
+    content_attrs = Message.attributes_object_sql('content_attributes', 'messages')
+
+    scope.where(source_id: candidates).first ||
+      scope.where(
+        "jsonb_typeof(#{content_attrs} -> 'telegram_message_ids') = 'array' " \
+        "AND (#{content_attrs} -> 'telegram_message_ids') @> CAST(? AS jsonb)",
+        [raw_id].to_json
+      ).first
   end
 
   def scoped_messages
-    chat_id = (params[:chat_id] || params[:peer_user_id]).to_s.presence
-    return inbox.messages if chat_id.blank?
+    return inbox.messages if target_chat_id.blank?
 
-    contact_inbox = inbox.contact_inboxes.find_by(source_id: chat_id)
+    contact_inbox = inbox.contact_inboxes.find_by(source_id: target_chat_id)
     return inbox.messages.none if contact_inbox.blank?
 
     inbox.messages.joins(:conversation).where(conversations: { contact_inbox_id: contact_inbox.id })
+  end
+
+  def target_chat_id
+    (params[:chat_id] || params[:peer_user_id]).to_s.presence
   end
 end

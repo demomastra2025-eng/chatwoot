@@ -7,7 +7,7 @@ class Api::V1::Accounts::TelegramPersonalChannelsController < Api::V1::Accounts:
   before_action :render_pending_deletion_response,
                 only: [:request_code, :request_qr, :verify_code, :verify_password, :reconnect, :history_sync, :contacts_sync, :disconnect]
   before_action :render_pending_deletion_diagnostics,
-                only: [:diagnostics]
+                only: [:diagnostics, :enrich_media]
 
   def request_code
     sync_channel!
@@ -68,6 +68,12 @@ class Api::V1::Accounts::TelegramPersonalChannelsController < Api::V1::Accounts:
     render json: Inbox::RuntimeStatePresenter.telegram_personal_diagnostics(gateway_client.diagnostics)
   end
 
+  def enrich_media
+    @message = @inbox.messages.find(params.require(:message_id))
+    @message = TelegramPersonal::EnrichHistoryMediaService.new(message: @message).perform
+    render 'api/v1/accounts/conversations/messages/update'
+  end
+
   private
 
   def fetch_inbox
@@ -119,11 +125,13 @@ class Api::V1::Accounts::TelegramPersonalChannelsController < Api::V1::Accounts:
   end
 
   def history_sync_options
-    {
+    options = {
       force: boolean_param(:force, default: true),
       reset_cursor: boolean_param(:reset_cursor, default: false),
       include_contacts: boolean_param(:include_contacts, default: false)
     }
+    options[:full] = boolean_param(:full) if params.key?(:full) && !params[:full].nil?
+    options
   end
 
   def contacts_sync_options

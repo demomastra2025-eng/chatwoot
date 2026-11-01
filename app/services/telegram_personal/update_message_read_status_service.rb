@@ -23,6 +23,7 @@ class TelegramPersonal::UpdateMessageReadStatusService
              <<~SQL.squish,
                CASE
                  WHEN messages.source_id ~ '^[0-9]+$' THEN messages.source_id::numeric <= :max_id
+                 WHEN messages.source_id ~ '^tg_group:[^:]+:[0-9]+$' THEN split_part(messages.source_id, ':', 3)::numeric <= :max_id
                  ELSE FALSE
                END
              SQL
