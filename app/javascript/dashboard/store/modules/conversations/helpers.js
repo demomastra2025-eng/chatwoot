@@ -125,6 +125,49 @@ export const filterByUnread = (shouldFilter, unread, unreadCount = 0) => {
     : shouldFilter;
 };
 
+export const conversationHasCalls = conversation => {
+  if (!conversation) return false;
+  if (conversation.has_calls === true) return true;
+  if (
+    conversation.is_communication_thread &&
+    typeof conversation.has_calls === 'boolean'
+  ) {
+    return conversation.has_calls;
+  }
+
+  const inboxChannel =
+    conversation?.meta?.channel || conversation?.channel || '';
+  if (inboxChannel === 'Channel::Voice') return true;
+
+  const channels = Array.isArray(conversation.channels)
+    ? conversation.channels
+    : [];
+  if (channels.some(channel => channel?.channel === 'Channel::Voice')) {
+    return true;
+  }
+
+  const additional = conversation.additional_attributes || {};
+  if (
+    additional.call_status ||
+    additional.call_provider ||
+    additional.call_direction
+  ) {
+    return true;
+  }
+
+  const messages = [
+    conversation.last_non_activity_message,
+    ...(Array.isArray(conversation.messages) ? conversation.messages : []),
+  ].filter(Boolean);
+  return messages.some(message => message?.content_type === 'voice_call');
+};
+
+export const filterByCallsOnly = (shouldFilter, callsOnly, conversation) => {
+  return truthyFilterValue(callsOnly)
+    ? conversationHasCalls(conversation) && shouldFilter
+    : shouldFilter;
+};
+
 export const filterByUnattended = (
   shouldFilter,
   conversationType,
@@ -144,6 +187,8 @@ export const applyPageFilters = (conversation, filters) => {
     teamId,
     conversationType,
     unread,
+    callsOnly,
+    calls_only: snakeCallsOnly,
   } = filters;
   const {
     status: chatStatus,
@@ -167,6 +212,11 @@ export const applyPageFilters = (conversation, filters) => {
   shouldFilter = filterByTeam(shouldFilter, teamId, chatTeamId);
   shouldFilter = filterByLabel(shouldFilter, labels, chatLabels);
   shouldFilter = filterByUnread(shouldFilter, unread, unreadCount);
+  shouldFilter = filterByCallsOnly(
+    shouldFilter,
+    callsOnly ?? snakeCallsOnly,
+    conversation
+  );
   shouldFilter = filterByUnattended(
     shouldFilter,
     conversationType,

@@ -328,5 +328,37 @@ describe('#ConversationAPI', () => {
         { params: { page: 3 } }
       );
     });
+
+    it('forwards calls_only across #get, #meta, and #filter', () => {
+      conversationAPI.get({
+        status: 'open',
+        assigneeType: 'me',
+        callsOnly: true,
+      });
+      expect(axiosMock.get.mock.calls.at(-1)[1].params).toMatchObject({
+        status: 'open',
+        assignee_type: 'me',
+        calls_only: true,
+      });
+
+      conversationAPI.meta({
+        status: 'open',
+        callsOnly: true,
+      });
+      expect(axiosMock.get.mock.calls.at(-1)[1].params).toMatchObject({
+        status: 'open',
+        calls_only: true,
+      });
+
+      conversationAPI.filter({
+        page: 1,
+        callsOnly: true,
+        queryData: { payload: [] },
+      });
+      expect(axiosMock.post.mock.calls.at(-1)[2].params).toMatchObject({
+        page: 1,
+        calls_only: true,
+      });
+    });
   });
 });

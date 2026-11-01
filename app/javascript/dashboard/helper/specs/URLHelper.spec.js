@@ -752,4 +752,76 @@ describe('#URL Helpers', () => {
       ).toBe('/app/accounts/1/custom_view/9?assignee_type=all');
     });
   });
+
+  describe('calls_only query serialization and location preservation', () => {
+    afterEach(() => {
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('serializes callsOnly=true into calls_only=true for conversation and communicationThread URLs', () => {
+      expect(
+        conversationUrl({
+          accountId: 1,
+          id: 42,
+          callsOnly: true,
+        })
+      ).toBe('accounts/1/conversations/42?calls_only=true');
+
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          callsOnly: true,
+        })
+      ).toBe('/app/accounts/1/dashboard?calls_only=true');
+
+      expect(
+        conversationUrl({
+          accountId: 1,
+          id: 42,
+          callsOnly: true,
+          communicationThread: true,
+        })
+      ).toBe(
+        'accounts/1/communication_threads/42?assignee_type=all&calls_only=true'
+      );
+
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          callsOnly: true,
+          communicationThread: true,
+        })
+      ).toBe(
+        '/app/accounts/1/communication_threads?assignee_type=all&calls_only=true'
+      );
+    });
+
+    it('preserves calls_only from window.location.search unless explicitly cleared', () => {
+      window.history.replaceState(
+        {},
+        '',
+        '/app/accounts/1/communication_threads?status=open&calls_only=true'
+      );
+
+      expect(
+        conversationUrl({
+          accountId: 1,
+          id: 99,
+          communicationThread: true,
+        })
+      ).toBe(
+        'accounts/1/communication_threads/99?status=open&assignee_type=all&calls_only=true'
+      );
+
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          callsOnly: false,
+          communicationThread: true,
+        })
+      ).toBe(
+        '/app/accounts/1/communication_threads?status=open&assignee_type=all'
+      );
+    });
+  });
 });

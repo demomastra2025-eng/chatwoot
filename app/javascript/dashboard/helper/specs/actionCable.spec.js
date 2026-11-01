@@ -363,6 +363,48 @@ describe('ActionCableConnector', () => {
       );
     });
 
+    it('isolates cross-tab counts when callsOnly or waitingForCallback toggles', () => {
+      const baseFilters = {
+        communicationThreadMode: true,
+        status: 'open',
+      };
+      const callsOnlyFilters = {
+        ...baseFilters,
+        callsOnly: true,
+      };
+      const waitingCallbackFilters = {
+        ...baseFilters,
+        waitingForCallback: true,
+      };
+      store.$store.state.conversations.conversationFilters = baseFilters;
+
+      const baseContextId = actionCable.sidebarUnreadCountsContextId();
+      const callsOnlyContextId =
+        actionCable.sidebarUnreadCountsContextId(callsOnlyFilters);
+      const waitingCallbackContextId = actionCable.sidebarUnreadCountsContextId(
+        waitingCallbackFilters
+      );
+
+      expect(callsOnlyContextId).not.toBe(baseContextId);
+      expect(waitingCallbackContextId).not.toBe(baseContextId);
+      expect(callsOnlyContextId).not.toBe(waitingCallbackContextId);
+
+      actionCable.onSidebarUnreadCountsStorage({
+        key: actionCable.sidebarUnreadCountsStorageKey,
+        newValue: JSON.stringify({
+          contextId: callsOnlyContextId,
+          counts: { all: 7 },
+          requestedAt: Date.now() - 1,
+          refreshedAt: Date.now(),
+        }),
+      });
+
+      expect(store.$store.commit).not.toHaveBeenCalledWith(
+        'SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS',
+        { all: 7 }
+      );
+    });
+
     it('ignores stale counts from an older request', () => {
       actionCable.lastSidebarUnreadCountsRequestedAt = 200;
       actionCable.lastSidebarUnreadCountsRefreshAt = 300;

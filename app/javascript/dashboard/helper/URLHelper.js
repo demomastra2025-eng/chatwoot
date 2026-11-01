@@ -106,6 +106,17 @@ const currentConversationWaitingForCallbackFromLocation = () => {
     : undefined;
 };
 
+const currentConversationCallsOnlyFromLocation = () => {
+  if (typeof window === 'undefined' || !window.location?.search) {
+    return undefined;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return truthyQueryValue(params.get('calls_only') || params.get('callsOnly'))
+    ? 'true'
+    : undefined;
+};
+
 const conversationQuery = (options = {}) => {
   const {
     status,
@@ -118,6 +129,7 @@ const conversationQuery = (options = {}) => {
     teamScope,
     unread,
     waitingForCallback,
+    callsOnly,
   } = options;
   const normalizedAssigneeType =
     normalizeConversationAssigneeType(assigneeType) ??
@@ -139,6 +151,11 @@ const conversationQuery = (options = {}) => {
       ? 'true'
       : undefined;
   }
+  const hasCallsOnlyOption = callsOnly !== undefined;
+  let callsOnlyQueryValue = currentConversationCallsOnlyFromLocation();
+  if (hasCallsOnlyOption) {
+    callsOnlyQueryValue = truthyQueryValue(callsOnly) ? 'true' : undefined;
+  }
 
   return {
     status:
@@ -153,6 +170,7 @@ const conversationQuery = (options = {}) => {
     team_scope: teamScope || currentConversationScopes.teamScope,
     unread: unreadQueryValue,
     waiting_for_callback: waitingForCallbackQueryValue,
+    calls_only: callsOnlyQueryValue,
   };
 };
 
@@ -184,6 +202,8 @@ export const conversationUrl = ({
   labelsScope,
   teamScope,
   unread,
+  waitingForCallback,
+  callsOnly,
   communicationThread = false,
 }) => {
   if (communicationThread) {
@@ -207,6 +227,8 @@ export const conversationUrl = ({
         labelsScope,
         teamScope,
         unread,
+        waitingForCallback,
+        callsOnly,
       })
     );
   }
@@ -237,6 +259,8 @@ export const conversationUrl = ({
       labelsScope,
       teamScope,
       unread,
+      waitingForCallback,
+      callsOnly,
     })
   );
 };
@@ -256,6 +280,8 @@ export const conversationListPageURL = ({
   labelsScope,
   teamScope,
   unread,
+  waitingForCallback,
+  callsOnly,
   communicationThread = false,
 }) => {
   if (communicationThread) {
@@ -280,6 +306,8 @@ export const conversationListPageURL = ({
           labelsScope,
           teamScope,
           unread,
+          waitingForCallback,
+          callsOnly,
         })
       )
     );
@@ -313,6 +341,8 @@ export const conversationListPageURL = ({
         labelsScope,
         teamScope,
         unread,
+        waitingForCallback,
+        callsOnly,
       })
     )
   );

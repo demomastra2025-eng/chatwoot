@@ -6,11 +6,11 @@ class BulkActions::SelectionSnapshot
   FILTER_KEYS = %w[
     inbox_id status assignee_type team_id labels conversation_type sort_by
     crm_pipeline_id crm_stage_id appointment_status labels_scope team_scope
-    unread source_id page mode query_data communication_thread_mode q query
+    unread waiting_for_callback calls_only source_id page mode query_data communication_thread_mode q query
   ].freeze
   ADVANCED_CONTEXT_KEYS = %w[
     crm_pipeline_id crm_stage_id appointment_status labels_scope team_scope
-    unread sort_by page
+    unread waiting_for_callback calls_only sort_by page
   ].freeze
 
   class InvalidSelection < StandardError; end

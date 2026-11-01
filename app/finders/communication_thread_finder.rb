@@ -14,7 +14,8 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     include_crm_deal_context: true,
     include_scheduling_appointment_context: true,
     include_unread: true,
-    include_waiting_for_callback: true
+    include_waiting_for_callback: true,
+    include_calls_only: true
   }.freeze
   SORT_OPTIONS = {
     'last_activity_at_asc' => 'last_message_activity_sort_at ASC NULLS LAST, communication_threads.id ASC',
@@ -180,6 +181,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     filter_by_scheduling_appointment_context
     filter_by_unread
     filter_by_waiting_for_callback
+    filter_by_calls_only
   end
 
   def validate_params!
@@ -241,6 +243,10 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
 
   def filter_by_waiting_for_callback
     @communication_threads = apply_waiting_for_callback_filter(@communication_threads)
+  end
+
+  def filter_by_calls_only
+    @communication_threads = apply_calls_only_filter(@communication_threads)
   end
 
   def filter_by_assignee_type
@@ -464,6 +470,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
       [:include_scheduling_appointment_context, method(:apply_scheduling_appointment_context_filter)],
       [:include_unread, method(:apply_unread_filter)],
       [:include_waiting_for_callback, method(:apply_waiting_for_callback_filter)],
+      [:include_calls_only, method(:apply_calls_only_filter)],
       [:include_assignee, method(:apply_assignee_filter)]
     ].reduce(base_scope) do |scope, (filter_key, filter_method)|
       filters[filter_key] ? filter_method.call(scope) : scope
@@ -541,6 +548,16 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
                                   "conversations.custom_attributes ->> 'waiting_for_callback') = 'true'"
                                 )
                                 .select(:id)
+    scope.where(id: linked_thread_ids(conversation_ids: matching_conversation_ids))
+  end
+
+  def apply_calls_only_filter(scope)
+    return scope unless calls_only?
+
+    matching_conversation_ids = Conversations::CallsOnlyScope.apply(
+      accessible_conversations,
+      account_id: current_account&.id
+    ).select(:id)
     scope.where(id: linked_thread_ids(conversation_ids: matching_conversation_ids))
   end
 
@@ -652,6 +669,12 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   def waiting_for_callback_only?
     ActiveModel::Type::Boolean.new.cast(
       params[:waiting_for_callback].presence || params[:waitingForCallback].presence
+    )
+  end
+
+  def calls_only?
+    ActiveModel::Type::Boolean.new.cast(
+      params[:calls_only].presence || params[:callsOnly].presence
     )
   end
 

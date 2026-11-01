@@ -18,6 +18,7 @@ RSpec.describe Conversations::EventDataPresenter do
           hmac_verified: conversation.contact_inbox.hmac_verified
         },
         id: conversation.display_id,
+        has_calls: false,
         messages: [],
         labels: [],
         inbox_id: conversation.inbox_id,
@@ -70,6 +71,12 @@ RSpec.describe Conversations::EventDataPresenter do
     it 'returns push event payload' do
       # the exceptions are the values that would be added in enterprise edition.
       expect(presenter.push_data.except(:applied_sla, :sla_events)).to include(expected_data)
+    end
+
+    it 'serializes has_calls as true when the conversation has call records' do
+      create(:telephony_call_session, account: conversation.account, conversation: conversation, provider: 'wazo')
+
+      expect(presenter.push_data[:has_calls]).to be(true)
     end
 
     it 'keeps the person name and avatar in sender metadata and carries the channel profile apart' do

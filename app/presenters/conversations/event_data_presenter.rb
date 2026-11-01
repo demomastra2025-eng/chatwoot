@@ -17,16 +17,13 @@ class Conversations::EventDataPresenter < SimpleDelegator
       contact_inbox: contact_inbox,
       id: display_id,
       inbox_id: inbox_id,
+      has_calls: calls?,
       messages: push_messages,
       labels: payload_labels,
       meta: push_meta,
       status: status,
       custom_attributes: custom_attributes,
-      snoozed_until: snoozed_until,
-      unread_count: unread_incoming_messages_count,
-      first_reply_created_at: first_reply_created_at,
-      priority: priority,
-      waiting_since: waiting_since.to_i,
+      **push_activity_metrics,
       **push_timestamps
     }
   end
@@ -42,6 +39,20 @@ class Conversations::EventDataPresenter < SimpleDelegator
   end
 
   private
+
+  def calls?
+    Conversations::CallsOnlyScope.conversation_has_calls?(__getobj__)
+  end
+
+  def push_activity_metrics
+    {
+      snoozed_until: snoozed_until,
+      unread_count: unread_incoming_messages_count,
+      first_reply_created_at: first_reply_created_at,
+      priority: priority,
+      waiting_since: waiting_since.to_i
+    }
+  end
 
   # The dashboard and the webhooks get the person's labels, the customer-facing payload only those of the conversation.
   def payload_labels
@@ -100,7 +111,7 @@ class Conversations::EventDataPresenter < SimpleDelegator
   end
 
   def push_campaign
-    return unless campaign.present?
+    return if campaign.blank?
 
     {
       id: campaign.display_id,

@@ -11,7 +11,8 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     include_crm_deal_context: true,
     include_scheduling_appointment_context: true,
     include_unread: true,
-    include_waiting_for_callback: true
+    include_waiting_for_callback: true,
+    include_calls_only: true
   }.freeze
   SORT_OPTIONS = {
     'last_activity_at_asc' => %w[sort_on_last_message_at asc],
@@ -92,6 +93,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     filter_by_scheduling_appointment_context
     filter_by_unread
     filter_by_waiting_for_callback
+    filter_by_calls_only
     filter_by_query
     filter_by_source_id
     filter_by_thread_rows
@@ -212,6 +214,10 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     @conversations = apply_waiting_for_callback_filter(@conversations)
   end
 
+  def filter_by_calls_only
+    @conversations = apply_calls_only_filter(@conversations)
+  end
+
   def filter_by_source_id
     return unless params[:source_id]
 
@@ -288,6 +294,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
       [:include_source_id, method(:apply_source_id_filter)],
       [:include_unread, method(:apply_unread_filter)],
       [:include_waiting_for_callback, method(:apply_waiting_for_callback_filter)],
+      [:include_calls_only, method(:apply_calls_only_filter)],
       [:include_assignee, method(:apply_assignee_filter)]
     ].reduce(base_count_scope) do |scope, (filter_key, filter_method)|
       filters.fetch(filter_key, true) ? filter_method.call(scope) : scope
@@ -367,7 +374,16 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
   def apply_waiting_for_callback_filter(scope)
     return scope unless waiting_for_callback_only?
 
-    scope.where("COALESCE(conversations.additional_attributes ->> 'waiting_for_callback', conversations.custom_attributes ->> 'waiting_for_callback') = 'true'")
+    scope.where(
+      "COALESCE(conversations.additional_attributes ->> 'waiting_for_callback', " \
+      "conversations.custom_attributes ->> 'waiting_for_callback') = 'true'"
+    )
+  end
+
+  def apply_calls_only_filter(scope)
+    return scope unless calls_only?
+
+    Conversations::CallsOnlyScope.apply(scope, account_id: current_account&.id)
   end
 
   def apply_source_id_filter(scope)
@@ -418,6 +434,12 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
   def waiting_for_callback_only?
     ActiveModel::Type::Boolean.new.cast(
       params[:waiting_for_callback].presence || params[:waitingForCallback].presence
+    )
+  end
+
+  def calls_only?
+    ActiveModel::Type::Boolean.new.cast(
+      params[:calls_only].presence || params[:callsOnly].presence
     )
   end
 

@@ -17,6 +17,7 @@ const props = defineProps({
   isOnExpandedLayout: { type: Boolean, required: true },
   activeUnreadOnly: { type: Boolean, default: false },
   activeWaitingForCallbackOnly: { type: Boolean, default: false },
+  activeCallsOnly: { type: Boolean, default: false },
   activeStatus: { type: String, default: wootConstants.STATUS_TYPE.OPEN },
   showStatusFilter: { type: Boolean, default: false },
   showAiStatus: { type: Boolean, default: false },
@@ -30,6 +31,7 @@ const emit = defineEmits([
   'filtersModal',
   'unreadFilterToggle',
   'waitingForCallbackFilterToggle',
+  'callsOnlyFilterToggle',
   'statusFilterChange',
 ]);
 
@@ -59,6 +61,12 @@ const waitingForCallbackFilterTooltip = computed(() =>
   props.activeWaitingForCallbackOnly
     ? t('CONVERSATION.VOICE_CALL.WAITING_FOR_CALLBACK_FILTER.SHOW_ALL')
     : t('CONVERSATION.VOICE_CALL.WAITING_FOR_CALLBACK_FILTER.SHOW_WAITING')
+);
+
+const callsOnlyFilterTooltip = computed(() =>
+  props.activeCallsOnly
+    ? t('CONVERSATION.VOICE_CALL.CALLS_ONLY_FILTER.SHOW_ALL')
+    : t('CONVERSATION.VOICE_CALL.CALLS_ONLY_FILTER.SHOW_CALLS_ONLY')
 );
 
 const toggleConversationLayout = () => {
@@ -102,6 +110,17 @@ const toggleConversationLayout = () => {
       <slot />
     </div>
     <div class="flex shrink-0 items-center gap-1">
+      <NextButton
+        v-tooltip.top-end="callsOnlyFilterTooltip"
+        data-testid="calls-only-filter-button"
+        :aria-label="callsOnlyFilterTooltip"
+        :aria-pressed="activeCallsOnly"
+        icon="i-lucide-phone"
+        variant="faded"
+        :color="activeCallsOnly ? 'blue' : 'slate'"
+        xs
+        @click="emit('callsOnlyFilterToggle')"
+      />
       <NextButton
         v-tooltip.top-end="waitingForCallbackFilterTooltip"
         data-testid="waiting-for-callback-filter-button"

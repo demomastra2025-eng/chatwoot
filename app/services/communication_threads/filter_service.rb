@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class CommunicationThreads::FilterService < FilterService
+class CommunicationThreads::FilterService < FilterService # rubocop:disable Metrics/ClassLength
   include CommunicationThreads::FilterService::Counters
   ATTRIBUTE_MODEL = 'conversation_attribute'
   DEFAULT_SORT = 'last_activity_at_desc'
@@ -128,8 +128,21 @@ class CommunicationThreads::FilterService < FilterService
 
   def apply_thread_scopes(scope, include_unread: true)
     scope = scope.where.not(team_id: nil) if team_scope_any?
+    scope = apply_calls_only_thread_filter(scope) if calls_only?
     scope = unread_thread_scope(scope) if include_unread && unread_only?
     scope
+  end
+
+  def apply_calls_only_thread_filter(scope)
+    call_conversation_ids = Conversations::CallsOnlyScope.apply(
+      base_relation.except(:includes, :eager_load, :preload),
+      account_id: @account&.id
+    ).reselect(:id)
+    scope.where(
+      id: CommunicationThreadConversation
+        .where(account_id: @account.id, conversation_id: call_conversation_ids)
+        .select(:communication_thread_id)
+    )
   end
 
   def crm_pipeline_id
@@ -157,6 +170,12 @@ class CommunicationThreads::FilterService < FilterService
   def waiting_for_callback_only?
     ActiveModel::Type::Boolean.new.cast(
       @params[:waiting_for_callback].presence || @params[:waitingForCallback].presence
+    )
+  end
+
+  def calls_only?
+    ActiveModel::Type::Boolean.new.cast(
+      @params[:calls_only].presence || @params[:callsOnly].presence
     )
   end
 

@@ -338,6 +338,7 @@ const conversationNavigationQuery = (overrides = {}) => {
   const camelLabelsScope = baseQuery.labelsScope;
   const camelTeamScope = baseQuery.teamScope;
   const camelUnreadOnly = baseQuery.unreadOnly;
+  const camelCallsOnly = baseQuery.callsOnly;
   delete baseQuery.messageId;
   delete baseQuery.assigneeType;
   delete baseQuery.crmPipelineId;
@@ -346,6 +347,7 @@ const conversationNavigationQuery = (overrides = {}) => {
   delete baseQuery.labelsScope;
   delete baseQuery.teamScope;
   delete baseQuery.unreadOnly;
+  delete baseQuery.callsOnly;
 
   const {
     assigneeType: overrideCamelAssigneeType,
@@ -356,6 +358,8 @@ const conversationNavigationQuery = (overrides = {}) => {
     teamScope: overrideCamelTeamScope,
     unread: overrideUnread,
     unreadOnly: overrideUnreadOnly,
+    calls_only: overrideCallsOnly,
+    callsOnly: overrideCamelCallsOnly,
     ...safeOverrides
   } = overrides;
   const hasCrmPipelineOverride =
@@ -375,6 +379,8 @@ const conversationNavigationQuery = (overrides = {}) => {
     overrideCamelTeamScope !== undefined;
   const hasUnreadOverride =
     overrideUnread !== undefined || overrideUnreadOnly !== undefined;
+  const hasCallsOnlyOverride =
+    overrideCallsOnly !== undefined || overrideCamelCallsOnly !== undefined;
   const nextAssigneeType =
     safeOverrides.assignee_type ||
     overrideCamelAssigneeType ||
@@ -399,6 +405,9 @@ const conversationNavigationQuery = (overrides = {}) => {
   const nextUnread = hasUnreadOverride
     ? (overrideUnread ?? overrideUnreadOnly)
     : baseQuery.unread || camelUnreadOnly;
+  const nextCallsOnly = hasCallsOnlyOverride
+    ? (overrideCallsOnly ?? overrideCamelCallsOnly)
+    : baseQuery.calls_only || camelCallsOnly;
   const nextQuery = {
     ...baseQuery,
     ...safeOverrides,
@@ -445,6 +454,12 @@ const conversationNavigationQuery = (overrides = {}) => {
     nextQuery.unread = 'true';
   } else {
     delete nextQuery.unread;
+  }
+
+  if (truthyQueryValue(nextCallsOnly)) {
+    nextQuery.calls_only = 'true';
+  } else {
+    delete nextQuery.calls_only;
   }
 
   return nextQuery;

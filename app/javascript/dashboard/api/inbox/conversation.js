@@ -33,6 +33,7 @@ class ConversationApi extends ApiClient {
     teamScope,
     unread,
     waitingForCallback,
+    callsOnly,
     includeMeta = true,
   }) {
     return axios.get(this.url, {
@@ -53,6 +54,7 @@ class ConversationApi extends ApiClient {
         team_scope: teamScope,
         unread,
         waiting_for_callback: waitingForCallback,
+        calls_only: callsOnly,
         include_meta: includeMeta ? undefined : false,
       },
     });
@@ -71,6 +73,7 @@ class ConversationApi extends ApiClient {
         unread: payload.unread,
         waiting_for_callback:
           payload.waitingForCallback || payload.waiting_for_callback,
+        calls_only: payload.callsOnly || payload.calls_only,
         include_meta: includeMeta ? undefined : false,
       },
     });
@@ -163,6 +166,7 @@ class ConversationApi extends ApiClient {
     teamScope,
     unread,
     waitingForCallback,
+    callsOnly,
   } = {}) {
     const url = `${this.url}/meta`;
     const params = {
@@ -179,6 +183,7 @@ class ConversationApi extends ApiClient {
       team_scope: teamScope,
       unread,
       waiting_for_callback: waitingForCallback,
+      calls_only: callsOnly,
     };
     // Identical requests that overlap (stats and sidebar counters ask for the same /meta) share one call.
     const requestKey = JSON.stringify([url, params]);

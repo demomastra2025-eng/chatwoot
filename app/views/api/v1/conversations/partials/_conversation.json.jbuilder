@@ -68,6 +68,7 @@ json.assignee_last_seen_at conversation.assignee_last_seen_at.to_i
 json.can_reply(list_preloader ? list_preloader.can_reply?(conversation) : conversation.can_reply?)
 json.contact_last_seen_at conversation.contact_last_seen_at.to_i
 json.custom_attributes conversation.custom_attributes
+json.has_calls(list_preloader ? list_preloader.calls?(conversation) : Conversations::CallsOnlyScope.conversation_has_calls?(conversation))
 json.inbox_id conversation.inbox_id
 json.labels(list_preloader ? list_preloader.labels(conversation) : Labels::UnifiedAssignmentService.union_for(contact: conversation.contact, conversations: [conversation]))
 json.crm_deal_stages((local_assigns[:crm_deal_stages_by_conversation_id] || {}).fetch(conversation.id, []))

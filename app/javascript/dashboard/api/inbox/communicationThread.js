@@ -93,6 +93,7 @@ class CommunicationThreadApi extends ApiClient {
     teamScope,
     unread,
     waitingForCallback,
+    callsOnly,
     includeMeta = true,
   } = {}) {
     const url = this.url;
@@ -112,6 +113,7 @@ class CommunicationThreadApi extends ApiClient {
         team_scope: teamScope,
         unread,
         waiting_for_callback: waitingForCallback,
+        calls_only: callsOnly,
         include_meta: includeMeta,
       },
     };
@@ -139,6 +141,7 @@ class CommunicationThreadApi extends ApiClient {
     teamScope,
     unread,
     waitingForCallback,
+    callsOnly,
   } = {}) {
     const url = `${this.url}/meta`;
     const params = {
@@ -155,6 +158,7 @@ class CommunicationThreadApi extends ApiClient {
       team_scope: teamScope,
       unread,
       waiting_for_callback: waitingForCallback,
+      calls_only: callsOnly,
     };
     const requestKey = JSON.stringify([url, params]);
     const currentRequest = inFlightMetaRequests.get(requestKey);
@@ -182,6 +186,8 @@ class CommunicationThreadApi extends ApiClient {
     labelsScope,
     teamScope,
     unread,
+    waitingForCallback,
+    callsOnly,
   } = {}) {
     return axios.get(`${this.url}/sidebar_unread_counts`, {
       params: {
@@ -196,6 +202,8 @@ class CommunicationThreadApi extends ApiClient {
         labels_scope: labelsScope,
         team_scope: teamScope,
         unread,
+        waiting_for_callback: waitingForCallback,
+        calls_only: callsOnly,
       },
     });
   }
@@ -213,6 +221,9 @@ class CommunicationThreadApi extends ApiClient {
           labels_scope: payload.labelsScope || payload.labels_scope,
           team_scope: payload.teamScope || payload.team_scope,
           unread: payload.unread,
+          waiting_for_callback:
+            payload.waitingForCallback || payload.waiting_for_callback,
+          calls_only: payload.callsOnly || payload.calls_only,
         },
       }
     );
@@ -230,6 +241,9 @@ class CommunicationThreadApi extends ApiClient {
         labels_scope: payload.labelsScope || payload.labels_scope,
         team_scope: payload.teamScope || payload.team_scope,
         unread: payload.unread,
+        waiting_for_callback:
+          payload.waitingForCallback || payload.waiting_for_callback,
+        calls_only: payload.callsOnly || payload.calls_only,
         sort_by: payload.sortBy || payload.sort_by,
         include_meta: includeMeta,
         meta_only: metaOnly,

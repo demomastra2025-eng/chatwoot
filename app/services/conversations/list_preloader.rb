@@ -26,6 +26,7 @@ class Conversations::ListPreloader
     preload_messages
     preload_message_state
     preload_labels
+    preload_call_state
     self
   end
 
@@ -57,6 +58,10 @@ class Conversations::ListPreloader
     Labels::UnifiedAssignmentService.normalize(
       @contact_labels.fetch(conversation.contact_id, []) + @conversation_labels.fetch(conversation.id, [])
     )
+  end
+
+  def calls?(conversation)
+    (@call_conversation_ids || Set.new).include?(conversation.id)
   end
 
   def message_payload(message)
@@ -123,6 +128,13 @@ class Conversations::ListPreloader
   def preload_labels
     @contact_labels = label_names('Contact', @conversations.map(&:contact_id))
     @conversation_labels = label_names('Conversation', @conversations_by_id.keys)
+  end
+
+  def preload_call_state
+    @call_conversation_ids = Conversations::CallsOnlyScope.conversation_ids_with_calls(
+      account_id: @account.id,
+      conversations: @conversations
+    )
   end
 
   def label_names(record_type, ids)
