@@ -5,6 +5,12 @@ RSpec.describe Accounts::WorkspaceRepliesMigration do
   let!(:first) { create(:inbox, account: account, greeting_enabled: true, greeting_message: 'Hello', out_of_office_message: 'Offline') }
   let!(:second) { create(:inbox, account: account, greeting_enabled: false, greeting_message: 'Old draft', out_of_office_message: '') }
   let(:service) { described_class.new(account) }
+  let(:choices) do
+    {
+      'workspace_greeting' => { 'enabled' => true, 'message' => 'Chosen greeting', 'excluded_inbox_ids' => [second.id] },
+      'workspace_out_of_office' => { 'enabled' => true, 'message' => 'Chosen offline' }
+    }
+  end
 
   before do
     account.update!(settings: account.settings.except('workspace_greeting', 'workspace_out_of_office'))
@@ -67,5 +73,57 @@ RSpec.describe Accounts::WorkspaceRepliesMigration do
     expect do
       expect { service.apply!(expected_digest: service.report[:digest]) }.not_to change(Message, :count)
     end.not_to(change { account.reload.updated_at })
+  end
+
+  it 'resolves conflicting values before app switch without touching retired columns or sending messages' do
+    second.update!(greeting_enabled: true, greeting_message: 'Different', out_of_office_message: 'Another offline')
+    snapshot = service.report
+    retired = [first.reload.attributes, second.reload.attributes]
+    expect(snapshot[:conflicts]).to contain_exactly('workspace_greeting', 'workspace_out_of_office')
+    expect { service.apply!(expected_digest: snapshot[:digest], configs: choices) }.not_to change(Message, :count)
+    expect(account.reload.workspace_greeting).to eq(choices['workspace_greeting'])
+    expect(account.workspace_out_of_office).to eq(choices['workspace_out_of_office'])
+    expect([first.reload.attributes, second.reload.attributes]).to eq(retired)
+    expect(service.report[:configs]).to be_empty
+  end
+
+  it 'requires a fresh inspected digest even for an explicit choice' do
+    snapshot = service.report
+    first.update!(greeting_message: 'Changed after choice')
+    expect { service.apply!(expected_digest: snapshot[:digest], configs: choices) }.to raise_error(described_class::Conflict, /changed/)
+    expect(account.reload.workspace_greeting).to be_nil
+  end
+
+  it 'rejects unrelated account attributes without partially applying the choices' do
+    expect do
+      service.apply!(expected_digest: service.report[:digest], configs: choices.merge('name' => 'Unexpected'))
+    end.to raise_error(described_class::Conflict, /exactly/)
+    expect(account.reload.workspace_greeting).to be_nil
+    expect(account.workspace_out_of_office).to be_nil
+  end
+
+  it 'rejects malformed or incomplete choices instead of substituting a guessed value' do
+    [[], choices.except('workspace_out_of_office')].each do |invalid|
+      expect { service.apply!(expected_digest: service.report[:digest], configs: invalid) }.to raise_error(described_class::Conflict)
+    end
+    expect(account.reload.workspace_greeting).to be_nil
+  end
+
+  it 'validates both choices atomically' do
+    choices['workspace_out_of_office']['message'] = ''
+    expect do
+      service.apply!(expected_digest: service.report[:digest], configs: choices)
+    end.to raise_error(ActiveRecord::RecordInvalid)
+    expect(account.reload.workspace_greeting).to be_nil
+    expect(account.workspace_out_of_office).to be_nil
+  end
+
+  it 'rejects exclusions from another company through the normal model validation' do
+    choices['workspace_greeting']['excluded_inbox_ids'] = [create(:inbox).id]
+    expect do
+      service.apply!(expected_digest: service.report[:digest], configs: choices)
+    end.to raise_error(ActiveRecord::RecordInvalid)
+    expect(account.reload.workspace_greeting).to be_nil
+    expect(account.workspace_out_of_office).to be_nil
   end
 end

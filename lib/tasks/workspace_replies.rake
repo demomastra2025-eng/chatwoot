@@ -12,10 +12,15 @@ namespace :workspace_replies do
     abort 'Company replies require migration before releasing the new runtime' if pending.any?
   end
 
-  desc 'Activate one inspected account using ACCOUNT_ID and EXPECTED_DIGEST; preserves retired columns'
+  desc 'Activate an inspected account; optional private CONFIG_PATH resolves conflicts, retired columns are preserved'
   task migrate: :environment do
     account = Account.find(ENV.fetch('ACCOUNT_ID'))
-    Accounts::WorkspaceRepliesMigration.new(account).apply!(expected_digest: ENV.fetch('EXPECTED_DIGEST'))
+    configs = JSON.parse(File.read(ENV['CONFIG_PATH'])) if ENV['CONFIG_PATH'].present?
+    Accounts::WorkspaceRepliesMigration.new(account).apply!(expected_digest: ENV.fetch('EXPECTED_DIGEST'), configs: configs)
     puts "Company replies activated for account #{account.id}"
+  rescue JSON::ParserError
+    abort 'CONFIG_PATH must contain a valid JSON object with the pending common reply settings'
+  rescue ActiveRecord::RecordInvalid => e
+    abort "Invalid company reply configuration: #{e.record.errors.attribute_names.join(', ')}"
   end
 end

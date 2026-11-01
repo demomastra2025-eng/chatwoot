@@ -19,18 +19,29 @@ class Accounts::WorkspaceRepliesMigration
     }
   end
 
-  def apply!(expected_digest:)
+  def apply!(expected_digest:, configs: nil)
     @account.with_lock do
       @account.inboxes.order(:id).lock.load
       snapshot = report
       raise Conflict, 'Workspace replies changed after inspection' unless snapshot[:digest] == expected_digest
-      raise Conflict, "Conflicting legacy values: #{snapshot[:conflicts].join(', ')}" if snapshot[:conflicts].any?
+      raise Conflict, "Conflicting legacy values: #{snapshot[:conflicts].join(', ')}" if configs.nil? && snapshot[:conflicts].any?
 
-      @account.update!(snapshot[:configs]) if snapshot[:configs].any?
+      selected = selected_configs(snapshot, configs)
+      @account.update!(selected) if selected.any?
     end
   end
 
   private
+
+  def selected_configs(snapshot, explicit)
+    return snapshot[:configs] if explicit.nil?
+
+    unless explicit.is_a?(Hash) && explicit.keys.map(&:to_s).sort == snapshot[:configs].keys.sort
+      raise Conflict, 'Explicit choice must contain exactly the pending common reply settings'
+    end
+
+    explicit.deep_stringify_keys
+  end
 
   def candidate_configs(rows)
     {}.tap do |candidates|
