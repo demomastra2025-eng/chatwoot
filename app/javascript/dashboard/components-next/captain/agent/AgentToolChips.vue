@@ -1,6 +1,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 import CaptainToolsAPI from 'dashboard/api/captain/tools';
 import {
   extractCaptainToolReferenceIds,
@@ -8,16 +10,40 @@ import {
 } from 'dashboard/helper/captainCatalog';
 import { AGENT_TOOL_SCOPE } from 'dashboard/components-next/captain/pageComponents/assistant/toolAccessDefaults';
 
-// Read-only row under the instruction: what the agent can call right now.
-// That is every tool mentioned in the instruction plus the hidden
-// non-capability tools still selected in config.tool_access.agent (they work
-// without a mention). Capabilities (FAQ, handoff, web) are global
-// settings and are not listed; the notes and the staff notification are
-// ordinary mentionable tools. The tool catalog is admin-only: on any error
-// the row is hidden.
+// Canonical bindings are the only grant source after cutover. Legacy records
+// keep their display until the platform performs an explicit migration.
 const props = defineProps({
   assistant: { type: Object, required: true },
   instruction: { type: String, default: '' },
+  capabilities: { type: Object, default: null },
+  canEdit: { type: Boolean, default: false },
+});
+
+const emit = defineEmits(['update:capabilities']);
+const canonical = computed(
+  () => props.capabilities || props.assistant?.config?.capabilities
+);
+const isCanonical = computed(() => canonical.value?.version === 1);
+const canonicalScope = computed(
+  () => canonical.value?.scopes?.[AGENT_TOOL_SCOPE]
+);
+const updateScope = patch => {
+  if (!props.canEdit || !isCanonical.value) return;
+  emit('update:capabilities', {
+    ...canonical.value,
+    scopes: {
+      ...canonical.value.scopes,
+      [AGENT_TOOL_SCOPE]: { ...canonicalScope.value, ...patch },
+    },
+  });
+};
+const scopeEnabled = computed({
+  get: () => canonicalScope.value?.enabled === true,
+  set: enabled => updateScope({ enabled }),
+});
+const selectedIds = computed({
+  get: () => canonicalScope.value?.tool_ids || [],
+  set: tool_ids => updateScope({ tool_ids }),
 });
 
 // Same list as the @-picker (TagTools), which never offers these tools.
@@ -93,6 +119,17 @@ const toolTitle = id => {
 };
 
 const chips = computed(() => {
+  if (isCanonical.value) {
+    if (canonicalScope.value?.enabled !== true) return [];
+    const ids = Array.isArray(canonicalScope.value.tool_ids)
+      ? canonicalScope.value.tool_ids
+      : [];
+    return [...new Set(ids.map(String))].map(id => ({
+      id,
+      title: toolTitle(id),
+      notMentioned: false,
+    }));
+  }
   const mentioned = new Set(mentionedIds.value);
   const ids = Array.from(new Set([...mentioned, ...hiddenAccessIds.value]));
   return ids.map(id => ({
@@ -108,6 +145,37 @@ const isVisible = computed(
 </script>
 
 <template>
+  <section
+    v-if="canEdit && isCanonical && isLoaded && !hasError"
+    class="border-t border-n-weak pt-4"
+    data-test="agent-bindings"
+  >
+    <label class="mb-0 flex items-center gap-2 text-body-main text-n-slate-12">
+      <Switch
+        v-model="scopeEnabled"
+        :aria-label="t('CAPTAIN.AGENT_PAGE.TOOLS_ROW')"
+      />
+      {{ t('CAPTAIN.AGENT_PAGE.TOOLS_ROW') }}
+    </label>
+    <div class="mt-4 grid gap-3 sm:grid-cols-2">
+      <label
+        v-for="tool in catalog"
+        :key="tool.id"
+        :for="`agent-tool-${assistant.id}-${tool.id}`"
+        class="mb-0 flex min-w-0 items-start gap-2 text-body-main font-normal text-n-slate-12"
+      >
+        <Checkbox
+          :id="`agent-tool-${assistant.id}-${tool.id}`"
+          v-model="selectedIds"
+          :value="String(tool.id)"
+          :disabled="!scopeEnabled"
+        />
+        <span class="min-w-0 break-words">{{
+          toolTitle(String(tool.id))
+        }}</span>
+      </label>
+    </div>
+  </section>
   <div
     v-if="isVisible"
     class="flex flex-wrap items-center gap-2"
