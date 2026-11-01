@@ -3,21 +3,28 @@ class Inboxes::FetchImapEmailInboxesJob < ApplicationJob
   include BillingHelper
 
   def perform
-    email_inboxes = Inbox.where(channel_type: 'Channel::Email')
-    email_inboxes.find_each(batch_size: 100) do |inbox|
-      ::Inboxes::FetchImapEmailsJob.perform_later(inbox.channel) if should_fetch_emails?(inbox)
+    eligible_email_channels.find_each(batch_size: 100) do |channel|
+      ::Inboxes::FetchImapEmailsJob.perform_later(channel) if should_fetch_emails?(channel)
     end
   end
 
   private
 
-  def should_fetch_emails?(inbox)
-    return false if inbox.account.suspended?
-    return false unless inbox.channel.imap_enabled
-    return false if inbox.channel.reauthorization_required?
+  def eligible_email_channels
+    Channel::Email
+      .where(imap_enabled: true)
+      .joins(:account, :inbox)
+      .merge(Account.active)
+      .includes(:account)
+  end
+
+  def should_fetch_emails?(channel)
+    return false if channel.account.suspended?
+    return false unless channel.imap_enabled
+    return false if channel.reauthorization_required?
 
     return true unless ChatwootApp.chatwoot_cloud?
-    return false if default_plan?(inbox.account)
+    return false if default_plan?(channel.account)
 
     true
   end

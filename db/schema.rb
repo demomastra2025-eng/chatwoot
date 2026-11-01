@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_11_01_183000) do
+ActiveRecord::Schema[7.2].define(version: 2026_11_02_003500) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2866,6 +2866,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_01_183000) do
     t.index ["account_id", "conversation_id", "created_at"], name: "idx_messages_account_conversation_public_chat_time", order: { created_at: :desc }, where: "((private = false) AND (message_type <> 2))"
     t.index ["account_id", "created_at", "id"], name: "idx_messages_first_inbound_cohort", where: "((message_type = 0) AND (NOT private))"
     t.index ["account_id", "created_at", "message_type"], name: "index_messages_on_account_created_type"
+    t.index ["account_id", "inbox_id", "created_at", "id", "updated_at"], name: "index_messages_on_acc_inbox_created_for_wa_deliveries", where: "((message_type = ANY (ARRAY[1, 3])) AND (status = ANY (ARRAY[1, 2])) AND (private = false) AND (source_id IS NOT NULL) AND (source_id <> ''::text))"
     t.index ["account_id", "inbox_id"], name: "index_messages_on_account_id_and_inbox_id"
     t.index ["account_id"], name: "index_messages_on_account_id"
     t.index ["content"], name: "index_messages_on_content", opclass: :gin_trgm_ops, using: :gin

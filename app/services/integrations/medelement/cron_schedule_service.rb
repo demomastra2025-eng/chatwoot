@@ -97,7 +97,11 @@ class Integrations::Medelement::CronScheduleService
     return true unless self.class.cron_enabled?
 
     Sidekiq::Cron::Job.destroy(legacy_job_name)
-    Sidekiq::Cron::Job.destroy(job_name('receptions_delta')) unless delta_enabled?
+    unless delta_enabled?
+      Sidekiq::Cron::Job.destroy(job_name('receptions_delta'))
+      Sidekiq::Cron::Job.destroy(job_name('receptions_delta_night'))
+    end
+    Sidekiq::Cron::Job.destroy(job_name('receptions_delta_night')) if delta_enabled? && !night_delta_schedule?
     schedules.map { |schedule| Sidekiq::Cron::Job.create(job_attributes(schedule)) }.all?
   end
 
@@ -134,7 +138,11 @@ class Integrations::Medelement::CronScheduleService
       { key: 'contacts', phases: CONTACT_PHASES, cron: configuration.contacts_sync_cron_expression },
       { key: 'catalog', phases: CATALOG_PHASES, cron: configuration.catalog_sync_cron_expression }
     ]
-    result << { key: 'receptions_delta', phases: [], cron: configuration.receptions_delta_cron_expression } if delta_enabled?
+    return result unless delta_enabled?
+
+    result << { key: 'receptions_delta', phases: [], cron: configuration.receptions_delta_cron_expression }
+    night_cron = configuration.receptions_delta_night_cron_expression
+    result << { key: 'receptions_delta_night', phases: [], cron: night_cron } if night_cron.present?
     result
   end
 
@@ -142,8 +150,16 @@ class Integrations::Medelement::CronScheduleService
     configuration.incremental_receptions_enabled? && configuration.sync_receptions?
   end
 
+  def night_delta_schedule?
+    configuration.receptions_delta_night_cron_expression.present?
+  end
+
+  def delta_schedule_key?(key)
+    %w[receptions_delta receptions_delta_night].include?(key)
+  end
+
   def job_attributes(schedule)
-    delta = schedule.fetch(:key) == 'receptions_delta'
+    delta = delta_schedule_key?(schedule.fetch(:key))
     {
       name: job_name(schedule.fetch(:key)),
       klass: delta ? 'Integrations::Medelement::ReceptionsDeltaJob' : 'Integrations::Medelement::ScheduledSyncJob',
@@ -157,7 +173,10 @@ class Integrations::Medelement::CronScheduleService
   end
 
   def job_names
-    (schedules.map { |schedule| job_name(schedule.fetch(:key)) } + [job_name('receptions_delta')]).uniq
+    (
+      schedules.map { |schedule| job_name(schedule.fetch(:key)) } +
+      [job_name('receptions_delta'), job_name('receptions_delta_night')]
+    ).uniq
   end
 
   def job_name(key)

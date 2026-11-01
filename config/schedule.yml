@@ -27,7 +27,7 @@ appointment_created_notification_recovery_job:
 
 # recovers silent read-sync runs only after owner, queue and account-lock checks
 medelement_stale_sync_run_recovery_job:
-  cron: '*/5 * * * *'
+  cron: '1-59/5 * * * *'
   class: 'Integrations::Medelement::StaleSyncRunRecoveryJob'
   queue: scheduled_jobs
 
@@ -113,7 +113,7 @@ telephony_call_reconciliation_job:
   queue: low
 
 telephony_wazo_call_log_sync_job:
-  cron: '*/2 * * * *'
+  cron: '1-59/2 * * * *'
   class: 'Telephony::Wazo::CallLogSyncJob'
   queue: low
 
@@ -123,7 +123,7 @@ telephony_beeline_call_history_sync_job:
   queue: low
 
 telephony_binotel_call_history_sync_job:
-  cron: '*/2 * * * *'
+  cron: '1-59/2 * * * *'
   class: 'Telephony::BinotelCallHistorySyncJob'
   queue: low
 
@@ -159,23 +159,23 @@ delete_accounts_job:
 # executed every 15 minutes
 # evaluates account-scoped Captain observability alerts and dispatches notifications
 ai_booking_monitor_job:
-  cron: '*/15 * * * *'
+  cron: '3,18,33,48 * * * *'
   class: 'Scheduling::AiBookingMonitorJob'
   queue: scheduled_jobs
 
 # Disabled by default; requires AI_BOOKING_PROVIDER_CHECK_ENABLED=true.
 ai_booking_provider_check_job:
-  cron: '*/15 * * * *'
+  cron: '6,21,36,51 * * * *'
   class: 'Scheduling::AiBookingProviderCheckJob'
   queue: scheduled_jobs
 
 deliver_captain_observability_alerts_job:
-  cron: '*/15 * * * *'
+  cron: '9,24,39,54 * * * *'
   class: 'Internal::DeliverCaptainObservabilityAlertsJob'
   queue: scheduled_jobs
 
 recover_captain_outcome_classifications_job:
-  cron: '*/10 * * * *'
+  cron: '4-59/10 * * * *'
   class: 'Internal::RecoverCaptainOutcomeClassificationsJob'
   queue: low
   active_job: true
@@ -183,7 +183,7 @@ recover_captain_outcome_classifications_job:
 # executed every 10 minutes
 # progressively backfills llm_event.trace_id from persisted payloads without a heavy deploy-time table rewrite
 backfill_llm_event_trace_id_job:
-  cron: '*/10 * * * *'
+  cron: '8-59/10 * * * *'
   class: 'Internal::BackfillLlmEventTraceIdJob'
   queue: scheduled_jobs
 
@@ -211,7 +211,7 @@ whatsapp_token_health_check_job:
 # executed every 15 minutes
 # verifies and repairs the official Meta WABA app webhook subscription
 whatsapp_webhook_subscription_health_check_job:
-  cron: '*/15 * * * *'
+  cron: '12,27,42,57 * * * *'
   class: 'Whatsapp::WebhookSubscriptionHealthCheckJob'
   queue: scheduled_jobs
 
@@ -231,7 +231,7 @@ facebook_page_credential_health_check_job:
 
 # executed every 30 minutes for assignment_v2
 periodic_assignment_job:
-  cron: '*/30 * * * *'
+  cron: '13,43 * * * *'
   class: 'AutoAssignment::PeriodicAssignmentJob'
   queue: scheduled_jobs
 
@@ -252,7 +252,7 @@ enforce_llm_event_retention_job:
 # executed every 12 hours
 # to remove orphan conversations without contact
 remove_orphan_conversations_job:
-  cron: '0 */12 * * *'
+  cron: '29 */12 * * *'
   class: 'Internal::RemoveOrphanConversationsJob'
   queue: housekeeping
 
@@ -284,7 +284,7 @@ crm_appointment_stage_due_job:
   active_job: true
 
 accounts_storage_breakdown_refresh_job:
-  cron: '0 * * * *'
+  cron: '37 * * * *'
   class: 'Accounts::StorageBreakdownRefreshJob'
   queue: low
 

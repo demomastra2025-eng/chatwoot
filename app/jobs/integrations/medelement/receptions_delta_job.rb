@@ -76,10 +76,13 @@ class Integrations::Medelement::ReceptionsDeltaJob < ApplicationJob
 
   def schedule_next(hook, configuration)
     return unless configuration.incremental_receptions_interval_seconds < 60
-    return unless enabled?(hook.reload, Integrations::Medelement::Configuration.new(hook: hook))
+
+    fresh_configuration = Integrations::Medelement::Configuration.new(hook: hook.reload)
+    return unless enabled?(hook, fresh_configuration)
+    return if fresh_configuration.off_hours?
 
     cursor = Integrations::Medelement::SyncCursor.find_by(hook_id: hook.id, name: 'receptions_delta')
-    interval = cursor&.current_interval_seconds || configuration.incremental_receptions_interval_seconds
+    interval = cursor&.current_interval_seconds || fresh_configuration.incremental_receptions_interval_seconds
     self.class.set(wait: interval + Kernel.rand(0..3)).perform_later(hook.id)
   end
 end

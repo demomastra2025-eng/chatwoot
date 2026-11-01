@@ -123,12 +123,20 @@ class Integrations::Medelement::DeltaMissAudit
     kind == 'changed' && fields.empty?
   end
 
-  def delta_cursor_healthy?
+  def delta_cursor_healthy?(now = Time.current)
     cursor = cursor_scope.first
     return false unless cursor&.last_success_at
     return false if cursor.last_poll_at && cursor.last_poll_at > cursor.last_success_at
 
-    cursor.last_success_at >= DELTA_HEALTH_MAX_AGE.ago
+    cursor.last_success_at >= now - delta_health_max_age(now)
+  end
+
+  def delta_health_max_age(now = Time.current)
+    night_window = configuration.night_delta_interval_minutes.minutes
+    in_night_grace = configuration.off_hours?(now) || configuration.off_hours?(now - night_window)
+    return [DELTA_HEALTH_MAX_AGE, night_window + 5.minutes].max if in_night_grace
+
+    DELTA_HEALTH_MAX_AGE
   end
 
   def delta_healthy_for_step_up?

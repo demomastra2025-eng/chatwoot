@@ -160,14 +160,27 @@ RSpec.context 'with valid schedule.yml' do
     expect(schedule.dig('whatsapp_token_health_check_job', 'queue')).to eq('scheduled_jobs')
   end
 
-  it 'checks and repairs WhatsApp webhook subscriptions every 15 minutes' do
+  it 'checks and repairs WhatsApp webhook subscriptions every 15 minutes off the top of the hour' do
     schedule = YAML.safe_load(file.read)
 
     expect(schedule['whatsapp_webhook_subscription_health_check_job']).to include(
-      'cron' => '*/15 * * * *',
+      'cron' => '12,27,42,57 * * * *',
       'class' => 'Whatsapp::WebhookSubscriptionHealthCheckJob',
       'queue' => 'scheduled_jobs'
     )
+  end
+
+  it 'ensures every schedule.yml entry is accepted by Sidekiq::Cron::Job and staggered off :00' do
+    schedule = YAML.safe_load(file.read)
+
+    schedule.each do |name, attrs|
+      job = Sidekiq::Cron::Job.new(attrs.merge('name' => name))
+      expect(job.valid?).to be(true), "Invalid cron for #{name}: #{job.errors.inspect}"
+    end
+
+    expect(schedule.dig('accounts_storage_breakdown_refresh_job', 'cron')).to eq('37 * * * *')
+    expect(schedule.dig('ai_booking_monitor_job', 'cron')).to eq('3,18,33,48 * * * *')
+    expect(schedule.dig('periodic_assignment_job', 'cron')).to eq('13,43 * * * *')
   end
 
   it 'checks Instagram and Facebook credential health on staggered schedules' do

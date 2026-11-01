@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Whatsapp::HistoricalDeliveryCountsService
+  include Whatsapp::HistoricalDeliveryMetadata
+
   Result = Struct.new(
     :delivery_groups,
     :free_quota_counts,
@@ -10,7 +12,7 @@ class Whatsapp::HistoricalDeliveryCountsService
     keyword_init: true
   )
 
-  MAX_CONTENT_ATTRIBUTES_BYTES = 262_144
+  COUNT_KEYS = Result.members.freeze
 
   def initialize(account:, channels:, period:, now: Time.current)
     @account = account
@@ -20,14 +22,39 @@ class Whatsapp::HistoricalDeliveryCountsService
   end
 
   def perform
+    return build_result(empty_counts) if @now < @period.begin || eligible_channels.empty?
+
+    inbox_ids = eligible_channels.map { |inbox, _| inbox.id }.uniq
+    cache = Whatsapp::HistoricalDeliveryCountsCache.new(
+      account: @account, eligible_channels: eligible_channels,
+      period: @period, messages_scope: base_eligible_messages_scope(inbox_ids)
+    )
+    build_result(cache.fetch(count_keys: COUNT_KEYS) { compute_counts })
+  end
+
+  private
+
+  def compute_counts
     counts = empty_counts
     historical_message_candidates.each do |phone_number, candidates|
       count_phone_deliveries(phone_number, candidates, counts)
     end
-    Result.new(**counts)
+    counts
   end
 
-  private
+  def build_result(counts_hash)
+    Result.new(**COUNT_KEYS.index_with { |key| Hash.new(0).merge!(counts_hash.fetch(key, {})) })
+  end
+
+  def eligible_channels
+    @eligible_channels ||= Array(@channels).filter_map do |channel|
+      inbox = channel.inbox
+      phone_number = WhatsappUsageDelivery.canonical_phone_number(channel.phone_number)
+      next if inbox.blank? || inbox.account_id != @account.id || phone_number.blank?
+
+      [inbox, phone_number]
+    end
+  end
 
   def empty_counts
     {
@@ -75,18 +102,12 @@ class Whatsapp::HistoricalDeliveryCountsService
 
   def historical_message_candidates
     candidates_by_key = {}
-    @channels.each { |channel| add_channel_candidates(candidates_by_key, channel) }
-    group_candidates_by_phone(candidates_by_key)
-  end
-
-  def add_channel_candidates(candidates_by_key, channel)
-    inbox = channel.inbox
-    phone_number = WhatsappUsageDelivery.canonical_phone_number(channel.phone_number)
-    return if inbox.blank? || inbox.account_id != @account.id || phone_number.blank?
-
-    eligible_messages(inbox).reorder(:id).find_each do |message|
-      add_message_candidate(candidates_by_key, phone_number, message)
+    eligible_channels.each do |inbox, phone_number|
+      eligible_messages(inbox).reorder(:id).find_each do |message|
+        add_message_candidate(candidates_by_key, phone_number, message)
+      end
     end
+    group_candidates_by_phone(candidates_by_key)
   end
 
   def add_message_candidate(candidates_by_key, phone_number, message)
@@ -96,9 +117,9 @@ class Whatsapp::HistoricalDeliveryCountsService
     key = [phone_number, source_id]
     candidate = { source_id: source_id, metadata: message_metadata(message) }
     previous = candidates_by_key[key]
-    if previous.nil? || metadata_score(candidate[:metadata]) > metadata_score(previous[:metadata])
-      candidates_by_key[key] = candidate
-    end
+    return unless previous.nil? || metadata_score(candidate[:metadata]) > metadata_score(previous[:metadata])
+
+    candidates_by_key[key] = candidate
   end
 
   def group_candidates_by_phone(candidates_by_key)
@@ -109,22 +130,27 @@ class Whatsapp::HistoricalDeliveryCountsService
     grouped
   end
 
+  def base_eligible_messages_scope(inbox_or_ids)
+    Message.reorder(nil)
+           .where(
+             account_id: @account.id,
+             inbox_id: inbox_or_ids,
+             created_at: @period,
+             message_type: [Message.message_types[:outgoing], Message.message_types[:template]],
+             status: Message.statuses.values_at('delivered', 'read'),
+             private: false
+           )
+           .where('messages.created_at <= ?', @now)
+           .where.not(source_id: [nil, ''])
+  end
+
   def eligible_messages(inbox)
     return Message.none if @now < @period.begin
 
-    Message.without_imported_history
-      .select(:id, :source_id, :content_attributes)
-      .where(
-        account_id: @account.id,
-        inbox_id: inbox.id,
-        created_at: @period,
-        message_type: [Message.message_types[:outgoing], Message.message_types[:template]],
-        status: Message.statuses.values_at('delivered', 'read'),
-        private: false
-      )
-      .where('messages.created_at <= ?', @now)
-      .where.not(source_id: [nil, ''])
+    base_eligible_messages_scope(inbox.id)
+      .without_imported_history
       .where(excluded_message_metadata_sql)
+      .select(:id, :source_id, :content_attributes)
   end
 
   def excluded_message_metadata_sql
@@ -160,74 +186,5 @@ class Whatsapp::HistoricalDeliveryCountsService
         recipient_country: recipient_country
       }
     end
-  end
-
-  def merge_delivery_metadata(message_metadata, delivery_row)
-    return message_metadata unless delivery_row
-
-    metadata = message_metadata.dup
-    %i[category billable pricing_type recipient_country].each do |key|
-      value = delivery_row[key]
-      metadata[key] = value if !value.nil? && (key == :billable || value.present?)
-    end
-    metadata
-  end
-
-  def message_metadata(message)
-    raw_attributes = message.read_attribute_before_type_cast(:content_attributes)
-    attributes = safe_hash(raw_attributes)
-    delivery = safe_hash(attributes['whatsapp_delivery'])
-    pricing = safe_hash(delivery['pricing'])
-
-    {
-      category: normalized_category(pricing['category']),
-      pricing_type: normalized_pricing_type(pricing['type']),
-      billable: normalized_boolean(pricing['billable']),
-      recipient_country: normalized_country(delivery['recipient_country'])
-    }
-  end
-
-  def safe_hash(value)
-    return value.deep_stringify_keys if value.is_a?(Hash)
-    return {} unless bounded_json_string?(value)
-
-    parsed_json_hash(value)
-  rescue JSON::ParserError, TypeError
-    {}
-  end
-
-  def parsed_json_hash(value)
-    parsed = JSON.parse(value)
-    parsed = JSON.parse(parsed) if bounded_json_string?(parsed)
-    parsed.is_a?(Hash) ? parsed.deep_stringify_keys : {}
-  end
-
-  def bounded_json_string?(value)
-    value.is_a?(String) && value.bytesize <= MAX_CONTENT_ATTRIBUTES_BYTES
-  end
-
-  def metadata_score(metadata)
-    %i[category pricing_type billable].count { |key| !metadata[key].nil? }
-  end
-
-  def normalized_category(value)
-    Whatsapp::UsageQuotaCounts.normalized_category(value)
-  end
-
-  def normalized_pricing_type(value)
-    type = value.to_s.downcase.strip
-    type if %w[regular free_customer_service free_entry_point].include?(type)
-  end
-
-  def normalized_boolean(value)
-    return true if value == true || value.to_s.casecmp('true').zero?
-    return false if value == false || value.to_s.casecmp('false').zero?
-
-    nil
-  end
-
-  def normalized_country(value)
-    country = value.to_s.upcase
-    country if country.match?(/\A[A-Z]{2}\z/)
   end
 end
