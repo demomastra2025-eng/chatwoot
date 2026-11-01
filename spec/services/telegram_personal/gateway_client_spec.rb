@@ -88,6 +88,7 @@ RSpec.describe TelegramPersonal::GatewayClient do
       unsynced_response = instance_double(
         HTTParty::Response,
         success?: false,
+        code: 503,
         parsed_response: { error: 'Channel 42 is not synced' },
         body: '{"error":"Channel 42 is not synced"}',
         headers: {}
@@ -324,6 +325,14 @@ RSpec.describe TelegramPersonal::GatewayClient do
       ).and_return(response)
 
       expect(client.teardown_channel!).to eq({ ok: true }.with_indifferent_access)
+    end
+  end
+
+  describe 'GatewayError#media_leg_closed?' do
+    it 'matches whole-word closed/ended messages without false-matching substrings' do
+      expect(described_class::GatewayError.new('Call session already ended').media_leg_closed?).to be(true)
+      expect(described_class::GatewayError.new('Media leg closed by peer').media_leg_closed?).to be(true)
+      expect(described_class::GatewayError.new('closed_caption_error').media_leg_closed?).to be(false)
     end
   end
 end

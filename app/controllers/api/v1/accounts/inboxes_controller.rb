@@ -289,7 +289,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
   def telegram_personal_runtime_state_update?(channel_params)
     @inbox.channel.is_a?(Channel::TelegramPersonal) &&
-      (channel_params.key?(:runtime_state) || channel_params.key?('runtime_state'))
+      %i[runtime_state calling_enabled].any? { |k| channel_params.key?(k) || channel_params.key?(k.to_s) }
   end
 
   def sync_telegram_personal_channel_after_update!
@@ -526,9 +526,13 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
   def normalized_telegram_personal_channel_params(channel_params)
     attrs = channel_params.to_h.with_indifferent_access
-    return attrs unless attrs.key?(:runtime_state)
+    has_calling = attrs.key?(:calling_enabled)
+    calling_value = attrs.delete(:calling_enabled) if has_calling
+    return attrs unless attrs.key?(:runtime_state) || has_calling
 
-    attrs[:runtime_state] = @inbox.channel.runtime_state_payload.merge(attrs[:runtime_state].to_h)
+    incoming_runtime = attrs[:runtime_state].to_h
+    incoming_runtime = incoming_runtime.merge('calling_enabled' => calling_value) if has_calling
+    attrs[:runtime_state] = @inbox.channel.runtime_state_payload.merge(incoming_runtime)
     attrs
   end
 

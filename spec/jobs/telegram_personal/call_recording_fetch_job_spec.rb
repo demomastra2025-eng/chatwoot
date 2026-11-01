@@ -73,4 +73,24 @@ RSpec.describe TelegramPersonal::CallRecordingFetchJob do
 
     expect(call.reload.recording).to be_attached
   end
+
+  it 'attaches recording for human operators but skips AI transcription when explicit AI consent is required and not granted' do
+    allow(Compliance::ExplicitAiConsentGate).to receive(:blocked?).with(conversation).and_return(true)
+    call = Call.create!(
+      provider: :telegram_personal, account: account, inbox: inbox, conversation: conversation,
+      contact: contact, provider_call_id: 'tg-rec-consent', media_session_id: 'tg-rec-sess-consent',
+      direction: :incoming, status: 'completed'
+    )
+
+    expect(gateway_client).to receive(:download_call_recording!).with(
+      call_ref: 'tg-rec-sess-consent', side: 'combined'
+    ).and_return("OggS#{'c' * 512}")
+
+    expect do
+      described_class.perform_now(call.id)
+    end.not_to have_enqueued_job(Whatsapp::CallTranscriptionJob)
+
+    expect(call.reload.recording).to be_attached
+    expect(Whatsapp::CallTranscriptionService.new(call).perform).to eq(error: 'AI consent required')
+  end
 end

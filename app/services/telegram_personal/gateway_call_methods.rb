@@ -11,7 +11,7 @@ module TelegramPersonal::GatewayCallMethods
     def media_leg_closed?
       code.to_s == 'media_leg_closed' ||
         http_status.to_i == 404 ||
-        message.to_s.match?(/(not found|already ended|closed|terminated|media_leg_closed)/i)
+        message.to_s.match?(/\b(not found|already ended|closed|terminated|media_leg_closed)\b/i)
     end
   end
 

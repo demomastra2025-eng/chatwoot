@@ -274,7 +274,7 @@ RSpec.describe WhatsappWeb::IncomingEventService do
         }.with_indifferent_access
       ).perform
 
-      expect(message.reload.content).to eq("Здравствуйте! https://app.one-link.kz/ \\n**Через логин + пароль**")
+      expect(message.reload.content).to eq("Здравствуйте! https://app.one-link.kz/ \\\n**Через логин + пароль**")
       expect(message.content_attributes['edited']).to be(true)
 
       described_class.new(

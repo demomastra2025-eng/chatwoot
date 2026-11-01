@@ -53,6 +53,10 @@ class TelegramPersonal::CallRecordingFetchJob < ApplicationJob
   def finalize_attached_recording!(call)
     TelegramPersonal::CallMessageBuilder.update_recording_url!(call: call)
     return unless call.transcript.blank? && call.account.call_transcriptions_enabled?
+    if call.conversation.present? && defined?(Compliance::ExplicitAiConsentGate) &&
+       Compliance::ExplicitAiConsentGate.blocked?(call.conversation)
+      return
+    end
 
     Whatsapp::CallTranscriptionJob.perform_later(call.id)
   end

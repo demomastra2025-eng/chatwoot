@@ -187,4 +187,27 @@ RSpec.describe Compliance::SubjectErasureService do
     expect(Compliance::DeletedSubjectTombstone.blocked?(account_id: account.id, identifiers: { phone: patient_phone })).to be(false)
   end
   # rubocop:enable RSpec/ExampleLength, RSpec/MultipleExpectations
+
+  it 'synchronously purges ActiveStorage voice recordings attached to WhatsApp and Telegram Personal Call rows' do
+    tg_channel = create(:channel_telegram_personal, account: account)
+    call = Call.create!(
+      provider: :telegram_personal,
+      account: account,
+      inbox: tg_channel.inbox,
+      conversation: conversation,
+      contact: contact,
+      provider_call_id: 'tg-erase-call-1',
+      direction: :incoming,
+      status: 'completed'
+    )
+    call.recording.attach(io: StringIO.new("OggS#{'z' * 512}"), filename: 'tg_erase.ogg', content_type: 'audio/ogg')
+    blob_id = call.recording.blob.id
+
+    cert = described_class.new(account: account, contact: contact, reason: 'subject_request').perform!
+
+    expect(cert.dig(:erased_counts, :call_recordings_purged)).to be >= 1
+    expect(Call.exists?(call.id)).to be(false)
+    expect(ActiveStorage::Attachment.where(record_type: 'Call', record_id: call.id)).to be_empty
+    expect(ActiveStorage::Blob.exists?(blob_id)).to be(false)
+  end
 end

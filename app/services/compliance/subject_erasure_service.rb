@@ -93,13 +93,14 @@ class Compliance::SubjectErasureService
   def execute_cascade!(conv_ids, erased_at, certificate_uid)
     counts = initial_counts
     call_session_ids = purge_call_sessions!(conv_ids, counts, erased_at, certificate_uid)
+    call_ids = purge_call_recording_blobs!(conv_ids, counts)
     purge_conversation_attachment_blobs!(conv_ids, counts)
 
     ApplicationRecord.transaction do
       anonymize_appointments!(conv_ids, counts, erased_at, certificate_uid)
       cleanup_conversation_fk_dependents!(conv_ids)
       destroy_conversations!(conv_ids, counts)
-      delete_dependent_records!
+      delete_dependent_records!(call_ids)
       contact.reload.destroy!
       counts[:contact_deleted] = true
     end
@@ -186,6 +187,26 @@ class Compliance::SubjectErasureService
     resolved&.to_s
   rescue StandardError
     nil
+  end
+
+  def calls_scope(conv_ids)
+    scope = Call.where(account_id: account.id, contact_id: contact.id)
+    conv_ids.present? ? scope.or(Call.where(account_id: account.id, conversation_id: conv_ids)) : scope
+  end
+
+  def purge_call_recording_blobs!(conv_ids, counts)
+    return [] unless defined?(Call)
+
+    call_ids = calls_scope(conv_ids).pluck(:id)
+    return [] if call_ids.empty?
+
+    ActiveStorage::Attachment.where(record_type: 'Call', record_id: call_ids).find_each do |att|
+      att.purge
+      counts[:call_recordings_purged] += 1
+    rescue StandardError => e
+      Rails.logger.warn("[Compliance::SubjectErasureService] Call blob purge failed id=#{att.id}: #{e.class}: #{e.message}")
+    end
+    call_ids
   end
 
   def purge_conversation_attachment_blobs!(conv_ids, counts)
@@ -301,15 +322,18 @@ class Compliance::SubjectErasureService
   end
 
   # rubocop:disable Rails/SkipsModelValidations
-  def delete_dependent_records!
-    delete_account_scoped_dependents!
+  def delete_dependent_records!(call_ids = [])
+    delete_account_scoped_dependents!(call_ids)
     delete_contact_scoped_dependents!
     unlink_nullable_contact_references!
   end
 
-  def delete_account_scoped_dependents!
+  def delete_account_scoped_dependents!(call_ids = [])
     Telephony::ContactEndpoint.where(account_id: account.id, contact_id: contact.id).delete_all if defined?(Telephony::ContactEndpoint)
-    Call.where(account_id: account.id, contact_id: contact.id).delete_all if defined?(Call)
+    if defined?(Call)
+      Call.where(account_id: account.id, id: call_ids).delete_all if call_ids.present?
+      Call.where(account_id: account.id, contact_id: contact.id).delete_all
+    end
     Reminder.where(account_id: account.id, target_contact_id: contact.id).delete_all if defined?(Reminder)
     ConfirmationRequest.where(account_id: account.id, contact_id: contact.id).delete_all if defined?(ConfirmationRequest)
   end

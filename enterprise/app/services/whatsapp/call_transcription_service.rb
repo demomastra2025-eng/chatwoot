@@ -13,6 +13,7 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService # rubocop:disable 
   end
 
   def perform
+    return { error: 'AI consent required' } if ai_consent_blocked?
     return { error: 'Transcription not available' } unless can_transcribe?
     return { error: 'No recording attached' } unless call.recording.attached?
 
@@ -25,6 +26,12 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService # rubocop:disable 
   end
 
   private
+
+  def ai_consent_blocked?
+    call.conversation.present? &&
+      defined?(Compliance::ExplicitAiConsentGate) &&
+      Compliance::ExplicitAiConsentGate.blocked?(call.conversation)
+  end
 
   def can_transcribe?
     account.call_transcriptions_enabled? && account.call_analysis_quota_available?
