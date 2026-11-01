@@ -870,20 +870,17 @@ const stageSeries = computed(() => [
             role="radiogroup"
             :aria-label="t('CATALOGUE.FORM.CARD_TITLE')"
           >
-            <label
+            <RadioCard
               v-for="option in cardOptions"
               :key="option.id"
-              :for="`gallery-card-${option.id}`"
-            >
-              <RadioCard
-                :id="`gallery-card-${option.id}`"
-                :label="option.label"
-                :description="option.description"
-                :is-active="cardChoice === option.id"
-                :data-test="`gallery-radiocard-${option.id}`"
-                @select="cardChoice = option.id"
-              />
-            </label>
+              :id="`gallery-card-${option.id}`"
+              name="gallery-card-choice"
+              :label="option.label"
+              :description="option.description"
+              :is-active="cardChoice === option.id"
+              :data-test="`gallery-radiocard-${option.id}`"
+              @select="cardChoice = option.id"
+            />
           </div>
         </div>
       </SectionLayout>
