@@ -342,6 +342,7 @@ onBeforeUnmount(() => {
           v-show="activeTab === TABS.FOLLOW_UPS"
           :assistant="assistant"
           :can-edit="isAdmin"
+          :can-edit-prompt="canManagePrompts"
           @dirty-change="setTabDirty(TABS.FOLLOW_UPS, $event)"
           @saved="setTabDirty(TABS.FOLLOW_UPS, false)"
         />

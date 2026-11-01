@@ -118,6 +118,7 @@ const simpleStub = name =>
       assistant: { type: Object, default: null },
       draft: { type: Object, default: null },
       canEdit: { type: Boolean, default: false },
+      canEditPrompt: { type: Boolean, default: false },
     },
     setup(props) {
       return () =>
@@ -128,6 +129,7 @@ const simpleStub = name =>
             'data-assistant-id': props.assistant?.id,
             'data-draft-name': props.draft?.name,
             'data-can-edit': props.canEdit,
+            'data-can-edit-prompt': props.canEditPrompt,
           },
           name
         );
@@ -361,6 +363,38 @@ describe('Agent page', () => {
           name: 'Renamed',
         });
       } else expect(saveButton(wrapper).exists()).toBe(false);
+    }
+  );
+
+  it.each([
+    ['ordinary admin', true, false],
+    ['ordinary agent', false, false],
+    ['verified platform admin', true, true],
+    ['verified platform agent', false, true],
+  ])(
+    'separates follow-up business and prompt permissions for %s with CAPTAIN_V2 enabled',
+    async (_role, admin, platform) => {
+      policy.isAdmin = admin;
+      currentUser.value = { type: 'User', captain_platform_access: platform };
+      route.query = { tab: 'follow-ups' };
+      sessionStorage.setItem(
+        'impersonationUser',
+        JSON.stringify({ type: 'SuperAdmin' })
+      );
+      localStorage.setItem(
+        'impersonationUser',
+        JSON.stringify({ type: 'SuperAdmin' })
+      );
+      try {
+        const wrapper = mountPage();
+        await flushPromises();
+        const tab = wrapper.getComponent({ name: 'AgentFollowUpsTab' });
+        expect(tab.props('canEdit')).toBe(admin);
+        expect(tab.props('canEditPrompt')).toBe(admin && platform);
+      } finally {
+        sessionStorage.removeItem('impersonationUser');
+        localStorage.removeItem('impersonationUser');
+      }
     }
   );
 

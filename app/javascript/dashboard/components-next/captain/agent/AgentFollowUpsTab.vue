@@ -14,12 +14,14 @@ import SettingsToggleSection from 'dashboard/components-next/Settings/SettingsTo
 const props = defineProps({
   assistant: { type: Object, required: true },
   canEdit: { type: Boolean, default: false },
+  canEditPrompt: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['dirtyChange', 'saved']);
 
 const store = useStore();
 const { t } = useI18n();
+const canManagePrompt = computed(() => props.canEdit && props.canEditPrompt);
 
 const state = reactive({
   enabled: false,
@@ -77,9 +79,11 @@ const incomingDraft = value => {
   const settings = value?.config?.follow_up_settings || {};
   return {
     enabled: Boolean(settings.enabled),
-    prompt: String(
-      settings.prompt || t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.DEFAULT_PROMPT')
-    ),
+    prompt: canManagePrompt.value
+      ? String(
+          settings.prompt || t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.DEFAULT_PROMPT')
+        )
+      : '',
     steps:
       Array.isArray(settings.steps) && settings.steps.length
         ? settings.steps.map(editableStep)
@@ -231,7 +235,7 @@ const save = async () => {
     useAlert(t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.VALIDATION'));
     return false;
   }
-  if (state.enabled && hasAiSteps && !prompt) {
+  if (canManagePrompt.value && state.enabled && hasAiSteps && !prompt) {
     useAlert(t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.PROMPT_VALIDATION'));
     return false;
   }
@@ -242,7 +246,11 @@ const save = async () => {
   try {
     const response = await CaptainAssistantAPI.update(assistantId, {
       config: {
-        follow_up_settings: { enabled: state.enabled, prompt, steps },
+        follow_up_settings: {
+          enabled: state.enabled,
+          steps,
+          ...(canManagePrompt.value ? { prompt } : {}),
+        },
       },
     });
     draftBaseline.value = submittedSnapshot;
@@ -275,7 +283,7 @@ defineExpose({ isDirty, save });
       :disabled="!canEdit"
       data-testid="follow-up-toggle"
     >
-      <template #editor>
+      <template v-if="canManagePrompt" #editor>
         <div class="flex flex-col gap-1" data-testid="follow-up-editor">
           <TextArea
             id="follow-up-prompt"

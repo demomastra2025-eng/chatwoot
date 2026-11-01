@@ -167,9 +167,9 @@ vi.mock('dashboard/components-next/button/Button.vue', () => ({
 
 const { default: AgentFollowUpsTab } = await import('./AgentFollowUpsTab.vue');
 
-const mountTab = ({ canEdit = true } = {}) =>
+const mountTab = ({ canEdit = true, canEditPrompt = true } = {}) =>
   mount(AgentFollowUpsTab, {
-    props: { assistant: assistantRecord, canEdit },
+    props: { assistant: assistantRecord, canEdit, canEditPrompt },
   });
 
 const setSettings = followUpSettings => {
@@ -237,7 +237,7 @@ describe('AgentFollowUpsTab', () => {
     expect(
       wrapper.get('[data-testid="follow-up-switch"]').element.disabled
     ).toBe(true);
-    expect(wrapper.get('#follow-up-prompt').element.disabled).toBe(true);
+    expect(wrapper.find('#follow-up-prompt').exists()).toBe(false);
     expect(wrapper.get('[data-testid="follow-up-mode"]').element.disabled).toBe(
       true
     );
@@ -258,6 +258,71 @@ describe('AgentFollowUpsTab', () => {
     expect(toggles[1].attributes('aria-expanded')).toBe('true');
     expect(await wrapper.vm.save()).toBe(false);
     expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it('ordinary admin can enable AI follow-ups and save steps without any prompt key', async () => {
+    setSettings({
+      enabled: false,
+      steps: [{ delay_seconds: 3600, mode: 'ai', objective: 'Follow up' }],
+    });
+    const wrapper = mountTab({ canEditPrompt: false });
+    expect(wrapper.find('#follow-up-prompt').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="follow-up-editor"]').exists()).toBe(
+      false
+    );
+    expect(wrapper.vm.isDirty).toBe(false);
+    await wrapper.get('[data-testid="follow-up-switch"]').setValue(true);
+    await clickSave(wrapper);
+    expect(updateMock).toHaveBeenLastCalledWith(58, {
+      config: {
+        follow_up_settings: {
+          enabled: true,
+          steps: [{ delay_seconds: 3600, mode: 'ai', objective: 'Follow up' }],
+        },
+      },
+    });
+    expect(
+      updateMock.mock.lastCall[1].config.follow_up_settings
+    ).not.toHaveProperty('prompt');
+    expect(wrapper.vm.isDirty).toBe(false);
+    await wrapper
+      .get('[data-testid="follow-up-objective"]')
+      .setValue('Business goal');
+    await clickSave(wrapper);
+    expect(updateMock.mock.lastCall[1].config.follow_up_settings).toEqual({
+      enabled: true,
+      steps: [{ delay_seconds: 3600, mode: 'ai', objective: 'Business goal' }],
+    });
+    await wrapper.get('[data-testid="follow-up-switch"]').setValue(false);
+    await clickSave(wrapper);
+    expect(updateMock.mock.lastCall[1].config.follow_up_settings).toEqual({
+      enabled: false,
+      steps: [{ delay_seconds: 3600, mode: 'ai', objective: 'Business goal' }],
+    });
+  });
+
+  it('ordinary saves omit even a stale private prompt returned with the record', async () => {
+    setSettings({
+      enabled: true,
+      prompt: 'Platform-only instructions',
+      steps: [{ delay_seconds: 3600, mode: 'static', message: 'Reminder' }],
+    });
+    const wrapper = mountTab({ canEditPrompt: false });
+    expect(wrapper.text()).not.toContain('Platform-only instructions');
+    await wrapper
+      .get('[data-testid="follow-up-message"]')
+      .setValue('New business message');
+    await clickSave(wrapper);
+    expect(updateMock.mock.lastCall[1].config.follow_up_settings).toEqual({
+      enabled: true,
+      steps: [
+        {
+          delay_seconds: 3600,
+          mode: 'static',
+          message: 'New business message',
+        },
+      ],
+    });
   });
 
   it('keeps legacy message-only steps in static mode', async () => {
