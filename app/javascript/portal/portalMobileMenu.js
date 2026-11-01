@@ -16,7 +16,14 @@ const updateMenu = (isOpen, { restoreFocus = true } = {}) => {
   menu.inert = !isOpen;
 
   if (isOpen) {
-    menu.querySelector('[data-mobile-menu-close]')?.focus();
+    // Let the opening visibility transition paint before moving focus inside.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (toggle.checked && menu.isConnected) {
+          menu.querySelector('[data-mobile-menu-close]')?.focus();
+        }
+      });
+    });
   } else if (restoreFocus) {
     trigger.focus();
   }

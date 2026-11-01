@@ -8,6 +8,11 @@ const menuTemplate = readFileSync(
   'utf8'
 ).replace(/<%[\s\S]*?%>/g, '');
 
+const waitForMenuPaint = () =>
+  new Promise(finishPaint => {
+    requestAnimationFrame(() => requestAnimationFrame(finishPaint));
+  });
+
 describe('portal native mobile menu', () => {
   let trigger;
   let menu;
@@ -32,12 +37,13 @@ describe('portal native mobile menu', () => {
     vi.restoreAllMocks();
   });
 
-  it('uses native buttons and opens the existing menu with focus on close', () => {
+  it('uses native buttons and opens the existing menu with focus on close', async () => {
     expect(trigger.tagName).toBe('BUTTON');
     expect(close.tagName).toBe('BUTTON');
     expect(menu.inert).toBe(true);
     trigger.focus();
     trigger.click();
+    await waitForMenuPaint();
 
     expect(toggle.checked).toBe(true);
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
@@ -58,8 +64,25 @@ describe('portal native mobile menu', () => {
     expect(document.activeElement).toBe(trigger);
   });
 
-  it('keeps Tab and Shift+Tab within the open menu', () => {
+  it('does not move focus into a menu closed or removed before opening paints', async () => {
+    trigger.focus();
     trigger.click();
+    await new Promise(requestAnimationFrame);
+    closeMobileMenu();
+    await waitForMenuPaint();
+    expect(menu.inert).toBe(true);
+    expect(document.activeElement).toBe(trigger);
+
+    trigger.click();
+    await new Promise(requestAnimationFrame);
+    menu.remove();
+    await waitForMenuPaint();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('keeps Tab and Shift+Tab within the open menu', async () => {
+    trigger.click();
+    await waitForMenuPaint();
     const last = menu.querySelector('a[href]');
     close.dispatchEvent(
       new KeyboardEvent('keydown', {
