@@ -110,7 +110,11 @@ export default {
 </script>
 
 <template>
-  <div v-on-clickaway="closeSearch" class="relative w-full max-w-5xl my-4">
+  <div
+    ref="searchRoot"
+    v-on-clickaway="closeSearch"
+    class="relative w-full max-w-5xl my-4"
+  >
     <PublicSearchInput
       :search-term="searchTerm"
       :search-placeholder="searchTranslations.searchPlaceholder"
@@ -123,6 +127,7 @@ export default {
       @mouseover="openSearch"
     >
       <SearchSuggestions
+        :keyboard-target="$refs.searchRoot?.querySelector('input')"
         :items="searchResults"
         :is-loading="isLoading"
         :search-term="normalizedSearchTerm"

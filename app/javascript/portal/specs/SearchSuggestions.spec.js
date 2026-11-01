@@ -56,7 +56,11 @@ describe('SearchSuggestions', () => {
   const renderSuggestions = async props => {
     document.body.innerHTML = '<input id="portal-search-test" />';
     wrapper = mount(SearchSuggestions, {
-      props: { items: articles, ...props },
+      props: {
+        items: articles,
+        keyboardTarget: document.getElementById('portal-search-test'),
+        ...props,
+      },
       attachTo: document.body,
       global: { directives: { dompurifyHtml: () => {} } },
     });
@@ -70,15 +74,15 @@ describe('SearchSuggestions', () => {
   };
 
   const pressKey = async key => {
-    document.activeElement.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key,
-        code: key,
-        bubbles: true,
-        cancelable: true,
-      })
-    );
+    const event = new KeyboardEvent('keydown', {
+      key,
+      code: key,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.activeElement.dispatchEvent(event);
     await flushPromises();
+    return event;
   };
 
   it('opens the backend link selected with arrow keys when Enter is pressed in the search input', async () => {
@@ -96,7 +100,39 @@ describe('SearchSuggestions', () => {
 
   it('does not activate a result before one has been selected', async () => {
     const [first, second] = await renderSuggestions();
-    await pressKey('Enter');
+    const event = await pressKey('Enter');
+    expect(event.defaultPrevented).toBe(false);
+    expect(first).not.toHaveBeenCalled();
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  it('preserves native Enter when a result link receives Tab focus', async () => {
+    const [first, second] = await renderSuggestions();
+    wrapper.findAll('a')[0].element.focus();
+    const event = await pressKey('Enter');
+    expect(event.defaultPrevented).toBe(false);
+    expect(first).not.toHaveBeenCalled();
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  it('does not redirect a focused link to the previous arrow selection', async () => {
+    const [first, second] = await renderSuggestions();
+    await pressKey('ArrowDown');
+    wrapper.findAll('a')[1].element.focus();
+    const event = await pressKey('Enter');
+    expect(event.defaultPrevented).toBe(false);
+    expect(first).not.toHaveBeenCalled();
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  it('leaves unrelated buttons and inputs outside the search untouched', async () => {
+    const [first, second] = await renderSuggestions();
+    await pressKey('ArrowDown');
+    const button = document.createElement('button');
+    document.body.appendChild(button);
+    button.focus();
+    const event = await pressKey('Enter');
+    expect(event.defaultPrevented).toBe(false);
     expect(first).not.toHaveBeenCalled();
     expect(second).not.toHaveBeenCalled();
   });

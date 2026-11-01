@@ -17,9 +17,9 @@ import { useKeyboardEvents } from './useKeyboardEvents';
  * @param {import('vue').Ref<Array>} items - A ref to the array of selectable items.
  * @returns {{action: Function, allowOnFocusedInput: boolean}} An object containing the action and a flag to allow the event on focused input.
  */
-const createAction = (action, items) => ({
+const createAction = (action, items, shouldHandleEvent) => ({
   action: e => {
-    if (!items.value?.length) return;
+    if (!items.value?.length || !shouldHandleEvent(e)) return;
     action();
     e.preventDefault();
   },
@@ -38,17 +38,18 @@ const createKeyboardEvents = (
   moveSelectionUp,
   moveSelectionDown,
   onSelect,
-  items
+  items,
+  shouldHandleEvent
 ) => {
   const events = {
-    ArrowUp: createAction(moveSelectionUp, items),
-    'Control+KeyP': createAction(moveSelectionUp, items),
-    ArrowDown: createAction(moveSelectionDown, items),
-    'Control+KeyN': createAction(moveSelectionDown, items),
+    ArrowUp: createAction(moveSelectionUp, items, shouldHandleEvent),
+    'Control+KeyP': createAction(moveSelectionUp, items, shouldHandleEvent),
+    ArrowDown: createAction(moveSelectionDown, items, shouldHandleEvent),
+    'Control+KeyN': createAction(moveSelectionDown, items, shouldHandleEvent),
   };
 
   if (typeof onSelect === 'function') {
-    events.Enter = createAction(onSelect, items);
+    events.Enter = createAction(onSelect, items, shouldHandleEvent);
   }
 
   return events;
@@ -90,6 +91,7 @@ export function useKeyboardNavigableList({
   onSelect,
   adjustScroll,
   selectedIndex,
+  shouldHandleEvent = () => true,
 }) {
   const moveSelection = direction => {
     selectedIndex.value = updateSelectionIndex(
@@ -107,7 +109,8 @@ export function useKeyboardNavigableList({
     moveSelectionUp,
     moveSelectionDown,
     onSelect,
-    items
+    items,
+    shouldHandleEvent
   );
 
   useKeyboardEvents(keyboardEvents);

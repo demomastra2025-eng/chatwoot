@@ -5,6 +5,10 @@ import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
 
 export default {
   props: {
+    keyboardTarget: {
+      type: Object,
+      default: null,
+    },
     items: {
       type: Array,
       default: () => [],
@@ -63,6 +67,9 @@ export default {
       onSelect,
       adjustScroll,
       selectedIndex,
+      shouldHandleEvent: event =>
+        event.target === props.keyboardTarget &&
+        (event.key !== 'Enter' || selectedIndex.value >= 0),
     });
 
     return {
