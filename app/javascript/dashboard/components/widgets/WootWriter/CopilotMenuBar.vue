@@ -1,5 +1,5 @@
 <script setup>
-import { computed, useTemplateRef } from 'vue';
+import { computed, nextTick, ref, useId, useTemplateRef } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useElementSize, useWindowSize } from '@vueuse/core';
 import { useMapGetter } from 'dashboard/composables/store';
@@ -32,6 +32,10 @@ const props = defineProps({
 const emit = defineEmits(['executeCopilotAction']);
 
 const { t } = useI18n();
+const menuId = useId();
+const openSubmenu = ref(null);
+const submenuTriggers = new Map();
+const submenus = new Map();
 
 const { draftMessage } = useCaptain();
 
@@ -182,13 +186,37 @@ const selectionMenuStyle = computed(() => {
 });
 
 const handleMenuItemClick = item => {
-  // For items with submenus, do nothing on click (hover will show submenu)
-  if (!item.subMenuItems) {
-    emit('executeCopilotAction', item.key);
+  if (item.subMenuItems) {
+    openSubmenu.value = openSubmenu.value === item.key ? null : item.key;
+    return;
+  }
+  emit('executeCopilotAction', item.key);
+};
+
+const focusSubmenu = async item => {
+  openSubmenu.value = item.key;
+  await nextTick();
+  submenus.get(item.key)?.$el?.querySelector('button')?.focus();
+};
+
+const closeSubmenu = item => {
+  openSubmenu.value = null;
+  submenuTriggers.get(item.key)?.$el?.focus();
+};
+
+const handleMenuKeydown = (event, item) => {
+  if (!item.subMenuItems) return;
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+    event.preventDefault();
+    focusSubmenu(item);
+  } else if (event.key === 'Escape' && openSubmenu.value === item.key) {
+    event.stopPropagation();
+    closeSubmenu(item);
   }
 };
 
-const handleSubMenuItemClick = (parentItem, subItem) => {
+const handleSubMenuItemClick = subItem => {
+  openSubmenu.value = null;
   emit('executeCopilotAction', subItem.key);
 };
 </script>
@@ -201,19 +229,23 @@ const handleSubMenuItemClick = (parentItem, subItem) => {
     :style="hasSelection && isEditorMenuPopover ? selectionMenuStyle : {}"
   >
     <div v-if="menuItems.length > 0" class="flex flex-col items-start gap-2.5">
-      <div
-        v-for="item in menuItems"
-        :key="item.key"
-        class="w-full relative group/submenu"
-      >
+      <div v-for="item in menuItems" :key="item.key" class="w-full relative">
         <Button
+          :ref="el => submenuTriggers.set(item.key, el)"
           :label="item.label"
           :icon="item.icon"
+          :aria-expanded="
+            item.subMenuItems ? openSubmenu === item.key : undefined
+          "
+          :aria-controls="
+            item.subMenuItems ? `${menuId}-${item.key}` : undefined
+          "
           slate
           link
           sm
           class="hover:!no-underline text-n-slate-12 font-normal text-xs w-full !justify-start"
           @click="handleMenuItemClick(item)"
+          @keydown="handleMenuKeydown($event, item)"
         >
           <template v-if="item.subMenuItems" #default>
             <div class="flex items-center gap-1 justify-between w-full">
@@ -226,11 +258,16 @@ const handleSubMenuItemClick = (parentItem, subItem) => {
           </template>
         </Button>
 
-        <!-- Hover Submenu -->
         <DropdownBody
-          v-if="item.subMenuItems"
-          class="group-hover/submenu:block hidden [&>ul]:gap-2 [&>ul]:px-3 [&>ul]:py-2.5 [&>ul]:dark:!border-n-strong max-h-[15rem] min-w-32 z-10 top-0"
-          :class="submenuPosition"
+          v-if="item.subMenuItems && openSubmenu === item.key"
+          :id="`${menuId}-${item.key}`"
+          :ref="el => submenus.set(item.key, el)"
+          class="[&>ul]:gap-2 [&>ul]:px-3 [&>ul]:py-2.5 [&>ul]:dark:!border-n-strong max-h-[15rem] min-w-32 z-10"
+          :class="
+            windowWidth < 640 ? 'left-0 top-full' : ['top-0', submenuPosition]
+          "
+          @keydown.esc.stop.prevent="closeSubmenu(item)"
+          @keydown.left.stop.prevent="closeSubmenu(item)"
         >
           <Button
             v-for="subItem in item.subMenuItems"
@@ -240,7 +277,7 @@ const handleSubMenuItemClick = (parentItem, subItem) => {
             link
             sm
             class="hover:!no-underline text-n-slate-12 font-normal text-xs w-full !justify-start mb-1"
-            @click="handleSubMenuItemClick(item, subItem)"
+            @click="handleSubMenuItemClick(subItem)"
           />
         </DropdownBody>
       </div>

@@ -36,14 +36,21 @@ onMounted(async () => {
 </script>
 
 <template>
-  <woot-modal :show="show" size="medium" @close="() => $emit('close')">
+  <woot-modal
+    :show="show"
+    size="medium"
+    :aria-label="$t('SIDEBAR_ITEMS.KEYBOARD_SHORTCUTS')"
+    @close="() => $emit('close')"
+  >
     <div class="flex flex-col h-auto overflow-auto">
       <woot-modal-header
         :header-title="$t('SIDEBAR_ITEMS.KEYBOARD_SHORTCUTS')"
       />
-      <div class="grid grid-cols-2 px-8 pt-0 pb-4 mt-6 gap-x-5 gap-y-3">
-        <div class="flex justify-between items-center min-w-[25rem]">
-          <h5 class="text-sm text-n-slate-12">
+      <div
+        class="grid grid-cols-1 xl:grid-cols-2 px-8 pt-0 pb-4 mt-6 gap-x-5 gap-y-3"
+      >
+        <div class="flex min-w-0 flex-wrap justify-between items-center gap-2">
+          <h5 class="min-w-0 break-words text-sm text-n-slate-12">
             {{ $t('KEYBOARD_SHORTCUTS.TOGGLE_MODAL') }}
           </h5>
           <div class="flex items-center gap-2 mb-1 ml-2">
@@ -57,13 +64,15 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="grid grid-cols-2 px-8 pt-0 pb-8 gap-x-5 gap-y-3">
+      <div
+        class="grid grid-cols-1 xl:grid-cols-2 px-8 pt-0 pb-8 gap-x-5 gap-y-3"
+      >
         <div
           v-for="shortcut in SHORTCUT_KEYS"
           :key="shortcut.id"
-          class="flex justify-between items-center min-w-[25rem]"
+          class="flex min-w-0 flex-wrap justify-between items-center gap-2"
         >
-          <h5 class="text-sm text-n-slate-12 min-w-[36px]">
+          <h5 class="min-w-0 break-words text-sm text-n-slate-12">
             {{ title(shortcut) }}
           </h5>
           <div class="flex items-center gap-2 mb-1 ml-2">

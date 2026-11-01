@@ -173,11 +173,10 @@ export default {
       >
         <NextButton
           ghost
+          slate
           :disabled="disabled || isEditorDisabled"
-          :class="{
-            'text-n-violet-9 hover:enabled:!bg-n-violet-3': !showCopilotMenu,
-            'text-n-violet-9 bg-n-violet-3': showCopilotMenu,
-          }"
+          :aria-label="$t('CONVERSATION.SIDEBAR.COPILOT')"
+          :aria-expanded="showCopilotMenu"
           sm
           icon="i-ph-sparkle-fill"
           @click="toggleCopilotMenu"
