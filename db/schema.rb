@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_30_133000) do
+ActiveRecord::Schema[7.2].define(version: 2026_11_01_183000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -367,6 +367,36 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_30_133000) do
     t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'inactive'::character varying::text])", name: "chk_billing_memberships_status"
   end
 
+  create_table "billing_account_profiles", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.boolean "billing_enabled", default: false, null: false
+    t.date "paid_until"
+    t.integer "billing_day"
+    t.string "billing_tax_id"
+    t.string "legal_name"
+    t.string "contract_number"
+    t.date "contract_signed_on"
+    t.bigint "custom_monthly_price_minor"
+    t.boolean "annual_discount", default: false, null: false
+    t.integer "extra_seats_count", default: 0, null: false
+    t.integer "extra_storage_packs_count", default: 0, null: false
+    t.string "knp_code", default: "859", null: false
+    t.string "billing_email"
+    t.bigint "billing_whatsapp_conversation_id"
+    t.boolean "autopay_enabled", default: false, null: false
+    t.string "bcc_card_token"
+    t.string "bcc_card_masked"
+    t.boolean "payment_overdue_banner", default: false, null: false
+    t.string "overdue_invoice_number"
+    t.integer "partner_commission_rate_pct", default: 30, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_billing_account_profiles_on_account_id", unique: true
+    t.index ["billing_enabled", "paid_until"], name: "idx_billing_account_profiles_enabled_paid_until"
+    t.index ["billing_tax_id"], name: "index_billing_account_profiles_on_billing_tax_id"
+  end
+
   create_table "billing_account_workspaces", force: :cascade do |t|
     t.bigint "billing_account_id", null: false
     t.integer "account_id", null: false
@@ -427,11 +457,77 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_30_133000) do
     t.check_constraint "starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at", name: "chk_billing_allocations_period"
   end
 
+  create_table "billing_invoices", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "invoice_number", null: false
+    t.string "status", default: "issued", null: false
+    t.date "period_start", null: false
+    t.date "period_end", null: false
+    t.string "usage_period_month"
+    t.date "due_on", null: false
+    t.string "currency", default: "KZT", null: false
+    t.string "plan_key"
+    t.string "payer_tax_id"
+    t.string "payer_legal_name"
+    t.string "knp_code", default: "859", null: false
+    t.string "payment_purpose", null: false
+    t.bigint "base_amount_minor", default: 0, null: false
+    t.bigint "addons_amount_minor", default: 0, null: false
+    t.integer "ai_dialogs_overage_count", default: 0, null: false
+    t.bigint "ai_dialogs_overage_minor", default: 0, null: false
+    t.integer "call_minutes_overage_count", default: 0, null: false
+    t.bigint "call_minutes_overage_minor", default: 0, null: false
+    t.bigint "amount_minor", null: false
+    t.bigint "partner_commission_base_minor", default: 0, null: false
+    t.string "bcc_external_invoice_id"
+    t.string "payment_url"
+    t.datetime "paid_at"
+    t.string "bank_reference_id"
+    t.integer "recurring_attempts_count", default: 0, null: false
+    t.datetime "last_recurring_attempt_at"
+    t.string "last_reminder_stage"
+    t.string "edo_document_id"
+    t.string "edo_status"
+    t.datetime "signed_by_counterparty_at"
+    t.string "esf_id"
+    t.string "esf_status"
+    t.jsonb "line_items", default: [], null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "period_start"], name: "idx_billing_invoices_unique_active_period", unique: true, where: "((status)::text <> 'cancelled'::text)"
+    t.index ["account_id"], name: "index_billing_invoices_on_account_id"
+    t.index ["invoice_number"], name: "index_billing_invoices_on_invoice_number", unique: true
+    t.index ["status", "due_on"], name: "index_billing_invoices_on_status_and_due_on"
+  end
+
   create_table "billing_organizations", force: :cascade do |t|
     t.string "name", null: false
     t.integer "status", default: 0, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+  end
+
+  create_table "billing_payment_events", force: :cascade do |t|
+    t.string "bank_reference_id", null: false
+    t.string "source", null: false
+    t.string "status", null: false
+    t.bigint "billing_invoice_id"
+    t.bigint "account_id"
+    t.bigint "amount_minor", null: false
+    t.string "currency", default: "KZT", null: false
+    t.string "sender_tax_id"
+    t.string "sender_name"
+    t.string "payment_purpose"
+    t.datetime "occurred_at"
+    t.string "review_reason"
+    t.jsonb "raw_payload", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_billing_payment_events_on_account_id"
+    t.index ["billing_invoice_id"], name: "index_billing_payment_events_on_billing_invoice_id"
+    t.index ["source", "bank_reference_id"], name: "idx_billing_payment_events_source_ref", unique: true
+    t.index ["status"], name: "index_billing_payment_events_on_status"
   end
 
   create_table "billing_plan_prices", force: :cascade do |t|
@@ -4313,12 +4409,16 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_30_133000) do
   add_foreign_key "assignment_quota_usages", "users", name: "fk_rails_assignment_quota_usages_user"
   add_foreign_key "billing_account_memberships", "billing_accounts"
   add_foreign_key "billing_account_memberships", "users", on_delete: :cascade
+  add_foreign_key "billing_account_profiles", "accounts"
   add_foreign_key "billing_account_workspaces", "accounts", on_delete: :cascade
   add_foreign_key "billing_account_workspaces", "billing_accounts"
   add_foreign_key "billing_audit_events", "billing_accounts"
   add_foreign_key "billing_audit_events", "users", column: "super_admin_id", on_delete: :nullify
   add_foreign_key "billing_entitlement_allocations", "accounts", on_delete: :cascade
   add_foreign_key "billing_entitlement_allocations", "billing_subscriptions"
+  add_foreign_key "billing_invoices", "accounts"
+  add_foreign_key "billing_payment_events", "accounts", on_delete: :nullify
+  add_foreign_key "billing_payment_events", "billing_invoices", on_delete: :nullify
   add_foreign_key "billing_plan_prices", "billing_plans"
   add_foreign_key "billing_subscriptions", "billing_accounts"
   add_foreign_key "billing_subscriptions", "billing_plan_prices"
