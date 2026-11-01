@@ -15,9 +15,9 @@ import { usePolicy } from 'dashboard/composables/usePolicy';
 
 const emit = defineEmits(['close', 'created']);
 
-// New agents use explicit canonical bindings. Prompt mentions are text; tools
-// are selected separately after creation. Workspace/model settings stay owned
-// by their existing server mechanisms.
+// The platform supplies an explicit instruction. The server initializes
+// canonical bindings for every creation path; this client does not infer
+// grants from mentions or copy model/workspace settings.
 const NEW_AGENT_USAGE_MODE = 'external_agent';
 const DESCRIPTION_MAX_LENGTH = 400;
 
@@ -113,15 +113,6 @@ const buildCreatePayload = () => ({
     routing_description: trimmedDescription.value,
     usage_mode: NEW_AGENT_USAGE_MODE,
     description: state.instruction.trim(),
-    config: {
-      capabilities: {
-        version: 1,
-        scopes: {
-          agent: { enabled: true, tool_ids: [] },
-          assistant: { enabled: false, tool_ids: [] },
-        },
-      },
-    },
   },
 });
 
