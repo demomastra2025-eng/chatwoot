@@ -31,6 +31,7 @@ const storeGetters = vi.hoisted(() => ({
   getContactNotes: vi.fn(),
   getSelectedChat: null,
   getCurrentUser: null,
+  labels: [],
 }));
 
 const storeDispatch = vi.hoisted(() => vi.fn());
@@ -118,6 +119,9 @@ vi.mock('vuex', () => ({
       'contactNotes/getAllNotesByContact': storeGetters.getContactNotes,
       getSelectedChat: storeGetters.getSelectedChat,
       getCurrentUser: storeGetters.getCurrentUser,
+      get 'labels/getLabels'() {
+        return storeGetters.labels;
+      },
     },
   }),
 }));
@@ -216,6 +220,7 @@ describe('FloatingCallWidget', () => {
     mockSession.isIncomingCallActionableInBrowser.mockImplementation(
       call => call?.callDirection === 'inbound'
     );
+    storeGetters.labels = [];
     mockSession.joinCall.mockReset();
     mockSession.endCall.mockReset();
     mockSession.rejectIncomingCall.mockReset();
@@ -1828,5 +1833,49 @@ describe('FloatingCallWidget', () => {
         wrapper.unmount();
       });
     });
+  });
+
+  it('resolves hex label slugs to human-readable Cyrillic display_title in call cards', () => {
+    window.localStorage.setItem('chatwoot_call_card_expanded', 'true');
+    storeGetters.labels = [
+      { title: 'label_06c09a1497f1', display_title: 'Первичный приём' },
+      { title: 'label_6c5d5f20b12f', display_title: 'VIP пациент' },
+    ];
+    storeGetters.getConversationById.mockReturnValue({
+      id: 77,
+      inbox_id: 9,
+      labels: ['label_06c09a1497f1', 'label_6c5d5f20b12f', 'implant'],
+      meta: {
+        sender: { id: 501, name: 'Асет', phone_number: '+77072817060' },
+        assignee: { id: 1, name: 'Асет' },
+      },
+    });
+    storeGetters.getInbox.mockReturnValue({
+      id: 9,
+      name: 'Клиника',
+      channel_type: 'Channel::Voice',
+      provider: 'sipuni',
+    });
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sip-label-call-1',
+        conversationId: 77,
+        inboxId: 9,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        status: 'ringing',
+        fromNumber: '+77072817060',
+        toNumber: '+79999705564',
+      },
+    ];
+
+    const wrapper = mountComponent();
+    expect(wrapper.text()).toContain('#Первичный приём');
+    expect(wrapper.text()).toContain('#VIP пациент');
+    expect(wrapper.text()).toContain('#implant');
+    expect(wrapper.text()).not.toContain('label_06c09a1497f1');
+    expect(wrapper.text()).not.toContain('label_6c5d5f20b12f');
+    wrapper.unmount();
+    window.localStorage.removeItem('chatwoot_call_card_expanded');
   });
 });

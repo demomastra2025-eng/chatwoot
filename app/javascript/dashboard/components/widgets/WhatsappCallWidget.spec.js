@@ -300,7 +300,9 @@ describe('WhatsappCallWidget embedded in PhoneWidget', () => {
     ];
 
     const wrapper = mountComponent({ embedded: true });
-    const container = wrapper.get('[data-testid="phone-widget-whatsapp-calls"]');
+    const container = wrapper.get(
+      '[data-testid="phone-widget-whatsapp-calls"]'
+    );
     expect(container.classes()).not.toContain('fixed');
 
     const card = wrapper.get('[data-testid="phone-widget-call-card"]');
@@ -318,5 +320,59 @@ describe('WhatsappCallWidget embedded in PhoneWidget', () => {
     expect(toggle.text()).toContain('Компактный вид');
     expect(card.text()).toContain('+77015554433');
     wrapper.unmount();
+  });
+});
+
+describe('WhatsappCallWidget Telegram Personal timer & i18n parity', () => {
+  beforeEach(() => {
+    mockSession.activeCall = null;
+    mockSession.incomingCalls = [];
+    mockSession.hasActiveCall = false;
+    mockSession.dismissIncomingCall.mockReset();
+    voiceCallsState.hasActiveCall = false;
+  });
+
+  it('auto-dismisses WhatsApp incoming calls after 30s and Telegram Personal calls after 90s', async () => {
+    vi.useFakeTimers();
+    try {
+      const waCall = {
+        callId: 'wa-ring-30',
+        provider: 'whatsapp',
+        caller: { name: 'WA Caller' },
+      };
+      const tgCall = {
+        callId: 'tg-ring-90',
+        provider: 'telegram_personal',
+        caller: { name: 'TG Caller' },
+      };
+      mockSession.incomingCalls = [waCall, tgCall];
+
+      const wrapper = mountComponent();
+      await vi.advanceTimersByTimeAsync(31000);
+      expect(mockSession.dismissIncomingCall).toHaveBeenCalledTimes(1);
+      expect(mockSession.dismissIncomingCall).toHaveBeenCalledWith(waCall);
+
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(mockSession.dismissIncomingCall).toHaveBeenCalledTimes(2);
+      expect(mockSession.dismissIncomingCall).toHaveBeenLastCalledWith(tgCall);
+      wrapper.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('registers all WHATSAPP_CALL translation keys in ru and kk locales', async () => {
+    const enLocale = (
+      await import('dashboard/i18n/locale/en/whatsappCall.json')
+    ).default;
+    const ruIndex = (await import('dashboard/i18n/locale/ru')).default;
+    const kkIndex = (await import('dashboard/i18n/locale/kk')).default;
+
+    const expectedKeys = Object.keys(enLocale.WHATSAPP_CALL);
+    expectedKeys.forEach(key => {
+      expect(ruIndex.WHATSAPP_CALL?.[key]).toBeTruthy();
+      expect(kkIndex.WHATSAPP_CALL?.[key]).toBeTruthy();
+      expect(ruIndex.WHATSAPP_CALL[key]).not.toBe(`WHATSAPP_CALL.${key}`);
+    });
   });
 });

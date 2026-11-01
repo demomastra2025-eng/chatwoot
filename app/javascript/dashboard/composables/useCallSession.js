@@ -1950,7 +1950,17 @@ export function useCallSession() {
       );
       if (!releaseResult) return null;
     } else {
-      await WebphoneClient.endClientCall(provider);
+      try {
+        await WebphoneClient.endClientCall(provider);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn('Failed to end non-native client call:', error);
+      }
+      callsStore.rememberTerminalCall({
+        ...call,
+        callSid: call?.callSid,
+        provider,
+      });
     }
 
     callsStore.dismissCall(call?.callSid, provider, call);

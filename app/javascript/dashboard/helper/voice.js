@@ -24,8 +24,18 @@ const isVoiceCallMessage = message => {
   return CONTENT_TYPES.VOICE_CALL === message?.content_type;
 };
 
-const isWhatsappCall = message => {
-  return message?.content_attributes?.data?.call_source === 'whatsapp';
+const DEDICATED_CALL_WIDGET_SOURCES = new Set([
+  'whatsapp',
+  'telegram_personal',
+]);
+
+const isDedicatedCallWidgetMessage = message => {
+  const contentData = message?.content_attributes?.data;
+  return (
+    DEDICATED_CALL_WIDGET_SOURCES.has(contentData?.call_source) ||
+    DEDICATED_CALL_WIDGET_SOURCES.has(contentData?.provider) ||
+    DEDICATED_CALL_WIDGET_SOURCES.has(message?.provider)
+  );
 };
 
 const shouldSkipCall = (callDirection, senderId, currentUserId) => {
@@ -202,9 +212,9 @@ function extractCallData(message) {
 export function handleVoiceCallCreated(message, currentUserId) {
   if (!isVoiceCallMessage(message)) return;
 
-  // WhatsApp calls are managed by their own store (whatsappCalls),
-  // don't add them to the browser call store.
-  if (isWhatsappCall(message)) return;
+  // WhatsApp and Telegram Personal calls are managed by their dedicated
+  // whatsappCalls store/widget; don't add them to the SIP browser call store.
+  if (isDedicatedCallWidgetMessage(message)) return;
 
   const {
     callSid,
@@ -374,8 +384,8 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
   commit(types.UPDATE_CONVERSATION_CALL_STATUS, callInfo);
   commit(types.UPDATE_MESSAGE_CALL_STATUS, callInfo);
 
-  // Browser call store interactions are not used for WhatsApp Cloud calls.
-  if (isWhatsappCall(message)) return;
+  // Browser call store interactions are not used for dedicated-widget calls.
+  if (isDedicatedCallWidgetMessage(message)) return;
 
   const callsStore = useCallsStore();
 

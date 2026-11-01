@@ -493,4 +493,68 @@ describe('voice helper', () => {
     const callsStore = useCallsStore();
     expect(callsStore.calls).toEqual([]);
   });
+
+  it('ignores telegram_personal voice_call messages in handleVoiceCallCreated', () => {
+    handleVoiceCallCreated(
+      {
+        content_type: 'voice_call',
+        conversation_id: 91,
+        inbox_id: 14,
+        sender: { id: 99 },
+        content_attributes: {
+          data: {
+            call_sid: 'pending_tg-sess-1',
+            call_direction: 'outbound',
+            call_source: 'telegram_personal',
+            provider: 'telegram_personal',
+            status: 'ringing',
+          },
+        },
+      },
+      99
+    );
+
+    expect(useCallsStore().calls).toEqual([]);
+  });
+
+  it('commits Vuex call status for telegram_personal updates without polluting callsStore', () => {
+    const commit = vi.fn();
+    handleVoiceCallUpdated(
+      commit,
+      {
+        content_type: 'voice_call',
+        conversation_id: 91,
+        inbox_id: 14,
+        sender: { id: 99 },
+        content_attributes: {
+          data: {
+            call_sid: 'tg-real-91',
+            call_direction: 'outbound',
+            call_source: 'telegram_personal',
+            provider: 'telegram_personal',
+            status: 'in-progress',
+          },
+        },
+      },
+      99
+    );
+
+    expect(commit).toHaveBeenCalledWith(
+      'UPDATE_CONVERSATION_CALL_STATUS',
+      expect.objectContaining({
+        conversationId: 91,
+        callSid: 'tg-real-91',
+        callStatus: 'in-progress',
+      })
+    );
+    expect(commit).toHaveBeenCalledWith(
+      'UPDATE_MESSAGE_CALL_STATUS',
+      expect.objectContaining({
+        conversationId: 91,
+        callSid: 'tg-real-91',
+        callStatus: 'in-progress',
+      })
+    );
+    expect(useCallsStore().calls).toEqual([]);
+  });
 });

@@ -85,6 +85,8 @@ class TelegramPersonal::CallMessageBuilder
       'status' => map_status(call.status),
       'call_direction' => call.direction_label,
       'call_source' => 'telegram_personal',
+      'provider' => 'telegram_personal',
+      'media_server_enabled' => true,
       'call_id' => call.id,
       'from_number' => from_number,
       'to_number' => to_number,

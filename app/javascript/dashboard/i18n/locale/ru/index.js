@@ -40,6 +40,7 @@ import settings from './settings.json';
 import signup from './signup.json';
 import sla from './sla.json';
 import teamsSettings from './teamsSettings.json';
+import whatsappCall from './whatsappCall.json';
 import whatsappTemplates from './whatsappTemplates.json';
 import whatsappUsage from './whatsappUsage.json';
 import yearInReview from './yearInReview.json';
@@ -87,6 +88,7 @@ export default withReportAliases(
     signup,
     sla,
     teamsSettings,
+    whatsappCall,
     whatsappTemplates,
     whatsappUsage,
     yearInReview

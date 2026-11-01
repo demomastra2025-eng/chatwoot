@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import {
   acceptWhatsappCallById,
   handleAgentOffer,
+  terminateCallOnUnload,
   WHATSAPP_CALL_MEDIA_LEG_CLOSED_MESSAGE,
 } from '../useWhatsappCallSession';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
@@ -901,6 +902,35 @@ describe('useWhatsappCallSession', () => {
       expect(lateStop).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it('posts unload termination to telegram_personal_calls for telegram_personal provider', () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true });
+    const prevLocation = window.location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { pathname: '/app/accounts/15/conversations/99' },
+    });
+
+    try {
+      terminateCallOnUnload(501, 'telegram_personal');
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/v1/accounts/15/telegram_personal_calls/501/terminate',
+        expect.objectContaining({ method: 'POST', keepalive: true })
+      );
+
+      terminateCallOnUnload(502, 'whatsapp');
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/v1/accounts/15/whatsapp_calls/502/terminate',
+        expect.objectContaining({ method: 'POST', keepalive: true })
+      );
+    } finally {
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        value: prevLocation,
+      });
+      fetchSpy.mockRestore();
     }
   });
 });

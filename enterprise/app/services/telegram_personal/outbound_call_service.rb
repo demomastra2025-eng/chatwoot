@@ -16,6 +16,7 @@ class TelegramPersonal::OutboundCallService
 
     call = build_prepared_call!(conversation, response, session_id)
     attach_outbound_message!(conversation, call)
+    update_conversation_call_status(conversation, 'ringing')
     schedule_call_cleanup(call)
     call
   rescue StandardError
@@ -138,15 +139,35 @@ class TelegramPersonal::OutboundCallService
   end
 
   def mark_prepared_outbound_failed(call)
-    call.with_lock do
-      call.reload
-      failed_meta = (call.meta || {}).merge('outbound_prepare_pending' => false, 'outbound_dialing' => false)
-      call.update!(status: 'failed', meta: failed_meta) unless call.terminal?
-    end
-    TelegramPersonal::CallMessageBuilder.update_status!(call: call.reload, status: 'failed')
+    transitioned = finalize_failed_outbound_record!(call)
+    call.reload
+    TelegramPersonal::CallMessageBuilder.update_status!(call: call, status: 'failed')
+    update_conversation_call_status(call.conversation, 'failed')
+    TelegramPersonal::CallBroadcaster.broadcast_ended(call) if transitioned
     terminate_orphan_gateway_session(gateway_client(call.conversation), call.media_session_id)
   rescue StandardError => e
     Rails.logger.error "[TELEGRAM CALL] Failed to mark prepared outbound failed #{call&.id}: #{e.message}"
+  end
+
+  def finalize_failed_outbound_record!(call)
+    transitioned = false
+    call.with_lock do
+      call.reload
+      next if call.terminal?
+
+      failed_meta = (call.meta || {}).merge('outbound_prepare_pending' => false, 'outbound_dialing' => false)
+      call.update!(status: 'failed', meta: failed_meta)
+      transitioned = true
+    end
+    transitioned
+  end
+
+  def update_conversation_call_status(conversation, call_status)
+    attrs = (conversation.additional_attributes || {}).merge(
+      'call_status' => call_status,
+      'call_direction' => 'outbound'
+    )
+    conversation.update!(additional_attributes: attrs)
   end
 
   def terminate_orphan_gateway_session(client, session_id)
