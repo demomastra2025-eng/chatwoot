@@ -9,10 +9,9 @@ import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
-import {
-  buildDefaultAgentToolAccess,
-  normalizeCapabilityToolAccess,
-} from 'dashboard/components-next/captain/pageComponents/assistant/toolAccessDefaults';
+import { usePromptInspectorAccess } from 'dashboard/composables/captain/usePromptInspectorAccess';
+import { AGENT_INSTRUCTION_MAX_LENGTH } from './agentDraft';
+import { usePolicy } from 'dashboard/composables/usePolicy';
 
 const emit = defineEmits(['close', 'created']);
 
@@ -25,12 +24,18 @@ const DESCRIPTION_MAX_LENGTH = 400;
 
 const { t } = useI18n();
 const store = useStore();
+const { canInspectPrompts } = usePromptInspectorAccess();
+const { checkPermissions } = usePolicy();
+const canCreate = computed(
+  () => canInspectPrompts.value && checkPermissions(['administrator'])
+);
 
 const dialogRef = ref(null);
 const isSubmitting = ref(false);
 const state = reactive({
   name: '',
   description: '',
+  instruction: '',
   avatarFile: null,
   avatarUrl: '',
   attemptedSubmit: false,
@@ -38,6 +43,16 @@ const state = reactive({
 
 const trimmedName = computed(() => state.name.trim());
 const trimmedDescription = computed(() => state.description.trim());
+const instructionError = computed(() => {
+  if (!state.attemptedSubmit) return '';
+  if (!state.instruction.trim())
+    return t('CAPTAIN.AGENT_PAGE.INSTRUCTION_REQUIRED');
+  return state.instruction.length > AGENT_INSTRUCTION_MAX_LENGTH
+    ? t('CAPTAIN.AGENT_PAGE.INSTRUCTION_MAX', {
+        max: AGENT_INSTRUCTION_MAX_LENGTH,
+      })
+    : '';
+});
 
 const nameError = computed(() => {
   if (!state.attemptedSubmit || trimmedName.value) return '';
@@ -61,7 +76,9 @@ const isFormValid = computed(
   () =>
     Boolean(trimmedName.value) &&
     Boolean(trimmedDescription.value) &&
-    trimmedDescription.value.length <= DESCRIPTION_MAX_LENGTH
+    trimmedDescription.value.length <= DESCRIPTION_MAX_LENGTH &&
+    Boolean(state.instruction.trim()) &&
+    state.instruction.length <= AGENT_INSTRUCTION_MAX_LENGTH
 );
 
 const revokeAvatarPreview = () => {
@@ -85,29 +102,20 @@ const resetForm = () => {
   revokeAvatarPreview();
   state.name = '';
   state.description = '';
+  state.instruction = '';
   state.avatarFile = null;
   state.avatarUrl = '';
   state.attemptedSubmit = false;
 };
 
-const defaultInstruction = () =>
-  t('CAPTAIN.ASSISTANTS.CREATE.DEFAULT_INSTRUCTION.EXTERNAL_AGENT');
-
-const buildCreatePayload = () => {
-  const toolAccess = normalizeCapabilityToolAccess(
-    buildDefaultAgentToolAccess()
-  );
-
-  return {
-    assistant: {
-      name: trimmedName.value,
-      routing_description: trimmedDescription.value,
-      usage_mode: NEW_AGENT_USAGE_MODE,
-      description: defaultInstruction(),
-      config: { tool_access: toolAccess },
-    },
-  };
-};
+const buildCreatePayload = () => ({
+  assistant: {
+    name: trimmedName.value,
+    routing_description: trimmedDescription.value,
+    usage_mode: NEW_AGENT_USAGE_MODE,
+    description: state.instruction.trim(),
+  },
+});
 
 const createAgent = async () => {
   try {
@@ -138,7 +146,7 @@ const uploadAvatar = async agent => {
 };
 
 const handleConfirm = async () => {
-  if (isSubmitting.value) return;
+  if (!canCreate.value || isSubmitting.value) return;
 
   state.attemptedSubmit = true;
   if (!isFormValid.value) return;
@@ -172,6 +180,7 @@ defineExpose({ dialogRef });
 
 <template>
   <Dialog
+    v-if="canCreate"
     ref="dialogRef"
     type="edit"
     width="lg-plus"
@@ -215,6 +224,7 @@ defineExpose({ dialogRef });
       />
 
       <TextArea
+        id="create-agent-routing-description"
         v-model="state.description"
         :label="t('CAPTAIN.GALLERY.CREATE.DESCRIPTION_LABEL')"
         :placeholder="t('CAPTAIN.GALLERY.CREATE.DESCRIPTION_PLACEHOLDER')"
@@ -226,6 +236,18 @@ defineExpose({ dialogRef });
         show-character-count
         auto-height
         min-height="5rem"
+      />
+      <TextArea
+        id="create-agent-instruction"
+        v-model="state.instruction"
+        :label="t('CAPTAIN.AGENT_PAGE.INSTRUCTION_LABEL')"
+        :placeholder="t('CAPTAIN.AGENT_PAGE.INSTRUCTION_PLACEHOLDER')"
+        :max-length="AGENT_INSTRUCTION_MAX_LENGTH"
+        :message="instructionError"
+        :message-type="instructionError ? 'error' : 'info'"
+        show-character-count
+        auto-height
+        min-height="8rem"
       />
     </div>
   </Dialog>

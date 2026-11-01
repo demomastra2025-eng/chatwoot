@@ -8,6 +8,7 @@ import ModelSettings from './ModelSettings.vue';
 import { resolveModelIcon } from 'dashboard/components-next/captain/agent/agentDraft';
 import PlaygroundScenarioEditor from './PlaygroundScenarioEditor.vue';
 import CaptainPlayground from 'dashboard/api/captain/playground';
+import { usePromptInspectorAccess } from 'dashboard/composables/captain/usePromptInspectorAccess';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 
 // The Playground tries out the whole AI of the workspace: it has no start
@@ -18,6 +19,7 @@ const props = defineProps({
 });
 const { t } = useI18n();
 const configStore = useCaptainConfigStore();
+const { canInspectPrompts } = usePromptInspectorAccess();
 const session = ref(null);
 const agentTasks = ref([]);
 const messages = ref([]);
@@ -85,7 +87,7 @@ const messageDisabled = computed(
     isLoadingSession.value ||
     isUpdatingPermissions.value ||
     permissionsUnresolved.value ||
-    Boolean(configStore.uiFlags?.fetchError) ||
+    (canInspectPrompts.value && Boolean(configStore.uiFlags?.fetchError)) ||
     !session.value
 );
 const previews = computed(() =>
@@ -292,18 +294,22 @@ const sendMessage = async () => {
   const flight = CaptainPlayground.message({
     sessionId: session.value.session_id,
     messageContent: content,
-    testOptions: {
-      model: selectedModel.value,
-      temperature:
-        metadata.value?.supports_temperature === true
-          ? temperature.value
-          : null,
-      thinkingEffort: metadata.value?.reasoning_efforts?.includes(
-        thinkingEffort.value
-      )
-        ? thinkingEffort.value
-        : '',
-    },
+    ...(canInspectPrompts.value
+      ? {
+          testOptions: {
+            model: selectedModel.value,
+            temperature:
+              metadata.value?.supports_temperature === true
+                ? temperature.value
+                : null,
+            thinkingEffort: metadata.value?.reasoning_efforts?.includes(
+              thinkingEffort.value
+            )
+              ? thinkingEffort.value
+              : '',
+          },
+        }
+      : {}),
   });
   pendingTurn = flight;
   try {
@@ -447,9 +453,11 @@ watch(
     isLoadingSettings.value = true;
     const sessionPromise = loadSession({ restoreHistory: true });
     try {
-      await configStore.fetch({ clientMetadataOnly: true });
+      if (canInspectPrompts.value)
+        await configStore.fetch({ clientMetadataOnly: true });
       if (current !== identity) return;
-      if (configStore.uiFlags.fetchError) throw new Error('metadata');
+      if (canInspectPrompts.value && configStore.uiFlags.fetchError)
+        throw new Error('metadata');
       isLoadingSettings.value = false;
       await sessionPromise;
     } catch (failure) {
@@ -502,6 +510,7 @@ defineExpose({
         />
       </div>
       <ModelSettings
+        v-if="canInspectPrompts"
         v-model:model="selectedModelValue"
         v-model:temperature="temperature"
         v-model:effort="thinkingEffort"

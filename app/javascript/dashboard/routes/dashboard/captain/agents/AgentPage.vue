@@ -31,12 +31,11 @@ import {
   agentInstructionMaxLength,
   buildAgentDraft,
   buildAgentUpdatePayload,
-  findAgentModelMetadata,
   isAgentDraftDirty,
   rebaseAgentDraft,
   validateAgentDraft,
 } from 'dashboard/components-next/captain/agent/agentDraft';
-import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
+import { usePromptInspectorAccess } from 'dashboard/composables/captain/usePromptInspectorAccess';
 
 // One AI agent: header (name, description, active, «Проверить», «Сохранить»)
 // and the tabs «Инструкция» · «Дожимы» · «Проверка» · «Голос», driven by the
@@ -53,12 +52,14 @@ const router = useRouter();
 const store = useStore();
 const { checkPermissions, shouldShowPaywall } = usePolicy();
 const { isCloudFeatureEnabled } = useAccount();
-const captainConfigStore = useCaptainConfigStore();
-
+const { canInspectPrompts } = usePromptInspectorAccess();
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 const inboxes = useMapGetter('inboxes/getInboxes');
 
 const isAdmin = computed(() => checkPermissions(['administrator']));
+const canManagePrompts = computed(
+  () => isAdmin.value && canInspectPrompts.value
+);
 const isPaywalled = computed(
   () => shouldShowPaywall?.(FEATURE_FLAGS.CAPTAIN) === true
 );
@@ -94,25 +95,18 @@ watch(
   { immediate: true }
 );
 
-const modelMetadata = computed(() => {
-  if (!draft.value) return {};
-  const platformModelId =
-    captainConfigStore.getSelectedModelForFeature('assistant') || '';
-  return findAgentModelMetadata({
-    models: captainConfigStore.getModelsForFeature('assistant') || [],
-    modelId: draft.value.model || platformModelId,
-    assistant: assistant.value,
-  });
-});
-
 const isDirty = computed(
   () =>
     isAdmin.value &&
-    isAgentDraftDirty(baseDraft.value, draft.value, modelMetadata.value)
+    isAgentDraftDirty(baseDraft.value, draft.value, {
+      canEditPrompts: canManagePrompts.value,
+    })
 );
 const validation = computed(() =>
   draft.value
-    ? validateAgentDraft(draft.value, baseDraft.value)
+    ? validateAgentDraft(draft.value, baseDraft.value, {
+        canEditPrompts: canManagePrompts.value,
+      })
     : { valid: false, errors: {} }
 );
 const instructionMaxLength = computed(() =>
@@ -124,11 +118,9 @@ const save = async () => {
   if (!isDirty.value || !validation.value.valid) return;
 
   const sentDraft = { ...draft.value };
-  const payload = buildAgentUpdatePayload(
-    baseDraft.value,
-    sentDraft,
-    modelMetadata.value
-  );
+  const payload = buildAgentUpdatePayload(baseDraft.value, sentDraft, {
+    canEditPrompts: canManagePrompts.value,
+  });
   if (!Object.keys(payload).length) {
     baseDraft.value = sentDraft;
     return;
@@ -158,14 +150,24 @@ const showFollowUpsTab = computed(() =>
   isCloudFeatureEnabled(FEATURE_FLAGS.CAPTAIN_V2)
 );
 const showVoiceTab = computed(
-  () => hasAssistant.value && isVoiceAgent(assistant.value, inboxes.value)
+  () =>
+    hasAssistant.value &&
+    canInspectPrompts.value &&
+    isVoiceAgent(assistant.value, inboxes.value)
 );
 const followUpsEnabled = computed(
   () => assistant.value?.config?.follow_up_settings?.enabled === true
 );
 
 const tabs = computed(() => [
-  { key: TABS.INSTRUCTION, label: t('CAPTAIN.AGENT_PAGE.TABS.INSTRUCTION') },
+  ...(canInspectPrompts.value
+    ? [
+        {
+          key: TABS.INSTRUCTION,
+          label: t('CAPTAIN.AGENT_PAGE.TABS.INSTRUCTION'),
+        },
+      ]
+    : []),
   ...(showFollowUpsTab.value
     ? [
         {
@@ -187,7 +189,7 @@ const activeTab = computed(() => {
   const requested = String(route.query.tab || '');
   return tabs.value.some(tab => tab.key === requested)
     ? requested
-    : TABS.INSTRUCTION;
+    : tabs.value[0]?.key;
 });
 const activeTabIndex = computed(() =>
   Math.max(
@@ -279,7 +281,6 @@ watch(
 
 onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload);
-  captainConfigStore.fetch();
 });
 
 onBeforeUnmount(() => {
@@ -312,7 +313,7 @@ onBeforeUnmount(() => {
     </template>
 
     <template #subHeader>
-      <div v-if="hasAssistant && !isPaywalled" class="pb-3 pt-2">
+      <div v-if="hasAssistant && !isPaywalled && tabs.length" class="pb-3 pt-2">
         <TabBar
           active-text-class="text-n-slate-12 scale-100"
           :tabs="tabs"
@@ -326,13 +327,13 @@ onBeforeUnmount(() => {
     <template #body>
       <div v-if="hasAssistant && draft" :key="assistant.id" class="pb-8">
         <AgentInstructionTab
-          v-if="visitedTabs[TABS.INSTRUCTION]"
+          v-if="canInspectPrompts && visitedTabs[TABS.INSTRUCTION]"
           v-show="activeTab === TABS.INSTRUCTION"
           v-model:draft="draft"
           :assistant="assistant"
           :errors="validation.errors"
           :show-errors="isDirty"
-          :can-edit="isAdmin"
+          :can-edit="canManagePrompts"
           :instruction-max-length="instructionMaxLength"
           @open-follow-ups="setTab(TABS.FOLLOW_UPS)"
         />

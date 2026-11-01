@@ -9,6 +9,7 @@ const routerReplaceMock = vi.fn();
 const leaveGuards = [];
 const updateGuards = [];
 const policy = { isAdmin: true };
+const currentUser = ref({ type: 'SuperAdmin', captain_platform_access: true });
 
 const route = reactive({
   name: 'captain_agent_show',
@@ -71,10 +72,12 @@ vi.mock('dashboard/composables/store', () => ({
       'inboxes/getInboxes': [],
     },
   }),
-  useMapGetter: key =>
-    key === 'captainAssistants/getUIFlags'
-      ? ref({ fetchingItem: false })
-      : ref([]),
+  useMapGetter: key => {
+    if (key === 'getCurrentUser') return currentUser;
+    if (key === 'captainAssistants/getUIFlags')
+      return ref({ fetchingItem: false });
+    return ref([]);
+  },
 }));
 
 vi.mock('dashboard/composables/usePolicy', () => ({
@@ -114,6 +117,7 @@ const simpleStub = name =>
     props: {
       assistant: { type: Object, default: null },
       draft: { type: Object, default: null },
+      canEdit: { type: Boolean, default: false },
     },
     setup(props) {
       return () =>
@@ -123,6 +127,7 @@ const simpleStub = name =>
             'data-stub': name,
             'data-assistant-id': props.assistant?.id,
             'data-draft-name': props.draft?.name,
+            'data-can-edit': props.canEdit,
           },
           name
         );
@@ -255,6 +260,7 @@ const instructionTab = wrapper =>
 describe('Agent page', () => {
   beforeEach(() => {
     policy.isAdmin = true;
+    currentUser.value = { type: 'SuperAdmin', captain_platform_access: true };
     route.query = {};
     route.params = { accountId: '3', assistantId: '12' };
     assistantRecord.value = buildAssistant();
@@ -311,27 +317,88 @@ describe('Agent page', () => {
     expect(saveButton(wrapper).attributes('disabled')).toBeDefined();
   });
 
-  it('sends the model settings as one config group with supported parameters', async () => {
+  it('never sends retired model settings, even for the platform', async () => {
     const wrapper = mountPage();
     await flushPromises();
-
-    const draft = instructionTab(wrapper).props('draft');
     instructionTab(wrapper).vm.$emit('update:draft', {
-      ...draft,
+      ...instructionTab(wrapper).props('draft'),
+      name: 'Renamed',
       model: 'smart-model',
       temperature: 0.5,
+      thinkingEffort: 'high',
     });
     await nextTick();
     await saveButton(wrapper).trigger('click');
     await flushPromises();
-
     expect(dispatchMock).toHaveBeenCalledWith('captainAssistants/update', {
       id: 12,
-      config: {
-        model: 'smart-model',
-        thinking_effort: 'low',
-        temperature: 0.5,
+      name: 'Renamed',
+    });
+  });
+
+  it.each(['administrator', 'agent'])(
+    'hides prompts for ordinary %s and safely saves a redacted record',
+    async role => {
+      policy.isAdmin = role === 'administrator';
+      currentUser.value = { type: 'User', captain_platform_access: false };
+      const { description, ...redacted } = buildAssistant();
+      assistantRecord.value = redacted;
+      route.query = { tab: 'instruction' };
+      const wrapper = mountPage();
+      await flushPromises();
+      expect(instructionTab(wrapper).exists()).toBe(false);
+      expect(wrapper.find('[data-tab="instruction"]').exists()).toBe(false);
+      expect(wrapper.text()).not.toContain(description);
+      if (policy.isAdmin) {
+        await wrapper
+          .find('input[data-test="agent-name-input"]')
+          .setValue('Renamed');
+        expect(saveButton(wrapper).attributes('disabled')).toBeUndefined();
+        await saveButton(wrapper).trigger('click');
+        await flushPromises();
+        expect(dispatchMock).toHaveBeenCalledWith('captainAssistants/update', {
+          id: 12,
+          name: 'Renamed',
+        });
+      } else expect(saveButton(wrapper).exists()).toBe(false);
+    }
+  );
+
+  it('allows verified impersonation with type User and the server flag', async () => {
+    currentUser.value = { type: 'User', captain_platform_access: true };
+    const wrapper = mountPage();
+    await flushPromises();
+    expect(instructionTab(wrapper).props('canEdit')).toBe(true);
+  });
+
+  it('saves only explicit canonical capability changes', async () => {
+    const capabilities = {
+      version: 1,
+      scopes: {
+        agent: { enabled: true, tool_ids: [] },
+        assistant: { enabled: false, tool_ids: [] },
       },
+    };
+    assistantRecord.value = { ...buildAssistant(), config: { capabilities } };
+    const wrapper = mountPage();
+    await flushPromises();
+    const next = {
+      ...capabilities,
+      scopes: {
+        ...capabilities.scopes,
+        agent: { enabled: true, tool_ids: ['send_notification'] },
+      },
+    };
+    instructionTab(wrapper).vm.$emit('update:draft', {
+      ...instructionTab(wrapper).props('draft'),
+      capabilities: next,
+    });
+    await nextTick();
+    await saveButton(wrapper).trigger('click');
+    await flushPromises();
+    expect(dispatchMock).toHaveBeenCalledWith('captainAssistants/update', {
+      id: 12,
+      config: { capabilities: next },
     });
   });
 

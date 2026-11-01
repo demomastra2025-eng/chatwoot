@@ -69,8 +69,20 @@ describe('PromptInspector', () => {
     }
   );
 
+  it('ignores a local impersonation marker without verified server access', async () => {
+    isImpersonating.value = true;
+    const wrapper = mountInspector();
+    await flushPromises();
+    expect(promptPreviewMock).not.toHaveBeenCalled();
+    expect(wrapper.text()).toBe('');
+  });
+
   it('loads and draws the compiled prompt for a super admin', async () => {
-    currentUser.value = { type: 'SuperAdmin', role: 'administrator' };
+    currentUser.value = {
+      type: 'SuperAdmin',
+      role: 'administrator',
+      captain_platform_access: true,
+    };
     const wrapper = mountInspector();
     await flushPromises();
 
@@ -80,6 +92,11 @@ describe('PromptInspector', () => {
 
   it('loads the compiled prompt for a super admin inside the clinic', async () => {
     isImpersonating.value = true;
+    currentUser.value = {
+      type: 'User',
+      role: 'administrator',
+      captain_platform_access: true,
+    };
     mountInspector();
     await flushPromises();
 

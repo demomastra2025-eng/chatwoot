@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { usePolicy } from 'dashboard/composables/usePolicy';
+import { usePromptInspectorAccess } from 'dashboard/composables/captain/usePromptInspectorAccess';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -41,6 +42,8 @@ const assistants = useMapGetter('captainAssistants/getRecords');
 const inboxes = useMapGetter('inboxes/getInboxes');
 
 const isAdmin = computed(() => checkPermissions(['administrator']));
+const { canInspectPrompts } = usePromptInspectorAccess();
+const canCreate = computed(() => isAdmin.value && canInspectPrompts.value);
 
 const agents = computed(() =>
   [...(assistants.value || [])].sort((first, second) => {
@@ -138,7 +141,7 @@ const handleToggleAllAgents = async () => {
 };
 
 const openCreateDialog = () => {
-  createDialogRef.value?.dialogRef?.open();
+  if (canCreate.value) createDialogRef.value?.dialogRef?.open();
 };
 
 const handleCreated = agent => {
@@ -216,7 +219,7 @@ onMounted(() => {
           {{ t('CAPTAIN.GALLERY.EMPTY') }}
         </p>
         <div
-          v-if="agents.length || isAdmin"
+          v-if="agents.length || canCreate"
           class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
         >
           <AgentGalleryCard
@@ -229,13 +232,13 @@ onMounted(() => {
             @open="openAgent(agent)"
             @toggle-active="value => handleToggleActive(agent, value)"
           />
-          <AgentNewTile v-if="isAdmin" @click="openCreateDialog" />
+          <AgentNewTile v-if="canCreate" @click="openCreateDialog" />
         </div>
       </div>
     </template>
 
     <CreateAgentDialog
-      v-if="isAdmin"
+      v-if="canCreate"
       ref="createDialogRef"
       @created="handleCreated"
     />

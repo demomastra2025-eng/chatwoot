@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   getModelsForFeature: vi.fn(),
   getSelectedModelForFeature: vi.fn(),
   uiFlags: { fetchError: false },
+  currentUser: { captain_platform_access: true },
   inboxes: [],
   assistants: [],
   assistantUIFlags: { fetchingList: false },
@@ -34,6 +35,7 @@ vi.mock('dashboard/composables/store', () => ({
   useStore: () => ({ dispatch: mocks.dispatch }),
   useMapGetter: key => ({
     get value() {
+      if (key === 'getCurrentUser') return mocks.currentUser;
       if (key === 'captainAssistants/getRecords') return mocks.assistants;
       if (key === 'captainAssistants/getUIFlags') return mocks.assistantUIFlags;
       return mocks.inboxes;
@@ -156,6 +158,7 @@ const isFramed = element => {
 beforeEach(() => {
   Object.values(mocks).forEach(value => value?.mockReset?.());
   mocks.uiFlags.fetchError = false;
+  mocks.currentUser = { captain_platform_access: true };
   mocks.assistants = [];
   mocks.assistantUIFlags = { fetchingList: false };
   mocks.inboxes = [
@@ -197,6 +200,23 @@ beforeEach(() => {
       success: true,
       playground: payload({ real_data_read: true, real_data_write: true }),
     },
+  });
+});
+
+describe('platform-managed playground', () => {
+  it('ordinary admin sends no diagnostic override keys, including null', async () => {
+    mocks.currentUser = { type: 'User', captain_platform_access: false };
+    const wrapper = mountPlayground();
+    await flushPromises();
+    expect(wrapper.findComponent({ name: 'ModelSettings' }).exists()).toBe(
+      false
+    );
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    await send(wrapper);
+    expect(mocks.playground).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      messageContent: 'Hello',
+    });
   });
 });
 

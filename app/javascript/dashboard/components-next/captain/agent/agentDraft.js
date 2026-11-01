@@ -1,8 +1,5 @@
-// Editable state of the agent page (header + «Инструкция» tab): name, short
-// description, instruction and model settings. One draft, one «Сохранить».
-// Only changed fields go to the server; model settings travel as one group in
-// `config` because the server merges config keys (never resend the whole
-// config).
+// The business draft never copies retired per-agent settings. Prompt and
+// capability changes require verified platform access at serialization.
 
 export const AGENT_DESCRIPTION_MAX_LENGTH = 400;
 export const AGENT_INSTRUCTION_MAX_LENGTH = 20000;
@@ -11,9 +8,7 @@ const DRAFT_FIELDS = Object.freeze([
   'name',
   'routingDescription',
   'instruction',
-  'model',
-  'thinkingEffort',
-  'temperature',
+  'capabilities',
 ]);
 
 const hasOwn = (object, key) =>
@@ -21,18 +16,13 @@ const hasOwn = (object, key) =>
 
 const toText = value => (typeof value === 'string' ? value : '');
 
-const toTemperature = value => {
-  if (value === null || value === undefined || value === '') return null;
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
-};
-
 const trimmed = value => toText(value).trim();
 
 export const resolveModelIcon = (model = {}) => {
-  const raw = typeof model === 'string'
-    ? model
-    : `${model?.provider || ''} ${model?.id || ''} ${model?.display_name || ''}`;
+  const raw =
+    typeof model === 'string'
+      ? model
+      : `${model?.provider || ''} ${model?.id || ''} ${model?.display_name || ''}`;
   if (/anthropic|claude/i.test(raw)) {
     return { icon: 'i-logos-claude-icon', iconClass: '' };
   }
@@ -53,15 +43,19 @@ export const resolveDefaultAgentEffort = metadata => {
 };
 
 export const buildAgentDraft = (assistant = {}) => {
-  const config = assistant?.config || {};
   return {
     name: toText(assistant?.name),
     routingDescription: toText(assistant?.routing_description),
-    instruction: toText(assistant?.description),
-    // '' = the platform default model chosen by the platform administrator.
-    model: toText(config.model),
-    thinkingEffort: toText(config.thinking_effort),
-    temperature: toTemperature(config.temperature),
+    ...(hasOwn(assistant, 'description')
+      ? { instruction: toText(assistant.description) }
+      : {}),
+    ...(assistant?.config?.capabilities?.version === 1
+      ? {
+          capabilities: JSON.parse(
+            JSON.stringify(assistant.config.capabilities)
+          ),
+        }
+      : {}),
   };
 };
 
@@ -87,43 +81,14 @@ export const findAgentModelMetadata = ({
     : {};
 };
 
-// A parameter the model does not support is never sent (the server ignores
-// it anyway), so it must not count as a change either. Unknown metadata
-// (still loading, or no access to the catalog) keeps the raw value.
-const effectiveTemperature = (temperature, metadata) => {
-  if (!hasOwn(metadata, 'supports_temperature')) return temperature;
-  return metadata.supports_temperature === true ? temperature : null;
-};
-
-const effectiveEffort = (effort, metadata) => {
-  if (!Array.isArray(metadata?.reasoning_efforts)) return effort || '';
-  if (!metadata.reasoning_efforts.length) return '';
-  return metadata.reasoning_efforts.includes(effort)
-    ? effort
-    : resolveDefaultAgentEffort(metadata);
-};
-
-const modelSettingsChanged = (base, draft, metadata) =>
-  toText(base?.model) !== toText(draft?.model) ||
-  effectiveEffort(base?.thinkingEffort, metadata) !==
-    effectiveEffort(draft?.thinkingEffort, metadata) ||
-  effectiveTemperature(base?.temperature ?? null, metadata) !==
-    effectiveTemperature(draft?.temperature ?? null, metadata);
-
-export const isAgentDraftDirty = (base, draft, modelMetadata = null) => {
-  if (!base || !draft) return false;
-  return (
-    trimmed(base.name) !== trimmed(draft.name) ||
-    trimmed(base.routingDescription) !== trimmed(draft.routingDescription) ||
-    toText(base.instruction) !== toText(draft.instruction) ||
-    modelSettingsChanged(base, draft, modelMetadata)
-  );
-};
-
 // Returns { valid, errors } where every error is a code: 'required' | 'max'.
 // `base` (the saved draft) sets the instruction limit; without it the limit
 // is the usual one or the draft's own length, whichever is larger.
-export const validateAgentDraft = (draft, base = null) => {
+export const validateAgentDraft = (
+  draft,
+  base = null,
+  { canEditPrompts = false } = {}
+) => {
   const errors = {};
   if (!trimmed(draft?.name)) {
     errors.name = 'required';
@@ -137,16 +102,20 @@ export const validateAgentDraft = (draft, base = null) => {
   }
 
   const instruction = toText(draft?.instruction);
-  if (!instruction.trim()) {
-    errors.instruction = 'required';
-  } else if (instruction.length > agentInstructionMaxLength(base || draft)) {
-    errors.instruction = 'max';
+  if (canEditPrompts && hasOwn(draft, 'instruction')) {
+    if (!instruction.trim()) errors.instruction = 'required';
+    else if (instruction.length > agentInstructionMaxLength(base || draft))
+      errors.instruction = 'max';
   }
 
   return { valid: Object.keys(errors).length === 0, errors };
 };
 
-export const buildAgentUpdatePayload = (base, draft, modelMetadata = {}) => {
+export const buildAgentUpdatePayload = (
+  base,
+  draft,
+  { canEditPrompts = false } = {}
+) => {
   const payload = {};
   if (!base || !draft) return payload;
 
@@ -156,24 +125,34 @@ export const buildAgentUpdatePayload = (base, draft, modelMetadata = {}) => {
   if (trimmed(base.routingDescription) !== trimmed(draft.routingDescription)) {
     payload.routing_description = trimmed(draft.routingDescription);
   }
-  if (toText(base.instruction) !== toText(draft.instruction)) {
+  if (
+    canEditPrompts &&
+    hasOwn(draft, 'instruction') &&
+    base.instruction !== draft.instruction
+  ) {
     payload.description = toText(draft.instruction);
   }
 
-  if (modelSettingsChanged(base, draft, modelMetadata)) {
-    const resolvedEffort = effectiveEffort(draft.thinkingEffort, modelMetadata);
+  if (
+    canEditPrompts &&
+    base.capabilities?.version === 1 &&
+    draft.capabilities?.version === 1 &&
+    JSON.stringify(base.capabilities) !== JSON.stringify(draft.capabilities)
+  ) {
     payload.config = {
-      model: toText(draft.model) || null,
-      thinking_effort: resolvedEffort || null,
-      temperature:
-        modelMetadata?.supports_temperature === true
-          ? toTemperature(draft.temperature)
-          : null,
+      capabilities: JSON.parse(JSON.stringify(draft.capabilities)),
     };
   }
 
   return payload;
 };
+
+export const isAgentDraftDirty = (base, draft, options = {}) =>
+  Boolean(
+    base &&
+      draft &&
+      Object.keys(buildAgentUpdatePayload(base, draft, options)).length
+  );
 
 // Moves the draft onto a newer saved record without losing the user's edits:
 // a field still equal to the previous base (untouched) takes the new value,
@@ -181,6 +160,7 @@ export const buildAgentUpdatePayload = (base, draft, modelMetadata = {}) => {
 export const rebaseAgentDraft = (previousBase, nextBase, draft) => {
   if (!previousBase || !draft) return { ...nextBase };
   return DRAFT_FIELDS.reduce((result, field) => {
+    if (!hasOwn(nextBase, field) && !hasOwn(draft, field)) return result;
     result[field] =
       JSON.stringify(draft[field]) === JSON.stringify(previousBase[field])
         ? nextBase[field]
