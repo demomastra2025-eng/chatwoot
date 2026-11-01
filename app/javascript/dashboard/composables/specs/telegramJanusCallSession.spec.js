@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { mount } from '@vue/test-utils';
 import { defineComponent, h } from 'vue';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
+import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
 
 const state = vi.hoisted(() => ({ clients: [], reconnect: vi.fn() }));
 vi.mock('dashboard/api/channel/voice/janusAudioBridgeCallClient', () => ({
@@ -22,6 +23,9 @@ vi.mock('dashboard/api/channel/voice/janusAudioBridgeCallClient', () => ({
 }));
 vi.mock('shared/helpers/mitt', () => ({ emitter: { emit: vi.fn() } }));
 vi.mock('dashboard/api/auth', () => ({ default: {} }));
+vi.mock('dashboard/api/whatsappCalls', () => ({
+  default: { agentAnswer: vi.fn() },
+}));
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }));
 vi.mock('dashboard/api/telegramPersonalCalls', async importOriginal => {
   const original = await importOriginal();
@@ -46,8 +50,22 @@ const offer = { transport: 'janus_audiobridge', peer_id: 'peer-1' };
 
 let track;
 let wrapper;
+function mountCallSession() {
+  let api;
+  wrapper = mount(
+    defineComponent({
+      setup() {
+        api = useWhatsappCallSession();
+        return () => h('div');
+      },
+    })
+  );
+  return api;
+}
+
 beforeEach(() => {
   setActivePinia(createPinia());
+  vi.spyOn(console, 'info').mockImplementation(() => {});
   useWhatsappCallsStore().setActiveCall({
     id: 1,
     provider: 'telegram_personal',
@@ -68,6 +86,8 @@ beforeEach(() => {
 afterEach(() => {
   wrapper?.unmount();
   wrapper = null;
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   clearPreparedInboundAgentAnswer({}, { cleanupWebrtc: true });
 });
 
@@ -143,15 +163,7 @@ describe('Telegram Janus call session', () => {
         serverRelay: true,
         isMuted: true,
       });
-      let ui;
-      wrapper = mount(
-        defineComponent({
-          setup() {
-            ui = useWhatsappCallSession();
-            return () => h('div');
-          },
-        })
-      );
+      const ui = mountCallSession();
       const first = handleCallAgentOffer(1, offer, {
         provider: 'telegram_personal',
       });
@@ -189,6 +201,57 @@ describe('Telegram Janus call session', () => {
       expect(store.activeCall.isMuted).toBe(false);
     }
   );
+
+  it('keeps a WhatsApp microphone muted when permission resolves after the mute action', async () => {
+    const store = useWhatsappCallsStore();
+    store.setActiveCall({
+      id: 99,
+      provider: 'whatsapp',
+      direction: 'incoming',
+      serverRelay: true,
+    });
+    const ui = mountCallSession();
+    const freshTrack = { kind: 'audio', enabled: true, stop: vi.fn() };
+    let resolvePermission;
+    navigator.mediaDevices.getUserMedia.mockReturnValue(
+      new Promise(resolve => {
+        resolvePermission = resolve;
+      })
+    );
+    const pc = {
+      localDescription: { type: 'answer', sdp: 'local-answer' },
+      iceGatheringState: 'complete',
+      addTrack: vi.fn(attached => expect(attached.enabled).toBe(false)),
+      setRemoteDescription: vi.fn(async () => {}),
+      createAnswer: vi.fn(async () => ({
+        type: 'answer',
+        sdp: 'local-answer',
+      })),
+      setLocalDescription: vi.fn(async () => {}),
+      close: vi.fn(),
+    };
+    vi.stubGlobal(
+      'RTCPeerConnection',
+      vi.fn(() => pc)
+    );
+    WhatsappCallsAPI.agentAnswer.mockResolvedValue({ data: { success: true } });
+    const connecting = handleAgentOffer(99, 'wa-offer', [], {
+      provider: 'whatsapp',
+    });
+    ui.toggleMute();
+    expect(ui.isMuted.value).toBe(true);
+    resolvePermission({
+      getTracks: () => [freshTrack],
+      getAudioTracks: () => [freshTrack],
+    });
+    await expect(connecting).resolves.toEqual({ success: true });
+    expect(pc.addTrack).toHaveBeenCalledOnce();
+    expect(freshTrack.enabled).toBe(false);
+    expect(ui.isMuted.value).toBe(true);
+    ui.toggleMute();
+    expect(freshTrack.enabled).toBe(true);
+    expect(ui.isMuted.value).toBe(false);
+  });
 
   it('stops microphone permission resolving after the call was cancelled', async () => {
     let resolvePermission;

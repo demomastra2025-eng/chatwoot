@@ -55,6 +55,14 @@ function stopStream(stream) {
   stream?.getTracks?.().forEach(track => track.stop());
 }
 
+function setInboundAudioStream(stream) {
+  const muted = useWhatsappCallsStore().activeCall?.isMuted === true;
+  stream.getAudioTracks?.().forEach(track => {
+    track.enabled = !muted;
+  });
+  inboundStream = stream;
+}
+
 function inboundNegotiationCancelledError() {
   const error = new Error('Inbound WebRTC negotiation was cancelled');
   error.retryable = false;
@@ -440,7 +448,7 @@ async function negotiateAgentOfferOnce(
       );
   timing.mark('get_user_media_ok');
   assertInboundNegotiationActive(negotiationToken, { stream });
-  inboundStream = stream;
+  setInboundAudioStream(stream);
 
   const servers = iceServers?.length
     ? iceServers
@@ -634,10 +642,7 @@ export async function handleCallAgentOffer(callId, offer, options = {}) {
       stopStream(stream);
       throw inboundNegotiationCancelledError();
     }
-    stream.getAudioTracks().forEach(track => {
-      track.enabled = callsStore.activeCall?.isMuted !== true;
-    });
-    inboundStream = stream;
+    setInboundAudioStream(stream);
     await client.connect(offer, {
       stream,
       onRemoteStream: remoteStream => {
@@ -823,7 +828,7 @@ async function doAcceptCall(
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    inboundStream = stream;
+    setInboundAudioStream(stream);
 
     const iceServers = call.iceServers?.length
       ? call.iceServers
