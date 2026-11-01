@@ -178,20 +178,25 @@ defineExpose({ state, isSubmitDisabled, submit: handleSubmit });
       </div>
     </div>
     <div class="flex flex-col gap-4">
-      <div class="flex items-end gap-3">
-        <Input
-          v-model="state.name"
-          class="flex-1"
-          :label="
-            t('HELP_CENTER.CATEGORY_PAGE.CATEGORY_DIALOG.FORM.NAME.LABEL')
-          "
-          :placeholder="
-            t('HELP_CENTER.CATEGORY_PAGE.CATEGORY_DIALOG.FORM.NAME.PLACEHOLDER')
-          "
-          :message="nameError"
-          :message-type="nameError ? 'error' : 'info'"
-        />
-        <OnClickOutside class="relative" @trigger="isEmojiPickerOpen = false">
+      <OnClickOutside
+        class="flex flex-col gap-3"
+        @trigger="isEmojiPickerOpen = false"
+      >
+        <div class="flex items-end gap-3">
+          <Input
+            v-model="state.name"
+            class="flex-1"
+            :label="
+              t('HELP_CENTER.CATEGORY_PAGE.CATEGORY_DIALOG.FORM.NAME.LABEL')
+            "
+            :placeholder="
+              t(
+                'HELP_CENTER.CATEGORY_PAGE.CATEGORY_DIALOG.FORM.NAME.PLACEHOLDER'
+              )
+            "
+            :message="nameError"
+            :message-type="nameError ? 'error' : 'info'"
+          />
           <Button
             :label="state.icon"
             color="slate"
@@ -203,14 +208,14 @@ defineExpose({ state, isSubmitDisabled, submit: handleSubmit });
             :icon="!state.icon ? 'i-lucide-smile-plus' : ''"
             @click="isEmojiPickerOpen = !isEmojiPickerOpen"
           />
-          <EmojiInput
-            v-if="isEmojiPickerOpen"
-            class="right-0 top-12"
-            show-remove-button
-            :on-click="onClickInsertEmoji"
-          />
-        </OnClickOutside>
-      </div>
+        </div>
+        <EmojiInput
+          v-if="isEmojiPickerOpen"
+          inline
+          show-remove-button
+          :on-click="onClickInsertEmoji"
+        />
+      </OnClickOutside>
       <Input
         v-model="state.slug"
         :label="t('HELP_CENTER.CATEGORY_PAGE.CATEGORY_DIALOG.FORM.SLUG.LABEL')"

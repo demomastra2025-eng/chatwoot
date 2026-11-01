@@ -22,6 +22,13 @@ describe('EmojiInput inside a form', () => {
     );
     await flushPromises();
     const action = wrapper.getComponent(Button);
+    const enter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    });
+    wrapper.get('input').element.dispatchEvent(enter);
+    expect(enter.defaultPrevented).toBe(true);
     expect(action.get('button').attributes('type')).toBe('button');
     action.get('button').element.click();
     await flushPromises();
