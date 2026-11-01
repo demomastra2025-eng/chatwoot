@@ -13,6 +13,9 @@ import {
 } from 'dashboard/api/telegramPersonalCalls';
 import Auth from 'dashboard/api/auth';
 import Timer from 'dashboard/helper/Timer';
+import JanusAudioBridgeCallClient, {
+  isJanusAudioBridgeOffer,
+} from 'dashboard/api/channel/voice/janusAudioBridgeCallClient';
 import { emitter } from 'shared/helpers/mitt';
 
 // ── Module-level WebRTC state (shared across legacy inbound + server-relay) ──
@@ -20,6 +23,7 @@ let inboundPc = null;
 let inboundStream = null;
 let inboundAudio = null;
 let inboundNegotiationToken = 0;
+let telegramJanusConnection = null;
 
 // Inbound accept can prewarm microphone while Rails/Meta accepts the call.
 // Keep this separate from the active PeerConnection stream so a warmed inbound
@@ -71,6 +75,9 @@ function assertInboundNegotiationActive(
 
 function cleanupInboundWebRTC({ keepPrewarmStream = false } = {}) {
   inboundNegotiationToken += 1;
+  const janusConnection = telegramJanusConnection;
+  telegramJanusConnection = null;
+  janusConnection?.client.close();
   if (inboundPc) {
     inboundPc.close();
     inboundPc = null;
@@ -389,6 +396,7 @@ function waitForIceGatheringComplete(pc) {
 // broadcast). Fall back to the presence of sdpOffer so legacy deployments keep
 // working when the field isn't set.
 function isServerRelayCall(call) {
+  if (isTelegramPersonalProvider(call)) return true;
   if (call?.mediaServerEnabled === true) return true;
   if (call?.mediaServerEnabled === false) return false;
   return !call?.sdpOffer;
@@ -520,6 +528,13 @@ async function negotiateAgentOfferOnce(
 }
 
 async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
+  if (
+    isTelegramPersonalProvider(
+      options.provider || useWhatsappCallsStore().activeCall
+    )
+  ) {
+    throw new Error('Telegram calls require Janus media');
+  }
   const direction = options.direction || 'incoming';
   const context = options.context || 'agent-offer';
   const usePrewarmedStream =
@@ -563,11 +578,118 @@ async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
   return attemptNegotiation(1);
 }
 
+export const hasAgentMediaOffer = offer =>
+  isJanusAudioBridgeOffer(offer) || Boolean(offer?.sdp_offer);
+
+function attachInboundRemoteAudio(stream) {
+  if (!inboundAudio) {
+    inboundAudio = document.createElement('audio');
+    inboundAudio.autoplay = true;
+    document.body.appendChild(inboundAudio);
+  }
+  inboundAudio.srcObject = stream;
+  inboundAudio.play().catch(() => {});
+}
+
+export async function handleCallAgentOffer(callId, offer, options = {}) {
+  if (!isTelegramPersonalProvider(options.provider)) {
+    return handleAgentOffer(callId, offer?.sdp_offer, offer?.ice_servers, {
+      ...options,
+      peerId: offer?.peer_id,
+    });
+  }
+  if (!isJanusAudioBridgeOffer(offer)) {
+    throw new Error('Telegram calls require Janus media');
+  }
+  const key = `${callId}:${offer.peer_id}`;
+  if (telegramJanusConnection?.key === key) {
+    return telegramJanusConnection.promise;
+  }
+  const usePrewarmedStream = options.usePrewarmedStream === true;
+  cleanupInboundWebRTC({ keepPrewarmStream: usePrewarmedStream });
+  const negotiationToken = inboundNegotiationToken;
+  const client = new JanusAudioBridgeCallClient();
+  const connection = { key, client, promise: null };
+  telegramJanusConnection = connection;
+  connection.promise = (async () => {
+    const stream = await withTimeout(
+      usePrewarmedStream
+        ? takeInboundPrewarmedAudioStream()
+        : navigator.mediaDevices.getUserMedia({ audio: true }),
+      AGENT_WEBRTC_MEDIA_TIMEOUT_MS,
+      'get_user_media',
+      { retryable: false, onLateResolve: stopStream }
+    );
+    assertInboundNegotiationActive(negotiationToken, { stream });
+    inboundStream = stream;
+    await client.connect(offer, {
+      stream,
+      onRemoteStream: remoteStream => {
+        if (negotiationToken === inboundNegotiationToken) {
+          attachInboundRemoteAudio(remoteStream);
+        }
+      },
+      onDisconnected: () => {
+        const callsStore = useWhatsappCallsStore();
+        if (String(callsStore.activeCall?.id) !== String(callId)) return;
+        callsStore.updateActiveCall({
+          agentWebrtcConnected: false,
+          agentWebrtcConnecting: false,
+        });
+        // Reconnection and connection share the same generation guard.
+        // eslint-disable-next-line no-use-before-define
+        reconnectTelegramJanusMedia(callId).catch(() => {});
+      },
+    });
+    assertInboundNegotiationActive(negotiationToken, { stream });
+    return { success: true };
+  })().catch(error => {
+    if (telegramJanusConnection === connection) cleanupInboundWebRTC();
+    throw error;
+  });
+  return connection.promise;
+}
+
+export async function reconnectTelegramJanusMedia(callId) {
+  const store = useWhatsappCallsStore();
+  if (String(store.activeCall?.id) !== String(callId) || store.isReconnecting)
+    return;
+  store.setReconnecting(true);
+  store.updateActiveCall({ agentWebrtcConnecting: true });
+  try {
+    const { data } = await callsApiFor('telegram_personal').reconnect(callId);
+    if (String(store.activeCall?.id) !== String(callId)) return;
+    await handleCallAgentOffer(callId, data, { provider: 'telegram_personal' });
+    if (String(store.activeCall?.id) !== String(callId)) return;
+    store.updateActiveCall({
+      agentWebrtcConnected: true,
+      agentWebrtcConnecting: false,
+    });
+    if (
+      isInboundDirection(store.activeCall.direction) ||
+      store.activeCall.metaAccepted
+    ) {
+      store.markActiveCallConnected();
+    }
+  } catch (error) {
+    if (String(store.activeCall?.id) !== String(callId)) return;
+    store.updateActiveCall({
+      agentWebrtcConnected: false,
+      agentWebrtcConnecting: false,
+    });
+    if (isMediaLegClosedError(error)) handleMediaLegClosed(store);
+  } finally {
+    if (String(store.activeCall?.id) === String(callId))
+      store.setReconnecting(false);
+  }
+}
+
 // Expose handleAgentOffer so ActionCable handler can invoke it
 export { handleAgentOffer };
 
 function prepareInboundAgentAnswer(callId, agentOffer, provider = null) {
-  if (!agentOffer?.sdp_offer) return null;
+  if (isTelegramPersonalProvider(provider) || !agentOffer?.sdp_offer)
+    return null;
   return handleAgentOffer(
     callId,
     agentOffer.sdp_offer,
@@ -663,7 +785,7 @@ async function doAcceptCall(
       const { data } = await callsApiFor(call).accept(call.id);
       return {
         success: true,
-        awaitingAgentOffer: !data?.agent_offer?.sdp_offer,
+        awaitingAgentOffer: !hasAgentMediaOffer(data?.agent_offer),
         agentOffer: data?.agent_offer,
         acceptData: data,
       };
@@ -727,24 +849,20 @@ async function connectAgentOfferForActiveCall(
   context,
   { usePrewarmedStream } = {}
 ) {
-  if (!agentOffer?.sdp_offer) return false;
+  if (!hasAgentMediaOffer(agentOffer)) return false;
 
   try {
     callsStore.updateActiveCall({ agentWebrtcConnecting: true });
-    await handleAgentOffer(
-      callId,
-      agentOffer.sdp_offer,
-      agentOffer.ice_servers || [],
-      {
-        direction: callsStore.activeCall?.direction,
-        context,
-        usePrewarmedStream:
-          usePrewarmedStream ??
-          isInboundDirection(callsStore.activeCall?.direction),
-        peerId: agentOffer.peer_id,
-        provider: callsStore.activeCall?.provider,
-      }
-    );
+    await handleCallAgentOffer(callId, agentOffer, {
+      direction: callsStore.activeCall?.direction,
+      context,
+      usePrewarmedStream:
+        usePrewarmedStream ??
+        isInboundDirection(callsStore.activeCall?.direction),
+      peerId: agentOffer.peer_id,
+      provider: callsStore.activeCall?.provider,
+    });
+    if (String(callsStore.activeCall?.id) !== String(callId)) return false;
     callsStore.updateActiveCall({
       agentWebrtcConnected: true,
       agentWebrtcConnecting: false,
@@ -754,6 +872,7 @@ async function connectAgentOfferForActiveCall(
     emitter.emit('whatsapp_call:agent_webrtc_connected');
     return true;
   } catch (err) {
+    if (String(callsStore.activeCall?.id) !== String(callId)) return false;
     callsStore.updateActiveCall({ agentWebrtcConnecting: false });
     callsStore.setReconnecting(false);
     if (isMediaLegClosedError(err)) {
@@ -959,7 +1078,7 @@ export async function acceptWhatsappCallById(callId, callSource = 'whatsapp') {
 /**
  * Fire-and-forget terminate request using fetch + keepalive.
  * Works reliably inside beforeunload / pagehide where axios won't complete.
- * Used ONLY in legacy mode. Server-relay mode does NOT terminate on unload.
+ * Telegram and legacy calls terminate on unload; WhatsApp server-relay calls persist.
  */
 export function terminateCallOnUnload(callId, provider = 'whatsapp') {
   const authData = Auth.hasAuthCookie() ? Auth.getAuthData() : {};
@@ -1038,8 +1157,8 @@ export function useWhatsappCallSession() {
     const call = callsStore.activeCall;
     if (!call?.id) return;
 
-    if (call.serverRelay) {
-      // Server-relay: only clean up local resources, do NOT terminate
+    if (call.serverRelay && !isTelegramPersonalProvider(call)) {
+      // WhatsApp server-relay: only clean up local resources.
       cleanupInboundWebRTC();
     } else {
       // Legacy: terminate and clean up

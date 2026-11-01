@@ -17,6 +17,7 @@ import {
 import { useWhatsappCallInitiation } from 'dashboard/composables/useWhatsappCallInitiation';
 
 const mockHandleAgentOffer = vi.fn();
+const mockHandleCallAgentOffer = vi.fn();
 const mockShowAlert = vi.fn();
 const mockStore = {
   getters: {
@@ -80,6 +81,9 @@ vi.mock('dashboard/stores/calls', () => ({
 
 vi.mock('dashboard/composables/useWhatsappCallSession', () => ({
   handleAgentOffer: (...args) => mockHandleAgentOffer(...args),
+  handleCallAgentOffer: (...args) => mockHandleCallAgentOffer(...args),
+  hasAgentMediaOffer: offer =>
+    offer?.transport === 'janus_audiobridge' || Boolean(offer?.sdp_offer),
   WHATSAPP_CALL_MEDIA_LEG_CLOSED_MESSAGE: 'Media leg closed',
   isMediaLegClosedError: () => false,
 }));
@@ -160,7 +164,7 @@ describe('useWhatsappCallInitiation for Channel::TelegramPersonal', () => {
     mockCallsStoreState.hasWhatsappCall = false;
   });
 
-  it('initiates an outbound Telegram Personal call via prepareOutbound -> handleAgentOffer -> dial', async () => {
+  it('dials Telegram only after its Janus media leg is ready', async () => {
     mockStore.getters.getConversationById.mockReturnValue({
       id: 501,
       display_id: 501,
@@ -189,7 +193,11 @@ describe('useWhatsappCallInitiation for Channel::TelegramPersonal', () => {
           call_id: 'pending_tg-sess-91',
           provider: 'telegram_personal',
           agent_offer: {
-            sdp_offer: 'v=0\r\noffer\r\n',
+            transport: 'janus_audiobridge',
+            room_id: 123,
+            server: 'wss://example.test/janus-sipuni',
+            token: 'ephemeral-token',
+            pin: 'ephemeral-pin',
             ice_servers: [],
             peer_id: 'peer-91',
           },
@@ -203,7 +211,12 @@ describe('useWhatsappCallInitiation for Channel::TelegramPersonal', () => {
           call_id: 'tg-real-91',
         },
       });
-    mockHandleAgentOffer.mockResolvedValue({ success: true });
+    let resolveMedia;
+    mockHandleCallAgentOffer.mockReturnValue(
+      new Promise(resolve => {
+        resolveMedia = resolve;
+      })
+    );
 
     const { canInitiateWhatsappCall, initiateWhatsappCall } =
       useWhatsappCallInitiation({
@@ -213,13 +226,19 @@ describe('useWhatsappCallInitiation for Channel::TelegramPersonal', () => {
 
     expect(canInitiateWhatsappCall.value).toBe(true);
 
-    await initiateWhatsappCall();
+    const initiation = initiateWhatsappCall();
+    await vi.waitFor(() =>
+      expect(mockHandleCallAgentOffer).toHaveBeenCalledOnce()
+    );
+    expect(dialSpy).not.toHaveBeenCalled();
+    resolveMedia({ success: true });
+    await initiation;
 
     expect(prepareSpy).toHaveBeenCalledWith(501);
-    expect(mockHandleAgentOffer).toHaveBeenCalledWith(
+    expect(mockHandleAgentOffer).not.toHaveBeenCalled();
+    expect(mockHandleCallAgentOffer).toHaveBeenCalledWith(
       91,
-      'v=0\r\noffer\r\n',
-      [],
+      expect.objectContaining({ transport: 'janus_audiobridge', room_id: 123 }),
       expect.objectContaining({
         direction: 'outbound',
         peerId: 'peer-91',

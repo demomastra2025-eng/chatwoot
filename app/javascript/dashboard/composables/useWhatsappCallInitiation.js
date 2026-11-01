@@ -3,7 +3,10 @@ import { useStore } from 'vuex';
 import { useI18n } from 'vue-i18n';
 
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
-import { callsApiFor } from 'dashboard/api/telegramPersonalCalls';
+import {
+  callsApiFor,
+  isTelegramPersonalProvider,
+} from 'dashboard/api/telegramPersonalCalls';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
@@ -14,6 +17,8 @@ import {
 } from 'dashboard/stores/whatsappCalls';
 import {
   handleAgentOffer,
+  handleCallAgentOffer,
+  hasAgentMediaOffer,
   handleMediaLegClosed,
   isMediaLegClosedError,
 } from 'dashboard/composables/useWhatsappCallSession';
@@ -164,21 +169,28 @@ export const useWhatsappCallInitiation = (options = {}) => {
     agentOffer,
     provider
   ) => {
-    if (!agentOffer?.sdp_offer) return false;
+    if (!hasAgentMediaOffer(agentOffer)) return false;
 
     whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: true });
     try {
-      await handleAgentOffer(
-        callId,
-        agentOffer.sdp_offer,
-        agentOffer.ice_servers,
-        {
-          direction: 'outbound',
-          context: 'outbound-initiate-response',
-          peerId: agentOffer.peer_id,
-          provider,
-        }
-      );
+      const mediaOptions = {
+        direction: 'outbound',
+        context: 'outbound-initiate-response',
+        peerId: agentOffer.peer_id,
+        provider,
+      };
+      if (isTelegramPersonalProvider(provider)) {
+        await handleCallAgentOffer(callId, agentOffer, mediaOptions);
+      } else {
+        await handleAgentOffer(
+          callId,
+          agentOffer.sdp_offer,
+          agentOffer.ice_servers,
+          mediaOptions
+        );
+      }
+      if (String(whatsappCallsStore.activeCall?.id) !== String(callId))
+        return false;
       whatsappCallsStore.updateActiveCall({
         agentWebrtcConnected: true,
         agentWebrtcConnecting: false,
@@ -189,6 +201,8 @@ export const useWhatsappCallInitiation = (options = {}) => {
       }
       return true;
     } catch (err) {
+      if (String(whatsappCallsStore.activeCall?.id) !== String(callId))
+        return false;
       whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: false });
       if (isMediaLegClosedError(err)) {
         handleMediaLegClosed(whatsappCallsStore);

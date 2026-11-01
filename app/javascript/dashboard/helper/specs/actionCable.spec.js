@@ -15,6 +15,8 @@ const {
   reconnectMock,
   clearPreparedInboundAgentAnswerMock,
   handleAgentOfferMock,
+  handleCallAgentOfferMock,
+  telegramShowMock,
   handleMediaLegClosedMock,
   isMediaLegClosedErrorMock,
   prewarmInboundAgentAnswerForCallMock,
@@ -25,6 +27,8 @@ const {
   reconnectMock: vi.fn(),
   clearPreparedInboundAgentAnswerMock: vi.fn(),
   handleAgentOfferMock: vi.fn(),
+  handleCallAgentOfferMock: vi.fn(),
+  telegramShowMock: vi.fn(),
   handleMediaLegClosedMock: vi.fn(),
   isMediaLegClosedErrorMock: vi.fn(() => false),
   prewarmInboundAgentAnswerForCallMock: vi.fn(),
@@ -48,6 +52,7 @@ vi.mock('dashboard/composables/useImpersonation', () => ({
 vi.mock('dashboard/composables/useWhatsappCallSession', () => ({
   clearPreparedInboundAgentAnswer: clearPreparedInboundAgentAnswerMock,
   handleAgentOffer: handleAgentOfferMock,
+  handleCallAgentOffer: handleCallAgentOfferMock,
   handleMediaLegClosed: handleMediaLegClosedMock,
   isMediaLegClosedError: isMediaLegClosedErrorMock,
   prewarmInboundAgentAnswerForCall: prewarmInboundAgentAnswerForCallMock,
@@ -59,6 +64,17 @@ vi.mock('dashboard/api/whatsappCalls', () => ({
     reconnect: reconnectMock,
   },
 }));
+
+vi.mock('dashboard/api/telegramPersonalCalls', async importOriginal => {
+  const original = await importOriginal();
+  return {
+    ...original,
+    callsApiFor: value =>
+      original.isTelegramPersonalProvider(value)
+        ? { show: telegramShowMock, reconnect: reconnectMock }
+        : original.callsApiFor(value),
+  };
+});
 
 vi.mock('../AudioAlerts/faviconHelper', () => ({
   initFaviconSwitcher: vi.fn(),
@@ -85,6 +101,7 @@ describe('ActionCableConnector', () => {
       data: { sdp_offer: 'fresh-offer', ice_servers: [] },
     });
     handleAgentOfferMock.mockResolvedValue();
+    handleCallAgentOfferMock.mockResolvedValue();
     prewarmInboundAgentAnswerForCallMock.mockReturnValue(null);
     isMediaLegClosedErrorMock.mockReturnValue(false);
     mockDispatch = vi.fn();
@@ -1133,6 +1150,74 @@ describe('ActionCableConnector', () => {
       });
       expect(callsStore.activeCall.status).toBe('connected');
       expect(callsStore.isReconnecting).toBe(false);
+    });
+
+    it('fetches Telegram media credentials from the authenticated API instead of trusting a readiness broadcast', async () => {
+      const callsStore = useWhatsappCallsStore();
+      callsStore.setActiveCall({
+        id: 42,
+        callId: 'tg-call',
+        provider: 'telegram_personal',
+        direction: 'incoming',
+      });
+      const offer = {
+        transport: 'janus_audiobridge',
+        room_id: 123,
+        peer_id: 'peer-1',
+      };
+      telegramShowMock.mockResolvedValue({ data: { agent_offer: offer } });
+      actionCable.onWhatsappCallAgentOffer({
+        id: 42,
+        provider: 'telegram_personal',
+        accepted_by_agent_id: 7,
+        media_ready: true,
+      });
+      actionCable.onWhatsappCallAgentOffer({
+        id: 42,
+        provider: 'telegram_personal',
+        accepted_by_agent_id: 7,
+        media_ready: true,
+      });
+      await vi.waitFor(() =>
+        expect(handleCallAgentOfferMock).toHaveBeenCalledOnce()
+      );
+      expect(telegramShowMock).toHaveBeenCalledOnce();
+      expect(handleCallAgentOfferMock).toHaveBeenCalledWith(
+        42,
+        offer,
+        expect.objectContaining({ provider: 'telegram_personal' })
+      );
+      expect(handleAgentOfferMock).not.toHaveBeenCalled();
+      expect(callsStore.activeCall.agentWebrtcConnected).toBe(true);
+    });
+
+    it('does not fetch Telegram media credentials for an event claimed by another operator', () => {
+      const callsStore = useWhatsappCallsStore();
+      callsStore.setActiveCall({
+        id: 42,
+        callId: 'tg-call',
+        provider: 'telegram_personal',
+      });
+      actionCable.onWhatsappCallAgentOffer({
+        id: 42,
+        accepted_by_agent_id: 9,
+        media_ready: true,
+      });
+      expect(telegramShowMock).not.toHaveBeenCalled();
+      expect(handleCallAgentOfferMock).not.toHaveBeenCalled();
+    });
+
+    it('does not connect when the protected Telegram API returns no media grant', async () => {
+      const callsStore = useWhatsappCallsStore();
+      callsStore.setActiveCall({
+        id: 42,
+        callId: 'tg-call',
+        provider: 'telegram_personal',
+      });
+      telegramShowMock.mockResolvedValue({ data: { agent_offer: null } });
+      await actionCable.connectTelegramCallMedia(callsStore.activeCall);
+      expect(handleCallAgentOfferMock).not.toHaveBeenCalled();
+      expect(callsStore.activeCall.agentWebrtcConnecting).toBe(false);
     });
 
     it('clears the active media-server call when reconnect sees closed media leg', async () => {

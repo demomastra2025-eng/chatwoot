@@ -18,12 +18,16 @@ import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import {
   clearPreparedInboundAgentAnswer,
   handleAgentOffer,
+  handleCallAgentOffer,
   handleMediaLegClosed,
   isMediaLegClosedError,
   prewarmInboundAgentAnswerForCall,
   startCallRecording,
 } from 'dashboard/composables/useWhatsappCallSession';
-import { callsApiFor } from 'dashboard/api/telegramPersonalCalls';
+import {
+  callsApiFor,
+  isTelegramPersonalProvider,
+} from 'dashboard/api/telegramPersonalCalls';
 import types from 'dashboard/store/mutation-types';
 import {
   startFaviconBlinking,
@@ -1200,6 +1204,11 @@ class ActionCableConnector extends BaseActionCableConnector {
       return;
     }
 
+    if (isTelegramPersonalProvider(activeCall)) {
+      this.connectTelegramCallMedia(activeCall, data);
+      return;
+    }
+
     whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: true });
     handleAgentOffer(activeCall.id, data.sdp_offer, data.ice_servers, {
       direction: activeCall.direction,
@@ -1232,6 +1241,46 @@ class ActionCableConnector extends BaseActionCableConnector {
       });
   };
 
+  connectTelegramCallMedia = async activeCall => {
+    const store = useWhatsappCallsStore();
+    store.updateActiveCall({ agentWebrtcConnecting: true });
+    try {
+      // Broadcasts are readiness notifications only. Credentials are issued by
+      // this authenticated API exclusively to the operator owning the call.
+      const { data } = await callsApiFor(activeCall).show(activeCall.id);
+      if (!this.matchesActiveCall(store.activeCall, { id: activeCall.id }))
+        return;
+      if (!data.agent_offer || store.activeCall.agentWebrtcConnected) return;
+      await handleCallAgentOffer(activeCall.id, data.agent_offer, {
+        provider: 'telegram_personal',
+        usePrewarmedStream: ['incoming', 'inbound'].includes(
+          activeCall.direction
+        ),
+      });
+      if (String(store.activeCall?.id) !== String(activeCall.id)) return;
+      store.updateActiveCall({
+        agentWebrtcConnected: true,
+        agentWebrtcConnecting: false,
+      });
+      if (
+        (activeCall.direction !== 'outgoing' &&
+          activeCall.direction !== 'outbound') ||
+        store.activeCall.metaAccepted
+      ) {
+        store.markActiveCallConnected();
+        emitter.emit('whatsapp_call:agent_webrtc_connected');
+      }
+    } catch (error) {
+      if (String(store.activeCall?.id) !== String(activeCall.id)) return;
+      if (isMediaLegClosedError(error)) handleMediaLegClosed(store);
+    } finally {
+      if (String(store.activeCall?.id) === String(activeCall.id)) {
+        store.updateActiveCall({ agentWebrtcConnecting: false });
+        store.setReconnecting(false);
+      }
+    }
+  };
+
   // eslint-disable-next-line class-methods-use-this
   onWhatsappCallAgentDisconnected = async data => {
     const whatsappCallsStore = useWhatsappCallsStore();
@@ -1245,6 +1294,11 @@ class ActionCableConnector extends BaseActionCableConnector {
       return;
     }
 
+    if (
+      isTelegramPersonalProvider(activeCall) &&
+      whatsappCallsStore.isReconnecting
+    )
+      return;
     whatsappCallsStore.setReconnecting(true);
     whatsappCallsStore.updateActiveCall({
       agentWebrtcConnected: false,
@@ -1255,20 +1309,26 @@ class ActionCableConnector extends BaseActionCableConnector {
       const { data: reconnectData } = await callsApiFor(activeCall).reconnect(
         activeCall.id
       );
-      if (!reconnectData?.sdp_offer)
-        throw new Error('Reconnect response missing sdp_offer');
-
-      await handleAgentOffer(
-        activeCall.id,
-        reconnectData.sdp_offer,
-        reconnectData.ice_servers,
-        {
-          direction: activeCall.direction || 'unknown',
-          context: 'reconnect',
-          peerId: reconnectData.peer_id,
-          provider: activeCall.provider,
-        }
-      );
+      const options = {
+        direction: activeCall.direction || 'unknown',
+        context: 'reconnect',
+        peerId: reconnectData.peer_id,
+        provider: activeCall.provider,
+      };
+      if (isTelegramPersonalProvider(activeCall)) {
+        await handleCallAgentOffer(activeCall.id, reconnectData, options);
+      } else {
+        if (!reconnectData?.sdp_offer)
+          throw new Error('Reconnect response missing sdp_offer');
+        await handleAgentOffer(
+          activeCall.id,
+          reconnectData.sdp_offer,
+          reconnectData.ice_servers,
+          options
+        );
+      }
+      if (String(whatsappCallsStore.activeCall?.id) !== String(activeCall.id))
+        return;
       whatsappCallsStore.updateActiveCall({
         agentWebrtcConnected: true,
         agentWebrtcConnecting: false,
@@ -1276,6 +1336,12 @@ class ActionCableConnector extends BaseActionCableConnector {
       whatsappCallsStore.markActiveCallConnected();
       emitter.emit('whatsapp_call:agent_webrtc_connected');
     } catch (err) {
+      if (
+        !this.matchesActiveCall(whatsappCallsStore.activeCall, {
+          id: activeCall.id,
+        })
+      )
+        return;
       whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: false });
       if (isMediaLegClosedError(err)) {
         handleMediaLegClosed(whatsappCallsStore);
@@ -1284,7 +1350,13 @@ class ActionCableConnector extends BaseActionCableConnector {
       // eslint-disable-next-line no-console
       console.error('[WhatsApp Call] Failed to reconnect agent:', err);
     } finally {
-      whatsappCallsStore.setReconnecting(false);
+      if (
+        this.matchesActiveCall(whatsappCallsStore.activeCall, {
+          id: activeCall.id,
+        })
+      ) {
+        whatsappCallsStore.setReconnecting(false);
+      }
     }
   };
 }
