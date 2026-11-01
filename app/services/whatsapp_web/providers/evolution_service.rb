@@ -257,20 +257,14 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def fetch_message_by_source_id(source_id:, remote_jid: nil, from_me: true)
-    response = request(:post, "/chat/findMessages/#{channel.instance_name}", body: {
-                         page: 1,
-                         offset: 1,
-                         where: {
-                           key: {
-                             id: source_id,
-                             fromMe: from_me
-                           }.tap do |key|
-                             key[:remoteJid] = remote_jid if remote_jid.present?
-                           end
-                         }
-                       })
+    return if source_id.blank?
 
-    response.dig('messages', 'records', 0)
+    primary_key = build_message_lookup_key(source_id: source_id, remote_jid: remote_jid, from_me: from_me)
+    primary_offset = primary_key.keys == [:id] ? 5 : 1
+    matched = select_matching_message_record(find_messages_records(primary_key, offset: primary_offset), source_id: source_id, from_me: from_me)
+    return matched if matched.present? || primary_key.keys == [:id]
+
+    select_matching_message_record(find_messages_records({ id: source_id }, offset: 5), source_id: source_id, from_me: from_me)
   end
 
   def fetch_message_media(record:, convert_to_mp4: false)
@@ -976,6 +970,56 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     return payload[:from_me] if payload.key?(:from_me)
 
     nil
+  end
+
+  def build_message_lookup_key(source_id:, remote_jid:, from_me:)
+    { id: source_id }.tap do |key|
+      key[:fromMe] = from_me unless from_me.nil?
+      key[:remoteJid] = remote_jid if remote_jid.present?
+    end
+  end
+
+  def find_messages_records(key_filter, offset:)
+    response = request(:post, "/chat/findMessages/#{channel.instance_name}", body: {
+                         page: 1,
+                         offset: offset,
+                         where: { key: key_filter }
+                       })
+    extract_find_messages_records(response)
+  end
+
+  def extract_find_messages_records(response)
+    return response if response.is_a?(Array)
+    return [] unless response.is_a?(Hash)
+
+    payload = response.with_indifferent_access
+    messages = payload[:messages]
+    return messages if messages.is_a?(Array)
+
+    Array.wrap(messages.is_a?(Hash) ? messages[:records] : payload[:records])
+  end
+
+  def select_matching_message_record(records, source_id:, from_me:)
+    candidates = records.select { |rec| rec.is_a?(Hash) && extract_record_key_value(rec, :id).to_s == source_id.to_s }
+    return if candidates.empty?
+    return candidates.first if from_me.nil?
+
+    expected = ActiveModel::Type::Boolean.new.cast(from_me)
+    candidates.find { |rec| record_from_me_matches?(rec, expected) } || candidates.first
+  end
+
+  def record_from_me_matches?(record, expected)
+    raw = extract_record_key_value(record, :fromMe)
+    return false if raw.nil?
+
+    ActiveModel::Type::Boolean.new.cast(raw) == expected
+  end
+
+  def extract_record_key_value(record, field)
+    key = record['key'] || record[:key]
+    return unless key.is_a?(Hash)
+
+    key[field.to_s].nil? ? key[field.to_sym] : key[field.to_s]
   end
 
   def request(method, path, body: nil)

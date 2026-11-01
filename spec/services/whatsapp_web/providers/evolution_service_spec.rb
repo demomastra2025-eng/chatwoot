@@ -792,6 +792,76 @@ describe WhatsappWeb::Providers::EvolutionService do
 
       expect(response.dig('key', 'id')).to eq('WA-MSG-1')
     end
+
+    it 'falls back to querying by key.id alone when Evolution stored remoteJid as @lid' do
+      service = described_class.new(channel: channel)
+
+      expect(service).to receive(:request)
+        .with(
+          :post,
+          "/chat/findMessages/#{channel.instance_name}",
+          body: {
+            page: 1,
+            offset: 1,
+            where: {
+              key: {
+                id: 'WA-LID-MSG-1',
+                fromMe: false,
+                remoteJid: '15551234567@s.whatsapp.net'
+              }
+            }
+          }
+        )
+        .and_return('messages' => { 'records' => [] })
+
+      expect(service).to receive(:request)
+        .with(
+          :post,
+          "/chat/findMessages/#{channel.instance_name}",
+          body: {
+            page: 1,
+            offset: 5,
+            where: { key: { id: 'WA-LID-MSG-1' } }
+          }
+        )
+        .and_return(
+          'messages' => {
+            'records' => [
+              {
+                'key' => { 'id' => 'WA-LID-MSG-1', 'fromMe' => false, 'remoteJid' => '248811223344@lid' },
+                'message' => { 'imageMessage' => { 'mimetype' => 'image/jpeg' } }
+              }
+            ]
+          }
+        )
+
+      response = service.fetch_message_by_source_id(
+        source_id: 'WA-LID-MSG-1',
+        remote_jid: '15551234567@s.whatsapp.net',
+        from_me: false
+      )
+
+      expect(response.dig('key', 'id')).to eq('WA-LID-MSG-1')
+      expect(response.dig('key', 'remoteJid')).to eq('248811223344@lid')
+    end
+
+    it 'handles top-level Array and messages Array payloads from Evolution findMessages without TypeError' do
+      service = described_class.new(channel: channel)
+
+      expect(service).to receive(:request)
+        .with(:post, "/chat/findMessages/#{channel.instance_name}", body: hash_including(where: { key: { id: 'WA-ARR-1', fromMe: false } }))
+        .and_return([{ 'key' => { 'id' => 'WA-ARR-1', 'fromMe' => false }, 'message' => { 'conversation' => 'Top array' } }])
+
+      expect(service).to receive(:request)
+        .with(:post, "/chat/findMessages/#{channel.instance_name}", body: hash_including(where: { key: { id: 'WA-ARR-2', fromMe: true } }))
+        .and_return('messages' => [{ 'key' => { 'id' => 'WA-ARR-2', 'fromMe' => true }, 'message' => { 'conversation' => 'Messages array' } }])
+
+      first = service.fetch_message_by_source_id(source_id: 'WA-ARR-1', from_me: false)
+      second = service.fetch_message_by_source_id(source_id: 'WA-ARR-2', from_me: true)
+
+      expect(first.dig('key', 'id')).to eq('WA-ARR-1')
+      expect(second.dig('key', 'id')).to eq('WA-ARR-2')
+    end
   end
 
   describe '#mark_messages_read' do

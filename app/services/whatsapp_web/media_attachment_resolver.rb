@@ -6,20 +6,18 @@ class WhatsappWeb::MediaAttachmentResolver
     @record = record.to_h.deep_symbolize_keys
     @source_id = source_id.to_s
     @provider_media_unavailable = false
+    @transient_media_failure = false
   end
 
   def resolve(attachment_payload)
-    attachment_payload = attachment_payload.to_h.deep_symbolize_keys
-    base64_file = file_from_base64(attachment_payload)
-    return Result.new(file: base64_file, pending_backfill: false) if base64_file.present?
+    payload = attachment_payload.to_h.deep_symbolize_keys
+    resolved_file = file_from_base64(payload) ||
+                    download_provider_attachment(payload) ||
+                    decrypt_encrypted_attachment(payload) ||
+                    download_remote_attachment(payload)
+    return Result.new(file: resolved_file, pending_backfill: false) if resolved_file.present?
 
-    remote_file = download_remote_attachment(attachment_payload)
-    return Result.new(file: remote_file, pending_backfill: false) if remote_file.present?
-
-    provider_file = download_provider_attachment(attachment_payload)
-    return Result.new(file: provider_file, pending_backfill: false) if provider_file.present?
-
-    Result.new(file: nil, pending_backfill: !@provider_media_unavailable)
+    Result.new(file: nil, pending_backfill: @transient_media_failure || !@provider_media_unavailable)
   end
 
   private
@@ -31,30 +29,93 @@ class WhatsappWeb::MediaAttachmentResolver
 
     tempfile_from_base64(
       attachment_payload[:base64],
-      filename: attachment_payload[:fileName].presence || "whatsapp-web-#{SecureRandom.hex(8)}",
-      content_type: attachment_payload[:mimetype].presence || 'application/octet-stream'
+      filename: attachment_payload[:fileName] || attachment_payload[:filename],
+      content_type: attachment_payload[:mimetype] || attachment_payload[:mime_type],
+      media_kind: media_kind_for(attachment_payload)
     )
-  end
-
-  def download_remote_attachment(attachment_payload)
-    return if attachment_payload[:mediaUrl].blank?
-
-    Down.download(attachment_payload[:mediaUrl])
-  rescue Down::ClientError => e
-    Rails.logger.warn("[WHATSAPP WEB] Skipping unavailable media attachment #{source_id}: #{e.message}")
-    nil
   end
 
   def download_provider_attachment(attachment_payload)
     provider_file = provider_file_from(record, attachment_payload)
-    return provider_file if provider_file.present? || @provider_media_unavailable
+    return provider_file if provider_file.present?
+    return if @provider_media_unavailable && complete_encryption_metadata?(attachment_payload)
 
-    provider_file_from(refetch_provider_message, attachment_payload)
+    refetched = refetched_provider_message
+    return if refetched.blank?
+    return if @provider_media_unavailable && !refetched_remote_jid_changed?(refetched)
+
+    @provider_media_unavailable = false
+    provider_file_from(refetched, attachment_payload, fallback_record: refetched)
   end
 
-  def provider_file_from(provider_record, attachment_payload)
+  def complete_encryption_metadata?(attachment_payload)
+    meta = WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: record, attachment_payload: attachment_payload)
+    meta[:url].present? && meta[:media_key].present?
+  end
+
+  def refetched_remote_jid_changed?(refetched)
+    initial_jid = record.dig(:key, :remoteJid).to_s
+    refetched_jid = refetched.dig(:key, :remoteJid).to_s
+    refetched_jid.present? && refetched_jid != initial_jid
+  end
+
+  def decrypt_encrypted_attachment(attachment_payload)
+    meta = encryption_metadata_for(attachment_payload)
+    return if meta[:url].blank? || meta[:media_key].blank?
+
+    WhatsappWeb::MediaDecryptor.decrypt_remote_media(url: meta[:url], media_key: meta[:media_key], metadata: meta)
+  rescue WhatsappWeb::MediaDecryptor::DecryptionError, Down::Error => e
+    @transient_media_failure = true
+    Rails.logger.warn("[WHATSAPP WEB] Native media decryption failed for #{source_id}: #{e.class}: #{e.message}")
+    nil
+  end
+
+  def download_remote_attachment(attachment_payload)
+    media_url = attachment_payload[:mediaUrl] || attachment_payload[:url]
+    return if media_url.blank? || encrypted_attachment_payload?(attachment_payload, media_url)
+
+    downloaded = Down.download(media_url)
+    reject_encrypted_download(downloaded)
+  rescue Down::Error => e
+    Rails.logger.warn("[WHATSAPP WEB] Skipping unavailable media attachment #{source_id}: #{e.message}")
+    nil
+  end
+
+  def reject_encrypted_download(downloaded)
+    return downloaded unless downloaded.respond_to?(:original_filename) && downloaded.original_filename.to_s.match?(/\.enc\z/i)
+
+    downloaded.close! if downloaded.respond_to?(:close!)
+    Rails.logger.warn("[WHATSAPP WEB] Blocked raw .enc remote attachment for #{source_id}")
+    nil
+  end
+
+  def encrypted_attachment_payload?(attachment_payload, media_url)
+    raw_meta = WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: record)
+    return true if WhatsappWeb::MediaDecryptor.encrypted_media_payload?(raw_meta)
+
+    meta = WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: record, attachment_payload: attachment_payload)
+    WhatsappWeb::MediaDecryptor.encrypted_media_payload?(
+      url: media_url,
+      media_key: meta[:media_key],
+      direct_path: meta[:direct_path],
+      filename: attachment_payload[:raw_file_name] || attachment_payload[:fileName] || attachment_payload[:filename]
+    )
+  end
+
+  def encryption_metadata_for(attachment_payload)
+    meta = WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: record, attachment_payload: attachment_payload)
+    return meta if meta[:url].present? && meta[:media_key].present?
+    return meta if refetched_provider_message.blank?
+
+    refetched_meta = WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: refetched_provider_message)
+    WhatsappWeb::MediaDecryptor.merge_encryption_metadata(meta, refetched_meta)
+  end
+
+  def provider_file_from(provider_record, attachment_payload, fallback_record: nil)
     provider_payload = fetch_provider_attachment_payload(provider_record)
-    return build_provider_attachment_file(provider_payload, attachment_payload) if provider_attachment_available?(provider_payload)
+    if provider_attachment_available?(provider_payload)
+      return build_provider_attachment_file(provider_payload, attachment_payload, fallback_record: fallback_record)
+    end
     return mark_provider_media_unavailable if provider_attachment_unavailable?(provider_payload)
 
     nil
@@ -69,10 +130,16 @@ class WhatsappWeb::MediaAttachmentResolver
     nil
   end
 
-  def refetch_provider_message
-    key = record[:key].to_h.deep_symbolize_keys
+  def refetched_provider_message
+    return @refetched_provider_message if defined?(@refetched_provider_message)
+
+    @refetched_provider_message = perform_provider_message_refetch
+  end
+
+  def perform_provider_message_refetch
     return if source_id.blank?
 
+    key = record[:key].to_h.deep_symbolize_keys
     channel.provider_service.fetch_message_by_source_id(
       source_id: source_id,
       remote_jid: WhatsappWeb::ProviderPayloadNormalizer.provider_lookup_remote_jid(key[:remoteJid]),
@@ -84,20 +151,25 @@ class WhatsappWeb::MediaAttachmentResolver
   end
 
   def provider_attachment_available?(provider_payload)
-    provider_payload = provider_payload.to_h.deep_symbolize_keys
-    provider_payload.present? && provider_payload[:unavailable] != true && provider_payload[:base64].present?
+    payload = provider_payload.to_h.deep_symbolize_keys
+    payload.present? && payload[:unavailable] != true && payload[:base64].present?
   end
 
   def provider_attachment_unavailable?(provider_payload)
     provider_payload.to_h.deep_symbolize_keys[:unavailable] == true
   end
 
-  def build_provider_attachment_file(provider_payload, attachment_payload)
-    provider_payload = provider_payload.to_h.deep_symbolize_keys
+  def build_provider_attachment_file(provider_payload, attachment_payload, fallback_record: nil)
+    payload = provider_payload.to_h.deep_symbolize_keys
+    merged_meta = WhatsappWeb::MediaDecryptor.merge_encryption_metadata(
+      WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: record, attachment_payload: attachment_payload),
+      WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: fallback_record)
+    )
     tempfile_from_base64(
-      provider_payload[:base64],
-      filename: provider_payload[:fileName].presence || attachment_payload[:fileName],
-      content_type: provider_payload[:mimetype].presence || attachment_payload[:mimetype]
+      payload[:base64],
+      filename: payload[:fileName].presence || merged_meta[:filename],
+      content_type: payload[:mimetype].presence || merged_meta[:mime_type],
+      media_kind: merged_meta[:media_kind] || media_kind_for(attachment_payload)
     )
   end
 
@@ -106,15 +178,19 @@ class WhatsappWeb::MediaAttachmentResolver
     nil
   end
 
-  def tempfile_from_base64(base64, filename:, content_type:)
-    filename = filename.presence || "whatsapp-web-#{SecureRandom.hex(8)}"
-    content_type = content_type.presence || 'application/octet-stream'
-    tempfile = Tempfile.new(['whatsapp-web', File.extname(filename)])
+  def media_kind_for(attachment_payload)
+    attachment_payload[:media_kind] || WhatsappWeb::MediaMimeNormalizer.extract_media_node(record)[:media_kind]
+  end
+
+  def tempfile_from_base64(base64, filename:, content_type:, media_kind: nil)
+    normalized_type = WhatsappWeb::MediaMimeNormalizer.normalize_mime_type(content_type, filename: filename, media_kind: media_kind)
+    sanitized_name = WhatsappWeb::MediaMimeNormalizer.sanitize_filename(filename, mime_type: normalized_type, media_kind: media_kind)
+    tempfile = Tempfile.new(['whatsapp-web', File.extname(sanitized_name)])
     tempfile.binmode
     tempfile.write(Base64.decode64(base64))
     tempfile.rewind
-    tempfile.define_singleton_method(:original_filename) { filename }
-    tempfile.define_singleton_method(:content_type) { content_type }
+    tempfile.define_singleton_method(:original_filename) { sanitized_name }
+    tempfile.define_singleton_method(:content_type) { normalized_type }
     tempfile
   end
 end

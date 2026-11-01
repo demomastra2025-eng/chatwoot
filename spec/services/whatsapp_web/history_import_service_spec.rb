@@ -746,4 +746,204 @@ RSpec.describe WhatsappWeb::HistoryImportService do
     expect(conversation.reload.last_activity_at.to_i).to eq(latest_activity_at.to_i)
     expect(conversation.contact.reload.last_activity_at.to_i).to eq(latest_contact_activity_at.to_i)
   end
+
+  it 'decrypts encrypted WhatsApp CDN media natively during history import instead of saving .enc' do
+    plaintext = '%PDF-1.7-history-decrypted'.b
+    raw_key = Random.bytes(32)
+    expanded = OpenSSL::KDF.hkdf(raw_key, salt: "\x00".b * 32, info: 'WhatsApp Document Keys', length: 112, hash: 'SHA256')
+    cipher = OpenSSL::Cipher.new('AES-256-CBC').tap do |c|
+      c.encrypt
+      c.key = expanded.byteslice(16, 32)
+      c.iv = expanded.byteslice(0, 16)
+    end
+    ciphertext = cipher.update(plaintext) + cipher.final
+    mac = OpenSSL::HMAC.digest('SHA256', expanded.byteslice(48, 32), expanded.byteslice(0, 16) + ciphertext).byteslice(0, 10)
+    enc_tf = Tempfile.new(['wa-hist', '.enc']).tap do |tf|
+      tf.binmode
+      tf.write(ciphertext + mac)
+      tf.rewind
+    end
+    cdn_url = 'https://mmg.whatsapp.net/v/t62.7119-24/hist_doc.enc'
+
+    provider_service = instance_double(
+      WhatsappWeb::Providers::EvolutionService,
+      prefer_provider_media_for_history?: true
+    )
+    allow(provider_service).to receive(:fetch_message_media).and_return(unavailable: true)
+    allow(channel).to receive(:provider_service).and_return(provider_service)
+    allow(Resolv).to receive(:getaddresses).with('mmg.whatsapp.net').and_return(['157.240.1.53'])
+    expect(Down).to receive(:download)
+      .with(cdn_url, hash_including(max_redirects: 0, open_timeout: 10, read_timeout: 30))
+      .and_return(enc_tf)
+
+    described_class.new(
+      channel: channel,
+      records: [
+        {
+          key: { id: 'history-msg-enc-pdf-1', remoteJid: '15551234567@s.whatsapp.net', fromMe: false },
+          pushName: 'Alice',
+          messageTimestamp: 1.hour.ago.to_i,
+          message: {
+            documentMessage: {
+              url: cdn_url,
+              mediaKey: Base64.strict_encode64(raw_key),
+              mimetype: 'application/pdf',
+              fileName: 'patient_referral.pdf.enc'
+            }
+          }
+        }
+      ]
+    ).perform
+
+    att = channel.inbox.messages.find_by!(source_id: 'history-msg-enc-pdf-1').attachments.first
+    expect(att.extension).to eq('pdf')
+    expect(att.file.filename.to_s).to eq('patient_referral.pdf')
+    expect(att.file.content_type).to eq('application/pdf')
+    expect(att.file.blob.open { |tf| File.binread(tf.path) }).to eq(plaintext)
+  end
+
+  it 'never downloads or saves raw ciphertext from non-mmg.whatsapp.net URLs when mediaKey or .enc filename is present' do
+    expect(Down).not_to receive(:download)
+    provider_service = instance_double(
+      WhatsappWeb::Providers::EvolutionService,
+      prefer_provider_media_for_history?: false,
+      fetch_message_media: nil,
+      fetch_message_by_source_id: nil
+    )
+    allow(channel).to receive(:provider_service).and_return(provider_service)
+
+    described_class.new(
+      channel: channel,
+      records: [
+        {
+          key: { id: 'history-msg-non-mmg-key', remoteJid: '15551234567@s.whatsapp.net', fromMe: false },
+          pushName: 'Alice',
+          messageTimestamp: 2.hours.ago.to_i,
+          message: {
+            documentMessage: {
+              url: 'https://mirror.example.com/opaque-ciphertext',
+              mediaKey: Base64.strict_encode64(Random.bytes(32)),
+              mimetype: 'application/pdf',
+              fileName: 'secret.pdf'
+            }
+          }
+        },
+        {
+          key: { id: 'history-msg-non-mmg-enc-name', remoteJid: '15551234567@s.whatsapp.net', fromMe: false },
+          pushName: 'Alice',
+          messageTimestamp: 1.hour.ago.to_i,
+          message: {
+            documentMessage: {
+              url: 'https://mirror.example.com/opaque-file',
+              mimetype: 'application/octet-stream',
+              fileName: 'raw_payload.xlsx.enc'
+            }
+          }
+        }
+      ]
+    ).perform
+
+    first_msg = channel.inbox.messages.find_by!(source_id: 'history-msg-non-mmg-key')
+    second_msg = channel.inbox.messages.find_by!(source_id: 'history-msg-non-mmg-enc-name')
+    expect(first_msg.attachments).to be_empty
+    expect(first_msg.content).to eq('[Attachment]')
+    expect(second_msg.attachments).to be_empty
+    expect(second_msg.content).to eq('[Attachment]')
+  end
+
+  it 'refetches @lid metadata during history import after fetch_message_media 404 and preserves real filename and MIME' do
+    plaintext = "PK\x03\x04history-lid-quarterly-xlsx".b
+    raw_key = Random.bytes(32)
+    expanded = OpenSSL::KDF.hkdf(raw_key, salt: "\x00".b * 32, info: 'WhatsApp Document Keys', length: 112, hash: 'SHA256')
+    cipher = OpenSSL::Cipher.new('AES-256-CBC')
+    cipher.encrypt
+    cipher.key = expanded.byteslice(16, 32)
+    cipher.iv = expanded.byteslice(0, 16)
+    ciphertext = cipher.update(plaintext) + cipher.final
+    mac = OpenSSL::HMAC.digest('SHA256', expanded.byteslice(48, 32), expanded.byteslice(0, 16) + ciphertext).byteslice(0, 10)
+    enc_tf = Tempfile.new(['wa-hist-lid', '.enc'])
+    enc_tf.binmode
+    enc_tf.write(ciphertext + mac)
+    enc_tf.rewind
+    xlsx_mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    cdn_url = 'https://mmg.whatsapp.net/v/t62.7119-24/hist_lid_quarterly.enc'
+
+    provider_service = instance_double(WhatsappWeb::Providers::EvolutionService, prefer_provider_media_for_history?: true)
+    allow(provider_service).to receive(:fetch_message_media).and_return(unavailable: true, status: 404)
+    expect(provider_service).to receive(:fetch_message_by_source_id).once.and_return(
+      'key' => { 'id' => 'history-msg-lid-404-xlsx', 'remoteJid' => '2455667788@lid', 'fromMe' => false },
+      'message' => {
+        'documentMessage' => { 'url' => cdn_url, 'mediaKey' => Base64.strict_encode64(raw_key),
+                               'fileName' => 'Quarterly_Report.xlsx', 'mimetype' => xlsx_mime }
+      }
+    )
+    allow(channel).to receive(:provider_service).and_return(provider_service)
+    allow(Resolv).to receive(:getaddresses).with('mmg.whatsapp.net').and_return(['157.240.1.53'])
+    expect(Down).to receive(:download)
+      .with(cdn_url, hash_including(max_redirects: 0, open_timeout: 10, read_timeout: 30))
+      .and_return(enc_tf)
+
+    described_class.new(
+      channel: channel,
+      records: [
+        { key: { id: 'history-msg-lid-404-xlsx', remoteJid: '15551234567@s.whatsapp.net', fromMe: false },
+          pushName: 'Alice', messageTimestamp: 1.hour.ago.to_i, message: { documentMessage: { caption: 'Q3 history report' } } }
+      ]
+    ).perform
+
+    att = channel.inbox.messages.find_by!(source_id: 'history-msg-lid-404-xlsx').attachments.first
+    expect(att.extension).to eq('xlsx')
+    expect(att.file.filename.to_s).to eq('Quarterly_Report.xlsx')
+    expect(att.file.content_type).to eq(xlsx_mime)
+  end
+
+  it 'unwraps ephemeralMessage containers and imports ptvMessage video notes during history sync' do
+    provider_service = instance_double(
+      WhatsappWeb::Providers::EvolutionService,
+      prefer_provider_media_for_history?: false
+    )
+    allow(channel).to receive(:provider_service).and_return(provider_service)
+
+    described_class.new(
+      channel: channel,
+      records: [
+        {
+          key: { id: 'history-ephemeral-img-1', remoteJid: '15551234567@s.whatsapp.net', fromMe: false },
+          pushName: 'Alice',
+          messageTimestamp: 2.hours.ago.to_i,
+          message: {
+            ephemeralMessage: {
+              message: {
+                imageMessage: {
+                  caption: 'Ephemeral history photo',
+                  mimetype: 'image/png',
+                  fileName: 'eph.png',
+                  base64: Base64.strict_encode64(File.binread(Rails.root.join('spec/assets/avatar.png')))
+                }
+              }
+            }
+          }
+        },
+        {
+          key: { id: 'history-ptv-1', remoteJid: '15551234567@s.whatsapp.net', fromMe: false },
+          pushName: 'Alice',
+          messageTimestamp: 1.hour.ago.to_i,
+          message: {
+            ptvMessage: {
+              caption: 'History video note',
+              mimetype: 'video/mp4',
+              base64: Base64.strict_encode64("\x00\x00\x00\x18ftypmp42history-ptv")
+            }
+          }
+        }
+      ]
+    ).perform
+
+    eph_att = channel.inbox.messages.find_by!(source_id: 'history-ephemeral-img-1').attachments.first
+    ptv_att = channel.inbox.messages.find_by!(source_id: 'history-ptv-1').attachments.first
+    expect(eph_att.file_type).to eq('image')
+    expect(eph_att.extension).to eq('png')
+    expect(ptv_att.file_type).to eq('video')
+    expect(ptv_att.extension).to eq('mp4')
+  end
 end

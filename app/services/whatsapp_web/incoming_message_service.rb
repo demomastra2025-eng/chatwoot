@@ -1,4 +1,21 @@
 class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
+  INCOMING_MESSAGE_TYPE_BY_KEY = {
+    conversation: 'text',
+    extendedTextMessage: 'text',
+    imageMessage: 'image',
+    videoMessage: 'video',
+    ptvMessage: 'video',
+    audioMessage: 'audio',
+    documentMessage: 'document',
+    stickerMessage: 'sticker',
+    locationMessage: 'location',
+    reactionMessage: 'reaction'
+  }.freeze
+
+  STANZA_ID_MESSAGE_KEYS = %i[
+    extendedTextMessage imageMessage videoMessage ptvMessage audioMessage documentMessage stickerMessage
+  ].freeze
+
   private
 
   def after_message_persisted(message)
@@ -177,6 +194,10 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
     "+#{digits}" if digits.present?
   end
 
+  def unwrapped_message
+    @unwrapped_message ||= WhatsappWeb::MediaMimeNormalizer.unwrap_message_container(params[:message])
+  end
+
   def message_payload_for(message_type)
     case message_type
     when 'text'
@@ -205,16 +226,40 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
   end
 
   def attachment_payload_for(message_type)
-    message_key = attachment_message_key(message_type)
-    payload = attachment_message_payload(message_key)
+    payload = attachment_message_payload(attachment_message_key(message_type))
+    raw_name = payload[:fileName] || payload[:name]
+    stripped_name = WhatsappWeb::MediaMimeNormalizer.strip_enc_filename(raw_name)
+    normalized_mime = normalized_payload_mime(payload[:mimetype], stripped_name, message_type)
 
     {
+      media_kind: message_type,
       caption: payload[:caption],
-      mimetype: payload[:mimetype],
-      fileName: payload[:fileName],
-      base64: params.dig(:message, :base64),
-      mediaUrl: payload[:mediaUrl] || payload[:url]
-    }.compact
+      mimetype: normalized_mime,
+      mime_type: normalized_mime,
+      raw_file_name: raw_name,
+      fileName: stripped_name,
+      filename: stripped_name,
+      base64: params.dig(:message, :base64) || unwrapped_message[:base64] || payload[:base64]
+    }.merge(encryption_fields_for(payload)).compact
+  end
+
+  def normalized_payload_mime(raw_mime, stripped_name, message_type)
+    return if raw_mime.blank? && stripped_name.blank?
+
+    WhatsappWeb::MediaMimeNormalizer.normalize_mime_type(raw_mime, filename: stripped_name, media_kind: message_type)
+  end
+
+  def encryption_fields_for(payload)
+    resolved_url = WhatsappWeb::MediaDecryptor.resolve_media_url(payload[:mediaUrl] || payload[:url], payload[:directPath])
+    {
+      url: payload[:url],
+      mediaUrl: resolved_url,
+      directPath: payload[:directPath],
+      mediaKey: payload[:mediaKey],
+      fileSha256: payload[:fileSha256],
+      fileEncSha256: payload[:fileEncSha256],
+      fileLength: payload[:fileLength]
+    }
   end
 
   def attachment_message_key(message_type)
@@ -228,14 +273,15 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
   end
 
   def attachment_message_payload(message_key)
-    message = params[:message].to_h.deep_symbolize_keys
+    message = unwrapped_message
+    direct = message[message_key].to_h.deep_symbolize_keys
+    return direct if direct.present?
 
-    message[message_key].to_h.deep_symbolize_keys.presence ||
-      message.dig(:documentWithCaptionMessage, :message, message_key).to_h.deep_symbolize_keys
+    message[:ptvMessage].to_h.deep_symbolize_keys if message_key == :videoMessage && message[:ptvMessage].present?
   end
 
   def location_payload
-    payload = params.dig(:message, :locationMessage).to_h.deep_symbolize_keys
+    payload = unwrapped_message[:locationMessage].to_h.deep_symbolize_keys
 
     {
       latitude: payload[:degreesLatitude] || payload[:latitude],
@@ -254,38 +300,21 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
   end
 
   def extract_stanza_id
-    message = params[:message].to_h.deep_symbolize_keys
-
-    [
-      params.dig(:contextInfo, :stanzaId),
-      message.dig(:contextInfo, :stanzaId),
-      message.dig(:extendedTextMessage, :contextInfo, :stanzaId),
-      message.dig(:imageMessage, :contextInfo, :stanzaId),
-      message.dig(:videoMessage, :contextInfo, :stanzaId),
-      message.dig(:audioMessage, :contextInfo, :stanzaId),
-      message.dig(:documentMessage, :contextInfo, :stanzaId),
-      message.dig(:documentWithCaptionMessage, :message, :documentMessage, :contextInfo, :stanzaId),
-      message.dig(:stickerMessage, :contextInfo, :stanzaId)
-    ].compact_blank.first
+    top_message = params[:message].to_h.deep_symbolize_keys
+    message = unwrapped_message
+    candidates = [params.dig(:contextInfo, :stanzaId), top_message.dig(:contextInfo, :stanzaId), message.dig(:contextInfo, :stanzaId)]
+    candidates.concat(STANZA_ID_MESSAGE_KEYS.map { |key| message.dig(key, :contextInfo, :stanzaId) })
+    candidates.compact_blank.first
   end
 
   def extract_message_type
-    message = params[:message].to_h.deep_symbolize_keys
-    return 'text' if message[:conversation].present? || message[:extendedTextMessage].present?
-    return 'image' if message[:imageMessage].present?
-    return 'video' if message[:videoMessage].present?
-    return 'audio' if message[:audioMessage].present?
-    return 'document' if message[:documentMessage].present? ||
-                         message.dig(:documentWithCaptionMessage, :message, :documentMessage).present?
-    return 'sticker' if message[:stickerMessage].present?
-    return 'location' if message[:locationMessage].present?
-    return 'reaction' if message[:reactionMessage].present?
-
-    'unsupported'
+    message = unwrapped_message
+    matched_key = INCOMING_MESSAGE_TYPE_BY_KEY.keys.find { |key| message[key].present? }
+    matched_key ? INCOMING_MESSAGE_TYPE_BY_KEY.fetch(matched_key) : 'unsupported'
   end
 
   def reaction_payload
-    payload = params.dig(:message, :reactionMessage).to_h.deep_symbolize_keys
+    payload = unwrapped_message[:reactionMessage].to_h.deep_symbolize_keys
     raw_timestamp = payload[:senderTimestampMs] || params[:messageTimestamp]
 
     {
@@ -298,7 +327,7 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
   end
 
   def extracted_text_body
-    message = params[:message].to_h.deep_symbolize_keys
+    message = unwrapped_message
 
     message[:conversation].presence ||
       message.dig(:extendedTextMessage, :text).presence ||
@@ -315,6 +344,26 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
 
     @pending_media_attachment_backfill = result.pending_backfill
     result.file
+  end
+
+  def attachment_content_type(attachment_payload, attachment_file)
+    file_mime = attachment_file.respond_to?(:content_type) ? attachment_file.content_type : nil
+    payload_mime = attachment_payload_value(attachment_payload, :mime_type)
+    chosen = WhatsappWeb::MediaMimeNormalizer.concrete_mime?(file_mime) ? file_mime : payload_mime
+    WhatsappWeb::MediaMimeNormalizer.normalize_mime_type(
+      chosen,
+      filename: attachment_payload_value(attachment_payload, :filename),
+      media_kind: attachment_payload_value(attachment_payload, :media_kind) || message_type
+    )
+  end
+
+  def attachment_filename(attachment_payload, attachment_file)
+    resolved_mime = attachment_content_type(attachment_payload, attachment_file)
+    media_kind = attachment_payload_value(attachment_payload, :media_kind) || message_type
+    file_name = attachment_file.original_filename if attachment_file.respond_to?(:original_filename)
+    payload_name = attachment_payload_value(attachment_payload, :filename)
+    raw_name = WhatsappWeb::MediaMimeNormalizer.synthesized_filename?(payload_name) ? (file_name.presence || payload_name) : payload_name
+    WhatsappWeb::MediaMimeNormalizer.sanitize_filename(raw_name, mime_type: resolved_mime, media_kind: media_kind)
   end
 
   def enqueue_media_attachment_backfill(message)
