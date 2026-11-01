@@ -330,12 +330,16 @@ class Compliance::SubjectErasureService
 
   def delete_account_scoped_dependents!(call_ids = [])
     Telephony::ContactEndpoint.where(account_id: account.id, contact_id: contact.id).delete_all if defined?(Telephony::ContactEndpoint)
-    if defined?(Call)
-      Call.where(account_id: account.id, id: call_ids).delete_all if call_ids.present?
-      Call.where(account_id: account.id, contact_id: contact.id).delete_all
-    end
+    delete_subject_calls!(call_ids)
     Reminder.where(account_id: account.id, target_contact_id: contact.id).delete_all if defined?(Reminder)
     ConfirmationRequest.where(account_id: account.id, contact_id: contact.id).delete_all if defined?(ConfirmationRequest)
+  end
+
+  def delete_subject_calls!(call_ids)
+    return unless defined?(Call)
+
+    Call.where(account_id: account.id, id: call_ids).delete_all if call_ids.present?
+    Call.where(account_id: account.id, contact_id: contact.id).delete_all
   end
 
   def delete_contact_scoped_dependents!
