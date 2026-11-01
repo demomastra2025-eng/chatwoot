@@ -128,6 +128,9 @@
         "APPOINTMENT_CONFIRMATION_UNAVAILABLE": "Select an approved template with a QUICK_REPLY button from an official WhatsApp Cloud channel.",
         "SKIP_LATE_IMPORT_LABEL": "Skip if the booking reached OneLink late from MedElement",
         "SKIP_LATE_IMPORT_NOTE": "If the booking arrived more than an hour after it was created in MedElement, this notice is not sent. A booking or reschedule notice is never sent after the visit has started.",
+        "MIN_MINUTES_BEFORE_LABEL": "Minimum minutes before visit",
+        "MIN_MINUTES_BEFORE_NOTE": "Optional: skip sending this notification when fewer minutes remain before the appointment starts (for example, 60).",
+        "MIN_MINUTES_BEFORE_INVALID": "Enter whole minutes from 1 to 43200 or leave empty",
         "TIMEZONE_LABEL": "Timezone",
         "RELATIVE_UNIT_LABEL": "Unit",
         "ATTACHMENTS_LABEL": "Attachments",
@@ -180,6 +183,7 @@
       "VALUE_MUST_BE_BETWEEN_1_AND_998": "Value must be between 1 and 998",
       "ACTION_PARAMETERS_REQUIRED": "Action parameters are required",
       "CREATE_TOUCH_DELAY_INVALID": "Reminder delay must be zero or greater",
+      "CREATE_TOUCH_MIN_MINUTES_BEFORE_INVALID": "Enter whole minutes from 1 to 43200 or leave empty",
       "STAGE_OPTION_ARCHIVED": "The selected stage is archived or no longer available. Choose an active stage before saving.",
       "ATLEAST_ONE_CONDITION_REQUIRED": "At least one condition is required",
       "ATLEAST_ONE_ACTION_REQUIRED": "At least one action is required"

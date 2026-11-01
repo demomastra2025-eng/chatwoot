@@ -11,6 +11,7 @@ class Reminders::ReconcileSourceEnrollmentsJob < ApplicationJob
       ChatwootExceptionTracker.new(e, account: enrollment.account).capture_exception
     end
     cancel_excluded_contact_touches(source)
+    cancel_short_lead_touches(source)
   end
 
   private
@@ -20,6 +21,14 @@ class Reminders::ReconcileSourceEnrollmentsJob < ApplicationJob
     return unless source.is_a?(AutomationRule)
 
     Reminders::CancelExcludedContactTouchesService.new(rule: source).perform
+  rescue StandardError => e
+    ChatwootExceptionTracker.new(e, account: source.account).capture_exception
+  end
+
+  def cancel_short_lead_touches(source)
+    return unless source.is_a?(AutomationRule)
+
+    Reminders::AppointmentShortLeadCancellation.cancel_open_rule_touches!(source)
   rescue StandardError => e
     ChatwootExceptionTracker.new(e, account: source.account).capture_exception
   end

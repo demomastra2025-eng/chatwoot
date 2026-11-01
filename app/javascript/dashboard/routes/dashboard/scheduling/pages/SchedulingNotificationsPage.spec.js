@@ -443,4 +443,125 @@ describe('SchedulingNotificationsPage', () => {
       })
     );
   });
+
+  it('displays, saves and clears min_minutes_before_appointment on preset and other rule cards', async () => {
+    mocks.rules = [
+      rule({ id: 1, min_minutes_before_appointment: 60 }),
+      rule({
+        id: 58,
+        name: 'Вы записаны (Intermedical)',
+        description: '',
+        min_minutes_before_appointment: 60,
+      }),
+    ];
+    const wrapper = await mountPage();
+
+    const presetCard = wrapper.find(
+      '[data-testid="reminder-preset-card-appointment_created"]'
+    );
+    expect(
+      presetCard
+        .find('[data-testid="preset-min-minutes-badge"]')
+        .attributes('data-min-minutes')
+    ).toBe('60');
+
+    await presetCard.find('.cursor-pointer').trigger('click');
+    const presetInput = presetCard.find(
+      '[data-testid="preset-min-minutes-input"]'
+    );
+    expect(presetInput.element.value).toBe('60');
+    await presetInput.setValue('90');
+    await presetCard
+      .find('[data-testid="save-inline-preset-btn"]')
+      .trigger('click');
+    await flushPromises();
+    expect(AutomationAPI.update).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ min_minutes_before_appointment: 90 })
+    );
+
+    const otherCard = wrapper.find('[data-testid="other-rule-card-58"]');
+    expect(
+      otherCard
+        .find('[data-testid="other-rule-min-minutes-badge"]')
+        .attributes('data-min-minutes')
+    ).toBe('60');
+    const otherInput = otherCard.find(
+      '[data-testid="other-rule-min-minutes-input"]'
+    );
+    await otherInput.setValue('');
+    await otherCard
+      .find('[data-testid="save-other-rule-min-minutes-btn"]')
+      .trigger('click');
+    await flushPromises();
+    expect(AutomationAPI.update).toHaveBeenCalledWith(58, {
+      min_minutes_before_appointment: null,
+      calendar_context: true,
+    });
+  });
+
+  it('rejects non-positive min_minutes_before_appointment input with a validation alert', async () => {
+    mocks.rules = [rule({ id: 1 })];
+    const wrapper = await mountPage();
+    const presetCard = wrapper.find(
+      '[data-testid="reminder-preset-card-appointment_created"]'
+    );
+    await presetCard.find('.cursor-pointer').trigger('click');
+    await presetCard
+      .find('[data-testid="preset-min-minutes-input"]')
+      .setValue('0');
+    await presetCard
+      .find('[data-testid="save-inline-preset-btn"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(AutomationAPI.update).not.toHaveBeenCalled();
+    expect(mocks.alert).toHaveBeenCalledWith(
+      'SCHEDULING.NOTIFICATIONS.MIN_MINUTES_BEFORE_INVALID'
+    );
+  });
+
+  it('updates min_minutes_before_appointment on custom calendar_managed=false rules without forcing calendar_managed and hides it on cancellation rules', async () => {
+    mocks.rules = [
+      rule({
+        id: 58,
+        name: 'Custom booking rule',
+        description: '',
+        calendar_managed: false,
+        event_name: 'appointment_created',
+      }),
+      rule({
+        id: 59,
+        name: 'Custom cancellation rule',
+        description: '',
+        calendar_managed: false,
+        event_name: 'appointment_cancelled',
+        min_minutes_before_appointment: 60,
+      }),
+    ];
+    const wrapper = await mountPage();
+
+    const customBookingCard = wrapper.find(
+      '[data-testid="other-rule-card-58"]'
+    );
+    await customBookingCard
+      .find('[data-testid="other-rule-min-minutes-input"]')
+      .setValue('75');
+    await customBookingCard
+      .find('[data-testid="save-other-rule-min-minutes-btn"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(AutomationAPI.update).toHaveBeenCalledWith(58, {
+      min_minutes_before_appointment: 75,
+      calendar_context: true,
+    });
+
+    const customCancelCard = wrapper.find('[data-testid="other-rule-card-59"]');
+    expect(
+      customCancelCard
+        .find('[data-testid="other-rule-min-minutes-input"]')
+        .exists()
+    ).toBe(false);
+  });
 });

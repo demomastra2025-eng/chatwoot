@@ -1,6 +1,9 @@
 require 'rails_helper'
 
 RSpec.describe Integrations::Medelement::AppointmentImporterService do
+  include ActiveJob::TestHelper
+  include ActiveSupport::Testing::TimeHelpers
+
   it 're-times a direct reminder when the provider moves a visit to another day' do
     account = create(:account)
     resource = create(:scheduling_resource, account: account)
@@ -30,5 +33,42 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     expect(touch.reload.scheduled_at.to_i).to eq((moved - 2.hours).to_i)
     expect(touch).to be_pending
     expect(other_touch.reload.scheduled_at).to eq(other_due)
+  end
+
+  it 'respects min_minutes_before_appointment when MedElement imports short-lead vs long-lead receptions' do
+    travel_to(Time.zone.parse('2026-11-02 10:00:00')) do
+      account = create(:account).tap { |record| record.enable_features!('scheduling') }
+      resource = create(:scheduling_resource, account: account)
+      contact = create(:contact, account: account, phone_number: '+77000000002')
+      create(:conversation, account: account, contact: contact)
+      create(
+        :automation_rule, account: account, event_name: 'appointment_created', active: true,
+                          min_minutes_before_appointment: 60,
+                          conditions: [{ attribute_key: 'source', filter_operator: 'is_present', values: [], query_operator: nil }],
+                          actions: [{ action_name: 'create_touch', action_params: [{
+                            action_type: 'send_message', content_kind: 'free_text', body: 'Вы записаны',
+                            timing_mode: 'relative', relative_anchor: 'touch.created_at', relative_offset_seconds: 60
+                          }] }]
+      )
+      service = described_class.new(account: account)
+
+      short_appt = nil
+      ok_appt = nil
+      perform_enqueued_jobs(only: EventDispatcherJob) do
+        short_appt = service.upsert!(
+          resource: resource, contact: contact,
+          reception: { 'RECEPTION_CODE' => 'short-rec', 'PATIENT_CODE' => 'p-1', 'ACTIVE' => 1 },
+          import_context: { starts_at: 45.minutes.from_now, ends_at: 75.minutes.from_now, specialist_code: 'sp-1' }
+        )
+        ok_appt = service.upsert!(
+          resource: resource, contact: contact,
+          reception: { 'RECEPTION_CODE' => 'ok-rec', 'PATIENT_CODE' => 'p-1', 'ACTIVE' => 1 },
+          import_context: { starts_at: 60.minutes.from_now, ends_at: 90.minutes.from_now, specialist_code: 'sp-1' }
+        )
+      end
+
+      expect(account.reminders.where(remindable: short_appt)).to be_empty
+      expect(account.reminders.where(remindable: ok_appt).count).to eq(1)
+    end
   end
 end

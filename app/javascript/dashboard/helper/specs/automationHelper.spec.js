@@ -1542,3 +1542,64 @@ describe('showActionInput', () => {
     expect(helpers.showActionInput(mockActionTypes, 'some_action')).toBe(false);
   });
 });
+
+describe('generateAutomationPayload min_minutes_before_appointment handling', () => {
+  it('omits stale top-level min_minutes_before_appointment while preserving edited or cleared touch action_params', () => {
+    const editedPayload = helpers.generateAutomationPayload({
+      name: 'Appointment confirmation',
+      description: 'Pre-visit check',
+      event_name: 'appointment_created',
+      min_minutes_before_appointment: 60,
+      conditions: [
+        {
+          attribute_key: 'source',
+          filter_operator: 'is_present',
+          values: [],
+          query_operator: 'and',
+        },
+      ],
+      actions: [
+        {
+          action_name: 'create_touch',
+          action_params: [
+            {
+              body: 'Booked',
+              min_minutes_before_appointment: 90,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(editedPayload).not.toHaveProperty('min_minutes_before_appointment');
+    expect(editedPayload.actions[0].action_params[0]).toEqual(
+      expect.objectContaining({ min_minutes_before_appointment: 90 })
+    );
+
+    const clearedPayload = helpers.generateAutomationPayload({
+      name: 'Appointment confirmation',
+      description: 'Cleared check',
+      event_name: 'appointment_created',
+      min_minutes_before_appointment: 60,
+      conditions: [
+        {
+          attribute_key: 'source',
+          filter_operator: 'is_present',
+          values: [],
+          query_operator: 'and',
+        },
+      ],
+      actions: [
+        {
+          action_name: 'create_touch',
+          action_params: [{ body: 'Booked' }],
+        },
+      ],
+    });
+
+    expect(clearedPayload).not.toHaveProperty('min_minutes_before_appointment');
+    expect(clearedPayload.actions[0].action_params[0]).not.toHaveProperty(
+      'min_minutes_before_appointment'
+    );
+  });
+});

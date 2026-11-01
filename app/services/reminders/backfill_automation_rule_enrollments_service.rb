@@ -79,6 +79,7 @@ class Reminders::BackfillAutomationRuleEnrollmentsService
   def plan_action(appointment, action)
     definition = touch_definition(action['action_params'])
     return unless Reminders::MissedAutomationTouchPolicy::APPOINTMENT_ANCHORS.include?(definition['relative_anchor'])
+    return if AutomationRules::AppointmentNotificationLeadTime.short?(appointment, rule: rule, action: action, now: activation_time)
 
     probe = Reminders::RelativeScheduleProbe.new(
       account: rule.account, remindable: appointment, definition: definition, created_at: activation_time

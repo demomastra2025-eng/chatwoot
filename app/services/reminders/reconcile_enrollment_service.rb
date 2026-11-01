@@ -17,7 +17,7 @@ class Reminders::ReconcileEnrollmentService
         cancel_unavailable_source!
       elsif Reminders::ExcludedContactPolicy.enrollment_excluded?(enrollment)
         cancel_excluded_contact!
-      elsif Reminders::SuppressedContactPolicy.cancel_enrollment_if_suppressed!(enrollment)
+      elsif cancel_suppressed_or_short_lead!
         nil
       else
         reconcile_materialized_reminders!
@@ -31,6 +31,11 @@ class Reminders::ReconcileEnrollmentService
 
   # The rule now excludes a contact of the enrollment's record: nothing more is materialized and the undelivered steps
   # that already exist are cancelled.
+  def cancel_suppressed_or_short_lead!
+    Reminders::SuppressedContactPolicy.cancel_enrollment_if_suppressed!(enrollment) ||
+      Reminders::AppointmentShortLeadCancellation.cancel_enrollment_if_short!(enrollment)
+  end
+
   def cancel_excluded_contact!
     Reminders::CancelEnrollmentService.new(
       enrollment: enrollment,

@@ -17,14 +17,14 @@ class Scheduling::AppointmentNotificationsSummary
 
   def reminder_items
     reminders = account.reminders.where(remindable: appointment).order(:scheduled_at, :id).to_a
-    rule_names = names_for(reminders)
+    rules = rules_for(reminders)
     messages = messages_for(reminders)
-    reminders.map { |reminder| reminder_payload(reminder, rule_names, messages) }
+    reminders.map { |reminder| reminder_payload(reminder, rules, messages) }
   end
 
-  def names_for(reminders)
+  def rules_for(reminders)
     rule_ids = reminders.filter_map { |reminder| reminder.metadata.to_h[Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY] }.uniq
-    account.automation_rules.where(id: rule_ids).pluck(:id, :name).to_h
+    account.automation_rules.where(id: rule_ids).index_by(&:id)
   end
 
   def messages_for(reminders)
@@ -34,16 +34,18 @@ class Scheduling::AppointmentNotificationsSummary
     end
   end
 
-  def reminder_payload(reminder, rule_names, messages)
+  def reminder_payload(reminder, rules, messages)
     metadata = reminder.metadata.to_h
-    rule_id = metadata[Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY]
+    rule = rules[metadata[Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY].to_i]
+    action_id = metadata[Reminder::AUTOMATION_ACTION_KEY]
     message_id = metadata[Reminder::DELIVERY_MATERIALIZED_MESSAGE_ID_KEY].to_i
     message = messages[message_id]
     {
       id: reminder.id, status: reminder.status, scheduled_at: reminder.scheduled_at,
       completed_at: reminder.completed_at, reason: reminder.last_error,
       delivery_stage: reminder.delivery_stage,
-      action_id: metadata[Reminder::AUTOMATION_ACTION_KEY], rule_name: rule_names[rule_id.to_i],
+      action_id: action_id, rule_name: rule&.name,
+      min_minutes_before_appointment: configured_min_minutes(rule, action_id),
       message_id: message ? message_id : nil, conversation_id: message&.fetch(:conversation_id), message_status: message&.fetch(:status)
     }
   end
@@ -51,14 +53,34 @@ class Scheduling::AppointmentNotificationsSummary
   def append_enrollments(items)
     visible_actions = items.filter_map { |item| item[:action_id] }
     enrollments = account.touch_plan_enrollments.where(remindable: appointment, status: 'active').to_a
-    names = account.automation_rules.where(id: enrollments.map(&:automation_rule_id)).pluck(:id, :name).to_h
+    rules = account.automation_rules.where(id: enrollments.map(&:automation_rule_id)).index_by(&:id)
     enrollments.each do |enrollment|
       next if visible_actions.include?(enrollment.source_action_id)
 
+      rule = rules[enrollment.automation_rule_id]
       items << {
         id: "enrollment-#{enrollment.id}", status: 'pending', scheduled_at: enrollment.next_due_at,
-        action_id: enrollment.source_action_id, rule_name: names[enrollment.automation_rule_id]
+        action_id: enrollment.source_action_id, rule_name: rule&.name,
+        min_minutes_before_appointment: configured_min_minutes(rule, enrollment.source_action_id)
       }
+    end
+  end
+
+  def configured_min_minutes(rule, raw_action_key)
+    return if rule.blank?
+
+    matching_action = find_rule_action(rule, raw_action_key)
+    AutomationRules::AppointmentNotificationLeadTime.configured_minutes(rule, action: matching_action)
+  end
+
+  def find_rule_action(rule, raw_action_key)
+    raw_key = raw_action_key.to_s
+    return if raw_key.blank?
+
+    stripped_key = raw_key.delete_prefix("#{rule.id}:")
+    Array(rule.actions).find do |entry|
+      candidate = entry.to_h['action_id'].to_s
+      candidate.present? && (candidate == raw_key || candidate == stripped_key)
     end
   end
 

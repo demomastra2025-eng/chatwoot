@@ -2,3 +2,4 @@ ru:
   appointment_notifications:
     schedule_override: 'Укажите время уведомления или уберите ручную настройку времени.'
     empty_field: 'Поле «%{field}» пустое у %{share}%% будущих записей. Выберите другое поле для уведомления.'
+    min_minutes_before_appointment: 'Поле «Минут до приёма» должно быть целым числом от 1 до 43200.'

@@ -86,4 +86,14 @@ RSpec.describe Reminders::BackfillAutomationRuleEnrollmentsService do
     expect(touches.count).to eq(3)
     expect(touches.open_statuses.count).to eq(1)
   end
+
+  it 'skips backfilling visits with fewer minutes remaining than min_minutes_before_appointment' do
+    rule.update!(min_minutes_before_appointment: 5_000, active: true)
+    expect(described_class.new(rule: rule, activation_time: rule.updated_at).plan).to be_empty
+
+    rule.update!(min_minutes_before_appointment: 3_000)
+    expect(described_class.new(rule: rule, activation_time: rule.updated_at).plan).to contain_exactly(
+      include(appointment_id: appointment.id, kind: 'direct')
+    )
+  end
 end

@@ -15,21 +15,10 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
     blobs, actions, error = validate_and_prepare_attachments(params[:actions])
     return render_could_not_create_error(error) if error
 
-    @automation_rule = Current.account.automation_rules.new(automation_rules_permit)
-    @automation_rule.actions = actions
-    @automation_rule.conditions = params[:conditions]
-    @automation_rule.calendar_managed =
-      ActiveModel::Type::Boolean.new.cast(params[:calendar_managed]) == true ||
-      (ActiveModel::Type::Boolean.new.cast(params[:calendar_context]) &&
-        @automation_rule.appointment_event? &&
-        Array(actions).any? { |action| action.to_h['action_name'] == 'create_touch' })
-
+    build_automation_rule_for_create(actions)
     return render_automation_rule_validation_error(@automation_rule) unless @automation_rule.valid?
 
-    ActiveRecord::Base.transaction do
-      @automation_rule.save!
-      attach_blobs!(@automation_rule, blobs)
-    end
+    persist_rule_with_blobs!(blobs)
   rescue ActiveRecord::RecordInvalid => e
     render_automation_rule_validation_error(e.record)
   end
@@ -38,21 +27,10 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
     blobs, actions, error = validate_and_prepare_attachments(params[:actions], @automation_rule)
     return render_could_not_create_error(error) if error
 
-    @automation_rule.assign_attributes(automation_rules_permit)
-    @automation_rule.actions = actions if params[:actions]
-    @automation_rule.conditions = params[:conditions] if params[:conditions]
-    if ActiveModel::Type::Boolean.new.cast(params[:calendar_context]) &&
-       @automation_rule.appointment_event? &&
-       Array(@automation_rule.actions).any? { |action| action.to_h['action_name'] == 'create_touch' }
-      @automation_rule.calendar_managed = true
-    end
-
+    assign_automation_rule_updates(actions)
     return render_automation_rule_validation_error(@automation_rule) unless @automation_rule.valid?
 
-    ActiveRecord::Base.transaction do
-      @automation_rule.save!
-      attach_blobs!(@automation_rule, blobs)
-    end
+    persist_rule_with_blobs!(blobs)
   rescue StandardError => e
     Rails.logger.error e
     render_automation_rule_validation_error(@automation_rule)
@@ -86,17 +64,57 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
 
   private
 
+  def build_automation_rule_for_create(actions)
+    @automation_rule = Current.account.automation_rules.new(automation_rules_permit)
+    @automation_rule.actions = actions
+    apply_min_minutes_before_appointment
+    @automation_rule.conditions = params[:conditions]
+    @automation_rule.calendar_managed =
+      boolean_param?(:calendar_managed) || calendar_context_touch_rule?(actions)
+  end
+
+  def assign_automation_rule_updates(actions)
+    @automation_rule.assign_attributes(automation_rules_permit)
+    @automation_rule.actions = actions if params[:actions]
+    apply_min_minutes_before_appointment
+    @automation_rule.conditions = params[:conditions] if params[:conditions]
+    @automation_rule.calendar_managed = true if boolean_param?(:calendar_managed)
+  end
+
+  def persist_rule_with_blobs!(blobs)
+    ActiveRecord::Base.transaction do
+      @automation_rule.save!
+      attach_blobs!(@automation_rule, blobs)
+    end
+  end
+
+  def calendar_context_touch_rule?(action_list)
+    boolean_param?(:calendar_context) &&
+      @automation_rule.appointment_event? &&
+      Array(action_list).any? { |action| action.to_h['action_name'] == 'create_touch' }
+  end
+
+  def boolean_param?(key)
+    ActiveModel::Type::Boolean.new.cast(params[key]) == true
+  end
+
   def ensure_calendar_management
     return unless @automation_rule.calendar_managed?
 
-    return if action_name == 'update' && ActiveModel::Type::Boolean.new.cast(params[:calendar_context])
+    return if action_name == 'update' && boolean_param?(:calendar_context)
 
     head :forbidden
   end
 
+  def apply_min_minutes_before_appointment
+    return unless params.key?(:min_minutes_before_appointment)
+
+    @automation_rule.min_minutes_before_appointment = params[:min_minutes_before_appointment]
+  end
+
   def automation_rules_permit
     params.permit(
-      :name, :description, :event_name, :active,
+      :name, :description, :event_name, :active, :min_minutes_before_appointment,
       conditions: [:attribute_key, :filter_operator, :query_operator, :custom_attribute_type, { values: [] }],
       actions: [:action_id, :action_name, { action_params: [] }]
     )

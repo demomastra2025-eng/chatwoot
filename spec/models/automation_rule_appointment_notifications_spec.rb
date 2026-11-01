@@ -40,4 +40,73 @@ RSpec.describe AutomationRule do
     rule.save!
     expect(rule.reload.actions.first['action_params']['timezone']).to eq(account.workspace_working_hours_timezone)
   end
+
+  describe 'min_minutes_before_appointment' do
+    it 'stores and syncs positive integer values across execution_schedule and touch action_params' do
+      rule = build_rule([{ timing_mode: 'relative', relative_anchor: 'touch.created_at',
+                           relative_offset_seconds: 60, body: 'Booked' }])
+      rule.min_minutes_before_appointment = '60'
+      rule.save!
+      rule.reload
+
+      expect(rule.min_minutes_before_appointment).to eq(60)
+      expect(rule.execution_schedule['min_minutes_before_appointment']).to eq(60)
+      expect(rule.actions.first['action_params'].first['min_minutes_before_appointment']).to eq(60)
+    end
+
+    it 'syncs min_minutes_before_appointment submitted inside touch action_params and clears when blank' do
+      rule = build_rule([{ timing_mode: 'relative', relative_anchor: 'touch.created_at',
+                           relative_offset_seconds: 60, min_minutes_before_appointment: '45', body: 'Booked' }])
+      rule.save!
+      expect(rule.reload.min_minutes_before_appointment).to eq(45)
+
+      rule.update!(min_minutes_before_appointment: '')
+      rule.reload
+      expect(rule.min_minutes_before_appointment).to be_nil
+      expect(rule.execution_schedule).not_to have_key('min_minutes_before_appointment')
+      expect(rule.actions.first['action_params'].first).not_to have_key('min_minutes_before_appointment')
+    end
+
+    it 'preserves min_minutes_before_appointment across partial updates and duplication' do
+      rule = build_rule([{ timing_mode: 'relative', relative_anchor: 'touch.created_at',
+                           relative_offset_seconds: 60, body: 'Booked' }])
+      rule.min_minutes_before_appointment = 60
+      rule.save!
+      rule.update!(active: true)
+
+      cloned = rule.dup
+      cloned.save!
+      expect(rule.reload.min_minutes_before_appointment).to eq(60)
+      expect(cloned.reload.min_minutes_before_appointment).to eq(60)
+    end
+
+    [0, -15, 'abc', 1.5, '1.5', 43_201].each do |invalid_value|
+      it "rejects invalid min_minutes_before_appointment value #{invalid_value.inspect}" do
+        rule = build_rule({ timing_mode: 'relative', relative_anchor: 'touch.created_at',
+                            relative_offset_seconds: 60, body: 'Booked' })
+        rule.min_minutes_before_appointment = invalid_value
+
+        expect(rule).not_to be_valid
+        expect(rule.errors[:min_minutes_before_appointment]).to be_present
+      end
+    end
+
+    it 'rejects invalid min_minutes_before_appointment inside create_touch action_params' do
+      rule = build_rule([{ timing_mode: 'relative', relative_anchor: 'touch.created_at',
+                           relative_offset_seconds: 60, min_minutes_before_appointment: -5, body: 'Booked' }])
+
+      expect(rule).not_to be_valid
+      expect(rule.errors[:min_minutes_before_appointment]).to be_present
+    end
+
+    it 'rejects non-blank min_minutes_before_appointment on non-appointment events' do
+      rule = build(:automation_rule, account: account, event_name: 'conversation_created',
+                                     conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['open'], query_operator: nil }],
+                                     actions: [{ action_name: 'send_message', action_params: ['Hi'] }])
+      rule.min_minutes_before_appointment = 60
+
+      expect(rule).not_to be_valid
+      expect(rule.errors[:min_minutes_before_appointment]).to be_present
+    end
+  end
 end

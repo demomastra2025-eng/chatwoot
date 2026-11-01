@@ -87,6 +87,10 @@
       "APPROVED_TEMPLATE_REQUIRED": "Choose an approved template",
       "CONFIRM_TEMPLATE_REQUIRED": "A template with a quick reply button is required",
       "BINDINGS_REQUIRED": "Choose data for template variables",
+      "MIN_MINUTES_BEFORE_SUMMARY": "Skip if < {minutes} min before visit",
+      "MIN_MINUTES_BEFORE_LABEL": "Min. minutes before visit",
+      "MIN_MINUTES_BEFORE_PLACEHOLDER": "60",
+      "MIN_MINUTES_BEFORE_INVALID": "Enter whole minutes from 1 to 43200 or leave empty",
       "NO_CONTENT": "No message",
       "PLANNED": "Planned",
       "SENT": "Sent",
@@ -99,6 +103,7 @@
         "MISSED_DUE_TO_LATE_AUTOMATION_EVENT": "Send time has passed",
         "APPOINTMENT_NOTICE_AFTER_START": "Visit already started",
         "APPOINTMENT_NOTICE_LATE_IMPORT": "Booking arrived too late",
+        "APPOINTMENT_NOTICE_SHORT_LEAD_TIME": "Too little time left before visit",
         "CONTACT_EXCLUDED": "Client excluded",
         "AUTOMATION_RULE_INACTIVE": "Rule disabled",
         "AUTOMATION_RULE_DELETED": "Rule removed",
@@ -814,6 +819,8 @@
         "CONFIRM_VIA_BUTTON": "Confirm via WhatsApp button",
         "CONFIRM_VIA_BUTTON_HINT": "When the client taps the quick-reply button, the booking status automatically updates to Confirmed",
         "REVIEW_DELAY": "When to send after visit completion",
+        "MIN_MINUTES_BEFORE_APPOINTMENT": "Minimum minutes before visit",
+        "MIN_MINUTES_BEFORE_APPOINTMENT_HINT": "Optional: do not send if fewer minutes remain before the appointment starts (for example, 60)",
         "VARIABLE_BINDINGS": "Bind booking fields to template variables"
       },
       "REVIEW_DELAY": {

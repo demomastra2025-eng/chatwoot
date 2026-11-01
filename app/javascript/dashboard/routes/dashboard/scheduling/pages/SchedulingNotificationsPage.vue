@@ -53,6 +53,44 @@ const templatePackDialogRef = ref(null);
 const createTemplateDialogRef = ref(null);
 const syncing = ref(false);
 const savingPresetKey = ref('');
+const savingOtherRuleId = ref(null);
+const otherRuleMinMinutesDrafts = reactive({});
+
+const PRE_VISIT_MIN_LEAD_EVENTS = [
+  'appointment_created',
+  'appointment_rescheduled',
+  'appointment_updated',
+];
+const MIN_MINUTES_MAX = 43200;
+
+const parsePositiveMinMinutes = raw => {
+  if (raw === null || raw === undefined || String(raw).trim() === '') {
+    return { empty: true, valid: true, value: null };
+  }
+  const trimmed = String(raw).trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return { empty: false, valid: false, value: null };
+  }
+  const num = Number(trimmed);
+  if (!Number.isInteger(num) || num < 1 || num > MIN_MINUTES_MAX) {
+    return { empty: false, valid: false, value: null };
+  }
+  return { empty: false, valid: true, value: num };
+};
+
+const ruleMinMinutes = rule => {
+  if (!rule) return null;
+  const raw =
+    rule.min_minutes_before_appointment ??
+    touchParams(rule)?.min_minutes_before_appointment ??
+    touchParams(rule)?.metadata?.min_minutes_before_appointment ??
+    null;
+  const parsed = parsePositiveMinMinutes(raw);
+  return parsed.valid && !parsed.empty ? parsed.value : null;
+};
+
+const supportsMinMinutesBefore = eventName =>
+  PRE_VISIT_MIN_LEAD_EVENTS.includes(eventName);
 
 const createDefaultPresetDraft = preset => ({
   enabled: false,
@@ -60,6 +98,7 @@ const createDefaultPresetDraft = preset => ({
   dayBeforeTime: preset.relativeTimeOfDay || '15:00',
   confirmationEnabled: Boolean(preset.supportsConfirmation),
   reviewDelayHours: 1,
+  minMinutesBeforeAppointment: '',
   variableBindings: {},
 });
 
@@ -283,6 +322,11 @@ const hydratePresetsFromRulesAndTemplates = () => {
         else state.reviewDelayHours = 3;
       }
 
+      const existingMin = ruleMinMinutes(existingRule);
+      state.minMinutesBeforeAppointment = existingMin
+        ? String(existingMin)
+        : '';
+
       const bodyParams = tplParams.processed_params?.body || {};
       const parsedBindings = {};
       Object.entries(bodyParams).forEach(([varIndex, rawRef]) => {
@@ -294,6 +338,7 @@ const hydratePresetsFromRulesAndTemplates = () => {
       state.variableBindings = parsedBindings;
     } else {
       state.enabled = false;
+      state.minMinutesBeforeAppointment = '';
       if (!state.templateKey || !templateByKey.value.has(state.templateKey)) {
         const defaultMatch = presetTemplate(preset);
         state.templateKey = defaultMatch ? makeTemplateKey(defaultMatch) : '';
@@ -301,6 +346,11 @@ const hydratePresetsFromRulesAndTemplates = () => {
     }
 
     ensureDefaultBindingsForPreset(preset);
+  });
+
+  notificationRules.value.forEach(rule => {
+    const minVal = ruleMinMinutes(rule);
+    otherRuleMinMinutesDrafts[rule.id] = minVal ? String(minVal) : '';
   });
 };
 
@@ -505,6 +555,13 @@ const saveInlinePreset = async (preset, { forceActive = null } = {}) => {
   }
 
   const existingRule = presetRule(preset);
+  const parsedMinMinutes = supportsMinMinutesBefore(preset.eventName)
+    ? parsePositiveMinMinutes(state.minMinutesBeforeAppointment)
+    : { empty: true, valid: true, value: null };
+  if (!parsedMinMinutes.valid) {
+    useAlert(L('MIN_MINUTES_BEFORE_INVALID'));
+    return;
+  }
   const isApproved = String(template.status || '').toUpperCase() === 'APPROVED';
   const nextActive =
     forceActive !== null
@@ -556,6 +613,11 @@ const saveInlinePreset = async (preset, { forceActive = null } = {}) => {
       },
     },
   };
+  if (parsedMinMinutes.value) {
+    params.min_minutes_before_appointment = parsedMinMinutes.value;
+  } else {
+    delete params.min_minutes_before_appointment;
+  }
 
   const payload = {
     name:
@@ -565,6 +627,7 @@ const saveInlinePreset = async (preset, { forceActive = null } = {}) => {
       `${(existingRule?.description || '').replace(/\[scheduling_preset:[a-z0-9_]+\]/gi, '').trim()} ${buildPresetMarker(preset.key)}`.trim(),
     event_name: preset.eventName,
     active: nextActive,
+    min_minutes_before_appointment: parsedMinMinutes.value,
     conditions: existingRule?.conditions?.length
       ? existingRule.conditions
       : [
@@ -593,6 +656,28 @@ const saveInlinePreset = async (preset, { forceActive = null } = {}) => {
     useAlert(L('SAVE_ERROR'));
   } finally {
     savingPresetKey.value = '';
+  }
+};
+
+const saveOtherRuleMinMinutes = async rule => {
+  if (!rule?.id) return;
+  const parsed = parsePositiveMinMinutes(otherRuleMinMinutesDrafts[rule.id]);
+  if (!parsed.valid) {
+    useAlert(L('MIN_MINUTES_BEFORE_INVALID'));
+    return;
+  }
+  savingOtherRuleId.value = rule.id;
+  try {
+    await AutomationAPI.update(rule.id, {
+      min_minutes_before_appointment: parsed.value,
+      calendar_context: true,
+    });
+    await store.dispatch('automations/get');
+    useAlert(L('SAVED'));
+  } catch {
+    useAlert(L('SAVE_ERROR'));
+  } finally {
+    savingOtherRuleId.value = null;
   }
 };
 
@@ -825,6 +910,19 @@ onMounted(async () => {
                       >
                         {{ getPresetStatusBadge(preset).label }}
                       </span>
+                      <span
+                        v-if="ruleMinMinutes(presetRule(preset))"
+                        data-testid="preset-min-minutes-badge"
+                        :data-min-minutes="ruleMinMinutes(presetRule(preset))"
+                        class="rounded-md bg-n-alpha-black2 px-2 py-0.5 text-[11px] font-medium text-n-slate-11"
+                      >
+                        {{
+                          t(
+                            'SCHEDULING.NOTIFICATIONS.MIN_MINUTES_BEFORE_SUMMARY',
+                            { minutes: ruleMinMinutes(presetRule(preset)) }
+                          )
+                        }}
+                      </span>
                     </div>
 
                     <p class="mb-1 mt-1 text-xs text-n-slate-11">
@@ -1006,6 +1104,38 @@ onMounted(async () => {
                     </div>
 
                     <div
+                      v-if="supportsMinMinutesBefore(preset.eventName)"
+                      class="space-y-1.5"
+                    >
+                      <label class="block text-xs font-medium text-n-slate-12">
+                        {{
+                          t(
+                            'SCHEDULING.REMINDERS.FIELDS.MIN_MINUTES_BEFORE_APPOINTMENT'
+                          )
+                        }}
+                        <input
+                          v-model="
+                            presetStates[preset.key].minMinutesBeforeAppointment
+                          "
+                          type="number"
+                          min="1"
+                          max="43200"
+                          step="1"
+                          data-testid="preset-min-minutes-input"
+                          :placeholder="L('MIN_MINUTES_BEFORE_PLACEHOLDER')"
+                          class="mt-1 w-full rounded-lg border border-n-weak bg-n-surface-1 p-2 text-sm text-n-slate-12"
+                        />
+                      </label>
+                      <p class="m-0 text-[11px] text-n-slate-11">
+                        {{
+                          t(
+                            'SCHEDULING.REMINDERS.FIELDS.MIN_MINUTES_BEFORE_APPOINTMENT_HINT'
+                          )
+                        }}
+                      </p>
+                    </div>
+
+                    <div
                       v-if="
                         getTemplateBodyVars(
                           getSelectedTemplateForPreset(preset.key)
@@ -1132,7 +1262,21 @@ onMounted(async () => {
             class="mb-2 flex flex-wrap items-center gap-3 rounded-xl border border-n-weak bg-n-solid-2 p-4"
           >
             <div class="min-w-48 flex-1">
-              <p class="m-0 font-semibold text-n-slate-12">{{ rule.name }}</p>
+              <div class="flex flex-wrap items-center gap-2">
+                <p class="m-0 font-semibold text-n-slate-12">{{ rule.name }}</p>
+                <span
+                  v-if="ruleMinMinutes(rule)"
+                  data-testid="other-rule-min-minutes-badge"
+                  :data-min-minutes="ruleMinMinutes(rule)"
+                  class="rounded-md bg-n-alpha-black2 px-2 py-0.5 text-[11px] font-medium text-n-slate-11"
+                >
+                  {{
+                    t('SCHEDULING.NOTIFICATIONS.MIN_MINUTES_BEFORE_SUMMARY', {
+                      minutes: ruleMinMinutes(rule),
+                    })
+                  }}
+                </span>
+              </div>
               <p class="m-0 text-sm text-n-slate-11">
                 {{ eventLabel(eventKeyForRule(rule)) }} · {{ summary(rule) }} ·
                 {{
@@ -1142,6 +1286,36 @@ onMounted(async () => {
                 }}
                 · {{ L('CONDITIONS') }}: {{ conditionsSummaryText(rule) }}
               </p>
+              <div
+                v-if="
+                  (rule.calendar_managed || firstTouch(rule)) &&
+                  supportsMinMinutesBefore(rule.event_name)
+                "
+                class="mt-2.5 flex flex-wrap items-center gap-2"
+              >
+                <label class="flex items-center gap-2 text-xs text-n-slate-11">
+                  <span>{{ L('MIN_MINUTES_BEFORE_LABEL') }}</span>
+                  <input
+                    v-model="otherRuleMinMinutesDrafts[rule.id]"
+                    type="number"
+                    min="1"
+                    max="43200"
+                    step="1"
+                    data-testid="other-rule-min-minutes-input"
+                    :placeholder="L('MIN_MINUTES_BEFORE_PLACEHOLDER')"
+                    class="w-24 rounded-lg border border-n-weak bg-n-surface-1 px-2 py-1 text-xs text-n-slate-12"
+                  />
+                </label>
+                <button
+                  type="button"
+                  data-testid="save-other-rule-min-minutes-btn"
+                  class="rounded-lg border border-n-weak px-2.5 py-1 text-xs font-medium text-n-slate-12 hover:border-n-brand hover:text-n-brand"
+                  :disabled="savingOtherRuleId === rule.id"
+                  @click="saveOtherRuleMinMinutes(rule)"
+                >
+                  {{ L('SAVE') }}
+                </button>
+              </div>
             </div>
             <template v-if="rule.calendar_managed || firstTouch(rule)">
               <label class="relative inline-flex cursor-pointer items-center">

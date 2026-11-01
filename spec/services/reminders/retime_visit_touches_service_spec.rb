@@ -120,4 +120,50 @@ RSpec.describe Reminders::RetimeVisitTouchesService do
     expect(touch.reload.scheduled_at.to_i).to eq((moved - 2.hours).to_i)
     expect(claim.reload).to be_materialized
   end
+
+  it 'cancels a visit-anchored reminder with short_lead_time when rescheduled inside min_minutes_before_appointment' do
+    account.enable_features!('scheduling')
+    rule = create(:automation_rule, account: account, event_name: 'appointment_created',
+                                    min_minutes_before_appointment: 180, conditions: [],
+                                    actions: [{ action_name: 'create_touch', action_params: [{
+                                      action_type: 'send_message', content_kind: 'free_text', body: '1h before',
+                                      timing_mode: 'relative', relative_anchor: 'appointment.starts_at',
+                                      relative_offset_seconds: -1.hour.to_i, target_inbox_id: conversation.inbox_id
+                                    }] }])
+    action_id = rule.actions.first['action_id']
+    touch = visit_touch(offset: -1.hour.to_i, metadata: {
+                          'touch_source' => 'automation', 'automation_rule_id' => rule.id,
+                          Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY => rule.id,
+                          Reminder::AUTOMATION_ACTION_KEY => action_id
+                        })
+    moved = 2.hours.from_now
+
+    appointment.update!(starts_at: moved, ends_at: moved + 30.minutes)
+
+    expect(touch.reload).to be_cancelled
+    expect(touch.last_error).to eq(Reminders::StaleAppointmentNoticePolicy::SHORT_LEAD_REASON)
+  end
+
+  it 'cancels an open direct visit-anchored reminder when min_minutes_before_appointment is raised on a live rule' do
+    extend ActiveJob::TestHelper
+    account.enable_features!('scheduling')
+    appointment.update_columns(created_at: 2.days.ago, starts_at: 3.hours.from_now, ends_at: 210.minutes.from_now) # rubocop:disable Rails/SkipsModelValidations
+    rule = create(:automation_rule, account: account, event_name: 'appointment_created',
+                                    min_minutes_before_appointment: 60, conditions: [],
+                                    actions: [{ action_name: 'create_touch', action_params: [{
+                                      action_type: 'send_message', content_kind: 'free_text', body: '1h before',
+                                      timing_mode: 'relative', relative_anchor: 'appointment.starts_at',
+                                      relative_offset_seconds: -1.hour.to_i, target_inbox_id: conversation.inbox_id
+                                    }] }])
+    touch = visit_touch(offset: -1.hour.to_i, metadata: {
+                          'touch_source' => 'automation', 'automation_rule_id' => rule.id,
+                          Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY => rule.id,
+                          Reminder::AUTOMATION_ACTION_KEY => rule.actions.first['action_id']
+                        })
+
+    perform_enqueued_jobs { rule.update!(min_minutes_before_appointment: 240) }
+
+    expect(touch.reload).to be_cancelled
+    expect(touch.last_error).to eq(Reminders::StaleAppointmentNoticePolicy::SHORT_LEAD_REASON)
+  end
 end

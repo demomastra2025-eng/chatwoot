@@ -5,7 +5,24 @@ export const VALUE_MUST_BE_BETWEEN_1_AND_998 =
   'VALUE_MUST_BE_BETWEEN_1_AND_998';
 export const ACTION_PARAMETERS_REQUIRED = 'ACTION_PARAMETERS_REQUIRED';
 export const CREATE_TOUCH_DELAY_INVALID = 'CREATE_TOUCH_DELAY_INVALID';
+export const CREATE_TOUCH_MIN_MINUTES_BEFORE_INVALID =
+  'CREATE_TOUCH_MIN_MINUTES_BEFORE_INVALID';
 export const ATLEAST_ONE_CONDITION_REQUIRED = 'ATLEAST_ONE_CONDITION_REQUIRED';
+
+export const parseMinMinutesBeforeAppointment = raw => {
+  if (raw === null || raw === undefined || String(raw).trim() === '') {
+    return { empty: true, valid: true, value: null, raw: '' };
+  }
+  const trimmed = String(raw).trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return { empty: false, valid: false, value: null, raw: String(raw) };
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 43200) {
+    return { empty: false, valid: false, value: null, raw: String(raw) };
+  }
+  return { empty: false, valid: true, value: parsed, raw: String(parsed) };
+};
 export const ATLEAST_ONE_ACTION_REQUIRED = 'ATLEAST_ONE_ACTION_REQUIRED';
 
 const isEmptyValue = value => {
@@ -201,6 +218,13 @@ const validateSingleAction = action => {
 
     if (timingMode === 'relative' && repeatMode && repeatMode !== 'once') {
       return CREATE_TOUCH_DELAY_INVALID;
+    }
+
+    if (
+      !parseMinMinutesBeforeAppointment(params?.min_minutes_before_appointment)
+        .valid
+    ) {
+      return CREATE_TOUCH_MIN_MINUTES_BEFORE_INVALID;
     }
 
     return null;

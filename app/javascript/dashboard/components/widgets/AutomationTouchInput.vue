@@ -102,6 +102,28 @@ const allowsLateImportSkip = (eventName, params) =>
   eventName === 'appointment_created' &&
   params.timing_mode !== 'absolute' &&
   !VISIT_ANCHORS.includes(params.relative_anchor);
+const MIN_MINUTES_BEFORE_KEY = 'min_minutes_before_appointment';
+const MIN_MINUTES_BEFORE_EVENTS = [
+  'appointment_created',
+  'appointment_rescheduled',
+  'appointment_updated',
+];
+const parseMinMinutesBefore = raw => {
+  if (raw === null || raw === undefined || String(raw).trim() === '') {
+    return { empty: true, valid: true, value: null, raw: '' };
+  }
+  const trimmed = String(raw).trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return { empty: false, valid: false, value: null, raw: String(raw) };
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 43200) {
+    return { empty: false, valid: false, value: null, raw: String(raw) };
+  }
+  return { empty: false, valid: true, value: parsed, raw: String(parsed) };
+};
+const allowsMinMinutesBefore = eventName =>
+  MIN_MINUTES_BEFORE_EVENTS.includes(eventName);
 const normalizeArray = value => (Array.isArray(value) ? value : []);
 const normalizeAttachmentId = attachment => {
   if (typeof attachment === 'string') return attachment;
@@ -453,6 +475,43 @@ export default {
         });
       },
     },
+    canConfigureMinMinutesBefore() {
+      return (
+        this.entityKey === 'appointment' &&
+        allowsMinMinutesBefore(this.eventName)
+      );
+    },
+    minMinutesBeforeState() {
+      return parseMinMinutesBefore(
+        this.normalizedValue[MIN_MINUTES_BEFORE_KEY]
+      );
+    },
+    minMinutesBeforeError() {
+      if (
+        !this.canConfigureMinMinutesBefore ||
+        this.minMinutesBeforeState.valid
+      ) {
+        return '';
+      }
+      return this.$t(
+        'AUTOMATION.ACTION.TOUCH_EDITOR.MIN_MINUTES_BEFORE_INVALID'
+      );
+    },
+    minMinutesBeforeAppointment: {
+      get() {
+        return this.minMinutesBeforeState.raw;
+      },
+      set(value) {
+        const parsed = parseMinMinutesBefore(value);
+        let nextValue = '';
+        if (!parsed.empty) {
+          nextValue = parsed.valid ? parsed.value : parsed.raw;
+        }
+        this.emitValue({
+          [MIN_MINUTES_BEFORE_KEY]: nextValue,
+        });
+      },
+    },
     canSkipLateImport() {
       return allowsLateImportSkip(this.eventName, this.normalizedValue);
     },
@@ -799,9 +858,6 @@ export default {
       return `automation-touch-editor-instructions-${this.eventName || 'rule'}`;
     },
   },
-  mounted() {
-    this.$store.dispatch('getCannedResponse', { searchKey: '' });
-  },
   watch: {
     mappedAppointmentFields: {
       immediate: true,
@@ -820,6 +876,9 @@ export default {
         }
       },
     },
+  },
+  mounted() {
+    this.$store.dispatch('getCannedResponse', { searchKey: '' });
   },
   methods: {
     cleanPayload(payload) {
@@ -896,6 +955,21 @@ export default {
       ) {
         cleaned.metadata = clone(cleaned.metadata);
         delete cleaned.metadata[LATE_IMPORT_OPT_IN_KEY];
+      }
+
+      const parsedMinMinutes = parseMinMinutesBefore(
+        cleaned[MIN_MINUTES_BEFORE_KEY]
+      );
+      if (
+        this.entityKey === 'appointment' &&
+        allowsMinMinutesBefore(this.eventName) &&
+        !parsedMinMinutes.empty
+      ) {
+        cleaned[MIN_MINUTES_BEFORE_KEY] = parsedMinMinutes.valid
+          ? parsedMinMinutes.value
+          : parsedMinMinutes.raw;
+      } else {
+        delete cleaned[MIN_MINUTES_BEFORE_KEY];
       }
 
       if (
@@ -1372,6 +1446,44 @@ export default {
             }}
           </p>
         </div>
+      </div>
+    </SchedulingFormFieldGroup>
+
+    <SchedulingFormFieldGroup
+      v-if="canConfigureMinMinutesBefore"
+      :framed="false"
+    >
+      <div class="grid gap-1.5 border-t border-n-weak pt-4">
+        <label class="grid gap-1.5 text-sm font-medium text-n-slate-12">
+          <span>
+            {{ $t('AUTOMATION.ACTION.TOUCH_EDITOR.MIN_MINUTES_BEFORE_LABEL') }}
+          </span>
+          <input
+            :value="minMinutesBeforeAppointment"
+            type="number"
+            min="1"
+            max="43200"
+            step="1"
+            data-testid="touch-min-minutes-before-input"
+            :aria-invalid="Boolean(minMinutesBeforeError)"
+            :placeholder="
+              $t('SCHEDULING.NOTIFICATIONS.MIN_MINUTES_BEFORE_PLACEHOLDER')
+            "
+            class="w-full max-w-xs rounded-lg border bg-n-surface-1 px-3 py-2 text-sm font-normal text-n-slate-12"
+            :class="minMinutesBeforeError ? 'border-n-ruby-9' : 'border-n-weak'"
+            @input="minMinutesBeforeAppointment = $event.target.value"
+          />
+        </label>
+        <p
+          v-if="minMinutesBeforeError"
+          data-testid="touch-min-minutes-before-error"
+          class="mb-0 text-xs leading-5 text-n-ruby-11"
+        >
+          {{ minMinutesBeforeError }}
+        </p>
+        <p class="mb-0 text-xs leading-5 text-n-slate-10">
+          {{ $t('AUTOMATION.ACTION.TOUCH_EDITOR.MIN_MINUTES_BEFORE_NOTE') }}
+        </p>
       </div>
     </SchedulingFormFieldGroup>
 

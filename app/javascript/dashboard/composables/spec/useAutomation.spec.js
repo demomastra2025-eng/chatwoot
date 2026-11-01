@@ -594,4 +594,23 @@ describe('useAutomation', () => {
 
     expect(schedulingReferencesStore.loadCabinets).not.toHaveBeenCalled();
   });
+
+  it('clears stale top-level min_minutes_before_appointment when switching events via onEventChange', async () => {
+    automationHelper.getDefaultConditions.mockReturnValue([]);
+    automationHelper.getDefaultActions.mockReturnValue([]);
+    const { automation, onEventChange } = useAutomation({
+      name: 'Booking rule',
+      event_name: 'appointment_created',
+      min_minutes_before_appointment: 60,
+      conditions: [],
+      actions: [],
+    });
+
+    automation.value.event_name = 'conversation_created';
+    await onEventChange();
+
+    expect(automation.value).not.toHaveProperty(
+      'min_minutes_before_appointment'
+    );
+  });
 });

@@ -13,6 +13,7 @@ const knownReasons = new Set([
   'missed_due_to_late_automation_event',
   'appointment_notice_after_start',
   'appointment_notice_late_import',
+  'appointment_notice_short_lead_time',
   'contact_excluded',
   'automation_rule_inactive',
   'automation_rule_deleted',

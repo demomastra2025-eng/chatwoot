@@ -31,18 +31,15 @@ class AutomationRules::AppointmentActionService
   private
 
   def short_lead_time_notification?(action)
-    return false unless @rule.event_name == 'appointment_created'
-    return false unless confirmation_action?(action)
+    return false unless AutomationRules::AppointmentCreatedNotificationHold::NOTIFYING_ACTIONS.include?(action[:action_name].to_s)
 
-    AutomationRules::AppointmentNotificationLeadTime.short?(@appointment, rule: @rule)
-  end
-
-  def confirmation_action?(action)
-    return true if action[:action_name] == 'send_webhook_event'
-    return false unless action[:action_name] == 'create_touch'
-
-    params = Array.wrap(action[:action_params]).first.to_h.with_indifferent_access
-    !params[:relative_anchor].to_s.in?(Reminders::MissedAutomationTouchPolicy::APPOINTMENT_ANCHORS)
+    AutomationRules::AppointmentNotificationLeadTime.short?(
+      @appointment,
+      rule: @rule,
+      action: action,
+      event_name: @rule.event_name,
+      delayed_notification: @delayed_notification
+    )
   end
 
   def send_webhook_event(webhook_url)
