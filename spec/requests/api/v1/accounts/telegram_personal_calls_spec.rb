@@ -254,6 +254,51 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
       expect(response.parsed_body['server']).to include('janus_ticket=')
     end
 
+    it 'rejects a concurrent reconnect without allocating another room or changing the current lease' do
+      inbound_call.update!(status: 'in_progress', started_at: 10.seconds.ago, accepted_by_agent: agent)
+      key = "telegram_personal:media_reconnect:#{account.id}:#{inbound_call.id}"
+      lock = Redis::LockManager.new
+      expect(lock.lock(key, 300)).to be_truthy
+      expect(gateway_client).not_to receive(:reconnect_call!)
+
+      begin
+        post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}/reconnect", headers: headers, as: :json
+        expect(response).to have_http_status(:conflict)
+        expect(response.parsed_body['code']).to eq('CALL_RECONNECT_IN_PROGRESS')
+        expect(lock.renew(key, 300)).to be(true)
+      ensure
+        lock.unlock(key)
+      end
+    end
+
+    it 'serializes another worker before the gateway can create a second media generation' do
+      inbound_call.update!(status: 'in_progress', started_at: 10.seconds.ago, accepted_by_agent: agent)
+      expect(gateway_client).to receive(:reconnect_call!).once do
+        expect do
+          TelegramPersonal::ReconnectCallService.new(call: Call.find(inbound_call.id), agent: agent).perform
+        end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('CALL_RECONNECT_IN_PROGRESS') }
+        { agent_offer: janus_offer('current-worker-peer') }
+      end
+
+      post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}/reconnect", headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(inbound_call.reload.meta.dig('agent_offer', 'peer_id')).to eq('current-worker-peer')
+    end
+
+    it 'does not persist media after losing the distributed reconnect lease' do
+      inbound_call.update!(status: 'in_progress', started_at: 10.seconds.ago, accepted_by_agent: agent,
+                           meta: { agent_offer: janus_offer('previous-peer') })
+      lock = Redis::LockManager.new
+      allow(Redis::LockManager).to receive(:new).and_return(lock)
+      allow(lock).to receive(:renew).and_return(false)
+      expect(gateway_client).to receive(:reconnect_call!).and_return(agent_offer: janus_offer('stale-worker-peer'))
+      expect(gateway_client).not_to receive(:terminate_call!)
+
+      post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}/reconnect", headers: headers, as: :json
+      expect(response).to have_http_status(:conflict)
+      expect(inbound_call.reload.meta.dig('agent_offer', 'peer_id')).to eq('previous-peer')
+    end
+
     it 'terminates an in_progress call' do
       inbound_call.update!(status: 'in_progress', started_at: 10.seconds.ago, accepted_by_agent: agent)
       expect(gateway_client).to receive(:terminate_call!).with(call_ref: 'tg-sess-500').and_return({ ok: true })

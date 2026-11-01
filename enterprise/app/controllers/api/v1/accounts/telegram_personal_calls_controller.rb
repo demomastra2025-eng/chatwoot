@@ -84,6 +84,8 @@ class Api::V1::Accounts::TelegramPersonalCallsController < Api::V1::Accounts::Ba
 
     TelegramPersonal::ReconnectCallService.new(call: @call, agent: current_user).perform
     render json: TelegramPersonal::JanusMediaConfig.browser_payload(call: @call, user: current_user)
+  rescue Telephony::Error => e
+    render_operator_busy(e)
   rescue TelegramPersonal::CallErrors::NotCallOwner
     render_call_taken_by_another_agent
   rescue TelegramPersonal::CallErrors::NotInProgress
