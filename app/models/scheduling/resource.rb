@@ -80,6 +80,7 @@ class Scheduling::Resource < ApplicationRecord
 
     with_lock do
       update!(timezone: account.workspace_working_hours_timezone) if timezone != account.workspace_working_hours_timezone
+      work_rules.find_each { |rule| rule.update!(active: false) }
       workspace_schedule_days.each { |day| sync_workspace_day!(day) }
       break_rules.find_each { |rule| rule.update!(active: false) }
       account.workspace_break_schedule.each { |entry| sync_workspace_break!(entry) }

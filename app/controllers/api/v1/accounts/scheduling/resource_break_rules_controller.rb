@@ -1,4 +1,6 @@
 class Api::V1::Accounts::Scheduling::ResourceBreakRulesController < Api::V1::Accounts::Scheduling::BaseController
+  include Scheduling::ResourceScheduleInput
+
   before_action :check_admin_authorization?, only: [:update]
   before_action :set_resource
 
@@ -8,20 +10,8 @@ class Api::V1::Accounts::Scheduling::ResourceBreakRulesController < Api::V1::Acc
   end
 
   def update
-    if @scheduling_resource.inherit_working_hours_from_account?
-      raise Scheduling::Error.new(code: 'BREAK_RULES_INHERITED',
-                                  message: 'Disable workspace schedule inheritance before editing specialist breaks',
-                                  status: :unprocessable_content)
-    end
-
-    rules_payload = params.permit(break_rules: [:weekday, :start_minute, :end_minute, :title, :active])[:break_rules] || []
-
-    ApplicationRecord.transaction do
-      @scheduling_resource.break_rules.destroy_all
-      rules_payload.each do |item|
-        @scheduling_resource.break_rules.create!(item.to_h)
-      end
-    end
+    rules_payload = raw_schedule_rule_sets.fetch(:break_rules, [])
+    Scheduling::ResourceScheduleUpdateService.new(resource: @scheduling_resource).update!(break_rules: rules_payload)
 
     rules = @scheduling_resource.break_rules.reload.ordered
     render_payload(rules.map { |rule| Scheduling::PayloadBuilder.break_rule(rule) }, meta: { count: rules.size })

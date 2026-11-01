@@ -1,4 +1,6 @@
 class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Scheduling::BaseController
+  include Scheduling::ResourceScheduleInput
+
   TERMINAL_APPOINTMENT_STATUSES = %w[completed cancelled no_show].freeze
   BLOCKING_APPOINTMENT_STATUSES = (Scheduling::Constants::APPOINTMENT_STATUSES - TERMINAL_APPOINTMENT_STATUSES).freeze
   BLOCKING_APPOINTMENT_DETAIL_LIMIT = 10
@@ -34,10 +36,10 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   def update
-    was_inheriting = @scheduling_resource.inherit_working_hours_from_account?
-    @scheduling_resource.update!(resource_params)
-    @scheduling_resource.use_personal_working_hours! if was_inheriting && !@scheduling_resource.inherit_working_hours_from_account?
-    @scheduling_resource.apply_workspace_working_hours! if @scheduling_resource.inherit_working_hours_from_account?
+    Scheduling::ResourceScheduleUpdateService.new(resource: @scheduling_resource).update!(
+      attributes: resource_params,
+      **raw_schedule_rule_sets
+    )
     render_payload(Scheduling::PayloadBuilder.resource(@scheduling_resource))
   end
 
@@ -86,7 +88,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
 
   def ensure_provider_writable_resource!
     return if @scheduling_resource.custom_attributes['medelement_specialist_code'].blank?
-    return if resource_params.to_h.keys == ['specialty']
+    return if resource_params.to_h.keys == ['specialty'] && raw_schedule_rule_sets.empty?
 
     raise Scheduling::Error.new(
       code: 'RESOURCE_READ_ONLY',
