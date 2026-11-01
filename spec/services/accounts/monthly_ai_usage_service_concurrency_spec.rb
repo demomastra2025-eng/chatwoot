@@ -3,6 +3,8 @@ require 'rails_helper'
 RSpec.describe Accounts::MonthlyAiUsageService do
   self.use_transactional_tests = false
 
+  include_context 'with active AI metering'
+
   it 'serializes contact windows and duplicate replies from separate database connections' do
     account = create(:account)
     contact = create(:contact, account: account)
@@ -41,5 +43,28 @@ RSpec.describe Accounts::MonthlyAiUsageService do
     expect(workers.map(&:value).count(true)).to eq(1)
     expect(described_class.new(call.account.reload).call_analysis_seconds_consumed).to eq(45)
     expect(Accounts::AiUsageEvent.count).to eq(1)
+  end
+
+  it 'reconciles one durable pending acknowledgement once from concurrent recovery workers' do
+    allow(Accounts::AiUsageOutbox).to receive(:deliver).and_return(false)
+    message = create(:message, message_type: :outgoing, source_id: 'accepted-once', additional_attributes: { 'captain_ai_reply' => {} })
+    allow(Accounts::AiUsageOutbox).to receive(:deliver).and_call_original
+    ready = Queue.new
+    start = Queue.new
+    workers = Array.new(2) do
+      Thread.new do
+        ActiveRecord::Base.connection_pool.with_connection do
+          ready << true
+          start.pop
+          Accounts::AiUsageOutbox.deliver(message.id)
+        end
+      end
+    end
+    2.times { ready.pop }
+    2.times { start << true }
+    expect(workers.map(&:value).count(true)).to eq(1)
+    expect(Accounts::AiUsageEvent.count).to eq(1)
+    expect(message.reload).to have_attributes(source_id: 'accepted-once', ai_usage_pending: false)
+    expect(described_class.new(message.account.reload).ai_dialogs_consumed).to eq(1)
   end
 end

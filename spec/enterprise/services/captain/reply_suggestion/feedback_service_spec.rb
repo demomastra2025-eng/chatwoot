@@ -1,6 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Captain::ReplySuggestion::FeedbackService do
+  include_context 'with active AI metering'
   let(:account) { create(:account) }
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:conversation) { create(:conversation, account: account, inbox: create(:inbox, account: account)) }

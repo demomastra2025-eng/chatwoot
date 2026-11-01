@@ -1,73 +1,61 @@
 # frozen_string_literal: true
 
-# One person in one branch. A phone number can belong to several people and is never a metering identity.
+# The durable reply history is the source of truth. Reconcile in send-time order under the
+# contact lock: a delayed feedback can change an old allocation, never displace the current one.
 class Accounts::AiDialogWindow
   WINDOW_KEY = Accounts::MonthlyAiUsageService::CONVERSATION_WINDOW_KEY
-
-  attr_reader :previous_period
+  attr_reader :period_deltas
 
   def initialize(contact, at:)
     @contact = contact
     @at = at
     @state = Accounts::AiDialogState.find_or_initialize_by(account_id: contact.account_id, contact_id: contact.id)
-    @window = @state.state if @state.persisted?
   end
 
-  # Lazy, additive cutover under the contact lock: keep billed counters unchanged and import all
-  # still-retained source ids before combining the old channel windows. Never rewrite legacy data.
   def import_legacy_events!
-    return if @window.is_a?(Hash)
+    return if @state.persisted?
 
-    windows = legacy_windows
+    windows = @contact.conversations.where(account_id: @contact.account_id).pluck(:additional_attributes)
+                      .filter_map { |attrs| attrs.to_h[WINDOW_KEY] }.select { |window| window.is_a?(Hash) }
     import_source_ids!(windows)
-    active = windows.select { |window| within_duration?(window) }
-    @window = {
-      'started_at' => active.pluck('started_at').min,
-      'replies_count' => active.sum { |window| window['replies_count'].to_i }
-    }
+    seeds = windows.filter_map do |window|
+      started = parse_time(window['started_at'])
+      count = window['replies_count'].to_i.clamp(0, Accounts::MonthlyAiUsageService::DIALOG_WINDOW_MAX_REPLIES)
+      { 'at' => started.iso8601(6), 'count' => count } if started && count.positive?
+    end
+    @state.state = { 'legacy_seeds' => seeds }
   end
 
   def record_reply!
-    opened = !active?
-    start = opened ? @at : [parse_time(@window['started_at']), @at].min
-    last = opened ? @at : [last_reply_at(@window), @at].max
-    previous_start = parse_time(@window['started_at'])
-    @previous_period = period(previous_start) if !opened && period(previous_start) != period(start)
-    @state.state = { 'started_at' => start.iso8601(6), 'last_reply_at' => last.iso8601(6),
-                     'replies_count' => opened ? 1 : @window['replies_count'].to_i + 1 }
+    previous = @state.state.fetch('period_counts', {})
+    windows = Accounts::AiDialogTimeline.new(timeline).windows
+    counts = dialog_counts(windows)
+    @period_deltas = (previous.keys | counts.keys).index_with { |key| counts.fetch(key, 0) - previous.fetch(key, 0) }
+    @state.state = @state.state.merge('windows' => windows, 'period_counts' => counts).merge(windows.last || {})
     @state.save!
-    opened
+    @period_deltas.values.sum.positive?
   end
 
   private
 
+  def dialog_counts(windows)
+    windows.reject { |window| window['legacy'] }.map { |window| period(window['started_at']) }.tally
+  end
+
+  def timeline
+    scope = Accounts::AiUsageEvent.where(account_id: @contact.account_id, contact_id: @contact.id,
+                                         bucket: Accounts::MonthlyAiUsageService::AI_DIALOGS_MONTHLY_KEY).where('quantity > 0')
+    replies = scope.order(:occurred_at, :id).pluck(:occurred_at).map { |at| [at, 1, false] }
+    seeds = Array(@state.state['legacy_seeds']).map { |seed| [parse_time(seed['at']), seed['count'], true] }
+    (seeds + replies).sort_by(&:first)
+  end
+
   def import_source_ids!(windows)
     events = windows.flat_map { |window| Array(window['message_ids']) }.compact_blank.uniq.map do |id|
-      { account_id: @contact.account_id, event_key: "message:#{id}", bucket: Accounts::MonthlyAiUsageService::AI_DIALOGS_MONTHLY_KEY,
-        occurred_at: @at, quantity: 0 }
+      { account_id: @contact.account_id, contact_id: @contact.id, event_key: "message:#{id}",
+        bucket: Accounts::MonthlyAiUsageService::AI_DIALOGS_MONTHLY_KEY, occurred_at: @at, quantity: 0 }
     end
     Accounts::AiUsageEvent.insert_all(events, unique_by: [:account_id, :event_key]) if events.any? # rubocop:disable Rails/SkipsModelValidations
-  end
-
-  def legacy_windows
-    @contact.conversations.where(account_id: @contact.account_id)
-            .pluck(:additional_attributes).filter_map { |attrs| attrs.to_h[WINDOW_KEY] }.select { |window| window.is_a?(Hash) }
-  end
-
-  def active?
-    @window['replies_count'].to_i.positive? &&
-      @window['replies_count'].to_i < Accounts::MonthlyAiUsageService::DIALOG_WINDOW_MAX_REPLIES && within_duration?(@window)
-  end
-
-  def within_duration?(window)
-    started = parse_time(window['started_at'])
-    return false unless started
-
-    [last_reply_at(window), @at].max - [started, @at].min < Accounts::MonthlyAiUsageService::DIALOG_WINDOW_DURATION
-  end
-
-  def last_reply_at(window)
-    parse_time(window['last_reply_at']) || parse_time(window['started_at'])
   end
 
   def parse_time(raw)
@@ -76,7 +64,7 @@ class Accounts::AiDialogWindow
     nil
   end
 
-  def period(time)
-    time.getlocal(Accounts::MonthlyAiUsageService::ALMATY_OFFSET).strftime('%Y-%m')
+  def period(raw)
+    parse_time(raw).getlocal(Accounts::MonthlyAiUsageService::ALMATY_OFFSET).strftime('%Y-%m')
   end
 end

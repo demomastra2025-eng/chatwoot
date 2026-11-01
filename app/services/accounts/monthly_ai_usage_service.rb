@@ -75,15 +75,15 @@ class Accounts::MonthlyAiUsageService
   # `sent` alone is the Message default, so external channels also need a provider id/receipt.
   def record_sent_message!(message)
     return false unless source_owned?(message)
-    return false unless message.outgoing? && !message.private?
+    return false unless public_reply?(message)
 
     # The provider can hold an object loaded before suggestion feedback added its provenance.
     # Read the persisted row under the save transaction rather than trusting that object's JSON.
     sent = Message.find_by(id: message.id, account_id: @account.id)
     return false unless sent && acknowledged?(sent)
 
-    stamp_sent_at!(sent)
     return false unless ai_reply?(sent)
+    return record_historical_message!(sent) if sent.ai_usage_version.nil?
 
     record_ai_dialog_reply!(sent.conversation, message_id: sent.id, at: sent.ai_usage_sent_at)
   end
@@ -99,10 +99,10 @@ class Accounts::MonthlyAiUsageService
     contact.with_lock do
       window = Accounts::AiDialogWindow.new(contact, at: at)
       window.import_legacy_events!
-      next :duplicate unless insert_event!("message:#{message_id}", AI_DIALOGS_MONTHLY_KEY, at)
+      next :duplicate unless insert_event!("message:#{message_id}", AI_DIALOGS_MONTHLY_KEY, at, 1, contact.id)
 
       opened = window.record_reply!
-      update_dialog_bucket!(window, opened, at)
+      window.period_deltas.each { |period, delta| increment_monthly_bucket!(AI_DIALOGS_MONTHLY_KEY, period, delta) }
       opened ? :new_dialog : :existing_dialog
     end
   end
@@ -127,11 +127,12 @@ class Accounts::MonthlyAiUsageService
 
   private
 
-  def update_dialog_bucket!(window, opened, at)
-    return unless opened || window.previous_period
+  def record_historical_message!(message)
+    insert_event!("message:#{message.id}", AI_DIALOGS_MONTHLY_KEY, message.ai_usage_sent_at || message.created_at, 0)
+  end
 
-    increment_monthly_bucket!(AI_DIALOGS_MONTHLY_KEY, window.previous_period, -1) if window.previous_period
-    increment_monthly_bucket!(AI_DIALOGS_MONTHLY_KEY, period_key(at), 1)
+  def public_reply?(message)
+    message.outgoing? && !message.private?
   end
 
   def source_owned?(source)
@@ -140,13 +141,6 @@ class Accounts::MonthlyAiUsageService
 
   def billable_seconds?(seconds)
     seconds.present? && seconds.finite? && seconds >= MIN_BILLABLE_CALL_SECONDS
-  end
-
-  def stamp_sent_at!(message)
-    return if message.ai_usage_sent_at
-
-    Message.where(id: message.id, ai_usage_sent_at: nil).update_all(ai_usage_sent_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
-    message.ai_usage_sent_at = Message.where(id: message.id).pick(:ai_usage_sent_at)
   end
 
   def ai_reply?(message)
@@ -161,9 +155,9 @@ class Accounts::MonthlyAiUsageService
       message.inbox.channel_type.in?(%w[Channel::WebWidget Channel::Api])
   end
 
-  def insert_event!(key, bucket, at, quantity = 1)
+  def insert_event!(key, bucket, at, quantity = 1, contact_id = nil)
     Accounts::AiUsageEvent.insert_all( # rubocop:disable Rails/SkipsModelValidations
-      [{ account_id: @account.id, event_key: key, bucket: bucket, occurred_at: at, quantity: quantity }],
+      [{ account_id: @account.id, contact_id: contact_id, event_key: key, bucket: bucket, occurred_at: at, quantity: quantity }],
       unique_by: [:account_id, :event_key], returning: [:id]
     ).rows.any?
   end

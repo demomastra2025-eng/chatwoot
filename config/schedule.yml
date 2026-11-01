@@ -14,6 +14,13 @@ trigger_scheduled_items_job:
   class: 'TriggerScheduledItemsJob'
   queue: scheduled_jobs
 
+# PostgreSQL-backed recovery for acknowledged AI messages; independent of enqueue success.
+drain_ai_usage_job:
+  cron: '17 * * * * *'
+  class: 'Accounts::DrainAiUsageJob'
+  queue: scheduled_jobs
+  active_job: true
+
 # durable outbox dispatch and ambiguous-state recovery for Medelement writes
 medelement_provider_command_dispatcher_job:
   cron: '*/1 * * * *'

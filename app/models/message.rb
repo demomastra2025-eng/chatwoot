@@ -211,7 +211,9 @@ class Message < ApplicationRecord
 
   before_create :activate_captain_human_control_for_human_response
   before_create :stamp_playground_delivery_policy
-  after_save :record_sent_ai_usage
+  before_create :mark_ai_usage_version
+  after_save :stage_sent_ai_usage
+  after_commit :reconcile_sent_ai_usage, on: [:create, :update]
 
   after_create_commit :execute_after_create_commit_callbacks
 
@@ -568,10 +570,16 @@ class Message < ApplicationRecord
     self.content_type ||= Message.content_types[:text]
   end
 
-  def record_sent_ai_usage
-    return unless outgoing? && !private?
+  def mark_ai_usage_version
+    self.ai_usage_version = 1 if outgoing? && !private?
+  end
 
-    Accounts::MonthlyAiUsageService.new(account).record_sent_message!(self)
+  def stage_sent_ai_usage
+    Accounts::AiUsageOutbox.stage!(self) if outgoing? && !private?
+  end
+
+  def reconcile_sent_ai_usage
+    Accounts::AiUsageOutbox.deliver(id) if outgoing? && !private?
   end
 
   def execute_after_create_commit_callbacks
