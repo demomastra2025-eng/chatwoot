@@ -1,0 +1,13 @@
+// Use the real product palette, fonts, base controls and typography.
+@import '../../../app/javascript/dashboard/assets/scss/woot';
+
+// Standalone catalogue document: content height, not application viewport height.
+html,
+body {
+  height: auto;
+  min-height: 0;
+}
+
+body {
+  @apply bg-n-background text-n-slate-12;
+}
