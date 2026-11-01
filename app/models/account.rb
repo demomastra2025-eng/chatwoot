@@ -135,8 +135,8 @@ class Account < ApplicationRecord
   has_many :tiktok_channels, dependent: :destroy_async, class_name: '::Channel::Tiktok'
   has_many :hooks, dependent: :destroy_async, class_name: 'Integrations::Hook'
   has_many :kaspi_pay_payments, dependent: :destroy_async, class_name: 'Integrations::KaspiPay::Payment'
-  has_one :billing_account_profile, dependent: :destroy_async, class_name: '::Billing::AccountProfile', inverse_of: :account
-  has_many :billing_invoices, dependent: :destroy_async, class_name: '::Billing::Invoice', inverse_of: :account
+  has_one :billing_account_profile, dependent: :destroy, class_name: '::Billing::AccountProfile', inverse_of: :account
+  has_many :billing_invoices, dependent: :destroy, class_name: '::Billing::Invoice', inverse_of: :account
   has_many :billing_payment_events, dependent: :nullify, class_name: '::Billing::PaymentEvent', inverse_of: :account
   has_many :inboxes, dependent: :destroy_async
   has_many :lead_forms, dependent: :destroy_async

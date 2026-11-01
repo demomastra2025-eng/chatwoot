@@ -16,22 +16,17 @@ class Billing::ClosingDocumentsService
   end
 
   def send_eavr!
-    return @invoice if @invoice.edo_document_id.present? && %w[sent_for_signature signed].include?(@invoice.edo_status)
+    return @invoice if @invoice.edo_document_id.present?
 
     unless Billing::Config.closing_documents_configured?
       @invoice.update!(edo_status: 'pending_configuration')
       return @invoice
     end
 
-    payload = build_eavr_payload
-    signed = @sigex_client.sign_payload!(payload)
-    edo_res = @edo_client.send_eavr!(eavr_payload: payload, cms_signature: signed[:cms_signature])
-    @invoice.update!(
-      edo_document_id: edo_res[:document_id],
-      edo_status: 'sent_for_signature',
-      metadata: @invoice.metadata.merge('eavr_sent_at' => Time.current.iso8601)
-    )
-    @invoice
+    customer_bin = resolve_and_backfill_customer_bin!
+    return record_missing_customer_bin! if customer_bin.blank?
+
+    sign_and_send_eavr!(customer_bin)
   end
 
   def process_counterparty_signature!(signed_at: Time.current)
@@ -43,7 +38,7 @@ class Billing::ClosingDocumentsService
       return @invoice
     end
 
-    turnover_date = signed_at.in_time_zone(Billing::ALMATY_TIMEZONE).to_date
+    turnover_date = clamped_turnover_date(signed_at)
     return handle_esf_deadline_exceeded!(turnover_date) if (Billing.today_almaty - turnover_date).to_i > ESF_DEADLINE_DAYS
 
     issue_signed_esf!(turnover_date)
@@ -51,18 +46,69 @@ class Billing::ClosingDocumentsService
 
   private
 
+  def sign_and_send_eavr!(customer_bin)
+    payload = build_eavr_payload(customer_bin)
+    signed = @sigex_client.sign_payload!(payload)
+    edo_res = @edo_client.send_eavr!(eavr_payload: payload, cms_signature: signed[:cms_signature])
+    @invoice.update!(
+      edo_document_id: edo_res[:document_id],
+      edo_status: 'sent_for_signature',
+      metadata: @invoice.metadata.merge('eavr_sent_at' => Time.current.iso8601)
+    )
+    @invoice
+  rescue Billing::SigexClient::ApiError, Billing::UchetEdoClient::ApiError => e
+    @invoice.update!(
+      edo_status: 'failed',
+      metadata: @invoice.metadata.merge('edo_last_error' => e.message, 'edo_failed_at' => Time.current.iso8601)
+    )
+    raise
+  end
+
   def issue_signed_esf!(turnover_date)
-    esf_payload = build_esf_payload(turnover_date)
+    customer_bin = resolve_and_backfill_customer_bin! || @invoice.payer_tax_id
+    esf_payload = build_esf_payload(turnover_date, customer_bin)
     signed = @sigex_client.sign_payload!(esf_payload)
     esf_res = @esf_client.issue_esf!(esf_payload: esf_payload, cms_signature: signed[:cms_signature])
+    @invoice.update!(esf_id: esf_res[:esf_id], esf_status: 'issued', metadata: esf_issued_metadata(turnover_date))
+    @invoice
+  rescue Billing::SigexClient::ApiError, Billing::IsEsfClient::ApiError => e
     @invoice.update!(
-      esf_id: esf_res[:esf_id],
-      esf_status: 'issued',
-      metadata: @invoice.metadata.merge(
-        'esf_issued_at' => Time.current.iso8601,
-        'esf_turnover_date' => turnover_date.iso8601,
-        'esf_statutory_deadline_on' => (turnover_date + ESF_DEADLINE_DAYS.days).iso8601
-      )
+      esf_status: 'failed',
+      metadata: @invoice.metadata.merge('esf_last_error' => e.message, 'esf_failed_at' => Time.current.iso8601)
+    )
+    raise
+  end
+
+  def esf_issued_metadata(turnover_date)
+    @invoice.metadata.merge(
+      'esf_issued_at' => Time.current.iso8601,
+      'esf_turnover_date' => turnover_date.iso8601,
+      'esf_statutory_deadline_on' => (turnover_date + ESF_DEADLINE_DAYS.days).iso8601
+    )
+  end
+
+  def clamped_turnover_date(signed_at)
+    raw_date = signed_at.in_time_zone(Billing::ALMATY_TIMEZONE).to_date
+    [raw_date, Billing.today_almaty].min
+  end
+
+  def resolve_and_backfill_customer_bin!
+    bin = Billing.normalize_tax_id(@invoice.payer_tax_id) || Billing.normalize_tax_id(@profile&.effective_tax_id)
+    return nil if bin.blank?
+
+    @invoice.update!(payer_tax_id: bin) if @invoice.payer_tax_id.blank?
+    bin
+  end
+
+  def record_missing_customer_bin!
+    @invoice.update!(
+      edo_status: 'failed',
+      metadata: @invoice.metadata.merge('edo_last_error' => 'Missing customer BIN/IIN')
+    )
+    Billing::OwnerTaskService.new.create_idempotent_task!(
+      idempotency_key: "billing:edo_missing_bin:#{@invoice.invoice_number}",
+      title: "[АВР не отправлен: нет БИН] Счёт #{@invoice.invoice_number}",
+      description: "У клиники Account ##{@invoice.account_id} не заполнен БИН/ИИН для отправки ЭАВР."
     )
     @invoice
   end
@@ -81,7 +127,7 @@ class Billing::ClosingDocumentsService
     @invoice
   end
 
-  def build_eavr_payload
+  def build_eavr_payload(customer_bin)
     {
       document_type: 'EAVR',
       invoice_number: @invoice.invoice_number,
@@ -90,8 +136,8 @@ class Billing::ClosingDocumentsService
       supplier_name: Billing::Config.bcc_supplier_name,
       supplier_iban: Billing::Config.bcc_business_iban,
       supplier_bik: Billing::Config.bcc_supplier_bik,
-      customer_bin: @invoice.payer_tax_id,
-      customer_name: @invoice.payer_legal_name,
+      customer_bin: customer_bin,
+      customer_name: @invoice.payer_legal_name || @profile&.effective_legal_name,
       currency: @invoice.currency,
       total_amount_kzt: @invoice.amount_kzt.to_s('F'),
       vat_exempt: true,
@@ -99,8 +145,8 @@ class Billing::ClosingDocumentsService
     }
   end
 
-  def build_esf_payload(turnover_date)
-    build_eavr_payload.merge(
+  def build_esf_payload(turnover_date, customer_bin)
+    build_eavr_payload(customer_bin).merge(
       document_type: 'ESF',
       eavr_document_id: @invoice.edo_document_id,
       turnover_date: turnover_date.iso8601

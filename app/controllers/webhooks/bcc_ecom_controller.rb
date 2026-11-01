@@ -10,8 +10,10 @@ class Webhooks::BccEcomController < ActionController::API
 
     return render json: { status: 'ignored' }, status: :ok unless approved_payment?(payload)
 
-    event = Billing::PaymentMatcher.new(source: 'bcc_ecom', payload: payload).perform
-    persist_card_token_if_opted_in!(event, payload)
+    card_token = payload['card_token']
+    sanitized_payload = Billing.sanitize_sensitive_payload(payload)
+    event = Billing::PaymentMatcher.new(source: 'bcc_ecom', payload: sanitized_payload).perform
+    persist_card_token_if_opted_in!(event, payload, card_token)
     render json: { status: 'ok', event_status: event.status, billing_invoice_id: event.billing_invoice_id }, status: :ok
   end
 
@@ -36,16 +38,26 @@ class Webhooks::BccEcomController < ActionController::API
     payload['approved'] == true || Billing::BccEcomClient::APPROVED_STATUSES.include?(status)
   end
 
-  def persist_card_token_if_opted_in!(event, payload)
-    return unless payload['save_card'] == true && payload['card_token'].present?
+  def persist_card_token_if_opted_in!(event, payload, card_token)
+    return unless eligible_for_card_save?(event, payload, card_token)
 
     profile = event.account&.billing_account_profile
     return unless profile
 
     profile.update!(
-      bcc_card_token: payload['card_token'].to_s.strip,
+      bcc_card_token: card_token.to_s.strip,
       bcc_card_masked: payload['card_masked'].to_s.strip.presence || profile.bcc_card_masked,
       autopay_enabled: true
     )
+  end
+
+  def eligible_for_card_save?(event, payload, card_token)
+    event.status == 'matched' && payload['save_card'] == true && card_token.present? && valid_merchant_id?(payload)
+  end
+
+  def valid_merchant_id?(payload)
+    return true if payload['merchant_id'].blank?
+
+    payload['merchant_id'].to_s == Billing::Config.bcc_ecom_merchant_id.to_s
   end
 end

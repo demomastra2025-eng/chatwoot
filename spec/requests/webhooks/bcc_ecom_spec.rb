@@ -41,8 +41,9 @@ RSpec.describe 'POST /webhooks/bcc_ecom', type: :request do
     expect(invoice.reload.status).to eq('issued')
   end
 
-  it 'verifies HMAC, settles invoice via PaymentMatcher, and stores opted-in Card-on-File token' do
+  it 'verifies HMAC, settles invoice, stores opted-in Card-on-File token, and strips card_token from raw_payload' do
     raw = {
+      merchant_id: 'm1',
       order_id: invoice.invoice_number,
       rrn: 'RRN-OK-777',
       amount_minor: invoice.amount_minor,
@@ -61,10 +62,36 @@ RSpec.describe 'POST /webhooks/bcc_ecom', type: :request do
     expect(response).to have_http_status(:ok)
     expect(invoice.reload).to have_attributes(status: 'paid', bank_reference_id: 'RRN-OK-777')
     expect(profile.reload).to have_attributes(
-      paid_until: Date.new(2026, 12, 10),
-      autopay_enabled: true,
-      bcc_card_token: 'tok_saved_999',
-      bcc_card_masked: '5522********8899'
+      paid_until: Date.new(2026, 12, 10), autopay_enabled: true,
+      bcc_card_token: 'tok_saved_999', bcc_card_masked: '5522********8899'
     )
+    event = Billing::PaymentEvent.find_by!(bank_reference_id: 'RRN-OK-777')
+    expect(event.raw_payload.keys).not_to include('card_token')
+  end
+
+  it 'refuses to save card_token when payment is partial (needs_review) or merchant_id mismatches' do
+    partial_raw = {
+      merchant_id: 'm1', order_id: invoice.invoice_number, rrn: 'RRN-PARTIAL-TOK',
+      amount_minor: 1000, currency: 'KZT', status: 'approved', save_card: true, card_token: 'tok_untrusted_1'
+    }.to_json
+    partial_sig = OpenSSL::HMAC.hexdigest('SHA256', secret_key, partial_raw)
+
+    wrong_merchant_raw = {
+      merchant_id: 'm_foreign', order_id: invoice.invoice_number, rrn: 'RRN-WRONG-MERCH',
+      amount_minor: invoice.amount_minor, currency: 'KZT', status: 'approved', save_card: true, card_token: 'tok_untrusted_2'
+    }.to_json
+    wrong_merchant_sig = OpenSSL::HMAC.hexdigest('SHA256', secret_key, wrong_merchant_raw)
+
+    with_billing_env(ecom_env) do
+      post '/webhooks/bcc_ecom', params: partial_raw,
+                                 headers: { 'CONTENT_TYPE' => 'application/json', 'X-BCC-Signature' => partial_sig }
+      expect(profile.reload.bcc_card_token).to be_nil
+      expect(profile.autopay_enabled).to be(false)
+
+      post '/webhooks/bcc_ecom', params: wrong_merchant_raw,
+                                 headers: { 'CONTENT_TYPE' => 'application/json', 'X-BCC-Signature' => wrong_merchant_sig }
+      expect(profile.reload.bcc_card_token).to be_nil
+      expect(profile.autopay_enabled).to be(false)
+    end
   end
 end

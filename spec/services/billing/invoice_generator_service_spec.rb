@@ -67,6 +67,40 @@ RSpec.describe Billing::InvoiceGeneratorService do
     expect(reissued.invoice_number).to eq(format('OL-202611-%<id>04d-02', id: account.id))
   end
 
+  it 'recovers cleanly via PostgreSQL savepoint when invoice_number collides inside @account.with_lock' do
+    other_account = create(:account)
+    colliding_number = format('OL-202611-%<id>04d-01', id: account.id)
+    Billing::Invoice.create!(
+      account: other_account, invoice_number: colliding_number, status: 'cancelled',
+      period_start: period_start, period_end: period_start + 1.month, due_on: period_start,
+      currency: 'KZT', base_amount_minor: 9_900_000, amount_minor: 9_900_000,
+      partner_commission_base_minor: 9_900_000, knp_code: '859', payment_purpose: 'Legacy'
+    )
+
+    recovered = described_class.new(account: account, period_start: period_start, notify: false).perform
+    expect(recovered).to be_persisted
+    expect(recovered.invoice_number).to eq(format('OL-202611-%<id>04d-02', id: account.id))
+  end
+
+  it 'enforces tenant isolation on NotificationService conversation lookup and formats non-zero tiyn' do
+    foreign_clinic = create(:account)
+    foreign_conv = create(:conversation, account: foreign_clinic, inbox: create(:inbox, account: foreign_clinic))
+    own_conv = create(:conversation, account: account, inbox: create(:inbox, account: account))
+    profile.update!(billing_whatsapp_conversation_id: foreign_conv.id, custom_monthly_price_minor: 19_900_055)
+
+    invoice = with_billing_env('BILLING_AUTOBILLING_ENABLED' => 'true') do
+      described_class.new(account: account, period_start: period_start).perform
+    end
+    expect(foreign_conv.messages.count).to eq(0)
+    expect(invoice.metadata['notifications'].last['conversation_sent']).to be(false)
+
+    profile.update!(billing_whatsapp_conversation_id: own_conv.id)
+    with_billing_env('BILLING_AUTOBILLING_ENABLED' => 'true') do
+      Billing::NotificationService.new(invoice: invoice).deliver_dunning_reminder!(stage: 't_zero')
+    end
+    expect(own_conv.messages.reload.last.content).to include('199 000.55 KZT')
+  end
+
   it 'runs GenerateUpcomingInvoicesJob for enabled profiles at T-5 days in Asia/Almaty' do
     other_account = create(:account)
     Accounts::ApplyPlan.new(account: other_account, tariff: 'text_call').call

@@ -108,7 +108,8 @@ class Billing::InvoiceAmountCalculator
   def resolve_usage_period_month
     return @explicit_usage_month if @explicit_usage_month.present?
 
-    candidate = (@period_start.beginning_of_month - 1.day).strftime('%Y-%m')
+    reference_date = [@period_start.to_date, Billing.today_almaty].min
+    candidate = (reference_date.beginning_of_month - 1.day).strftime('%Y-%m')
     already_billed = Billing::Invoice.where(account_id: @account.id, usage_period_month: candidate)
                                      .where.not(status: 'cancelled').exists?
     already_billed ? nil : candidate

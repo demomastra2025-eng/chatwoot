@@ -26,12 +26,18 @@ class Billing::BccRecurringChargeJob < ApplicationJob
                            .where('paid_until <= ?', today)
                            .includes(:account)
                            .find_each do |profile|
-      next if profile.bcc_card_token.blank? || profile.account.blank?
-
-      Billing::InvoiceGeneratorService.new(
-        account: profile.account, period_start: profile.paid_until, due_on: profile.paid_until, notify: false
-      ).perform
+      ensure_autopay_invoice_for_profile!(profile)
+    rescue StandardError => e
+      Rails.logger.error("[Billing::BccRecurringChargeJob] profile=#{profile.id} ensure error: #{e.class}: #{e.message}")
     end
+  end
+
+  def ensure_autopay_invoice_for_profile!(profile)
+    return if profile.bcc_card_token.blank? || profile.account.blank?
+
+    Billing::InvoiceGeneratorService.new(
+      account: profile.account, period_start: profile.paid_until, due_on: profile.paid_until, notify: false
+    ).perform
   end
 
   def due_autopay_invoices
@@ -44,14 +50,23 @@ class Billing::BccRecurringChargeJob < ApplicationJob
   end
 
   def attempt_charge_for!(invoice)
-    profile = invoice.account&.billing_account_profile
-    return if profile.blank? || profile.bcc_card_token.blank?
-    return if recently_attempted?(invoice)
+    attempt_num, card_token = claim_recurring_attempt(invoice)
+    return unless attempt_num
 
-    attempt_num = invoice.recurring_attempts_count + 1
-    res = execute_ecom_charge(invoice, profile.bcc_card_token)
-    invoice.update!(recurring_attempts_count: attempt_num, last_recurring_attempt_at: Time.current)
+    res = execute_ecom_charge(invoice, card_token)
     res[:approved] ? settle_approved_charge!(invoice, res, attempt_num) : handle_failed_attempt!(invoice, res[:message], attempt_num)
+  end
+
+  def claim_recurring_attempt(invoice)
+    invoice.with_lock do
+      profile = invoice.account&.billing_account_profile
+      return nil if !invoice.open? || profile.blank? || profile.bcc_card_token.blank?
+      return nil if invoice.recurring_attempts_count >= MAX_ATTEMPTS || recently_attempted?(invoice)
+
+      next_attempt = invoice.recurring_attempts_count + 1
+      invoice.update!(recurring_attempts_count: next_attempt, last_recurring_attempt_at: Time.current)
+      [next_attempt, profile.bcc_card_token]
+    end
   end
 
   def recently_attempted?(invoice)

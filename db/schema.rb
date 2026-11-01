@@ -388,7 +388,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_01_183000) do
     t.string "bcc_card_masked"
     t.boolean "payment_overdue_banner", default: false, null: false
     t.string "overdue_invoice_number"
-    t.integer "partner_commission_rate_pct", default: 30, null: false
+    t.integer "partner_commission_rate_pct", default: 0, null: false
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
@@ -521,6 +521,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_01_183000) do
     t.string "payment_purpose"
     t.datetime "occurred_at"
     t.string "review_reason"
+    t.jsonb "metadata", default: {}, null: false
     t.jsonb "raw_payload", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false

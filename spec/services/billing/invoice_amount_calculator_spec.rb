@@ -3,6 +3,8 @@
 require 'rails_helper'
 
 RSpec.describe Billing::InvoiceAmountCalculator do
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:account) { create(:account) }
   let(:period_start) { Date.new(2026, 11, 10) }
 
@@ -62,7 +64,9 @@ RSpec.describe Billing::InvoiceAmountCalculator do
       oct_time = Time.find_zone('Asia/Almaty').local(2026, 10, 20, 12, 0, 0)
       Accounts::MonthlyAiUsageService.new(account).record_call_analysis!(duration_seconds: 50_000 * 60, at: oct_time)
 
-      ent = described_class.new(account: account, profile: profile, period_start: period_start).perform
+      ent = travel_to(Time.find_zone('Asia/Almaty').local(2026, 11, 5, 10, 0, 0)) do
+        described_class.new(account: account, profile: profile, period_start: period_start).perform
+      end
       expect(ent).to have_attributes(
         plan_key: 'enterprise', base_amount_minor: 65_000_000,
         call_minutes_overage_minor: 0, amount_minor: 65_000_000
@@ -82,7 +86,9 @@ RSpec.describe Billing::InvoiceAmountCalculator do
       )
       Accounts::MonthlyAiUsageService.new(account).record_call_analysis!(duration_seconds: 1250 * 60, at: oct_time)
 
-      res = described_class.new(account: account, profile: profile, period_start: period_start).perform
+      res = travel_to(Time.find_zone('Asia/Almaty').local(2026, 11, 5, 10, 0, 0)) do
+        described_class.new(account: account, profile: profile, period_start: period_start).perform
+      end
 
       expect(res).to have_attributes(
         usage_period_month: '2026-10',
@@ -95,6 +101,34 @@ RSpec.describe Billing::InvoiceAmountCalculator do
         amount_minor: 22_010_000,
         partner_commission_base_minor: 19_900_000
       )
+    end
+
+    it 'does not close an in-progress calendar month at T-5 for billing_day=1 and bills full month once completed' do
+      Accounts::ApplyPlan.new(account: account, tariff: 'ai_agent_rop').call
+      profile = build_profile(paid_until: Date.new(2026, 12, 1), billing_day: 1)
+      Billing::InvoiceGeneratorService.new(
+        account: account, period_start: Date.new(2026, 11, 1), usage_period_month: '2026-10', notify: false
+      ).perform
+      account.update!(
+        custom_attributes: account.custom_attributes.to_h.merge(
+          Accounts::MonthlyAiUsageService::AI_DIALOGS_MONTHLY_KEY => { '2026-11' => 1400 }
+        )
+      )
+
+      early_dec_calc = travel_to(Time.find_zone('Asia/Almaty').local(2026, 11, 26, 9, 0, 0)) do
+        described_class.new(account: account, profile: profile, period_start: Date.new(2026, 12, 1)).perform
+      end
+      expect(early_dec_calc).to have_attributes(usage_period_month: nil, ai_dialogs_overage_count: 0, ai_dialogs_overage_minor: 0)
+
+      account.update!(
+        custom_attributes: account.custom_attributes.to_h.merge(
+          Accounts::MonthlyAiUsageService::AI_DIALOGS_MONTHLY_KEY => { '2026-11' => 1650 }
+        )
+      )
+      jan_calc = travel_to(Time.find_zone('Asia/Almaty').local(2026, 12, 27, 9, 0, 0)) do
+        described_class.new(account: account, profile: profile, period_start: Date.new(2027, 1, 1)).perform
+      end
+      expect(jan_calc).to have_attributes(usage_period_month: '2026-11', ai_dialogs_overage_count: 650, ai_dialogs_overage_minor: 1_950_000)
     end
   end
 end

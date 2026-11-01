@@ -51,21 +51,30 @@ class Billing::InvoiceGeneratorService
     attempts = 0
     begin
       attempts += 1
-      inv_number = next_invoice_number
-      Billing::Invoice.create!(invoice_attributes(inv_number, calc))
-    rescue ActiveRecord::RecordNotUnique => e
-      retry if attempts < MAX_NUMBER_RETRIES && e.message.include?('invoice_number')
+      inv_number = next_invoice_number(attempts - 1)
+      Billing::Invoice.transaction(requires_new: true) do
+        Billing::Invoice.create!(invoice_attributes(inv_number, calc))
+      end
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+      retry if attempts < MAX_NUMBER_RETRIES && invoice_number_conflict?(e)
       raise
     end
   end
 
-  def next_invoice_number
+  def invoice_number_conflict?(error)
+    return error.message.include?('invoice_number') if error.is_a?(ActiveRecord::RecordNotUnique)
+
+    error.record.is_a?(Billing::Invoice) && error.record.errors.of_kind?(:invoice_number, :taken)
+  end
+
+  def next_invoice_number(attempt_offset = 0)
     prefix = format('OL-%<ym>s-%<acc>04d-', ym: @period_start.strftime('%Y%m'), acc: @account.id)
-    last_seq = Billing::Invoice.where('invoice_number LIKE ?', "#{prefix}%")
+    last_seq = Billing::Invoice.where(account_id: @account.id)
+                               .where('invoice_number LIKE ?', "#{prefix}%")
                                .pluck(:invoice_number)
                                .filter_map { |num| num.delete_prefix(prefix).to_i }
                                .max.to_i
-    format('%<prefix>s%<seq>02d', prefix: prefix, seq: last_seq + 1)
+    format('%<prefix>s%<seq>02d', prefix: prefix, seq: last_seq + 1 + attempt_offset)
   end
 
   def invoice_attributes(inv_number, calc)

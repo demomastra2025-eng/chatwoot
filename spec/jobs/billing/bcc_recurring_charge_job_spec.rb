@@ -40,6 +40,33 @@ RSpec.describe Billing::BccRecurringChargeJob do
     expect(profile.reload.paid_until).to eq(Billing.today_almaty + 1.month)
   end
 
+  it 'commits recurring attempt claim before HTTP charge and isolates broken enterprise profiles' do
+    broken_clinic = create(:account, name: 'Broken Enterprise')
+    Accounts::ApplyPlan.new(account: broken_clinic, tariff: 'enterprise').call
+    Billing::AccountProfile.create!(
+      account: broken_clinic, billing_enabled: true, paid_until: Billing.today_almaty,
+      autopay_enabled: true, bcc_card_token: 'tok_broken', custom_monthly_price_minor: nil
+    )
+
+    Accounts::ApplyPlan.new(account: clinic, tariff: 'text_call').call
+    Billing::AccountProfile.create!(
+      account: clinic, billing_enabled: true, paid_until: Billing.today_almaty,
+      autopay_enabled: true, bcc_card_token: 'tok_healthy'
+    )
+
+    attempts_during_http = nil
+    stub_request(:post, 'https://ecom.bcc.kz/recurring/charge').to_return do
+      inv = clinic.billing_invoices.first
+      attempts_during_http = inv.reload.recurring_attempts_count
+      { status: 200, body: { approved: true, rrn: 'RRN-CLAIMED-1', status: 'approved' }.to_json }
+    end
+
+    with_billing_env(ecom_env) { described_class.perform_now }
+
+    expect(attempts_during_http).to eq(1)
+    expect(clinic.billing_invoices.first.reload.status).to eq('paid')
+  end
+
   it 'retries failed recurring charges 3 times spaced by 24h and falls back to PDF invoice + payment link' do
     Accounts::ApplyPlan.new(account: clinic, tariff: 'text_call').call
     due_date = Date.new(2026, 11, 10)

@@ -50,7 +50,7 @@ class CreateBillingAutobillingTables < ActiveRecord::Migration[7.1]
     table.string :bcc_card_masked
     table.boolean :payment_overdue_banner, null: false, default: false
     table.string :overdue_invoice_number
-    table.integer :partner_commission_rate_pct, null: false, default: 30
+    table.integer :partner_commission_rate_pct, null: false, default: 0
   end
 
   def create_invoices_table
@@ -142,6 +142,7 @@ class CreateBillingAutobillingTables < ActiveRecord::Migration[7.1]
     table.string :payment_purpose
     table.datetime :occurred_at
     table.string :review_reason
+    table.jsonb :metadata, null: false, default: {}
     table.jsonb :raw_payload, null: false, default: {}
   end
 end

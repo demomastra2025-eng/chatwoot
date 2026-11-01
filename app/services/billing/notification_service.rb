@@ -4,7 +4,7 @@ class Billing::NotificationService
   def initialize(invoice:)
     @invoice = invoice
     @account = invoice.account
-    @profile = @account&.billing_account_profile
+    @profile = @account ? Billing::AccountProfile.find_by(account_id: @account.id) : nil
   end
 
   def deliver_invoice_issued!
@@ -46,7 +46,7 @@ class Billing::NotificationService
     conv_id = @profile&.billing_whatsapp_conversation_id
     return false if conv_id.blank?
 
-    conversation = Conversation.find_by(id: conv_id)
+    conversation = find_scoped_conversation(conv_id)
     return false unless conversation
 
     msg = conversation.messages.new(account: conversation.account, inbox: conversation.inbox, message_type: :outgoing, content: text)
@@ -56,6 +56,13 @@ class Billing::NotificationService
   rescue StandardError => e
     Rails.logger.warn("[Billing::NotificationService] Failed conversation delivery for #{@invoice.invoice_number}: #{e.class}")
     false
+  end
+
+  def find_scoped_conversation(conv_id)
+    allowed_account_ids = [@account&.id, OwnerFinance::AccessPolicy.workspace_account_id].compact.uniq
+    return nil if allowed_account_ids.empty?
+
+    Conversation.where(account_id: allowed_account_ids).find_by(id: conv_id)
   end
 
   def attach_invoice_pdf_to_message(message)
@@ -78,7 +85,8 @@ class Billing::NotificationService
   end
 
   def format_kzt(minor)
-    whole = minor.to_i / 100
-    whole.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\1 ').reverse
+    whole, tiyn = minor.to_i.divmod(100)
+    grouped = whole.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\1 ').reverse
+    tiyn.zero? ? grouped : format('%<whole>s.%<tiyn>02d', whole: grouped, tiyn: tiyn)
   end
 end
