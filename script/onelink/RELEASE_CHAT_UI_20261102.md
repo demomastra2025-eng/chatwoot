@@ -15,9 +15,12 @@ passed its integration checks.
 - Conversation history scroll: `7acad4e23c005b8222292dcc19d8bc3da64d1785`.
 - Reactions and authoritative Telegram edit metadata: `9916e0f43e78b03921e6fb41e4f1e3d4f4642c01`.
 - Telegram calls through shared Janus: `afdf2fd27c9f25dc31b0f87ff513ea76e0b0877e`.
+- Specialist profile and atomic weekly schedule: `98afb85a4c22578e06b5311a0caeabe9c986bc44`.
 
-Specialist schedule changes enter this list only after the corrected frozen SHA
-has passed independent review. Other unfinished `logic-*` branches are excluded.
+The specialist correction has passed independent review, including raw JSON and
+URL-encoded form validation before Rails deep-munge. Invalid lists cannot clear
+or replace saved rules; errors roll back the profile and both rule sets.
+Other unfinished `logic-*` branches are excluded.
 
 ## Telegram edit metadata: coordinated cutover required
 
