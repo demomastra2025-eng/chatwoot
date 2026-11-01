@@ -102,6 +102,26 @@ const allowsLateImportSkip = (eventName, params) =>
   eventName === 'appointment_created' &&
   params.timing_mode !== 'absolute' &&
   !VISIT_ANCHORS.includes(params.relative_anchor);
+const MIN_MINUTES_BEFORE_KEY = 'min_minutes_before_appointment';
+const MIN_MINUTES_BEFORE_EVENTS = [
+  'appointment_created',
+  'appointment_rescheduled',
+  'appointment_updated',
+];
+const normalizeMinMinutesBefore = raw => {
+  if (raw === null || raw === undefined || String(raw).trim() === '') {
+    return null;
+  }
+  const trimmed = String(raw).trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 43200
+    ? parsed
+    : null;
+};
+const allowsMinMinutesBefore = (eventName, params) =>
+  MIN_MINUTES_BEFORE_EVENTS.includes(eventName) ||
+  Boolean(normalizeMinMinutesBefore(params?.[MIN_MINUTES_BEFORE_KEY]));
 const normalizeArray = value => (Array.isArray(value) ? value : []);
 const normalizeAttachmentId = attachment => {
   if (typeof attachment === 'string') return attachment;
@@ -453,6 +473,26 @@ export default {
         });
       },
     },
+    canConfigureMinMinutesBefore() {
+      return (
+        this.entityKey === 'appointment' &&
+        allowsMinMinutesBefore(this.eventName, this.normalizedValue)
+      );
+    },
+    minMinutesBeforeAppointment: {
+      get() {
+        const val = normalizeMinMinutesBefore(
+          this.normalizedValue[MIN_MINUTES_BEFORE_KEY]
+        );
+        return val ? String(val) : '';
+      },
+      set(value) {
+        const parsed = normalizeMinMinutesBefore(value);
+        this.emitValue({
+          [MIN_MINUTES_BEFORE_KEY]: parsed || '',
+        });
+      },
+    },
     canSkipLateImport() {
       return allowsLateImportSkip(this.eventName, this.normalizedValue);
     },
@@ -799,9 +839,6 @@ export default {
       return `automation-touch-editor-instructions-${this.eventName || 'rule'}`;
     },
   },
-  mounted() {
-    this.$store.dispatch('getCannedResponse', { searchKey: '' });
-  },
   watch: {
     mappedAppointmentFields: {
       immediate: true,
@@ -820,6 +857,9 @@ export default {
         }
       },
     },
+  },
+  mounted() {
+    this.$store.dispatch('getCannedResponse', { searchKey: '' });
   },
   methods: {
     cleanPayload(payload) {
@@ -896,6 +936,19 @@ export default {
       ) {
         cleaned.metadata = clone(cleaned.metadata);
         delete cleaned.metadata[LATE_IMPORT_OPT_IN_KEY];
+      }
+
+      const parsedMinMinutes = normalizeMinMinutesBefore(
+        cleaned[MIN_MINUTES_BEFORE_KEY]
+      );
+      if (
+        this.entityKey === 'appointment' &&
+        allowsMinMinutesBefore(this.eventName, cleaned) &&
+        parsedMinMinutes
+      ) {
+        cleaned[MIN_MINUTES_BEFORE_KEY] = parsedMinMinutes;
+      } else {
+        delete cleaned[MIN_MINUTES_BEFORE_KEY];
       }
 
       if (
@@ -1372,6 +1425,35 @@ export default {
             }}
           </p>
         </div>
+      </div>
+    </SchedulingFormFieldGroup>
+
+    <SchedulingFormFieldGroup
+      v-if="canConfigureMinMinutesBefore"
+      :framed="false"
+    >
+      <div class="grid gap-1.5 border-t border-n-weak pt-4">
+        <label class="grid gap-1.5 text-sm font-medium text-n-slate-12">
+          <span>
+            {{ $t('AUTOMATION.ACTION.TOUCH_EDITOR.MIN_MINUTES_BEFORE_LABEL') }}
+          </span>
+          <input
+            :value="minMinutesBeforeAppointment"
+            type="number"
+            min="1"
+            max="43200"
+            step="1"
+            data-testid="touch-min-minutes-before-input"
+            :placeholder="
+              $t('SCHEDULING.NOTIFICATIONS.MIN_MINUTES_BEFORE_PLACEHOLDER')
+            "
+            class="w-full max-w-xs rounded-lg border border-n-weak bg-n-surface-1 px-3 py-2 text-sm font-normal text-n-slate-12"
+            @input="minMinutesBeforeAppointment = $event.target.value"
+          />
+        </label>
+        <p class="mb-0 text-xs leading-5 text-n-slate-10">
+          {{ $t('AUTOMATION.ACTION.TOUCH_EDITOR.MIN_MINUTES_BEFORE_NOTE') }}
+        </p>
       </div>
     </SchedulingFormFieldGroup>
 

@@ -121,6 +121,8 @@ class AutomationRule < ApplicationRecord
     status payment_status appointment_type source appointment_source lead_time_minutes starts_at_weekday starts_at_time service_id
     resource_id medelement_cabinet_code contact_id
   ].freeze
+  MIN_MINUTES_BEFORE_APPOINTMENT_KEY = 'min_minutes_before_appointment'.freeze
+  MIN_MINUTES_BEFORE_APPOINTMENT_RANGE = (1..43_200)
 
   include Rails.application.routes.url_helpers
   include Reauthorizable
@@ -146,6 +148,7 @@ class AutomationRule < ApplicationRecord
   validate :query_operator_presence
   validate :query_operator_value
   validate :appointment_schedule_override_valid
+  validate :appointment_min_minutes_before_valid
   validate :appointment_template_fields_available
   validate :calendar_managed_appointment_event
   validates :account_id, presence: true
@@ -153,9 +156,13 @@ class AutomationRule < ApplicationRecord
   before_validation :normalize_action_ids
   before_destroy :cancel_live_touch_enrollments, prepend: true
   before_destroy :cancel_open_rule_touches, prepend: true
+  after_save :reset_min_minutes_assignment_state
   after_update_commit :reauthorized!, if: -> { saved_change_to_conditions? }
   after_update_commit :reconcile_live_touch_enrollments,
-                      if: -> { saved_change_to_actions? || saved_change_to_active? || saved_change_to_conditions? }
+                      if: lambda {
+                        saved_change_to_actions? || saved_change_to_active? ||
+                          saved_change_to_conditions? || saved_change_to_execution_schedule?
+                      }
   after_update_commit :cancel_removed_or_inactive_touches,
                       if: -> { saved_change_to_actions? || saved_change_to_active? }
   after_commit :backfill_live_appointment_enrollments, on: %i[create update], if: :backfill_live_appointment_enrollments?
@@ -189,6 +196,42 @@ class AutomationRule < ApplicationRecord
     actions_attributes - [LEGACY_TOUCH_PLAN_ACTION]
   end
 
+  def actions=(value)
+    @actions_explicitly_assigned = true
+    super
+  end
+
+  def min_minutes_before_appointment
+    return @parsed_min_minutes_before_appointment if @min_minutes_before_appointment_assigned
+
+    schedule_value = parse_min_minutes_value(execution_schedule.to_h[MIN_MINUTES_BEFORE_APPOINTMENT_KEY])
+    return schedule_value if schedule_value.present?
+
+    action_min_minutes_before_appointment
+  end
+
+  def min_minutes_before_appointment=(raw_value)
+    @min_minutes_before_appointment_assigned = true
+    if blank_min_minutes_value?(raw_value)
+      @min_minutes_before_appointment_invalid = false
+      @parsed_min_minutes_before_appointment = nil
+      self.execution_schedule = execution_schedule.to_h.except(MIN_MINUTES_BEFORE_APPOINTMENT_KEY)
+      return
+    end
+
+    parsed = parse_min_minutes_value(raw_value)
+    @min_minutes_before_appointment_invalid = parsed.nil?
+    @parsed_min_minutes_before_appointment = parsed
+    return if parsed.nil?
+
+    self.execution_schedule = execution_schedule.to_h.merge(MIN_MINUTES_BEFORE_APPOINTMENT_KEY => parsed)
+  end
+
+  def reload(*)
+    reset_min_minutes_assignment_state
+    super
+  end
+
   def appointment_event?
     event_name.in?(APPOINTMENT_EVENT_NAMES)
   end
@@ -219,9 +262,10 @@ class AutomationRule < ApplicationRecord
   private
 
   def normalize_action_ids
+    @action_min_minutes_invalid = false
     existing_actions = actions_in_database
     seen_action_ids = Set.new
-    self.actions = Array(actions).each_with_index.map do |raw_action, index|
+    normalized_actions = Array(actions).each_with_index.map do |raw_action, index|
       action = raw_action.to_h.deep_stringify_keys
       next action unless action['action_name'] == 'create_touch'
 
@@ -230,6 +274,8 @@ class AutomationRule < ApplicationRecord
       seen_action_ids << action_id
       normalized_touch_action(action, action_id)
     end
+    self[:actions] = normalized_actions
+    sync_min_minutes_before_appointment
   end
 
   def normalized_touch_action(action, action_id)
@@ -238,7 +284,7 @@ class AutomationRule < ApplicationRecord
       action['action_params'] = if appointment_event?
                                   normalize_appointment_touch_params(action['action_params'])
                                 else
-                                  without_relative_schedule_override(action['action_params'])
+                                  without_non_appointment_touch_flags(action['action_params'])
                                 end
     end
     action
@@ -256,7 +302,130 @@ class AutomationRule < ApplicationRecord
     params = params.deep_stringify_keys
     params.delete('manual_schedule_override') if params['scheduled_at'].blank?
     params['timezone'] = account.workspace_working_hours_timezone if account.present?
+    normalize_touch_min_minutes_param!(params) if params.key?(MIN_MINUTES_BEFORE_APPOINTMENT_KEY)
     params
+  end
+
+  def normalize_touch_min_minutes_param!(params)
+    raw = params[MIN_MINUTES_BEFORE_APPOINTMENT_KEY]
+    if blank_min_minutes_value?(raw)
+      params.delete(MIN_MINUTES_BEFORE_APPOINTMENT_KEY)
+      return
+    end
+
+    parsed = parse_min_minutes_value(raw)
+    if parsed.nil?
+      @action_min_minutes_invalid = true
+    else
+      params[MIN_MINUTES_BEFORE_APPOINTMENT_KEY] = parsed
+    end
+  end
+
+  def sync_min_minutes_before_appointment
+    if @min_minutes_before_appointment_assigned
+      sync_assigned_min_minutes_to_schedule_and_actions
+    elsif !appointment_event?
+      self.execution_schedule = execution_schedule.to_h.except(MIN_MINUTES_BEFORE_APPOINTMENT_KEY)
+    elsif @actions_explicitly_assigned && !@action_min_minutes_invalid && touch_action_present?
+      apply_schedule_min_minutes(action_min_minutes_before_appointment)
+    end
+  end
+
+  def sync_assigned_min_minutes_to_schedule_and_actions
+    return if @min_minutes_before_appointment_invalid || !appointment_event?
+
+    apply_schedule_min_minutes(@parsed_min_minutes_before_appointment)
+    return unless touch_action_present?
+
+    updated_actions = Array(actions).map { |action| apply_min_minutes_to_touch_action(action, @parsed_min_minutes_before_appointment) }
+    self[:actions] = updated_actions
+  end
+
+  def apply_schedule_min_minutes(minutes)
+    self.execution_schedule = if minutes.present?
+                                execution_schedule.to_h.merge(MIN_MINUTES_BEFORE_APPOINTMENT_KEY => minutes)
+                              else
+                                execution_schedule.to_h.except(MIN_MINUTES_BEFORE_APPOINTMENT_KEY)
+                              end
+  end
+
+  def apply_min_minutes_to_touch_action(action, minutes)
+    return action unless action.is_a?(Hash) && action['action_name'] == 'create_touch' && action.key?('action_params')
+
+    raw_params = action['action_params']
+    updated_params = if raw_params.is_a?(Array)
+                       raw_params.map { |entry| apply_min_minutes_to_param_hash(entry, minutes) }
+                     else
+                       apply_min_minutes_to_param_hash(raw_params, minutes)
+                     end
+    action.merge('action_params' => updated_params)
+  end
+
+  def apply_min_minutes_to_param_hash(params, minutes)
+    return params unless params.is_a?(Hash)
+
+    hash = params.deep_stringify_keys
+    minutes.present? ? hash.merge(MIN_MINUTES_BEFORE_APPOINTMENT_KEY => minutes) : hash.except(MIN_MINUTES_BEFORE_APPOINTMENT_KEY)
+  end
+
+  def touch_action_present?
+    Array(actions).any? { |action| action.is_a?(Hash) && action['action_name'] == 'create_touch' }
+  end
+
+  def action_min_minutes_before_appointment
+    Array(actions).each do |action|
+      parsed = extract_min_minutes_from_touch_action(action)
+      return parsed if parsed.present?
+    end
+    nil
+  end
+
+  def extract_min_minutes_from_touch_action(action)
+    return unless action.is_a?(Hash) && action['action_name'] == 'create_touch'
+
+    Array.wrap(action['action_params']).each do |params|
+      next unless params.is_a?(Hash)
+
+      hash = params.with_indifferent_access
+      parsed = parse_min_minutes_value(hash[MIN_MINUTES_BEFORE_APPOINTMENT_KEY] || hash.dig(:metadata, MIN_MINUTES_BEFORE_APPOINTMENT_KEY))
+      return parsed if parsed.present?
+    end
+    nil
+  end
+
+  def appointment_min_minutes_before_valid
+    message = I18n.t('appointment_notifications.min_minutes_before_appointment')
+    if @min_minutes_before_appointment_assigned &&
+       (@min_minutes_before_appointment_invalid || (!appointment_event? && @parsed_min_minutes_before_appointment.present?))
+      errors.add(:min_minutes_before_appointment, message)
+    end
+    return unless @action_min_minutes_invalid
+
+    errors.add(:min_minutes_before_appointment, message)
+    errors.add(:actions, message)
+  end
+
+  def blank_min_minutes_value?(raw_value)
+    raw_value.nil? || (raw_value.is_a?(String) && raw_value.strip.empty?)
+  end
+
+  def parse_min_minutes_value(raw_value)
+    value = case raw_value
+            when Integer
+              raw_value
+            when String
+              stripped = raw_value.strip
+              stripped.to_i if stripped.match?(/\A\+?\d+\z/)
+            end
+    value if value && MIN_MINUTES_BEFORE_APPOINTMENT_RANGE.cover?(value)
+  end
+
+  def reset_min_minutes_assignment_state
+    @min_minutes_before_appointment_assigned = false
+    @min_minutes_before_appointment_invalid = false
+    @parsed_min_minutes_before_appointment = nil
+    @actions_explicitly_assigned = false
+    @action_min_minutes_invalid = false
   end
 
   def appointment_schedule_override_valid
@@ -283,6 +452,17 @@ class AutomationRule < ApplicationRecord
 
   # The touch editor has no manual-time control, so the flag can only be a leftover of a legacy action: it is dropped
   # from a relative timing instead of rejecting a save the user cannot fix (AutomationRules::TouchScheduleOverride).
+  def without_non_appointment_touch_flags(action_params)
+    cleaned = without_relative_schedule_override(action_params)
+    return cleaned.map { |entry| strip_min_minutes_key(entry) } if cleaned.is_a?(Array)
+
+    strip_min_minutes_key(cleaned)
+  end
+
+  def strip_min_minutes_key(params)
+    params.is_a?(Hash) ? params.deep_stringify_keys.except(MIN_MINUTES_BEFORE_APPOINTMENT_KEY) : params
+  end
+
   def without_relative_schedule_override(action_params)
     return AutomationRules::TouchScheduleOverride.without_relative_override(action_params) unless action_params.is_a?(Array)
 

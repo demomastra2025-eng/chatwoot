@@ -56,12 +56,47 @@ class Reminders::StaleAppointmentNoticePolicy
   private
 
   def short_lead_time?
-    return false unless metadata[Reminder::AUTOMATION_EVENT_NAME_KEY] == 'appointment_created'
     return false unless prompt_notice? || reminder.relative_anchor.to_s.in?(%w[appointment.created_at touch.created_at])
 
-    rule = AutomationRule.find_by(id: metadata['automation_rule_id'], account_id: appointment.account_id)
+    event_name = metadata[Reminder::AUTOMATION_EVENT_NAME_KEY].to_s
+    rule = automation_rule
+    action = matching_rule_action(rule)
+    if AutomationRules::AppointmentNotificationLeadTime.configured_minutes(rule, action: action).present?
+      return AutomationRules::AppointmentNotificationLeadTime.short?(
+        appointment,
+        rule: rule,
+        action: action,
+        event_name: event_name,
+        reference_time: notice_event_reference_time(event_name),
+        now: now
+      )
+    end
 
-    AutomationRules::AppointmentNotificationLeadTime.short?(appointment, rule: rule, now: now)
+    event_name == 'appointment_created' && AutomationRules::AppointmentNotificationLeadTime.short?(appointment, rule: rule, now: now)
+  end
+
+  def automation_rule
+    rule_id = metadata['automation_rule_id']
+    return if rule_id.blank?
+
+    scope = AutomationRule.where(id: rule_id)
+    scope = scope.where(account_id: appointment.account_id) if appointment.account_id.present?
+    scope.first
+  end
+
+  def matching_rule_action(rule)
+    raw_key = metadata[Reminder::AUTOMATION_ACTION_KEY].to_s
+    return if rule.blank? || raw_key.blank?
+
+    stripped_key = raw_key.delete_prefix("#{rule.id}:")
+    Array(rule.actions).find do |entry|
+      action_id = entry.to_h['action_id'].to_s
+      action_id.present? && (action_id == raw_key || action_id == stripped_key)
+    end
+  end
+
+  def notice_event_reference_time(event_name)
+    event_name == 'appointment_created' ? (appointment.created_at || reminder.created_at || now) : (reminder.created_at || now)
   end
 
   def notice?

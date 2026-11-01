@@ -20,6 +20,11 @@ describe('AppointmentNotifications', () => {
           { id: 1, status: 'pending', scheduled_at: '2026-11-01T10:00:00Z' },
           { id: 2, status: 'completed', scheduled_at: '2026-11-01T11:00:00Z' },
           { id: 3, status: 'cancelled', reason: 'appointment_started' },
+          {
+            id: 7,
+            status: 'cancelled',
+            reason: 'appointment_notice_short_lead_time',
+          },
           { id: 4, status: 'failed', reason: 'provider_timeout' },
         ],
       },
@@ -38,6 +43,9 @@ describe('AppointmentNotifications', () => {
     expect(wrapper.text()).toContain('SCHEDULING.NOTIFICATIONS.NOT_DELIVERED');
     expect(wrapper.text()).toContain(
       'SCHEDULING.NOTIFICATIONS.REASONS.APPOINTMENT_STARTED'
+    );
+    expect(wrapper.text()).toContain(
+      'SCHEDULING.NOTIFICATIONS.REASONS.APPOINTMENT_NOTICE_SHORT_LEAD_TIME'
     );
     expect(wrapper.text()).not.toContain('provider_timeout');
   });

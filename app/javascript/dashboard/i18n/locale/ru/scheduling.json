@@ -91,6 +91,10 @@
       "APPROVED_TEMPLATE_REQUIRED": "Выберите одобренный шаблон",
       "CONFIRM_TEMPLATE_REQUIRED": "Нужен шаблон с кнопкой быстрого ответа",
       "BINDINGS_REQUIRED": "Выберите данные для переменных шаблона",
+      "MIN_MINUTES_BEFORE_SUMMARY": "Не слать, если < {minutes} мин до приёма",
+      "MIN_MINUTES_BEFORE_LABEL": "Минут до приёма (не слать, если меньше)",
+      "MIN_MINUTES_BEFORE_PLACEHOLDER": "60",
+      "MIN_MINUTES_BEFORE_INVALID": "Укажите целое число минут от 1 до 43200 или оставьте поле пустым",
       "NO_CONTENT": "Сообщение не задано",
       "PLANNED": "Запланировано",
       "SENT": "Отправлено",
@@ -103,6 +107,7 @@
         "MISSED_DUE_TO_LATE_AUTOMATION_EVENT": "Время отправки прошло",
         "APPOINTMENT_NOTICE_AFTER_START": "Приём уже начался",
         "APPOINTMENT_NOTICE_LATE_IMPORT": "Запись поступила слишком поздно",
+        "APPOINTMENT_NOTICE_SHORT_LEAD_TIME": "До приёма осталось мало времени",
         "CONTACT_EXCLUDED": "Клиент исключён из рассылки",
         "AUTOMATION_RULE_INACTIVE": "Правило выключено",
         "AUTOMATION_RULE_DELETED": "Правило удалено",
@@ -836,6 +841,8 @@
         "CONFIRM_VIA_BUTTON": "Подтверждение кнопкой в WhatsApp",
         "CONFIRM_VIA_BUTTON_HINT": "При нажатии быстрой кнопки статус записи автоматически станет «Подтверждено»",
         "REVIEW_DELAY": "Когда отправлять после завершения визита",
+        "MIN_MINUTES_BEFORE_APPOINTMENT": "Минут до приёма",
+        "MIN_MINUTES_BEFORE_APPOINTMENT_HINT": "Необязательно: не отправлять уведомление, если до начала приёма осталось меньше указанного числа минут (например, 60)",
         "VARIABLE_BINDINGS": "Подстановка данных записи в переменные шаблона"
       },
       "REVIEW_DELAY": {

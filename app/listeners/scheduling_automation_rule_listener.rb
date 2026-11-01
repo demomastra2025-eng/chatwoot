@@ -5,29 +5,10 @@ class SchedulingAutomationRuleListener < BaseListener
     return if performed_by_automation?(event)
 
     appointment, account = extract_appointment_and_account(event)
-    return unless appointment.present? && account.present?
+    return if appointment.blank? || account.blank?
 
     rules = matching_rules_for_event('appointment_created', account, appointment, event.data[:changed_attributes])
-    held = AutomationRules::AppointmentCreatedNotificationHold.required?(appointment, performed_by: event.data[:performed_by])
-
-    AutomationRules::AppointmentCreatedNotificationHold.record!(appointment, rules) if held && rules.any?
-    rules.each do |rule|
-      live_appointment = account.scheduling_appointments.find_by(id: appointment.id)
-      next if live_appointment.blank?
-
-      service = AutomationRules::AppointmentActionService.new(
-        rule, account, live_appointment, changed_attributes: event.data[:changed_attributes]
-      )
-      if held
-        service.perform(actions: AutomationRules::AppointmentCreatedNotificationHold.other_actions(rule))
-      else
-        service.perform
-      end
-    end
-    return unless held && rules.any?
-
-    command_id = appointment.reload.custom_attributes.to_h[Integrations::Medelement::AppointmentProviderStatus::COMMAND_ID_KEY]
-    AutomationRules::ReleaseAppointmentCreatedNotificationsJob.perform_later(command_id) if command_id.present?
+    dispatch_created_rules(rules, account, appointment, event)
   end
 
   def appointment_updated(event)
@@ -51,6 +32,36 @@ class SchedulingAutomationRuleListener < BaseListener
   end
 
   private
+
+  def dispatch_created_rules(rules, account, appointment, event)
+    held = AutomationRules::AppointmentCreatedNotificationHold.required?(appointment, performed_by: event.data[:performed_by])
+    held_rules = held ? AutomationRules::AppointmentCreatedNotificationHold.holdable_rules(appointment, rules) : []
+
+    AutomationRules::AppointmentCreatedNotificationHold.record!(appointment, held_rules) if held_rules.any?
+    execute_created_rules(rules, account, appointment, event.data[:changed_attributes], held)
+    enqueue_held_release(appointment) if held_rules.any?
+  end
+
+  def enqueue_held_release(appointment)
+    command_id = appointment.reload.custom_attributes.to_h[Integrations::Medelement::AppointmentProviderStatus::COMMAND_ID_KEY]
+    AutomationRules::ReleaseAppointmentCreatedNotificationsJob.perform_later(command_id) if command_id.present?
+  end
+
+  def execute_created_rules(rules, account, appointment, changed_attributes, held)
+    rules.each do |rule|
+      live_appointment = account.scheduling_appointments.find_by(id: appointment.id)
+      next if live_appointment.blank?
+
+      service = AutomationRules::AppointmentActionService.new(
+        rule, account, live_appointment, changed_attributes: changed_attributes
+      )
+      if held
+        service.perform(actions: AutomationRules::AppointmentCreatedNotificationHold.other_actions(rule))
+      else
+        service.perform
+      end
+    end
+  end
 
   def appointment_rescheduled?(event)
     event.data[:changed_attributes].to_h.keys.intersect?(RESCHEDULED_ATTRIBUTE_KEYS)

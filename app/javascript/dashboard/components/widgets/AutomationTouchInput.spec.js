@@ -643,4 +643,38 @@ describe('AutomationTouchInput', () => {
       {}
     );
   });
+
+  it('sets, preserves and clears min_minutes_before_appointment for appointment touches only', async () => {
+    const wrapper = mountComponent({
+      eventName: 'appointment_created',
+      modelValue: { body: 'Вы записаны' },
+    });
+
+    expect(wrapper.vm.canConfigureMinMinutesBefore).toBe(true);
+    expect(wrapper.vm.minMinutesBeforeAppointment).toBe('');
+
+    wrapper.vm.minMinutesBeforeAppointment = '60';
+    let payload = await applyLastPayload(wrapper);
+    expect(payload.min_minutes_before_appointment).toBe(60);
+    expect(wrapper.vm.minMinutesBeforeAppointment).toBe('60');
+
+    wrapper.vm.minMinutesBeforeAppointment = '0';
+    payload = await applyLastPayload(wrapper);
+    expect(payload).not.toHaveProperty('min_minutes_before_appointment');
+
+    wrapper.vm.minMinutesBeforeAppointment = '';
+    payload = await applyLastPayload(wrapper);
+    expect(payload).not.toHaveProperty('min_minutes_before_appointment');
+
+    const conversationWrapper = mountComponent({
+      eventName: 'conversation_updated',
+      modelValue: { body: 'Follow up', min_minutes_before_appointment: 60 },
+    });
+    expect(conversationWrapper.vm.canConfigureMinMinutesBefore).toBe(false);
+    expect(
+      conversationWrapper.vm.cleanPayload(
+        conversationWrapper.vm.normalizedValue
+      )
+    ).not.toHaveProperty('min_minutes_before_appointment');
+  });
 });

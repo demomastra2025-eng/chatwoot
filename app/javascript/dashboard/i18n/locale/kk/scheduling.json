@@ -87,6 +87,10 @@
       "APPROVED_TEMPLATE_REQUIRED": "Бекітілген үлгіні таңдаңыз",
       "CONFIRM_TEMPLATE_REQUIRED": "Жылдам жауап батырмасы бар үлгі қажет",
       "BINDINGS_REQUIRED": "Үлгі айнымалыларына деректерді таңдаңыз",
+      "MIN_MINUTES_BEFORE_SUMMARY": "Қабылдауға < {minutes} мин қалса жібермеу",
+      "MIN_MINUTES_BEFORE_LABEL": "Қабылдауға дейінгі минут (аз болса жібермеу)",
+      "MIN_MINUTES_BEFORE_PLACEHOLDER": "60",
+      "MIN_MINUTES_BEFORE_INVALID": "1 мен 43200 аралығындағы бүтін минут санын көрсетіңіз немесе бос қалдырыңыз",
       "NO_CONTENT": "Хабарлама берілмеген",
       "PLANNED": "Жоспарланған",
       "SENT": "Жіберілген",
@@ -99,6 +103,7 @@
         "MISSED_DUE_TO_LATE_AUTOMATION_EVENT": "Жіберу уақыты өтті",
         "APPOINTMENT_NOTICE_AFTER_START": "Қабылдау басталып кетті",
         "APPOINTMENT_NOTICE_LATE_IMPORT": "Жазылу кеш келді",
+        "APPOINTMENT_NOTICE_SHORT_LEAD_TIME": "Қабылдауға тым аз уақыт қалды",
         "CONTACT_EXCLUDED": "Клиент тізімнен шығарылған",
         "AUTOMATION_RULE_INACTIVE": "Ереже өшірулі",
         "AUTOMATION_RULE_DELETED": "Ереже жойылған",
@@ -461,6 +466,8 @@
         "CONFIRM_VIA_BUTTON": "WhatsApp батырмасымен растау",
         "CONFIRM_VIA_BUTTON_HINT": "Клиент батырманы басқанда жазылу мәртебесі автоматты түрде «Расталды» болады",
         "REVIEW_DELAY": "Сапар аяқталғаннан кейін қашан жіберу керек",
+        "MIN_MINUTES_BEFORE_APPOINTMENT": "Қабылдауға дейінгі минут",
+        "MIN_MINUTES_BEFORE_APPOINTMENT_HINT": "Міндетті емес: қабылдау басталуына көрсетілген минуттан аз уақыт қалса, хабарлама жібермеу (мысалы, 60)",
         "VARIABLE_BINDINGS": "Жазылу деректерін үлгі айнымалыларына байланыстыру"
       },
       "REVIEW_DELAY": {

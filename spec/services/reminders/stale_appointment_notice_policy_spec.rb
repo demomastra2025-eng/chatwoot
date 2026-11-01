@@ -172,4 +172,26 @@ RSpec.describe Reminders::StaleAppointmentNoticePolicy do
       expect(stale_reason).to eq(described_class::STARTED_REASON)
     end
   end
+
+  describe 'with rule min_minutes_before_appointment configured' do
+    it 'cancels a reschedule notice when fewer minutes than configured remained at trigger time' do
+      account = create(:account).tap { |record| record.enable_features!('scheduling') }
+      rule = create(:automation_rule, account: account, event_name: 'appointment_rescheduled',
+                                      min_minutes_before_appointment: 60, conditions: [],
+                                      actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hook'] }])
+      appointment.account = account
+      appointment.starts_at = now + 45.minutes
+      reminder.created_at = now
+      reminder.scheduled_at = now + 1.minute
+      update_metadata(
+        { Reminder::AUTOMATION_EVENT_NAME_KEY => 'appointment_rescheduled', 'automation_rule_id' => rule.id },
+        without: [described_class::LATE_IMPORT_OPT_IN_KEY]
+      )
+
+      expect(stale_reason).to eq(described_class::SHORT_LEAD_REASON)
+
+      appointment.starts_at = now + 60.minutes
+      expect(stale_reason).to be_nil
+    end
+  end
 end

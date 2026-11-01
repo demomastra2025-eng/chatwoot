@@ -25,12 +25,12 @@ RSpec.describe AutomationRules::AppointmentCreatedNotificationHold do
   let(:rule) do
     create(
       :automation_rule, account: account, event_name: 'appointment_created',
-      conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }],
-      actions: [
-        { action_name: 'change_appointment_status', action_params: ['confirmed'] },
-        { action_name: 'create_touch', action_params: { body: 'Подтверждение записи', delay_minutes: 10 } },
-        { action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/appointments'] }
-      ]
+                        conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }],
+                        actions: [
+                          { action_name: 'change_appointment_status', action_params: ['confirmed'] },
+                          { action_name: 'create_touch', action_params: { body: 'Подтверждение записи', delay_minutes: 10 } },
+                          { action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/appointments'] }
+                        ]
     )
   end
 
@@ -49,7 +49,7 @@ RSpec.describe AutomationRules::AppointmentCreatedNotificationHold do
       desired_starts_at: appointment.starts_at, desired_ends_at: appointment.ends_at
     )
     status = Integrations::Medelement::AppointmentProviderStatus
-    appointment.update_columns(custom_attributes: appointment.custom_attributes.merge(status::COMMAND_ID_KEY => command.id))
+    appointment.update_columns(custom_attributes: appointment.custom_attributes.merge(status::COMMAND_ID_KEY => command.id)) # rubocop:disable Rails/SkipsModelValidations
     command
   end
 
@@ -110,12 +110,57 @@ RSpec.describe AutomationRules::AppointmentCreatedNotificationHold do
     command.update!(status: 'succeeded')
     described_class.new(command: command).perform
     reminder = account.reminders.find_by!(remindable: appointment)
-    reminder.update_columns(status: Reminder.statuses.fetch('completed'), completed_at: Time.current)
+    reminder.update_columns(status: Reminder.statuses.fetch('completed'), completed_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
 
     state = command.reload.execution_state.except(described_class::DONE_KEY, described_class::COMPLETE_KEY)
     command.update!(execution_state: state)
     described_class.new(command: command).perform
 
     expect(account.reminders.where(remindable: appointment).count).to eq(1)
+  end
+
+  it 'skips holding and releasing notifications when booked with fewer minutes than min_minutes_before_appointment' do
+    rule.update!(min_minutes_before_appointment: 60)
+    short_appt = create(
+      :scheduling_appointment, account: account, resource: resource, service: service, contact: contact, conversation: conversation,
+                               starts_at: 45.minutes.from_now, ends_at: 75.minutes.from_now,
+                               custom_attributes: { Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => 'pending' }
+    )
+    clear_enqueued_jobs
+
+    SchedulingAutomationRuleListener.instance.appointment_created(
+      Events::Base.new('appointment_created', Time.zone.now, appointment: short_appt, performed_by: actor)
+    )
+
+    expect(short_appt.reload.status).to eq('confirmed')
+    expect(short_appt.custom_attributes).not_to have_key(described_class::HOLD_KEY)
+    expect(account.reminders.where(remindable: short_appt)).to be_empty
+    expect(enqueued_jobs.count { |job| job[:job] == WebhookJob }).to eq(0)
+  end
+
+  it 'releases held notifications when booked 62 minutes ahead even if command succeeds at 57 minutes remaining' do
+    rule.update!(min_minutes_before_appointment: 60)
+    ahead_appt = create(
+      :scheduling_appointment, account: account, resource: resource, service: service, contact: contact, conversation: conversation,
+                               starts_at: 62.minutes.from_now, ends_at: 92.minutes.from_now,
+                               custom_attributes: { Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => 'pending' }
+    )
+    SchedulingAutomationRuleListener.instance.appointment_created(
+      Events::Base.new('appointment_created', Time.zone.now, appointment: ahead_appt, performed_by: actor)
+    )
+    command = Integrations::Medelement::ProviderCommand.create!(
+      account: account, appointment: ahead_appt, contact: contact, operation: 'create_reception', status: 'succeeded',
+      idempotency_key: SecureRandom.uuid, company_cabinet_code: 'cabinet-1',
+      desired_starts_at: ahead_appt.starts_at, desired_ends_at: ahead_appt.ends_at
+    )
+    status_key = Integrations::Medelement::AppointmentProviderStatus::COMMAND_ID_KEY
+    ahead_appt.update_columns(custom_attributes: ahead_appt.reload.custom_attributes.merge(status_key => command.id)) # rubocop:disable Rails/SkipsModelValidations
+    clear_enqueued_jobs
+
+    travel 5.minutes
+    described_class.new(command: command).perform
+    reminder = account.reminders.find_by!(remindable: ahead_appt)
+    expect(Reminders::StaleAppointmentNoticePolicy.new(reminder: reminder, now: Time.current).stale_reason).to be_nil
+    expect(enqueued_jobs.count { |job| job[:job] == WebhookJob }).to eq(1)
   end
 end

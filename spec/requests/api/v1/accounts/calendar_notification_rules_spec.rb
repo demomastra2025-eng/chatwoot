@@ -105,4 +105,37 @@ RSpec.describe 'Calendar appointment notification rules', type: :request do
     expect(response).to have_http_status(:unprocessable_content)
     expect(rule.reload).not_to be_calendar_managed
   end
+
+  it 'round-trips creating, partial-updating, updating, cloning and clearing min_minutes_before_appointment' do
+    post path, params: rule_params.merge(min_minutes_before_appointment: 60), headers: headers
+    expect(response).to have_http_status(:success)
+    rule_id = response.parsed_body.dig('payload', 'id') || account.automation_rules.last.id
+    expect(response.parsed_body.dig('payload', 'min_minutes_before_appointment') || response.parsed_body['min_minutes_before_appointment']).to eq(60)
+
+    put "#{path}/#{rule_id}", params: { active: true, calendar_context: true }, headers: headers
+    expect(response).to have_http_status(:success)
+    expect(account.automation_rules.find(rule_id).min_minutes_before_appointment).to eq(60)
+
+    put "#{path}/#{rule_id}", params: { min_minutes_before_appointment: 120, calendar_context: true }, headers: headers
+    expect(response).to have_http_status(:success)
+    expect(account.automation_rules.find(rule_id).min_minutes_before_appointment).to eq(120)
+
+    put "#{path}/#{rule_id}", params: { min_minutes_before_appointment: '', calendar_context: true }, headers: headers
+    expect(account.automation_rules.find(rule_id).min_minutes_before_appointment).to be_nil
+  end
+
+  it 'preserves min_minutes_before_appointment on clone and rejects invalid values via API' do
+    rule = create(:automation_rule, account: account, event_name: 'appointment_created', active: false,
+                                    min_minutes_before_appointment: 60,
+                                    conditions: [{ attribute_key: 'source', filter_operator: 'is_present', values: [], query_operator: nil }],
+                                    actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hook'] }])
+
+    post "#{path}/#{rule.id}/clone", headers: headers
+    expect(response).to have_http_status(:success)
+    expect(account.automation_rules.order(:id).last.min_minutes_before_appointment).to eq(60)
+
+    put "#{path}/#{rule.id}", params: { min_minutes_before_appointment: 0 }, headers: headers
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['errors']).to include(include('field' => 'min_minutes_before_appointment'))
+  end
 end
