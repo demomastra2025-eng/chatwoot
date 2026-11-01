@@ -12,6 +12,92 @@ RSpec.describe Crm::Deal do
     it { is_expected.to have_many(:contacts).through(:deal_contacts) }
   end
 
+  describe 'historical creator membership' do
+    let(:creator) { create(:user, account: account, role: :agent) }
+    let(:deal) { create(:crm_deal, account: account, pipeline: pipeline, stage: stage, creator: creator) }
+    let(:foreign_creator) { create(:user, account: create(:account), role: :agent) }
+
+    def revoke_creator_membership
+      deal
+      AccountUser.where(account: account, user: creator).delete_all
+      expect(account.users.exists?(id: creator.id)).to be(false)
+      deal.reload
+    end
+
+    it 'leases a due deal without erasing its creator after membership was revoked' do
+      revoke_creator_membership
+
+      expect { deal.update!(appointment_automation_next_check_at: 5.minutes.from_now) }.not_to raise_error
+
+      expect(deal.reload.creator_id).to eq(creator.id)
+      expect(deal.appointment_automation_next_check_at).to be > Time.current
+    end
+
+    it 'allows an unrelated update while retaining historical authorship' do
+      revoke_creator_membership
+
+      deal.update!(description: 'Updated after membership revocation')
+
+      expect(deal.reload.creator_id).to eq(creator.id)
+      expect(deal.description).to eq('Updated after membership revocation')
+    end
+
+    it 'rejects a foreign creator on a new deal' do
+      new_deal = build(:crm_deal, account: account, pipeline: pipeline, stage: stage, creator: foreign_creator)
+
+      expect(new_deal).not_to be_valid
+      expect(new_deal.errors[:creator]).to include('must belong to the current account')
+    end
+
+    it 'rejects creator reassignment outside the account' do
+      revoke_creator_membership
+      deal.creator = foreign_creator
+
+      expect(deal).not_to be_valid
+      expect(deal.errors[:creator]).to include('must belong to the current account')
+      expect(deal.reload.creator_id).to eq(creator.id)
+    end
+
+    it 'permits explicit reassignment to a current account member' do
+      revoke_creator_membership
+      replacement = create(:user, account: account, role: :agent)
+
+      deal.update!(creator: replacement)
+
+      expect(deal.reload.creator_id).to eq(replacement.id)
+    end
+
+    it 'revalidates an unchanged creator when the deal account changes' do
+      deal
+      destination = create(:account)
+      destination_pipeline = create(:crm_pipeline, account: destination)
+      destination_stage = create(:crm_stage, account: destination, pipeline: destination_pipeline)
+      deal.assign_attributes(account: destination, pipeline: destination_pipeline, stage: destination_stage)
+
+      expect(deal).not_to be_valid
+      expect(deal.errors[:creator]).to include('must belong to the current account')
+      expect(deal.reload.account_id).to eq(account.id)
+    end
+
+    it 'continues checking the owner on unrelated updates' do
+      revoke_creator_membership
+      deal.owner = foreign_creator
+
+      expect(deal).not_to be_valid
+      expect(deal.errors[:owner]).to include('must belong to the current account')
+      expect(deal.errors[:creator]).to be_empty
+    end
+
+    it 'continues checking the team on unrelated updates' do
+      revoke_creator_membership
+      deal.team = create(:team, account: foreign_creator.accounts.first)
+
+      expect(deal).not_to be_valid
+      expect(deal.errors[:team]).to include('must belong to the current account')
+      expect(deal.errors[:creator]).to be_empty
+    end
+  end
+
   describe 'contact owner sync' do
     before { new_owner }
 

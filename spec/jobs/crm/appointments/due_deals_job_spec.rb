@@ -1,6 +1,20 @@
 require 'rails_helper'
 
 RSpec.describe Crm::Appointments::DueDealsJob do
+  it 'leases and enqueues a deal whose historical creator left the account' do
+    account = create(:account)
+    creator = create(:user, account: account, role: :agent)
+    deal = create(:crm_deal, account: account, creator: creator, appointment_automation_next_check_at: 1.minute.ago)
+    AccountUser.where(account: account, user: creator).delete_all
+    allow(Crm::Appointments::EvaluateDealJob).to receive(:perform_later)
+
+    expect { described_class.perform_now }.not_to raise_error
+
+    expect(Crm::Appointments::EvaluateDealJob).to have_received(:perform_later).with(account.id, deal.id).once
+    expect(deal.reload.appointment_automation_next_check_at).to be > Time.current
+    expect(deal.creator_id).to eq(creator.id)
+  end
+
   it 'leases only a bounded set of due open deals and does not enqueue them twice' do
     stub_const('Crm::Appointments::DueDealsJob::BATCH_SIZE', 2)
     due = create_list(:crm_deal, 3, appointment_automation_next_check_at: 1.minute.ago)

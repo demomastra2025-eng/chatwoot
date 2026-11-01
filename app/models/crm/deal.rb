@@ -224,7 +224,8 @@ class Crm::Deal < ApplicationRecord
     validate_account_match(:pipeline, pipeline)
     validate_account_match(:stage, stage)
     validate_account_match(:owner, owner)
-    validate_account_match(:creator, creator)
+    # Preserve historical authorship after account membership is revoked.
+    validate_account_match(:creator, creator) if new_record? || will_save_change_to_creator_id? || will_save_change_to_account_id?
     validate_account_match(:team, team) if has_attribute?(:team_id)
     validate_account_match(:company, company)
     validate_account_match(:waiting_set_by, waiting_set_by)
