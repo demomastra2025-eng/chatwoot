@@ -1,4 +1,5 @@
 import { adjustColorForContrast } from '../shared/helpers/colorHelper.js';
+import { closeMobileMenu } from './portalMobileMenu.js';
 
 const getResolvedTheme = theme => {
   // Helper to get resolved theme (handles 'system' -> 'dark'/'light')
@@ -98,10 +99,7 @@ export const initializeThemeHandlers = () => {
 
       if (menu.id === 'mobile-appearance-dropdown') {
         // Set the mobile menu toggle to false after a delay to ensure the transition is completed
-        setTimeout(() => {
-          const mobileToggle = document.getElementById('mobile-menu-toggle');
-          if (mobileToggle) mobileToggle.checked = false;
-        }, 300);
+        setTimeout(closeMobileMenu, 300);
       }
 
       return;

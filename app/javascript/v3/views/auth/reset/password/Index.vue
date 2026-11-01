@@ -86,6 +86,7 @@ export default {
         <FormInput
           v-model="credentials.email"
           name="email_address"
+          :label="$t('RESET_PASSWORD.EMAIL.LABEL')"
           :has-error="v$.credentials.email.$error"
           :error-message="$t('RESET_PASSWORD.EMAIL.ERROR')"
           :placeholder="$t('RESET_PASSWORD.EMAIL.PLACEHOLDER')"

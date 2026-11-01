@@ -1,11 +1,15 @@
 <script setup>
-import { defineProps, defineModel, computed } from 'vue';
+import { defineProps, defineModel, computed, useId } from 'vue';
 import { useToggle } from '@vueuse/core';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import WithLabel from './WithLabel.vue';
 
 const props = defineProps({
+  id: {
+    type: String,
+    default: '',
+  },
   label: {
     type: String,
     required: true,
@@ -49,6 +53,8 @@ const model = defineModel({
 });
 
 const [isPasswordVisible, togglePasswordVisibility] = useToggle();
+const generatedId = useId();
+const inputId = computed(() => props.id || generatedId);
 
 const isPasswordField = computed(() => props.type === FIELDS.PASSWORD);
 
@@ -62,6 +68,7 @@ const currentInputType = computed(() => {
 
 <template>
   <WithLabel
+    :id="inputId"
     :label="label"
     :icon="icon"
     :name="name"
@@ -73,6 +80,7 @@ const currentInputType = computed(() => {
     </template>
     <input
       v-bind="$attrs"
+      :id="inputId"
       v-model="model"
       :name="name"
       :type="currentInputType"

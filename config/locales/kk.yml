@@ -417,9 +417,14 @@ kk:
     footer:
       made_with: Made with
     header:
+      menu: Мәзір
+      open_menu: Мәзірді ашу
+      close_menu: Мәзірді жабу
+      language: Тіл
       go_to_homepage: Website
       visit_website: Visit website
       appearance:
+        title: Көрініс
         system: System
         light: Light
         dark: Dark

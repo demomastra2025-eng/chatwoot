@@ -472,9 +472,14 @@ ru:
     footer:
       made_with: Сделано с
     header:
+      menu: Меню
+      open_menu: Открыть меню
+      close_menu: Закрыть меню
+      language: Язык
       go_to_homepage: Сайт
       visit_website: Посетить сайт
       appearance:
+        title: Оформление
         system: Система
         light: Светлая
         dark: Тёмная

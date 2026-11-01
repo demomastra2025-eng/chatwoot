@@ -8,6 +8,7 @@ import slugifyWithCounter from '@sindresorhus/slugify';
 import PublicArticleSearch from './components/PublicArticleSearch.vue';
 import TableOfContents from './components/TableOfContents.vue';
 import { initializeTheme } from './portalThemeHelper.js';
+import { initializeMobileMenu } from './portalMobileMenu.js';
 import { getLanguageDirection } from 'dashboard/components/widgets/conversation/advancedFilterItems/languages.js';
 
 export const getHeadingsfromTheArticle = () => {
@@ -139,6 +140,7 @@ export const InitializationHelpers = {
     if (window.portalConfig.isPlainLayoutEnabled === 'true') {
       InitializationHelpers.appendPlainParamToURLs();
     } else {
+      initializeMobileMenu();
       InitializationHelpers.initializeThemesInPortal();
       InitializationHelpers.navigateToLocalePage();
       InitializationHelpers.initializeSearch();

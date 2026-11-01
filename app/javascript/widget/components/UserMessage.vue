@@ -116,7 +116,6 @@ export default {
           <div class="flex flex-col justify-end">
             <MessageReplyButton
               v-if="!isInProgress && !isFailed"
-              class="transition-opacity delay-75 opacity-0 group-hover:opacity-100 sm:opacity-0"
               @click="toggleReply"
             />
           </div>

@@ -27,6 +27,7 @@ export default {
 <template>
   <button
     type="submit"
+    :aria-label="$t('CHAT_ACTIONS.SEND')"
     :disabled="disabled"
     class="min-h-8 min-w-8 flex items-center justify-center ml-1"
   >

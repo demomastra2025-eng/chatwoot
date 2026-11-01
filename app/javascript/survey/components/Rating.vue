@@ -21,7 +21,7 @@ export default {
         { selected: rating.value === this.selectedRating },
         { disabled: !!this.selectedRating },
         { hover: !!this.selectedRating },
-        'emoji-button shadow-none text-3xl lg:text-4xl outline-none mr-8',
+        'emoji-button shadow-none text-3xl lg:text-4xl outline-none',
       ];
     },
     onClick(rating) {
@@ -33,7 +33,7 @@ export default {
 
 <template>
   <div class="customer-satisfcation mb-2">
-    <div class="ratings flex py-5 px-0">
+    <div class="ratings flex justify-around py-5 px-0">
       <button
         v-for="rating in ratings"
         :key="rating.key"
