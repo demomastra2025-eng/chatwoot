@@ -1,6 +1,6 @@
 class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::BaseController
   OPENROUTER_PROVIDER = Llm::OpenRouterModelCatalog::PROVIDER
-  INSTALLATION_MANAGED_MODEL_KEYS = Llm::Config::INSTALLATION_MANAGED_MODEL_CONFIGS.keys.freeze
+  INSTALLATION_MANAGED_MODEL_KEYS = Llm::Config::INSTALLATION_MANAGED_MODEL_FEATURES
   RELEASE_GATE_INTEGER_KEYS = %w[
     min_request_count
     max_avg_duration_ms

@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe 'Captain legacy scenario compatibility', type: :request do
   let(:account) { create(:account) }
-  let(:admin) { create(:user, account: account, role: :administrator) }
+  let(:admin) { create(:super_admin).tap { |user| create(:account_user, account: account, user: user, role: :administrator) } }
   let(:parent) { create(:captain_assistant, account: account, description: 'Parent main instruction') }
   let(:scenario) { create(:captain_scenario, assistant: parent, account: account) }
   let(:path) { "/api/v1/accounts/#{account.id}/captain/assistants/#{parent.id}/scenarios/#{scenario.id}" }

@@ -1,8 +1,12 @@
 json.account_id resource.account_id
 json.avatar_url resource.avatar_url
-json.config(resource.config.to_h.except('handoff_requires_explicit_consent', 'handoff_consent_reason', 'rules', 'skills', 'main_prompt_rules_migration'))
+prompt_access = Captain::PromptInspectorAccess.allowed?(user: Current.user, impersonation: @super_admin_impersonation)
+json.config Captain::AssistantConfigContract.public_config(resource, prompt_access: prompt_access)
+json.effective_settings Captain::AssistantConfigContract.effective_settings(resource)
 json.created_at resource.created_at.to_i
-json.description resource.description
+if prompt_access
+  json.description resource.description
+end
 json.id resource.id
 json.name resource.name
 json.type 'captain_assistant'

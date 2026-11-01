@@ -23,6 +23,8 @@ module Llm::Config
     'agent_routing_escalation' => 'CAPTAIN_AGENT_ROUTING_ESCALATION_MODEL',
     'council_split' => 'CAPTAIN_COUNCIL_SPLIT_MODEL'
   }.freeze
+  INSTALLATION_DEFAULT_MODEL_FEATURES = %w[assistant editor copilot].freeze
+  INSTALLATION_MANAGED_MODEL_FEATURES = (INSTALLATION_MANAGED_MODEL_CONFIGS.keys + INSTALLATION_DEFAULT_MODEL_FEATURES).freeze
   # The image readers have a platform default of their own (config/llm.yml): a blank slot is that default, never the installation default
   # model (CAPTAIN_DEFAULT_MODEL), so moving the agent to another model never moves the reading of images with it.
   OWN_DEFAULT_MODEL_FEATURES = %w[image_recognition image_handwriting].freeze
@@ -177,7 +179,7 @@ module Llm::Config
     end
 
     def installation_managed_model_feature?(feature_key)
-      INSTALLATION_MANAGED_MODEL_CONFIGS.key?(feature_key.to_s)
+      INSTALLATION_MANAGED_MODEL_FEATURES.include?(feature_key.to_s)
     end
 
     def custom_api_base_configured?(provider, account: nil)
@@ -341,6 +343,8 @@ module Llm::Config
 
     # The model fixed for the feature: the platform's own for a platform-managed feature, else the account's choice.
     def explicit_model_for(feature_key, account: nil)
+      return if INSTALLATION_DEFAULT_MODEL_FEATURES.include?(feature_key)
+
       if installation_managed_model_feature?(feature_key)
         installation_managed_model_for(feature_key, account: account)
       else

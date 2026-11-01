@@ -2,7 +2,7 @@
 
 class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Account::BaseAccountTool
   CONFIG_FIELD_KEYS = %w[
-    feature_citation welcome_message temperature context_access tool_access voice_settings
+    feature_citation context_access tool_access voice_settings
   ].freeze
   ACCOUNT_SETTING_KEYS = %w[
     feature_faq feature_memory feature_web feature_document_reading feature_image_understanding
@@ -27,6 +27,18 @@ class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Accou
 
   private
 
+  def tool_failure(error, retryable: nil)
+    return formatted_payload(error: error.code, fields: error.fields) if error.is_a?(Captain::AssistantConfigContract::Violation)
+
+    super
+  end
+
+  def ensure_platform_prompt_access!(field)
+    return if Captain::PromptInspectorAccess.allowed?(user: @user)
+
+    raise Captain::AssistantConfigContract::Violation.new('platform_managed_prompt', [field])
+  end
+
   def find_captain_assistant!(assistant_id)
     account.captain_assistants.find(assistant_id)
   end
@@ -45,12 +57,13 @@ class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Accou
   end
 
   def assistant_identity_payload(assistant)
-    {
+    payload = {
       id: assistant.id,
       name: assistant.name,
-      description: redacted_value(assistant.description),
       usage_mode: assistant.usage_mode
     }
+    payload[:description] = redacted_value(assistant.description) if Captain::PromptInspectorAccess.allowed?(user: @user)
+    payload
   end
 
   def assistant_config_summary_payload(assistant)
@@ -58,7 +71,7 @@ class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Accou
       feature_faq: assistant.feature_faq,
       feature_memory: false,
       feature_citation: cast_config_boolean(assistant.config&.dig('feature_citation')),
-      temperature: assistant.config&.dig('temperature')
+      effective_settings: Captain::AssistantConfigContract.effective_settings(assistant)
     }
   end
 
@@ -80,7 +93,8 @@ class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Accou
   end
 
   def merge_extended_assistant_payload!(payload, assistant)
-    payload[:config] = redacted_value(assistant.config.to_h.except(*HIDDEN_CONFIG_KEYS))
+    prompt_access = Captain::PromptInspectorAccess.allowed?(user: @user)
+    payload[:config] = redacted_value(Captain::AssistantConfigContract.public_config(assistant, prompt_access: prompt_access).except(*HIDDEN_CONFIG_KEYS))
   end
 
   def parse_json_hash(value, field_name:, default: {})
@@ -110,6 +124,13 @@ class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Accou
   def filtered_config_updates(value)
     config = parse_json_hash(value, field_name: 'config_json').deep_stringify_keys
     raise ArgumentError, 'Separate rules were removed. Save instructions in description.' if config.key?('rules')
+    fields = Captain::AssistantConfigContract.voice_prompt_fields(config)
+    if fields.any? && !Captain::PromptInspectorAccess.allowed?(user: @user)
+      raise Captain::AssistantConfigContract::Violation.new('platform_managed_prompt', fields)
+    end
+
+    fields = Captain::AssistantConfigContract.unsupported_fields(config)
+    raise Captain::AssistantConfigContract::Violation.new('unsupported_assistant_settings', fields.map { |field| "config.#{field}" }) if fields.any?
 
     config.slice(*CONFIG_FIELD_KEYS)
   end

@@ -65,7 +65,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response[:id]).to eq(assistant.id)
-        expect(json_response[:description]).to eq(assistant.description)
+        expect(json_response).not_to have_key(:description)
       end
 
       it 'does not expose historical handoff consent settings' do
@@ -595,8 +595,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           name: 'New Assistant',
           description: 'Assistant Description',
           config: {
-            feature_faq: true,
-            feature_memory: false,
             feature_citation: true
           }
         }
@@ -623,6 +621,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     end
 
     context 'when it is an admin' do
+      let(:admin) { create(:super_admin).tap { |user| create(:account_user, account: account, user: user, role: :administrator) } }
+
       it 'creates a new assistant' do
         expect do
           post "/api/v1/accounts/#{account.id}/captain/assistants",
@@ -839,6 +839,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     end
 
     context 'when it is an admin' do
+      let(:admin) { create(:super_admin).tap { |user| create(:account_user, account: account, user: user, role: :administrator) } }
+
       it 'updates the assistant' do
         patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
               params: update_attributes,

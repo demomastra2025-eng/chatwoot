@@ -1,16 +1,6 @@
 # rubocop:disable Metrics/ClassLength
 class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::BaseController
-  ASSISTANT_CONFIG_FIELDS = [
-    :feature_faq, :feature_memory, :feature_citation, :feature_web, :feature_document_reading,
-    :model, :feature_image_understanding, :handoff_enabled, :auto_completion_enabled,
-    :welcome_message, :handoff_message, :resolution_message,
-    :handoff_message_enabled, :handoff_message_mode,
-    :resolution_message_enabled, :resolution_message_mode,
-    :temperature, :thinking_effort,
-    :auto_reply_on_last_incoming,
-    :use_audio_transcriptions,
-    :message_collapse_window_seconds, :history_message_limit
-  ].freeze
+  ASSISTANT_CONFIG_FIELDS = [:feature_citation].freeze
   VOICE_SETTINGS_ARRAY_FIELDS = Telephony::AiVoice::VoiceSettingsDefaults::ARRAY_KEYS.index_with { [] }.freeze
   VOICE_SETTINGS_SCALAR_FIELDS = (Telephony::AiVoice::VoiceSettingsDefaults::DEFAULTS.keys - VOICE_SETTINGS_ARRAY_FIELDS.keys).freeze
 
@@ -21,6 +11,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   before_action :set_assistant, only: [:show, :update, :destroy, :playground, :avatar, :prompt_preview, :voice_preview]
   before_action :ensure_internal_playground_available, only: :playground
   before_action :reject_separate_rules, only: [:create, :update]
+  before_action :enforce_assistant_config_contract, only: [:create, :update]
   around_action :with_model_metadata_snapshot, only: :show
 
   def index
@@ -136,6 +127,25 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     render_not_found_error('Resource could not be found')
   end
 
+  def enforce_assistant_config_contract
+    platform = Captain::PromptInspectorAccess.allowed?(user: Current.user, impersonation: @super_admin_impersonation)
+    return render json: { error: 'platform_managed_assistant' }, status: :forbidden if action_name == 'create' && !platform
+    fields = prompt_write_fields
+    return render json: { error: 'platform_managed_prompt', fields: fields }, status: :unprocessable_content if fields.any? && !platform
+
+    fields = Captain::AssistantConfigContract.unsupported_fields(params.dig(:assistant, :config))
+    return if fields.empty?
+
+    render json: { error: 'unsupported_assistant_settings', fields: fields.map { |field| "config.#{field}" } },
+           status: :unprocessable_content
+  end
+
+  def prompt_write_fields
+    fields = Captain::AssistantConfigContract.voice_prompt_fields(params.dig(:assistant, :config))
+    fields.unshift('description') if params[:assistant].respond_to?(:key?) && params[:assistant].key?(:description)
+    fields
+  end
+
   def reject_separate_rules
     attributes = params[:assistant]
     return unless attributes.respond_to?(:key?)
@@ -175,9 +185,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     @account_assistants ||= Captain::Assistant.for_account(Current.account.id).with_attached_avatar
   end
 
-  # Safety checks are one workspace-wide setting (Captain::AccountSettings), not an agent setting, and an agent has no channel list or
-  # transfer list (every enabled agent is a peer in every text channel). config.safety_settings and the old channel and transfer
-  # lists are therefore not permitted here: a legacy client may still send them, they are ignored.
+  # Workspace settings and platform model parameters are rejected before strong parameter filtering.
   def assistant_params
     permitted = params.require(:assistant).permit(
       :name,
@@ -202,7 +210,6 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     existing_config = attributes[:config].is_a?(Hash) ? attributes[:config].deep_stringify_keys : {}
     existing_config['voice_settings'] = normalized_voice_settings(existing_config['voice_settings'])
     normalize_outcome_reason_settings!(existing_config)
-    existing_config = normalized_model_config(existing_config)
 
     attributes.merge(config: existing_config)
   end
@@ -218,12 +225,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     end
     normalize_outcome_reason_settings!(incoming_config, existing_config['outcome_reason_settings'])
 
-    attributes.merge(config: normalized_model_config(existing_config.merge(incoming_config)))
-  end
-
-  def normalized_model_config(config)
-    model = config['model'].presence || Llm::Config.model_for(feature: :assistant, account: Current.account)
-    Llm::ModelParameters.for(model, account: Current.account).normalize_config(config)
+    attributes.merge(config: existing_config.merge(incoming_config))
   end
 
   def cancel_captain_follow_ups_if_disabled!

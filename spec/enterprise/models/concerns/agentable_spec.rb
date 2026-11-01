@@ -48,7 +48,7 @@ RSpec.describe Concerns::Agentable do
         instruction_parts: instance_of(Proc),
         tools: [],
         model: 'gpt-4-turbo',
-        temperature: 0.8,
+        temperature: nil,
         response_schema: Captain::ResponseSchema,
         read_only_tools: false,
         suggestion_tools: false
@@ -76,21 +76,21 @@ RSpec.describe Concerns::Agentable do
       dummy_instance.agent
     end
 
-    it 'preserves an explicit zero temperature' do
+    it 'ignores an archived zero temperature' do
       dummy_instance.temperature = 0
 
       expect(Captain::Runtime::Agent).to receive(:new).with(
-        hash_including(temperature: 0.0)
+        hash_including(temperature: nil)
       )
 
       dummy_instance.agent
     end
 
-    it 'converts temperature to float' do
+    it 'ignores an archived temperature string' do
       dummy_instance.temperature = '0.5'
 
       expect(Captain::Runtime::Agent).to receive(:new).with(
-        hash_including(temperature: 0.5)
+        hash_including(temperature: nil)
       )
 
       dummy_instance.agent

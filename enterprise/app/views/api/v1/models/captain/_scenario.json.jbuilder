@@ -2,7 +2,9 @@ json.id scenario.id
 standalone_agent = scenario.standalone_agent
 json.title standalone_agent&.name || scenario.title
 json.description standalone_agent ? standalone_agent.routing_description : scenario.description
-json.instruction standalone_agent ? standalone_agent.description : scenario.instruction
+if Captain::PromptInspectorAccess.allowed?(user: Current.user, impersonation: @super_admin_impersonation)
+  json.instruction standalone_agent ? standalone_agent.description : scenario.instruction
+end
 json.tools scenario.tools
 json.enabled standalone_agent ? standalone_agent.active? : scenario.enabled
 json.standalone_agent_id standalone_agent&.id

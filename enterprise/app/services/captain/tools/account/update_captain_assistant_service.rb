@@ -5,7 +5,7 @@ class Captain::Tools::Account::UpdateCaptainAssistantService < Captain::Tools::A
     'update_captain_assistant'
   end
 
-  CONFIG_JSON_DESCRIPTION = 'Optional JSON object with supported config fields such as temperature, tool_access, context_access, voice_settings'
+  CONFIG_JSON_DESCRIPTION = 'Optional JSON object with supported config fields: feature_citation, tool_access, context_access, voice_settings'
 
   description 'Update one Captain assistant profile, main instructions, config or tool access in the current account. Requires operator confirmation.'
   param :assistant_id, type: :integer, desc: 'Captain assistant ID', required: true
@@ -30,6 +30,8 @@ class Captain::Tools::Account::UpdateCaptainAssistantService < Captain::Tools::A
       previous_assistant: before_payload,
       updated_fields: attributes.keys.map(&:to_s)
     )
+  rescue Captain::AssistantConfigContract::Violation => e
+    formatted_payload(error: e.code, fields: e.fields)
   rescue StandardError => e
     tool_failure(e)
   end
@@ -39,6 +41,9 @@ class Captain::Tools::Account::UpdateCaptainAssistantService < Captain::Tools::A
   def build_update_attributes(assistant:, kwargs:)
     if kwargs.key?(:response_guidelines_json) || kwargs.key?(:guardrails_json)
       raise ArgumentError, 'Separate rules were removed. Save instructions in description.'
+    end
+    if kwargs.key?(:description) && !Captain::PromptInspectorAccess.allowed?(user: @user)
+      raise Captain::AssistantConfigContract::Violation.new('platform_managed_prompt', ['description'])
     end
 
     profile_update_attributes(kwargs)
