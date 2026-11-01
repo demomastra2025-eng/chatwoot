@@ -4,8 +4,12 @@ import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
 import TelegramPersonalCallsAPI, {
   callsApiFor,
+  isTelegramPersonalProvider,
 } from 'dashboard/api/telegramPersonalCalls';
-import { handleAgentOffer } from 'dashboard/composables/useWhatsappCallSession';
+import {
+  handleAgentOffer,
+  handleCallAgentOffer,
+} from 'dashboard/composables/useWhatsappCallSession';
 
 async function fetchActiveCallForApi(api, defaultProvider) {
   try {
@@ -41,7 +45,15 @@ export function useCallReconnection() {
 
   const reconnectActiveCall = async () => {
     if (!hasAccountScopedRoute()) return;
-    if (callsStore.hasActiveCall || callsStore.hasIncomingCall) return;
+    if (
+      callsStore.hasActiveCall ||
+      callsStore.hasIncomingCall ||
+      callsStore.isReconnecting
+    )
+      return;
+    const initialGeneration = callsStore.activeCallGeneration;
+    const accountRoute = window.location.pathname.split('/')[3];
+    let callScope = null;
 
     try {
       const found =
@@ -50,7 +62,14 @@ export function useCallReconnection() {
           TelegramPersonalCallsAPI,
           'telegram_personal'
         ));
-      if (!found) return;
+      if (
+        !found ||
+        callsStore.activeCallGeneration !== initialGeneration ||
+        callsStore.hasActiveCall ||
+        callsStore.hasIncomingCall ||
+        accountRoute !== window.location.pathname.split('/')[3]
+      )
+        return;
 
       const { call: activeCallData, provider: resolvedProvider } = found;
 
@@ -66,36 +85,53 @@ export function useCallReconnection() {
         caller: activeCallData.caller,
       });
 
+      callScope = callsStore.captureActiveCallScope();
       if (activeCallData.elapsed_seconds) {
         callsStore.setTimerOffset(activeCallData.elapsed_seconds);
       }
 
       await nextTick();
+      if (!callsStore.matchesActiveCallScope(callScope)) return;
 
       const { data: reconnectData } = await callsApiFor(
         resolvedProvider
       ).reconnect(activeCallData.id);
-      if (!reconnectData?.sdp_offer) {
-        throw new Error('Reconnect response missing sdp_offer');
+      if (!callsStore.matchesActiveCallScope(callScope)) return;
+      const mediaOptions = {
+        direction: activeCallData.direction,
+        context: 'page-load-reconnect',
+        peerId: reconnectData.peer_id,
+        provider: resolvedProvider,
+      };
+      if (isTelegramPersonalProvider(resolvedProvider)) {
+        await handleCallAgentOffer(
+          activeCallData.id,
+          reconnectData,
+          mediaOptions
+        );
+      } else {
+        if (!reconnectData?.sdp_offer)
+          throw new Error('Reconnect response missing sdp_offer');
+        await handleAgentOffer(
+          activeCallData.id,
+          reconnectData.sdp_offer,
+          reconnectData.ice_servers,
+          mediaOptions
+        );
       }
-
-      await handleAgentOffer(
-        activeCallData.id,
-        reconnectData.sdp_offer,
-        reconnectData.ice_servers,
-        {
-          direction: activeCallData.direction,
-          context: 'page-load-reconnect',
-          peerId: reconnectData.peer_id,
-          provider: resolvedProvider,
-        }
-      );
+      if (!callsStore.matchesActiveCallScope(callScope)) return;
+      callsStore.updateActiveCall({
+        agentWebrtcConnected: true,
+        agentWebrtcConnecting: false,
+      });
       callsStore.markActiveCallConnected();
       emitter.emit('whatsapp_call:agent_webrtc_connected');
     } catch {
-      callsStore.clearActiveCall();
+      if (callsStore.matchesActiveCallScope(callScope))
+        callsStore.clearActiveCall();
     } finally {
-      callsStore.setReconnecting(false);
+      if (callsStore.matchesActiveCallScope(callScope))
+        callsStore.setReconnecting(false);
     }
   };
 

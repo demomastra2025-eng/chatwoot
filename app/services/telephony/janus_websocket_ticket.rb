@@ -10,6 +10,8 @@ class Telephony::JanusWebsocketTicket
   MAX_TTL_SECONDS = 5.minutes.to_i
   REVOKED_PROFILE_STATUSES = %w[disabled deleting failed].freeze
 
+  extend Telephony::JanusTelegramCallScope
+
   class << self
     def issue(server_url:, account:, user:, sip_profile:, registration_instance_id:)
       validate_scope!(account: account, user: user, sip_profile: sip_profile)
@@ -65,11 +67,17 @@ class Telephony::JanusWebsocketTicket
     private
 
     def valid_payload?(payload, origin:, path:)
-      payload[:version].to_i == 1 &&
-        payload[:jti].present? &&
+      payload[:jti].present? &&
         secure_match?(payload[:origin], normalize_origin(origin)) &&
         secure_match?(payload[:path], normalize_path(path)) &&
-        active_profile?(payload)
+        active_scope?(payload)
+    end
+
+    def active_scope?(payload)
+      return active_profile?(payload) if payload[:version].to_i == 1
+      return active_telegram_call?(payload) if payload[:version].to_i == 2 && payload[:kind] == 'telegram_personal_call'
+
+      false
     end
 
     def verified_payload(ticket)

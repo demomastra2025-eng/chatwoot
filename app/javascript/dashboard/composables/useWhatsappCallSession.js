@@ -13,6 +13,9 @@ import {
 } from 'dashboard/api/telegramPersonalCalls';
 import Auth from 'dashboard/api/auth';
 import Timer from 'dashboard/helper/Timer';
+import JanusAudioBridgeCallClient, {
+  isJanusAudioBridgeOffer,
+} from 'dashboard/api/channel/voice/janusAudioBridgeCallClient';
 import { emitter } from 'shared/helpers/mitt';
 
 // ── Module-level WebRTC state (shared across legacy inbound + server-relay) ──
@@ -20,6 +23,7 @@ let inboundPc = null;
 let inboundStream = null;
 let inboundAudio = null;
 let inboundNegotiationToken = 0;
+let telegramJanusConnection = null;
 
 // Inbound accept can prewarm microphone while Rails/Meta accepts the call.
 // Keep this separate from the active PeerConnection stream so a warmed inbound
@@ -51,6 +55,14 @@ function stopStream(stream) {
   stream?.getTracks?.().forEach(track => track.stop());
 }
 
+function setInboundAudioStream(stream) {
+  const muted = useWhatsappCallsStore().activeCall?.isMuted === true;
+  stream.getAudioTracks?.().forEach(track => {
+    track.enabled = !muted;
+  });
+  inboundStream = stream;
+}
+
 function inboundNegotiationCancelledError() {
   const error = new Error('Inbound WebRTC negotiation was cancelled');
   error.retryable = false;
@@ -71,6 +83,9 @@ function assertInboundNegotiationActive(
 
 function cleanupInboundWebRTC({ keepPrewarmStream = false } = {}) {
   inboundNegotiationToken += 1;
+  const janusConnection = telegramJanusConnection;
+  telegramJanusConnection = null;
+  janusConnection?.client.close();
   if (inboundPc) {
     inboundPc.close();
     inboundPc = null;
@@ -389,6 +404,7 @@ function waitForIceGatheringComplete(pc) {
 // broadcast). Fall back to the presence of sdpOffer so legacy deployments keep
 // working when the field isn't set.
 function isServerRelayCall(call) {
+  if (isTelegramPersonalProvider(call)) return true;
   if (call?.mediaServerEnabled === true) return true;
   if (call?.mediaServerEnabled === false) return false;
   return !call?.sdpOffer;
@@ -432,7 +448,7 @@ async function negotiateAgentOfferOnce(
       );
   timing.mark('get_user_media_ok');
   assertInboundNegotiationActive(negotiationToken, { stream });
-  inboundStream = stream;
+  setInboundAudioStream(stream);
 
   const servers = iceServers?.length
     ? iceServers
@@ -520,6 +536,13 @@ async function negotiateAgentOfferOnce(
 }
 
 async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
+  if (
+    isTelegramPersonalProvider(
+      options.provider || useWhatsappCallsStore().activeCall
+    )
+  ) {
+    throw new Error('Telegram calls require Janus media');
+  }
   const direction = options.direction || 'incoming';
   const context = options.context || 'agent-offer';
   const usePrewarmedStream =
@@ -563,11 +586,138 @@ async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
   return attemptNegotiation(1);
 }
 
+export const hasAgentMediaOffer = offer =>
+  isJanusAudioBridgeOffer(offer) || Boolean(offer?.sdp_offer);
+
+function attachInboundRemoteAudio(stream) {
+  if (!inboundAudio) {
+    inboundAudio = document.createElement('audio');
+    inboundAudio.autoplay = true;
+    document.body.appendChild(inboundAudio);
+  }
+  inboundAudio.srcObject = stream;
+  inboundAudio.play().catch(() => {});
+}
+
+export async function handleCallAgentOffer(callId, offer, options = {}) {
+  if (!isTelegramPersonalProvider(options.provider)) {
+    return handleAgentOffer(callId, offer?.sdp_offer, offer?.ice_servers, {
+      ...options,
+      peerId: offer?.peer_id,
+    });
+  }
+  if (!isJanusAudioBridgeOffer(offer)) {
+    throw new Error('Telegram calls require Janus media');
+  }
+  const callsStore = useWhatsappCallsStore();
+  const callScope = callsStore.captureActiveCallScope();
+  if (
+    !callScope ||
+    String(callScope.id) !== String(callId) ||
+    !isTelegramPersonalProvider(callsStore.activeCall)
+  ) {
+    throw inboundNegotiationCancelledError();
+  }
+  const key = `${callScope.generation}:${callId}:${offer.peer_id}`;
+  if (telegramJanusConnection?.key === key) {
+    return telegramJanusConnection.promise;
+  }
+  const usePrewarmedStream = options.usePrewarmedStream === true;
+  cleanupInboundWebRTC({ keepPrewarmStream: usePrewarmedStream });
+  const negotiationToken = inboundNegotiationToken;
+  const client = new JanusAudioBridgeCallClient();
+  const connection = { key, client, promise: null };
+  telegramJanusConnection = connection;
+  connection.promise = (async () => {
+    const stream = await withTimeout(
+      usePrewarmedStream
+        ? takeInboundPrewarmedAudioStream()
+        : navigator.mediaDevices.getUserMedia({ audio: true }),
+      AGENT_WEBRTC_MEDIA_TIMEOUT_MS,
+      'get_user_media',
+      { retryable: false, onLateResolve: stopStream }
+    );
+    assertInboundNegotiationActive(negotiationToken, { stream });
+    if (!callsStore.matchesActiveCallScope(callScope)) {
+      stopStream(stream);
+      throw inboundNegotiationCancelledError();
+    }
+    setInboundAudioStream(stream);
+    await client.connect(offer, {
+      stream,
+      onRemoteStream: remoteStream => {
+        if (negotiationToken === inboundNegotiationToken) {
+          attachInboundRemoteAudio(remoteStream);
+        }
+      },
+      onDisconnected: () => {
+        if (!callsStore.matchesActiveCallScope(callScope)) return;
+        callsStore.updateActiveCall({
+          agentWebrtcConnected: false,
+          agentWebrtcConnecting: false,
+        });
+        // Reconnection and connection share the same generation guard.
+        // eslint-disable-next-line no-use-before-define
+        reconnectTelegramJanusMedia(callId).catch(() => {});
+      },
+    });
+    assertInboundNegotiationActive(negotiationToken, { stream });
+    if (!callsStore.matchesActiveCallScope(callScope)) {
+      stopStream(stream);
+      throw inboundNegotiationCancelledError();
+    }
+    return { success: true };
+  })().catch(error => {
+    if (telegramJanusConnection === connection) cleanupInboundWebRTC();
+    throw error;
+  });
+  return connection.promise;
+}
+
+export async function reconnectTelegramJanusMedia(callId) {
+  const store = useWhatsappCallsStore();
+  if (
+    String(store.activeCall?.id) !== String(callId) ||
+    !isTelegramPersonalProvider(store.activeCall) ||
+    store.isReconnecting
+  )
+    return;
+  const callScope = store.captureActiveCallScope();
+  store.setReconnecting(true);
+  store.updateActiveCall({ agentWebrtcConnecting: true });
+  try {
+    const { data } = await callsApiFor('telegram_personal').reconnect(callId);
+    if (!store.matchesActiveCallScope(callScope)) return;
+    await handleCallAgentOffer(callId, data, { provider: 'telegram_personal' });
+    if (!store.matchesActiveCallScope(callScope)) return;
+    store.updateActiveCall({
+      agentWebrtcConnected: true,
+      agentWebrtcConnecting: false,
+    });
+    if (
+      isInboundDirection(store.activeCall.direction) ||
+      store.activeCall.metaAccepted
+    ) {
+      store.markActiveCallConnected();
+    }
+  } catch (error) {
+    if (!store.matchesActiveCallScope(callScope)) return;
+    store.updateActiveCall({
+      agentWebrtcConnected: false,
+      agentWebrtcConnecting: false,
+    });
+    if (isMediaLegClosedError(error)) handleMediaLegClosed(store);
+  } finally {
+    if (store.matchesActiveCallScope(callScope)) store.setReconnecting(false);
+  }
+}
+
 // Expose handleAgentOffer so ActionCable handler can invoke it
 export { handleAgentOffer };
 
 function prepareInboundAgentAnswer(callId, agentOffer, provider = null) {
-  if (!agentOffer?.sdp_offer) return null;
+  if (isTelegramPersonalProvider(provider) || !agentOffer?.sdp_offer)
+    return null;
   return handleAgentOffer(
     callId,
     agentOffer.sdp_offer,
@@ -643,13 +793,30 @@ export const isCallTakenByAnotherAgentError = error =>
   error?.response?.status === 422 &&
   /already accepted/i.test(error.response?.data?.error || '');
 
+function commitAcceptedCall(callsStore, activeCallData, callScope) {
+  if (callScope) {
+    if (!callsStore.matchesActiveCallScope(callScope)) {
+      throw inboundNegotiationCancelledError();
+    }
+    // This is a stage change of the same call. Keep the operator's latest
+    // microphone choice, including a choice made while provider acceptance waited.
+    callsStore.updateActiveCall({
+      ...activeCallData,
+      isMuted: callsStore.activeCall.isMuted === true,
+    });
+  } else {
+    if (callsStore.hasActiveCall) throw inboundNegotiationCancelledError();
+    callsStore.setActiveCall(activeCallData);
+  }
+}
+
 /**
  * Legacy mode: creates WebRTC session and posts SDP to backend (browser ↔ Meta).
  * Can be called from anywhere — composable, widget, or bubble.
  */
 async function doAcceptCall(
   call,
-  { preconnectedAgent = false, skipPrewarm = false } = {}
+  { preconnectedAgent = false, skipPrewarm = false, callScope = null } = {}
 ) {
   // Server-relay mode: POST /accept without SDP. New Rails returns the media
   // server's Peer-B offer in the response as the synchronous source of truth;
@@ -663,22 +830,28 @@ async function doAcceptCall(
       const { data } = await callsApiFor(call).accept(call.id);
       return {
         success: true,
-        awaitingAgentOffer: !data?.agent_offer?.sdp_offer,
+        awaitingAgentOffer: !hasAgentMediaOffer(data?.agent_offer),
         agentOffer: data?.agent_offer,
         acceptData: data,
       };
     } catch (error) {
-      cleanupInboundWebRTC();
+      if (
+        !callScope ||
+        useWhatsappCallsStore().matchesActiveCallScope(callScope)
+      ) {
+        cleanupInboundWebRTC();
+      }
       throw error;
     }
   }
 
   // Legacy mode: full browser-side WebRTC handshake
   cleanupInboundWebRTC();
+  const negotiationToken = inboundNegotiationToken;
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    inboundStream = stream;
+    setInboundAudioStream(stream);
 
     const iceServers = call.iceServers?.length
       ? call.iceServers
@@ -715,7 +888,7 @@ async function doAcceptCall(
 
     return { success: true };
   } catch (err) {
-    cleanupInboundWebRTC();
+    if (negotiationToken === inboundNegotiationToken) cleanupInboundWebRTC();
     throw err;
   }
 }
@@ -727,24 +900,22 @@ async function connectAgentOfferForActiveCall(
   context,
   { usePrewarmedStream } = {}
 ) {
-  if (!agentOffer?.sdp_offer) return false;
+  if (!hasAgentMediaOffer(agentOffer)) return false;
+  const callScope = callsStore.captureActiveCallScope();
+  if (!callScope || String(callScope.id) !== String(callId)) return false;
 
   try {
     callsStore.updateActiveCall({ agentWebrtcConnecting: true });
-    await handleAgentOffer(
-      callId,
-      agentOffer.sdp_offer,
-      agentOffer.ice_servers || [],
-      {
-        direction: callsStore.activeCall?.direction,
-        context,
-        usePrewarmedStream:
-          usePrewarmedStream ??
-          isInboundDirection(callsStore.activeCall?.direction),
-        peerId: agentOffer.peer_id,
-        provider: callsStore.activeCall?.provider,
-      }
-    );
+    await handleCallAgentOffer(callId, agentOffer, {
+      direction: callsStore.activeCall?.direction,
+      context,
+      usePrewarmedStream:
+        usePrewarmedStream ??
+        isInboundDirection(callsStore.activeCall?.direction),
+      peerId: agentOffer.peer_id,
+      provider: callsStore.activeCall?.provider,
+    });
+    if (!callsStore.matchesActiveCallScope(callScope)) return false;
     callsStore.updateActiveCall({
       agentWebrtcConnected: true,
       agentWebrtcConnecting: false,
@@ -754,6 +925,7 @@ async function connectAgentOfferForActiveCall(
     emitter.emit('whatsapp_call:agent_webrtc_connected');
     return true;
   } catch (err) {
+    if (!callsStore.matchesActiveCallScope(callScope)) return false;
     callsStore.updateActiveCall({ agentWebrtcConnecting: false });
     callsStore.setReconnecting(false);
     if (isMediaLegClosedError(err)) {
@@ -778,10 +950,14 @@ async function connectPreparedOrFallbackAgentOffer({
   fallbackAgentOffer,
   forceFreshStream = false,
 }) {
+  const callScope = callsStore.captureActiveCallScope();
+  if (!callScope || String(callScope.id) !== String(activeCallData.id))
+    return false;
   if (preparedAnswerPromise) {
     try {
       callsStore.updateActiveCall({ agentWebrtcConnecting: true });
       await postPreparedInboundAgentAnswer(preparedAnswerPromise);
+      if (!callsStore.matchesActiveCallScope(callScope)) return false;
       callsStore.updateActiveCall({
         agentWebrtcConnected: true,
         agentWebrtcConnecting: false,
@@ -791,6 +967,7 @@ async function connectPreparedOrFallbackAgentOffer({
       emitter.emit('whatsapp_call:agent_webrtc_connected');
       return true;
     } catch (err) {
+      if (!callsStore.matchesActiveCallScope(callScope)) return false;
       callsStore.updateActiveCall({ agentWebrtcConnecting: false });
       callsStore.setReconnecting(false);
       if (isMediaLegClosedError(err)) {
@@ -832,8 +1009,15 @@ export async function acceptWhatsappCallById(callId, callSource = 'whatsapp') {
   );
 
   if (!call) {
+    const initialGeneration = callsStore.activeCallGeneration;
     const api = callsApiFor(callSource);
     const { data } = await api.show(callId);
+    if (
+      callsStore.hasActiveCall ||
+      callsStore.activeCallGeneration !== initialGeneration
+    ) {
+      return { success: false, error: 'active_call_exists' };
+    }
     if (data.status !== 'ringing') {
       return { success: false, error: 'not_ringing' };
     }
@@ -862,6 +1046,7 @@ export async function acceptWhatsappCallById(callId, callSource = 'whatsapp') {
   let serverRelay = false;
   let preparedAgentAnswerPromise = null;
   let preparedAgentOffer = null;
+  let callScope = null;
 
   try {
     serverRelay = isServerRelayCall(call);
@@ -880,6 +1065,7 @@ export async function acceptWhatsappCallById(callId, callSource = 'whatsapp') {
         status: call.status || 'ringing',
       };
       callsStore.setActiveCall(activeCallData);
+      callScope = callsStore.captureActiveCallScope();
       prepareInboundAudioStream();
       preparedAgentOffer =
         call.agentOffer || callsStore.consumePendingAgentOffer(activeCallData);
@@ -892,7 +1078,11 @@ export async function acceptWhatsappCallById(callId, callSource = 'whatsapp') {
     const result = await doAcceptCall(call, {
       preconnectedAgent,
       skipPrewarm: preparedAgentAnswerPromise !== null,
+      callScope,
     });
+    if (callScope && !callsStore.matchesActiveCallScope(callScope)) {
+      throw inboundNegotiationCancelledError();
+    }
 
     callsStore.removeIncomingCall(call.callId);
 
@@ -919,7 +1109,7 @@ export async function acceptWhatsappCallById(callId, callSource = 'whatsapp') {
           ? 'connected'
           : result.acceptData?.status || call.status,
     };
-    callsStore.setActiveCall(activeCallData);
+    commitAcceptedCall(callsStore, activeCallData, callScope);
     const freshOfferReplacesPrepared = Boolean(
       preparedAgentOffer &&
         result.agentOffer &&
@@ -949,9 +1139,14 @@ export async function acceptWhatsappCallById(callId, callSource = 'whatsapp') {
     return { success: true, call: callsStore.activeCall, ...result };
   } catch (err) {
     preparedAgentAnswerPromise?.catch(() => {});
-    if (serverRelay) callsStore.clearActiveCall();
-    cleanupInboundWebRTC();
-    callsStore.removeIncomingCall(call.callId);
+    const ownsCall = callScope
+      ? callsStore.matchesActiveCallScope(callScope)
+      : !callsStore.hasActiveCall;
+    if (ownsCall) {
+      if (serverRelay) callsStore.clearActiveCall();
+      cleanupInboundWebRTC();
+      callsStore.removeIncomingCall(call.callId);
+    }
     throw err;
   }
 }
@@ -959,7 +1154,7 @@ export async function acceptWhatsappCallById(callId, callSource = 'whatsapp') {
 /**
  * Fire-and-forget terminate request using fetch + keepalive.
  * Works reliably inside beforeunload / pagehide where axios won't complete.
- * Used ONLY in legacy mode. Server-relay mode does NOT terminate on unload.
+ * Telegram and legacy calls terminate on unload; WhatsApp server-relay calls persist.
  */
 export function terminateCallOnUnload(callId, provider = 'whatsapp') {
   const authData = Auth.hasAuthCookie() ? Auth.getAuthData() : {};
@@ -993,7 +1188,7 @@ export function useWhatsappCallSession() {
   const callsStore = useWhatsappCallsStore();
 
   const isAccepting = computed(() => callsStore.isAccepting);
-  const isMuted = ref(false);
+  const isMuted = computed(() => callsStore.activeCall?.isMuted === true);
   const callError = ref(null);
   const callDuration = ref(0);
   const isReconnecting = computed(() => callsStore.isReconnecting);
@@ -1038,8 +1233,8 @@ export function useWhatsappCallSession() {
     const call = callsStore.activeCall;
     if (!call?.id) return;
 
-    if (call.serverRelay) {
-      // Server-relay: only clean up local resources, do NOT terminate
+    if (call.serverRelay && !isTelegramPersonalProvider(call)) {
+      // WhatsApp server-relay: only clean up local resources.
       cleanupInboundWebRTC();
     } else {
       // Legacy: terminate and clean up
@@ -1064,13 +1259,14 @@ export function useWhatsappCallSession() {
    * Accept an incoming call — used by the floating widget buttons.
    */
   const acceptCall = async call => {
-    if (callsStore.isAccepting) return;
+    if (callsStore.isAccepting || callsStore.hasActiveCall) return;
     callsStore.setAccepting(true);
     callError.value = null;
 
     let serverRelay = false;
     let preparedAgentAnswerPromise = null;
     let preparedAgentOffer = null;
+    let callScope = null;
 
     try {
       serverRelay = isServerRelayCall(call);
@@ -1089,6 +1285,7 @@ export function useWhatsappCallSession() {
           status: call.status || 'ringing',
         };
         callsStore.setActiveCall(activeCallData);
+        callScope = callsStore.captureActiveCallScope();
         prepareInboundAudioStream();
         preparedAgentOffer =
           call.agentOffer ||
@@ -1102,7 +1299,11 @@ export function useWhatsappCallSession() {
       const result = await doAcceptCall(call, {
         preconnectedAgent,
         skipPrewarm: preparedAgentAnswerPromise !== null,
+        callScope,
       });
+      if (callScope && !callsStore.matchesActiveCallScope(callScope)) {
+        throw inboundNegotiationCancelledError();
+      }
       callsStore.removeIncomingCall(call.callId);
 
       const existingActiveCall = callsStore.activeCall;
@@ -1122,7 +1323,7 @@ export function useWhatsappCallSession() {
             ? 'connected'
             : result.acceptData?.status || call.status,
       };
-      callsStore.setActiveCall(activeCallData);
+      commitAcceptedCall(callsStore, activeCallData, callScope);
       const freshOfferReplacesPrepared = Boolean(
         preparedAgentOffer &&
           result.agentOffer &&
@@ -1156,8 +1357,12 @@ export function useWhatsappCallSession() {
         durationTimer.start();
       }
     } catch (err) {
-      if (serverRelay) callsStore.clearActiveCall();
       preparedAgentAnswerPromise?.catch(() => {});
+      const ownsCall = callScope
+        ? callsStore.matchesActiveCallScope(callScope)
+        : !callsStore.hasActiveCall;
+      if (!ownsCall) return;
+      if (serverRelay) callsStore.clearActiveCall();
       cleanupInboundWebRTC();
       if (isCallTakenByAnotherAgentError(err)) {
         // Another operator won the call: the card goes and says why.
@@ -1173,7 +1378,13 @@ export function useWhatsappCallSession() {
       console.error('[WhatsApp Call] acceptCall error:', err);
       // Note: doAcceptCall already cleans up WebRTC resources on error
     } finally {
-      callsStore.setAccepting(false);
+      if (
+        !callsStore.hasActiveCall ||
+        !callScope ||
+        callsStore.matchesActiveCallScope(callScope)
+      ) {
+        callsStore.setAccepting(false);
+      }
     }
   };
 
@@ -1213,12 +1424,13 @@ export function useWhatsappCallSession() {
   };
 
   const toggleMute = () => {
+    if (!callsStore.activeCall) return;
+    const muted = !isMuted.value;
+    callsStore.updateActiveCall({ isMuted: muted });
     const stream = inboundStream || getOutboundCallState().stream;
-    if (!stream) return;
-    const audioTrack = stream.getAudioTracks()[0];
-    if (!audioTrack) return;
-    audioTrack.enabled = !audioTrack.enabled;
-    isMuted.value = !audioTrack.enabled;
+    stream?.getAudioTracks?.().forEach(track => {
+      track.enabled = !muted;
+    });
   };
 
   const dismissIncomingCall = call => {

@@ -1,0 +1,6 @@
+# Build on DEV from the retained, exact production image ID/digest. No Janus
+# compiler/library or recording-postprocessor change is needed for this release.
+ARG JANUS_BASE_IMAGE
+FROM ${JANUS_BASE_IMAGE}
+COPY entrypoint.sh /usr/local/bin/onelink-janus-entrypoint
+RUN chmod 755 /usr/local/bin/onelink-janus-entrypoint
