@@ -30,6 +30,7 @@ class Captain::ReplySuggestion::FeedbackService
 
   def perform
     record = load_record!
+    record_sent_provenance!
     record_event(record)
     return unless record
 
@@ -41,6 +42,22 @@ class Captain::ReplySuggestion::FeedbackService
   end
 
   private
+
+  # Feedback may arrive before or after the provider ack. Keep provenance on the persisted
+  # message so both orderings use the same Message callback and source identity.
+  def record_sent_provenance!
+    return unless outcome == 'sent' && copilot_action == 'reply_suggestion'
+    return unless conversation&.account_id == account.id
+
+    message = sent_message
+    return unless message
+
+    message.with_lock do
+      attrs = message.additional_attributes.to_h.deep_dup
+      attrs['captain_ai_suggestion'] = { 'request_id' => suggestion_request_id }.compact
+      message.update!(additional_attributes: attrs)
+    end
+  end
 
   # A rejected suggestion leaves no approval card and no sticky agent of its own behind.
   def rejected(record)
@@ -141,8 +158,8 @@ class Captain::ReplySuggestion::FeedbackService
   def sent_message
     return if message_id.blank? || conversation.blank?
 
-    Message.where(conversation_id: conversation.id, message_type: :outgoing, private: false, sender_type: 'User', sender_id: user.id)
-           .find_by(id: message_id)
+    conversation.messages.where(account_id: account.id, message_type: :outgoing, private: false, sender_type: 'User', sender_id: user.id)
+                .find_by(id: message_id)
   end
 
   def remember_dismissal(record)

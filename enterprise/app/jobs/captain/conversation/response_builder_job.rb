@@ -236,7 +236,6 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
         schedule_first_follow_up(outgoing_message)
         Rails.logger.info("[CAPTAIN][ResponseBuilderJob] Incrementing response usage for #{account.id}")
         account.increment_response_usage
-        Accounts::MonthlyAiUsageService.new(account).record_ai_dialog_reply!(@conversation, message_id: outgoing_message&.id)
         account.increment_token_usage(@response.dig('usage', 'total_tokens'))
       end
     end

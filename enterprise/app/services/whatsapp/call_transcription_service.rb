@@ -275,11 +275,10 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService # rubocop:disable 
 
   def update_call_and_message(transcribed_text)
     return if transcribed_text.blank?
-    return unless store_first_transcript!(transcribed_text)
 
-    account.increment_response_usage
-    record_call_analysis_usage!
-    sync_transcript_to_message(transcribed_text)
+    store_first_transcript!(transcribed_text)
+
+    sync_transcript_to_message(call.transcript)
   end
 
   def store_first_transcript!(transcribed_text)
@@ -287,7 +286,11 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService # rubocop:disable 
     call.with_lock do
       call.reload
       first_transcription = call.transcript.blank?
-      call.update!(transcript: transcribed_text)
+      if first_transcription
+        call.update!(transcript: transcribed_text)
+        account.increment_response_usage
+        record_call_analysis_usage!
+      end
     end
     first_transcription
   end
@@ -316,6 +319,7 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService # rubocop:disable 
   def record_call_analysis_usage!
     duration = call.respond_to?(:duration_seconds) && call.duration_seconds.present? ? call.duration_seconds : @probed_duration_seconds
     Accounts::MonthlyAiUsageService.new(account).record_call_analysis!(
+      call: call,
       duration_seconds: duration,
       unanswered: unanswered_whatsapp_call?(duration)
     )

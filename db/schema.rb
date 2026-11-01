@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_11_01_183000) do
+ActiveRecord::Schema[7.2].define(version: 2026_11_02_013000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -30,6 +30,26 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_01_183000) do
     t.datetime "updated_at", null: false
     t.index ["owner_type", "owner_id"], name: "index_access_tokens_on_owner_type_and_owner_id"
     t.index ["token"], name: "index_access_tokens_on_token", unique: true
+  end
+
+  create_table "account_ai_dialog_states", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "contact_id", null: false
+    t.jsonb "state", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "contact_id"], name: "index_account_ai_dialog_states_on_account_id_and_contact_id", unique: true
+  end
+
+  create_table "account_ai_usage_events", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "event_key", null: false
+    t.string "bucket", null: false
+    t.datetime "occurred_at", null: false
+    t.integer "quantity", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "event_key"], name: "index_account_ai_usage_events_on_account_id_and_event_key", unique: true
   end
 
   create_table "account_user_lifecycle_snapshots", force: :cascade do |t|
@@ -2859,6 +2879,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_01_183000) do
     t.jsonb "additional_attributes", default: {}
     t.text "processed_message_content"
     t.jsonb "sentiment", default: {}
+    t.datetime "ai_usage_sent_at"
     t.index "(((((((((((COALESCE(processed_message_content, ''::text) || '\n'::text) || COALESCE((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN\n    CASE\n        WHEN ((content_attributes #>> '{}'::text[]) IS JSON OBJECT) THEN ((content_attributes #>> '{}'::text[]))::json\n        ELSE '{}'::json\n    END\n    ELSE '{}'::json\nEND ->> 'text'::text), ''::text)) || '\n'::text) || COALESCE((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN\n    CASE\n        WHEN ((content_attributes #>> '{}'::text[]) IS JSON OBJECT) THEN ((content_attributes #>> '{}'::text[]))::json\n        ELSE '{}'::json\n    END\n    ELSE '{}'::json\nEND ->> 'text_content'::text), ''::text)) || '\n'::text) || COALESCE((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN\n    CASE\n        WHEN ((content_attributes #>> '{}'::text[]) IS JSON OBJECT) THEN ((content_attributes #>> '{}'::text[]))::json\n        ELSE '{}'::json\n    END\n    ELSE '{}'::json\nEND ->> 'transcribed_text'::text), ''::text)) || '\n'::text) || COALESCE(((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN\n    CASE\n        WHEN ((content_attributes #>> '{}'::text[]) IS JSON OBJECT) THEN ((content_attributes #>> '{}'::text[]))::json\n        ELSE '{}'::json\n    END\n    ELSE '{}'::json\nEND -> 'email'::text) ->> 'subject'::text), ''::text)) || '\n'::text) || COALESCE(((\nCASE json_typeof(content_attributes)\n    WHEN 'object'::text THEN content_attributes\n    WHEN 'string'::text THEN\n    CASE\n        WHEN ((content_attributes #>> '{}'::text[]) IS JSON OBJECT) THEN ((content_attributes #>> '{}'::text[]))::json\n        ELSE '{}'::json\n    END\n    ELSE '{}'::json\nEND -> 'email'::text) ->> 'text_content'::text), ''::text))) gin_trgm_ops", name: "index_messages_on_transcription_search_text", using: :gin
     t.index "((additional_attributes -> 'campaign_id'::text))", name: "index_messages_on_additional_attributes_campaign_id", using: :gin
     t.index "to_tsvector('english'::regconfig, COALESCE(content, ''::text))", name: "index_messages_on_english_search_vector", using: :gin
@@ -4430,6 +4451,9 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_01_183000) do
     t.index ["inbox_id"], name: "index_working_hours_on_inbox_id"
   end
 
+  add_foreign_key "account_ai_dialog_states", "accounts", on_delete: :cascade
+  add_foreign_key "account_ai_dialog_states", "contacts", on_delete: :cascade
+  add_foreign_key "account_ai_usage_events", "accounts", on_delete: :cascade
   add_foreign_key "account_user_lifecycle_snapshots", "accounts", on_delete: :cascade
   add_foreign_key "account_user_lifecycle_snapshots", "users", column: "deactivated_by_id", on_delete: :nullify
   add_foreign_key "account_user_lifecycle_snapshots", "users", on_delete: :cascade

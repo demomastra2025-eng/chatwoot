@@ -211,6 +211,8 @@ class Message < ApplicationRecord
 
   before_create :activate_captain_human_control_for_human_response
   before_create :stamp_playground_delivery_policy
+  after_save :record_sent_ai_usage
+
   after_create_commit :execute_after_create_commit_callbacks
 
   after_update_commit :dispatch_update_event
@@ -564,6 +566,12 @@ class Message < ApplicationRecord
 
   def ensure_content_type
     self.content_type ||= Message.content_types[:text]
+  end
+
+  def record_sent_ai_usage
+    return unless outgoing? && !private?
+
+    Accounts::MonthlyAiUsageService.new(account).record_sent_message!(self)
   end
 
   def execute_after_create_commit_callbacks
