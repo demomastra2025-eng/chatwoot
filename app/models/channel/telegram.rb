@@ -35,6 +35,13 @@ class Channel::Telegram < ApplicationRecord
     "https://api.telegram.org/bot#{bot_token}"
   end
 
+  def webhook_secret_token
+    secret_key = Rails.application.secret_key_base.to_s
+    return if bot_token.blank? || secret_key.blank?
+
+    OpenSSL::HMAC.hexdigest('SHA256', secret_key, "telegram-webhook-secret:#{bot_token}")
+  end
+
   def send_message_on_telegram(message)
     message_id = send_message(message) if message.outgoing_content.present?
     message_id = Telegram::SendAttachmentsService.new(message: message).perform if message.attachments.present?
@@ -92,10 +99,7 @@ class Channel::Telegram < ApplicationRecord
     }.merge(business_body(message))
     body[:reply_markup] = reply_markup unless reply_markup.nil?
 
-    response = HTTParty.post(
-      "#{telegram_api_url}/#{method_name}",
-      body: body
-    )
+    response = HTTParty.post("#{telegram_api_url}/#{method_name}", body: body)
 
     raise response.parsed_response['description'] unless response.success?
 
@@ -103,13 +107,8 @@ class Channel::Telegram < ApplicationRecord
   end
 
   def delete_message(message:)
-    response = HTTParty.post(
-      "#{telegram_api_url}/deleteMessage",
-      body: {
-        chat_id: chat_id(message),
-        message_id: message.source_id
-      }.merge(business_body(message))
-    )
+    payload = { chat_id: chat_id(message), message_id: message.source_id }.merge(business_body(message))
+    response = HTTParty.post("#{telegram_api_url}/deleteMessage", body: payload)
 
     raise response.parsed_response['description'] unless response.success?
 
@@ -120,14 +119,8 @@ class Channel::Telegram < ApplicationRecord
     business_connection_id = business_connection_id(message)
     return false if business_connection_id.blank?
 
-    response = HTTParty.post(
-      "#{telegram_api_url}/readBusinessMessage",
-      body: {
-        business_connection_id: business_connection_id,
-        chat_id: chat_id(message),
-        message_id: message.source_id
-      }
-    )
+    payload = { business_connection_id: business_connection_id, chat_id: chat_id(message), message_id: message.source_id }
+    response = HTTParty.post("#{telegram_api_url}/readBusinessMessage", body: payload)
 
     raise response.parsed_response['description'] unless response.success?
 
@@ -135,10 +128,7 @@ class Channel::Telegram < ApplicationRecord
   end
 
   def answer_callback_query(callback_query_id:)
-    response = HTTParty.post(
-      "#{telegram_api_url}/answerCallbackQuery",
-      body: { callback_query_id: callback_query_id }
-    )
+    response = HTTParty.post("#{telegram_api_url}/answerCallbackQuery", body: { callback_query_id: callback_query_id })
 
     raise response.parsed_response['description'] unless response.success?
 
@@ -153,10 +143,7 @@ class Channel::Telegram < ApplicationRecord
       reaction: reaction_payload.to_json
     }.merge(business_body(message))
 
-    response = HTTParty.post(
-      "#{telegram_api_url}/setMessageReaction",
-      body: body
-    )
+    response = HTTParty.post("#{telegram_api_url}/setMessageReaction", body: body)
 
     raise response.parsed_response['description'] unless response.success?
 
@@ -183,7 +170,8 @@ class Channel::Telegram < ApplicationRecord
     HTTParty.post("#{telegram_api_url}/deleteWebhook")
     response = HTTParty.post("#{telegram_api_url}/setWebhook",
                              body: {
-                               url: "#{ENV.fetch('FRONTEND_URL', nil)}/webhooks/telegram/#{bot_token}"
+                               url: "#{ENV.fetch('FRONTEND_URL', nil)}/webhooks/telegram/#{bot_token}",
+                               secret_token: webhook_secret_token
                              })
     errors.add(:bot_token, 'error setting up the webook') unless response.success?
   end

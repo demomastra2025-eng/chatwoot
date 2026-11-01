@@ -170,6 +170,24 @@ describe 'Rack::Attack auth throttles' do
     end
   end
 
+  describe 'accounts/ip' do
+    it 'throttles POST /api/v1/accounts, POST /api/v2/accounts, and POST /auth including consecutive-slash variants' do
+      expect(throttle_key('accounts/ip', json_env({}, '/api/v1/accounts'))).to eq(ip)
+      expect(throttle_key('accounts/ip', json_env({}, '//api/v1/accounts'))).to eq(ip)
+      expect(throttle_key('accounts/ip', json_env({}, '/api//v1/accounts'))).to eq(ip)
+      expect(throttle_key('accounts/ip', json_env({}, '/api/v2/accounts'))).to eq(ip)
+      expect(throttle_key('accounts/ip', json_env({}, '//api/v2/accounts/'))).to eq(ip)
+      expect(throttle_key('accounts/ip', json_env({}, '/auth'))).to eq(ip)
+      expect(throttle_key('accounts/ip', json_env({}, '//auth'))).to eq(ip)
+    end
+
+    it 'does not throttle authenticated account reads or sign-in under accounts/ip' do
+      get_v1 = json_env({}, '/api/v1/accounts').merge('REQUEST_METHOD' => 'GET')
+      expect(throttle_key('accounts/ip', get_v1)).to be_nil
+      expect(throttle_key('accounts/ip', json_env({}, '/auth/sign_in'))).to be_nil
+    end
+  end
+
   describe 'api/v1/widget/conversations/transcript' do
     it 'throttles widget transcript POST requests by ip' do
       expect(throttle_key('api/v1/widget/conversations/transcript', json_env({}, '/api/v1/widget/conversations/transcript'))).to eq(ip)

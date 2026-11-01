@@ -39,7 +39,7 @@ class Rack::Attack
     # Rails allows paths with extensions and trailing slashes, so compare against a normalized path.
     # For example, /auth, /auth.json, and /auth/ should all use the same throttle.
     def path_without_extentions
-      normalized_path = path[/^[^.]+/]
+      normalized_path = path.squeeze('/')[/^[^.]+/]
       normalized_path == '/' ? normalized_path : normalized_path.sub(%r{/+\z}, '')
     end
     alias path_without_extensions path_without_extentions
@@ -170,8 +170,9 @@ class Rack::Attack
   end
 
   ## Prevent Brute-Force Signup Attacks ###
+  SIGNUP_PATHS = %w[/api/v1/accounts /api/v2/accounts /auth].freeze
   throttle('accounts/ip', limit: 5, period: 30.minutes) do |req|
-    req.ip if req.path_without_extentions == '/api/v1/accounts' && req.post?
+    req.ip if SIGNUP_PATHS.include?(req.path_without_extentions) && req.post?
   end
 
   ##-----------------------------------------------##
