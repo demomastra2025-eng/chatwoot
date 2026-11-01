@@ -1553,6 +1553,8 @@ export default {
               normalizedAcceptedMessage !== normalizedEditorMessage,
             action: copilotAcceptedMeta?.action || 'reply_suggestion',
             request_id: copilotAcceptedMeta?.requestId || null,
+            suggestion_request_id:
+              copilotAcceptedMeta?.suggestionRequestId || null,
             follow_up_count: copilotAcceptedMeta?.followUpCount || 0,
           },
         };

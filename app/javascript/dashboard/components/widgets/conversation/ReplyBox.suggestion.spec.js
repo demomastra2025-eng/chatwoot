@@ -911,6 +911,107 @@ describe('ReplyBox reply suggestion outcomes', () => {
     );
   });
 
+  it('carries the generated suggestion identity in the primary edited send when optional feedback fails', async () => {
+    wrapper = await mountReplyBox();
+    const dispatch = vi
+      .spyOn(wrapper.vm.$store, 'dispatch')
+      .mockResolvedValue({ id: 771 });
+    TasksAPI.feedback.mockRejectedValueOnce(new Error('feedback unavailable'));
+    const meta = {
+      action: 'reply_suggestion',
+      requestId: 'refinement-trace-id',
+      suggestionRequestId: 'generated-suggestion-id',
+    };
+
+    await wrapper.vm.sendMessage(
+      { message: 'Edited staff reply', private: false },
+      'Edited staff reply',
+      'Original AI draft',
+      meta
+    );
+    await flushPromises();
+
+    expect(dispatch).toHaveBeenCalledWith(
+      'createPendingMessageAndSend',
+      expect.objectContaining({
+        contentAttributes: {
+          copilot: expect.objectContaining({
+            assisted: true,
+            edited_before_send: true,
+            request_id: 'refinement-trace-id',
+            suggestion_request_id: 'generated-suggestion-id',
+          }),
+        },
+      })
+    );
+  });
+
+  it('keeps the same suggestion identity on a failed save and retry', async () => {
+    wrapper = await mountReplyBox();
+    const dispatch = vi.spyOn(wrapper.vm.$store, 'dispatch');
+    dispatch.mockImplementation(type => {
+      if (type === 'createPendingMessageAndSend') {
+        const attempts = dispatch.mock.calls.filter(
+          ([action]) => action === type
+        ).length;
+        return attempts === 1
+          ? Promise.reject(new Error('save unavailable'))
+          : Promise.resolve({ id: 772 });
+      }
+      return Promise.resolve();
+    });
+    const meta = {
+      action: 'reply_suggestion',
+      suggestionRequestId: 'sr-retry',
+    };
+    const retry = () =>
+      wrapper.vm.sendMessage(
+        { message: 'Edited reply', private: false },
+        'Edited reply',
+        'AI draft',
+        meta
+      );
+    await retry();
+    await retry();
+    const payloads = dispatch.mock.calls
+      .filter(([action]) => action === 'createPendingMessageAndSend')
+      .map(([, payload]) => payload);
+    expect(payloads).toHaveLength(2);
+    expect(
+      payloads.map(
+        payload => payload.contentAttributes.copilot.suggestion_request_id
+      )
+    ).toEqual(['sr-retry', 'sr-retry']);
+  });
+
+  it('includes the identity only on the first text segment of a split logical AI reply', async () => {
+    wrapper = await mountReplyBox();
+    const dispatch = vi
+      .spyOn(wrapper.vm.$store, 'dispatch')
+      .mockResolvedValue({ id: 773 });
+    const segments = Array.from({ length: 7 }, (_, index) => ({
+      message: `Part ${index + 1}`,
+      private: false,
+    }));
+    vi.spyOn(wrapper.vm, 'getMultipleMessagesPayload').mockReturnValue(
+      segments
+    );
+    wrapper.vm.sendMessageAsMultipleMessages('All parts', 'AI draft', {
+      action: 'reply_suggestion',
+      suggestionRequestId: 'sr-split',
+    });
+    await flushPromises();
+    const payloads = dispatch.mock.calls
+      .filter(([action]) => action === 'createPendingMessageAndSend')
+      .map(([, payload]) => payload);
+    expect(payloads).toHaveLength(7);
+    expect(
+      payloads.map(
+        payload => payload.contentAttributes?.copilot?.suggestion_request_id
+      )
+    ).toEqual(['sr-split', ...Array(6).fill(undefined)]);
+  });
+
   it('never carries a suggestion of one conversation into another', async () => {
     mockGetReplySuggestionStatus.mockResolvedValueOnce({
       suggestion: state(),
