@@ -37,7 +37,12 @@ const modelValue = defineModel({ type: Boolean, default: false });
           {{ header }}
         </span>
         <div v-if="hideToggle" class="size-2" />
-        <ToggleSwitch v-else v-model="modelValue" :disabled="disabled" />
+        <ToggleSwitch
+          v-else
+          v-model="modelValue"
+          :disabled="disabled"
+          :aria-label="header"
+        />
       </div>
       <span v-if="description" class="text-body-main text-n-slate-11">
         {{ description }}

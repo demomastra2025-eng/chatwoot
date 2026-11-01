@@ -124,6 +124,17 @@ Do not treat public product pages as proof of runtime implementation when code d
 
 ## Frontend Rules
 
+- Every OneLink frontend change and review MUST use `onelink-design-system`.
+  Canonical source: `brain-cat 03-runbooks/onelink-design-system/SKILL.md`;
+  installed skill: `$CODEX_HOME/skills/onelink-design-system/SKILL.md`.
+  Read its current component catalogue, layout recipes, examples and acceptance
+  checks before editing. Use supported component APIs; no ad hoc visual variants
+  or local CSS overrides. New visual patterns require Aset's specific decision,
+  followed by a catalogue entry and example. Routine fixes within existing
+  patterns need no extra approval. Missing checks or design-system violations
+  are NO-GO in independent review. Match the native UI surface: dashboard,
+  widget, portal, survey, superadmin or shared. The brain rules take precedence
+  over historical workflow instructions elsewhere in this file.
 - The product frontend is a Rails + Vue 3 + Vite application, not a separate SPA repo.
 - Main surfaces live under `app/javascript/`:
   - `dashboard/`
