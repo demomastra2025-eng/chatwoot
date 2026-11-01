@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { h, nextTick } from 'vue';
+import { h, nextTick, ref } from 'vue';
 import Modal from './Modal.vue';
 import ComboBox from '../components-next/combobox/ComboBox.vue';
 import TagMultiSelectComboBox from '../components-next/combobox/TagMultiSelectComboBox.vue';
@@ -76,6 +76,7 @@ describe('legacy Modal focus and semantics', () => {
   it('returns focus on parent-driven close and traps an empty dialog', async () => {
     const trigger = await openModal();
     await wrapper.setProps({ show: false });
+    await nextTick();
     expect(document.activeElement).toBe(trigger);
     wrapper.unmount();
     wrapper = mount(Modal, {
@@ -207,5 +208,72 @@ describe('legacy Modal focus and semantics', () => {
     expect(document.activeElement).toBe(last.element);
     await last.trigger('keydown', { key: 'Tab' });
     expect(document.activeElement).toBe(first.element);
+  });
+
+  it('returns to the outer opener when a parent closes with its child still open', async () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+    const childVisible = ref(false);
+    wrapper = mount(Modal, {
+      attachTo: document.body,
+      props: { show: false, showCloseButton: false },
+      attrs: { 'aria-label': 'Parent' },
+      slots: {
+        default: () => [
+          h('button', { id: 'child-opener' }, 'Open child'),
+          h(
+            Modal,
+            {
+              show: childVisible.value,
+              showCloseButton: false,
+              'aria-label': 'Child',
+            },
+            {
+              default: () =>
+                h('button', { id: 'child-action' }, 'Child action'),
+            }
+          ),
+        ],
+      },
+    });
+    await wrapper.setProps({ show: true });
+    wrapper.get('#child-opener').element.focus();
+    childVisible.value = true;
+    await nextTick();
+    await nextTick();
+    expect(document.activeElement).toBe(wrapper.get('#child-action').element);
+    await wrapper.setProps({ show: false });
+    await nextTick();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('names the parent even when a nested modal initially has focus', async () => {
+    wrapper = mount(Modal, {
+      attachTo: document.body,
+      props: { show: true, showCloseButton: false },
+      slots: {
+        default: () => [
+          h('h2', 'Parent title'),
+          h(
+            Modal,
+            { show: true, showCloseButton: false },
+            {
+              default: () => [
+                h('h2', 'Child title'),
+                h('button', 'Child action'),
+              ],
+            }
+          ),
+        ],
+      },
+    });
+    await nextTick();
+    await nextTick();
+    const dialogs = wrapper.findAll('[data-legacy-modal]');
+    const labelId = dialogs[0].attributes('aria-labelledby');
+    expect(labelId).toBeTruthy();
+    expect(document.getElementById(labelId).textContent).toBe('Parent title');
+    expect(document.activeElement.textContent).toBe('Child action');
   });
 });

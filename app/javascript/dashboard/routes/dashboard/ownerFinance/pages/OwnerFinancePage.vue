@@ -3113,6 +3113,7 @@ const saveModal = () => {
                 id="finance-contractForm-monthly_amount"
                 v-model="contractForm.monthly_amount"
                 type="number"
+                step="0.01"
                 :label="UI.MODALS.FIELD_MONTHLY_AMOUNT"
                 :disabled="isSaving"
               />
@@ -3123,6 +3124,7 @@ const saveModal = () => {
                 id="finance-contractForm-one_time_amount"
                 v-model="contractForm.one_time_amount"
                 type="number"
+                step="0.01"
                 :label="UI.MODALS.FIELD_ONE_TIME_AMOUNT"
                 :disabled="isSaving"
               />
@@ -3242,6 +3244,7 @@ const saveModal = () => {
                 id="finance-obligationForm-base_amount"
                 v-model="obligationForm.base_amount"
                 type="number"
+                step="0.01"
                 :label="UI.MODALS.FIELD_BASE_AMOUNT"
                 :disabled="isSaving"
                 @update:model-value="onObligationBaseChange"
@@ -3253,6 +3256,7 @@ const saveModal = () => {
                 id="finance-obligationForm-overage_excluded_amount"
                 v-model="obligationForm.overage_excluded_amount"
                 type="number"
+                step="0.01"
                 :label="UI.MODALS.FIELD_OVERAGE_EXCLUDED"
                 :disabled="isSaving"
               />
@@ -3265,6 +3269,7 @@ const saveModal = () => {
                 id="finance-obligationForm-amount"
                 v-model="obligationForm.amount"
                 type="number"
+                step="0.01"
                 :label="UI.MODALS.FIELD_AMOUNT"
                 :disabled="isSaving"
               />
@@ -3275,6 +3280,7 @@ const saveModal = () => {
                 id="finance-obligationForm-paid_amount"
                 v-model="obligationForm.paid_amount"
                 type="number"
+                step="0.01"
                 :label="UI.MODALS.FIELD_PAID_AMOUNT"
                 :disabled="isSaving"
               />

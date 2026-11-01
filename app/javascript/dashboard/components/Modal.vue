@@ -2,7 +2,7 @@
 import {
   computed,
   nextTick,
-  onBeforeUnmount,
+  onUnmounted,
   ref,
   useAttrs,
   useId,
@@ -85,13 +85,14 @@ watch(
   show,
   async visible => {
     if (!visible) {
-      restoreFocus();
+      await nextTick();
+      if (!show.value) restoreFocus();
       return;
     }
     returnFocusTo = document.activeElement;
     automaticLabelId.value = undefined;
     await nextTick();
-    if (!show.value || !dialogRef.value || !isTopmost()) return;
+    if (!show.value || !dialogRef.value) return;
     const heading = dialogRef.value.querySelector(
       'h1, h2, h3, [role="heading"]'
     );
@@ -99,6 +100,7 @@ watch(
       if (!heading.id) heading.id = headingId;
       automaticLabelId.value = heading.id;
     }
+    if (!isTopmost()) return;
     const autofocus = dialogRef.value.querySelector(
       '[autofocus]:not(:disabled)'
     );
@@ -107,7 +109,9 @@ watch(
   { immediate: true }
 );
 
-onBeforeUnmount(restoreFocus);
+// A nested modal's opener may belong to a parent that is also being removed.
+// Restore after removal so that a detached child opener cannot steal focus.
+onUnmounted(restoreFocus);
 
 const modalClassName = computed(() => {
   const modalClassNameMap = {

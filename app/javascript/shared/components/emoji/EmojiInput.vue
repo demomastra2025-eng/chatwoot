@@ -221,6 +221,7 @@ export default {
         />
         <NextButton
           v-if="showRemoveButton"
+          type="button"
           faded
           sm
           slate

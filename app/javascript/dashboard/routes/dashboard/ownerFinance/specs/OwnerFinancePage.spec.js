@@ -155,8 +155,9 @@ describe('OwnerFinancePage', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  const mountPage = () =>
+  const mountPage = (options = {}) =>
     mount(OwnerFinancePage, {
+      ...options,
       global: {
         stubs: {
           TeleportWithDirection: { template: '<div><slot /></div>' },
@@ -271,4 +272,42 @@ describe('OwnerFinancePage', () => {
     expect(OwnerFinanceAPI.createDeadline).not.toHaveBeenCalled();
     wrapper.unmount();
   });
+
+  it.each([
+    [
+      'contract',
+      UI.ADD_CONTRACT,
+      'client_name',
+      'monthly_amount',
+      'createContract',
+    ],
+    [
+      'obligation',
+      UI.ADD_OBLIGATION,
+      'title',
+      'base_amount',
+      'createObligation',
+    ],
+  ])(
+    'saves decimal money through native form validation in the %s dialog',
+    async (kind, label, name, amount, method) => {
+      const wrapper = mountPage({ attachTo: document.body });
+      await flushPromises();
+      await wrapper.get('[data-test="tab-contracts"]').trigger('click');
+      await clickLabel(wrapper, label);
+      await wrapper
+        .get(`#finance-${kind}Form-${name}`)
+        .setValue('Synthetic fixture');
+      await wrapper.get(`#finance-${kind}Form-${amount}`).setValue('100001.23');
+      const form = wrapper.get('form').element;
+      expect(form.checkValidity()).toBe(true);
+      OwnerFinanceAPI[method].mockResolvedValueOnce({ data: {} });
+      wrapper.get('button[type="submit"]').element.click();
+      await flushPromises();
+      expect(OwnerFinanceAPI[method]).toHaveBeenCalledTimes(1);
+      expect(OwnerFinanceAPI[method].mock.calls[0][0][amount]).toBe(100001.23);
+      expect(wrapper.get('dialog').element.open).toBe(false);
+      wrapper.unmount();
+    }
+  );
 });
