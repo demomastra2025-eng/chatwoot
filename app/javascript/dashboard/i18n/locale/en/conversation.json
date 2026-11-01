@@ -107,6 +107,10 @@
         "SHOW_WAITING": "Show missed calls waiting for callback",
         "SHOW_ALL": "Show all chats"
       },
+      "CALLS_ONLY_FILTER": {
+        "SHOW_CALLS_ONLY": "Calls only",
+        "SHOW_ALL": "Show all chats"
+      },
       "VOICEMAIL": "Voicemail",
       "CALL_ENDED": "Call ended",
       "NOT_ANSWERED_YET": "Not answered yet",

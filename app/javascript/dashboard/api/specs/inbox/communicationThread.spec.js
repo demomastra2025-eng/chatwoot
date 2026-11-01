@@ -179,5 +179,54 @@ describe('#CommunicationThreadAPI', () => {
         }
       );
     });
+
+    it('forwards calls_only across #get, #meta, #filter, #sidebarUnreadCounts, and #filterSidebarUnreadCounts', () => {
+      communicationThreadAPI.get({
+        status: 'open',
+        assigneeType: 'all',
+        callsOnly: true,
+      });
+      expect(axiosMock.get.mock.calls.at(-1)[1].params).toMatchObject({
+        status: 'open',
+        assignee_type: 'all',
+        calls_only: true,
+      });
+
+      communicationThreadAPI.meta({
+        status: 'open',
+        callsOnly: true,
+      });
+      expect(axiosMock.get.mock.calls.at(-1)[1].params).toMatchObject({
+        status: 'open',
+        calls_only: true,
+      });
+
+      communicationThreadAPI.sidebarUnreadCounts({
+        status: 'open',
+        callsOnly: true,
+      });
+      expect(axiosMock.get.mock.calls.at(-1)[1].params).toMatchObject({
+        status: 'open',
+        calls_only: true,
+      });
+
+      communicationThreadAPI.filterSidebarUnreadCounts({
+        callsOnly: true,
+        queryData: { payload: [] },
+      });
+      expect(axiosMock.post.mock.calls.at(-1)[2].params).toMatchObject({
+        calls_only: true,
+      });
+
+      communicationThreadAPI.filter({
+        page: 1,
+        callsOnly: true,
+        queryData: { payload: [] },
+      });
+      expect(axiosMock.post.mock.calls.at(-1)[2].params).toMatchObject({
+        page: 1,
+        calls_only: true,
+      });
+    });
   });
 });

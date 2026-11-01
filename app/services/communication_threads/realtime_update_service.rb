@@ -64,6 +64,7 @@ class CommunicationThreads::RealtimeUpdateService # rubocop:disable Metrics/Clas
     read_states = batch_read_states(account, links)
     preload_conversation_directional_timestamps(account, links)
     preload_meta_ad_referrals(account, links)
+    preload_call_conversation_ids(account, links)
     groups.each_value do |group|
       shared_payload = shared_realtime_payload(communication_thread, group[:links], source_conversation, message)
       payload = realtime_payload(communication_thread, group[:links], shared_payload, read_states)
@@ -112,7 +113,8 @@ class CommunicationThreads::RealtimeUpdateService # rubocop:disable Metrics/Clas
       status: communication_thread.status, priority: communication_thread.priority,
       assignee_id: communication_thread.assignee_id, team_id: communication_thread.team_id,
       labels: label_list(communication_thread, links), scheduling_appointment_statuses: scheduling_appointment_statuses(communication_thread),
-      snoozed_until: CommunicationThread.snoozed_until_for(links.filter_map(&:conversation))
+      snoozed_until: CommunicationThread.snoozed_until_for(links.filter_map(&:conversation)),
+      has_calls: links.any? { |link| (@call_conversation_ids || Set.new).include?(link.conversation_id) }
     }
   end
 
@@ -152,6 +154,13 @@ class CommunicationThreads::RealtimeUpdateService # rubocop:disable Metrics/Clas
     return base_meta if referral.blank?
 
     base_meta.merge(meta_ad_referral: referral.summary(communication_thread: communication_thread))
+  end
+
+  def preload_call_conversation_ids(account, links)
+    @call_conversation_ids = Conversations::CallsOnlyScope.conversation_ids_with_calls(
+      account_id: account.id,
+      conversations: links.filter_map(&:conversation).uniq
+    )
   end
 
   def preload_meta_ad_referrals(account, links)

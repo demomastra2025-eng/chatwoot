@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class CommunicationThreads::FilterService < FilterService
+class CommunicationThreads::FilterService < FilterService # rubocop:disable Metrics/ClassLength
   include CommunicationThreads::FilterService::Counters
   ATTRIBUTE_MODEL = 'conversation_attribute'
   DEFAULT_SORT = 'last_activity_at_desc'
@@ -116,6 +116,7 @@ class CommunicationThreads::FilterService < FilterService
   def apply_conversation_scopes(scope)
     scope = conversations_with_any_label(scope) if labels_scope_any?
     scope = conversations_waiting_for_callback(scope) if waiting_for_callback_only?
+    scope = conversations_with_calls(scope) if calls_only?
     scope
   end
 
@@ -124,6 +125,10 @@ class CommunicationThreads::FilterService < FilterService
       "COALESCE(conversations.additional_attributes ->> 'waiting_for_callback', " \
       "conversations.custom_attributes ->> 'waiting_for_callback') = 'true'"
     )
+  end
+
+  def conversations_with_calls(scope)
+    Conversations::CallsOnlyScope.apply(scope)
   end
 
   def apply_thread_scopes(scope, include_unread: true)
@@ -157,6 +162,12 @@ class CommunicationThreads::FilterService < FilterService
   def waiting_for_callback_only?
     ActiveModel::Type::Boolean.new.cast(
       @params[:waiting_for_callback].presence || @params[:waitingForCallback].presence
+    )
+  end
+
+  def calls_only?
+    ActiveModel::Type::Boolean.new.cast(
+      @params[:calls_only].presence || @params[:callsOnly].presence
     )
   end
 

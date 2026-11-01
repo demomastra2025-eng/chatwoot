@@ -146,4 +146,29 @@ describe('ChatListHeader', () => {
     await btn.trigger('click');
     expect(wrapper.emitted('waitingForCallbackFilterToggle')).toHaveLength(1);
   });
+
+  it('renders the calls-only quick filter button, toggles active state, and emits callsOnlyFilterToggle', async () => {
+    const inactiveWrapper = mountComponent({
+      activeCallsOnly: false,
+    });
+    const inactiveBtn = inactiveWrapper.get(
+      '[data-testid="calls-only-filter-button"]'
+    );
+    expect(inactiveBtn.attributes('aria-pressed')).toBe('false');
+    expect(inactiveBtn.attributes('aria-label')).toBe('Calls only');
+    expect(inactiveBtn.attributes('color')).toBe('slate');
+
+    const activeWrapper = mountComponent({
+      activeCallsOnly: true,
+    });
+    const activeBtn = activeWrapper.get(
+      '[data-testid="calls-only-filter-button"]'
+    );
+    expect(activeBtn.attributes('aria-pressed')).toBe('true');
+    expect(activeBtn.attributes('aria-label')).toBe('Show all chats');
+    expect(activeBtn.attributes('color')).toBe('blue');
+
+    await activeBtn.trigger('click');
+    expect(activeWrapper.emitted('callsOnlyFilterToggle')).toHaveLength(1);
+  });
 });

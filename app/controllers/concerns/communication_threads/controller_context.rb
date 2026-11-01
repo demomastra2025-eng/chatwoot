@@ -4,7 +4,7 @@
 # (conversations, links, inboxes) and the preloads of the thread payload (channels, read state, last messages, labels, deal
 # stages, appointments). Both the thread endpoints and the person endpoints (contacts/:id/dialog) render the same payload
 # from them, so there is one place that decides what a user sees of a person.
-module CommunicationThreads::ControllerContext
+module CommunicationThreads::ControllerContext # rubocop:disable Metrics/ModuleLength
   extend ActiveSupport::Concern
 
   JSON_MESSAGE_PARAMS = %i[content_attributes template_params delivery_policy].freeze
@@ -17,7 +17,7 @@ module CommunicationThreads::ControllerContext
            status: :unprocessable_content
   end
 
-  def permitted_message_params
+  def permitted_message_params # rubocop:disable Metrics/MethodLength
     normalized_message_params.permit(
       :content,
       :private,
@@ -66,6 +66,7 @@ module CommunicationThreads::ControllerContext
     @accessible_links_by_thread_id = preloaded_accessible_links(thread_ids)
     preload_channel_message_state
     preload_channel_capabilities(include_unlinked)
+    preload_thread_call_state
     return unless include_list_context
 
     preload_list_context(communication_threads)
@@ -188,6 +189,14 @@ module CommunicationThreads::ControllerContext
     @channel_unread_counts_by_conversation_id = {}
     @last_incoming_message_timestamps_by_conversation_id = {}
     @channel_last_seen_timestamps_by_conversation_id = {}
+  end
+
+  def preload_thread_call_state
+    linked_conversations = @accessible_links_by_thread_id.values.flatten.filter_map(&:conversation).uniq
+    @call_conversation_ids = Conversations::CallsOnlyScope.conversation_ids_with_calls(
+      account_id: Current.account.id,
+      conversations: linked_conversations
+    )
   end
 
   def preload_last_non_activity_messages_by_thread

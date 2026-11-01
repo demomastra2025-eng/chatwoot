@@ -81,7 +81,10 @@ import {
   isOnMentionsView,
   isOnUnattendedView,
 } from '../store/modules/conversations/helpers/actionHelpers';
-import { filterByUnread } from '../store/modules/conversations/helpers';
+import {
+  filterByCallsOnly,
+  filterByUnread,
+} from '../store/modules/conversations/helpers';
 import { matchesFilters } from '../store/modules/conversations/helpers/filterHelpers';
 import { CONVERSATION_EVENTS } from '../helper/AnalyticsHelper/events';
 import { conversationMatchesLocalSearch } from './widgets/conversation/helpers/conversationSearch';
@@ -422,6 +425,10 @@ const activeWaitingForCallbackOnly = computed(() =>
   )
 );
 
+const activeCallsOnly = computed(() =>
+  truthyQueryValue(route.query.calls_only || route.query.callsOnly)
+);
+
 function conversationNavigationQuery(overrides = {}) {
   const baseQuery = { ...route.query };
   const camelAssigneeType = baseQuery.assigneeType;
@@ -432,6 +439,7 @@ function conversationNavigationQuery(overrides = {}) {
   const camelTeamScope = baseQuery.teamScope;
   const camelUnreadOnly = baseQuery.unreadOnly;
   const camelWaitingForCallback = baseQuery.waitingForCallback;
+  const camelCallsOnly = baseQuery.callsOnly;
   delete baseQuery.messageId;
   delete baseQuery.assigneeType;
   delete baseQuery.crmPipelineId;
@@ -441,6 +449,7 @@ function conversationNavigationQuery(overrides = {}) {
   delete baseQuery.teamScope;
   delete baseQuery.unreadOnly;
   delete baseQuery.waitingForCallback;
+  delete baseQuery.callsOnly;
 
   const {
     assigneeType: overrideCamelAssigneeType,
@@ -453,6 +462,8 @@ function conversationNavigationQuery(overrides = {}) {
     unreadOnly: overrideUnreadOnly,
     waiting_for_callback: overrideWaitingForCallback,
     waitingForCallback: overrideCamelWaitingForCallback,
+    calls_only: overrideCallsOnly,
+    callsOnly: overrideCamelCallsOnly,
     ...safeOverrides
   } = overrides;
   const hasCrmPipelineOverride =
@@ -475,6 +486,8 @@ function conversationNavigationQuery(overrides = {}) {
   const hasWaitingForCallbackOverride =
     overrideWaitingForCallback !== undefined ||
     overrideCamelWaitingForCallback !== undefined;
+  const hasCallsOnlyOverride =
+    overrideCallsOnly !== undefined || overrideCamelCallsOnly !== undefined;
   const nextAssigneeType =
     safeOverrides.assignee_type ||
     overrideCamelAssigneeType ||
@@ -502,6 +515,9 @@ function conversationNavigationQuery(overrides = {}) {
   const nextWaitingForCallback = hasWaitingForCallbackOverride
     ? (overrideWaitingForCallback ?? overrideCamelWaitingForCallback)
     : baseQuery.waiting_for_callback || camelWaitingForCallback;
+  const nextCallsOnly = hasCallsOnlyOverride
+    ? (overrideCallsOnly ?? overrideCamelCallsOnly)
+    : baseQuery.calls_only || camelCallsOnly;
   const nextQuery = {
     ...baseQuery,
     ...safeOverrides,
@@ -555,6 +571,12 @@ function conversationNavigationQuery(overrides = {}) {
     nextQuery.waiting_for_callback = 'true';
   } else {
     delete nextQuery.waiting_for_callback;
+  }
+
+  if (truthyQueryValue(nextCallsOnly)) {
+    nextQuery.calls_only = 'true';
+  } else {
+    delete nextQuery.calls_only;
   }
 
   return nextQuery;
@@ -760,6 +782,7 @@ const conversationFilters = computed(() => {
     teamScope: props.teamId ? undefined : activeTeamScope.value || undefined,
     unread: activeUnreadOnly.value || undefined,
     waitingForCallback: activeWaitingForCallbackOnly.value || undefined,
+    callsOnly: activeCallsOnly.value || undefined,
   };
 });
 
@@ -771,6 +794,7 @@ const isConversationListFiltered = computed(() =>
       hasActiveFolders.value ||
       activeUnreadOnly.value ||
       activeWaitingForCallbackOnly.value ||
+      activeCallsOnly.value ||
       activeCrmPipelineId.value ||
       activeCrmStageId.value ||
       activeAppointmentStatusFilter.value ||
@@ -874,6 +898,10 @@ const conversationList = computed(() => {
       )
     );
   }
+
+  localConversationList = localConversationList.filter(conversation =>
+    filterByCallsOnly(true, activeCallsOnly.value, conversation)
+  );
 
   return filterConversationsByCommunicationThreadMode(
     localConversationList,
@@ -980,6 +1008,7 @@ const bulkSelectionFilters = computed(() => {
     team_scope: activeTeamScope.value || undefined,
     unread: activeUnreadOnly.value || undefined,
     waiting_for_callback: activeWaitingForCallbackOnly.value || undefined,
+    calls_only: activeCallsOnly.value || undefined,
     sort_by: activeSortBy.value,
   };
 
@@ -1195,6 +1224,16 @@ function onWaitingForCallbackFilterToggle() {
   });
 }
 
+function onCallsOnlyFilterToggle() {
+  router.push({
+    name: route.name,
+    params: route.params,
+    query: conversationNavigationQuery({
+      calls_only: !activeCallsOnly.value,
+    }),
+  });
+}
+
 function emitConversationLoaded() {
   emit('conversationLoad');
 }
@@ -1219,6 +1258,7 @@ function fetchFilteredConversations(payload) {
       teamScope: activeTeamScope.value || undefined,
       unread: activeUnreadOnly.value || undefined,
       waitingForCallback: activeWaitingForCallbackOnly.value || undefined,
+      callsOnly: activeCallsOnly.value || undefined,
       sortBy: activeSortBy.value,
     })
     .then(emitConversationLoaded);
@@ -1241,6 +1281,7 @@ function fetchSavedFilteredConversations(payload) {
       teamScope: activeTeamScope.value || undefined,
       unread: activeUnreadOnly.value || undefined,
       waitingForCallback: activeWaitingForCallbackOnly.value || undefined,
+      callsOnly: activeCallsOnly.value || undefined,
       sortBy: activeSortBy.value,
     })
     .then(emitConversationLoaded);
@@ -1667,6 +1708,7 @@ function redirectToConversationList() {
       teamScope: activeTeamScope.value,
       unread: activeUnreadOnly.value,
       waitingForCallback: activeWaitingForCallbackOnly.value,
+      callsOnly: activeCallsOnly.value,
       communicationThread: props.communicationThreadMode,
     })
   );
@@ -2439,6 +2481,11 @@ watch(activeWaitingForCallbackOnly, () => {
   resetAndFetchData();
 });
 
+watch(activeCallsOnly, () => {
+  clearLocalSearch();
+  resetAndFetchData();
+});
+
 watch(activeFolder, (newVal, oldVal) => {
   if (newVal !== oldVal) {
     store.dispatch('customViews/setActiveConversationFolder', newVal || null);
@@ -2479,6 +2526,7 @@ watch(bulkSelectionContextKey, contextKey => setSelectionContext(contextKey), {
       :is-on-expanded-layout="isOnExpandedLayout"
       :active-unread-only="activeUnreadOnly"
       :active-waiting-for-callback-only="activeWaitingForCallbackOnly"
+      :active-calls-only="activeCallsOnly"
       :active-status="activeStatus"
       :show-status-filter="showStatusFilter"
       :show-ai-status="showAiStatus"
@@ -2489,6 +2537,7 @@ watch(bulkSelectionContextKey, contextKey => setSelectionContext(contextKey), {
       @basic-filter-change="onBasicFilterChange"
       @unread-filter-toggle="onUnreadFilterToggle"
       @waiting-for-callback-filter-toggle="onWaitingForCallbackFilterToggle"
+      @calls-only-filter-toggle="onCallsOnlyFilterToggle"
       @status-filter-change="updateConversationStatusQuery"
     >
       <ChatListCount

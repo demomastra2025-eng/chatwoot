@@ -103,6 +103,14 @@
       "MISSED_CALL": "Missed call",
       "MISSED_CALL_WAITING_CALLBACK": "Пропущенный звонок — ждёт перезвона",
       "WAITING_FOR_CALLBACK_BADGE": "Ждёт перезвона",
+      "WAITING_FOR_CALLBACK_FILTER": {
+        "SHOW_WAITING": "Қайта қоңырауды күтетін жауапсыз қоңырауларды көрсету",
+        "SHOW_ALL": "Барлық чаттарды көрсету"
+      },
+      "CALLS_ONLY_FILTER": {
+        "SHOW_CALLS_ONLY": "Тек қоңыраулар",
+        "SHOW_ALL": "Барлық чаттарды көрсету"
+      },
       "VOICEMAIL": "Voicemail",
       "CALL_ENDED": "Call ended",
       "NOT_ANSWERED_YET": "Not answered yet",

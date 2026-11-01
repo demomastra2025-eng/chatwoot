@@ -29,6 +29,14 @@ thread_waiting_for_callback = linked_conversations.any? do |conversation|
   ActiveModel::Type::Boolean.new.cast(conversation.custom_attributes&.dig('waiting_for_callback')) ||
     ActiveModel::Type::Boolean.new.cast(conversation.additional_attributes&.dig('waiting_for_callback'))
 end
+thread_has_calls = if defined?(@call_conversation_ids) && !@call_conversation_ids.nil?
+                     linked_conversations.any? { |conversation| @call_conversation_ids.include?(conversation.id) }
+                   else
+                     Conversations::CallsOnlyScope.any_conversation_has_calls?(
+                       account_id: communication_thread.account_id,
+                       conversations: linked_conversations
+                     )
+                   end
 thread_custom_attributes = {}
 thread_custom_attributes[:pinned] = true if thread_pinned
 thread_custom_attributes[:waiting_for_callback] = true if thread_waiting_for_callback
@@ -74,6 +82,7 @@ json.labels(local_assigns[:labels] || Labels::UnifiedAssignmentService.union_for
   conversations: linked_conversations
 ))
 json.custom_attributes thread_custom_attributes
+json.has_calls thread_has_calls
 json.crm_deal_stages((local_assigns[:crm_deal_stages_by_communication_thread_id] || {}).fetch(communication_thread.id, []))
 json.scheduling_appointment_statuses(
   (local_assigns[:scheduling_appointment_statuses_by_communication_thread_id] || {}).fetch(communication_thread.id, [])
