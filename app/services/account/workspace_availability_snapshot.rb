@@ -15,6 +15,7 @@ class Account::WorkspaceAvailabilitySnapshot
   def as_json(*)
     Rails.cache.fetch(cache_key, expires_in: 5.minutes) do
       {
+        configured: @account.workspace_working_hours_configured?,
         timezone: @zone.tzinfo.name,
         valid_from: beginning_of(@date).iso8601,
         valid_until: beginning_of(@date + DAYS_AHEAD).iso8601,

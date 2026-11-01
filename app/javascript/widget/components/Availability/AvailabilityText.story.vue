@@ -1,71 +1,16 @@
 <script setup>
 import AvailabilityText from './AvailabilityText.vue';
 
-// Base time for consistent testing: Monday, July 15, 2024, 10:00:00 UTC
-const baseTime = new Date('2024-07-15T10:00:00.000Z');
-const utcOffset = '+00:00'; // UTC
+// Fixed visitor-local dates keep the examples stable across timezones.
+const baseTime = new Date(2024, 6, 15, 10);
 
 const defaultProps = {
   time: baseTime,
-  utcOffset,
-  workingHours: [
-    {
-      dayOfWeek: 0,
-      openHour: 9,
-      openMinutes: 0,
-      closeHour: 17,
-      closeMinutes: 0,
-      closedAllDay: false,
-    }, // Sunday
-    {
-      dayOfWeek: 1,
-      openHour: 9,
-      openMinutes: 0,
-      closeHour: 17,
-      closeMinutes: 0,
-      closedAllDay: false,
-    }, // Monday (current day)
-    {
-      dayOfWeek: 2,
-      openHour: 9,
-      openMinutes: 0,
-      closeHour: 17,
-      closeMinutes: 0,
-      closedAllDay: false,
-    }, // Tuesday
-    {
-      dayOfWeek: 3,
-      openHour: 9,
-      openMinutes: 0,
-      closeHour: 17,
-      closeMinutes: 0,
-      closedAllDay: false,
-    }, // Wednesday
-    {
-      dayOfWeek: 4,
-      openHour: 9,
-      openMinutes: 0,
-      closeHour: 17,
-      closeMinutes: 0,
-      closedAllDay: false,
-    }, // Thursday
-    {
-      dayOfWeek: 5,
-      openHour: 9,
-      openMinutes: 0,
-      closeHour: 17,
-      closeMinutes: 0,
-      closedAllDay: false,
-    }, // Friday
-    {
-      dayOfWeek: 6,
-      openHour: 9,
-      openMinutes: 0,
-      closeHour: 17,
-      closeMinutes: 0,
-      closedAllDay: true,
-    }, // Saturday (closed)
-  ],
+  workingHours: Array.from({ length: 14 }, (_, offset) => {
+    const opening = new Date(2024, 6, 15 + offset, 9);
+    const closing = new Date(2024, 6, 15 + offset, 17);
+    return { starts_at: opening.toISOString(), ends_at: closing.toISOString() };
+  }).filter(slot => new Date(slot.starts_at).getDay() !== 6),
   workingHoursEnabled: true,
   replyTime: 'in_a_few_minutes',
   isOnline: true,
@@ -86,13 +31,13 @@ const createVariant = (
   // Adjust time for specific scenarios
   if (title.includes('Back Tomorrow')) {
     // Set time to just after closing on Monday to trigger 'Back Tomorrow' (Tuesday)
-    props.time = new Date('2024-07-15T17:01:00.000Z');
+    props.time = new Date(2024, 6, 15, 17, 1);
     props.isInWorkingHours = false;
     props.isOnline = false;
   }
   if (title.includes('Back Multiple Days Away')) {
     // Set time to Friday evening to trigger 'Back on Sunday' (as Saturday is closed)
-    props.time = new Date('2024-07-19T18:00:00.000Z');
+    props.time = new Date(2024, 6, 19, 18);
     props.isInWorkingHours = false;
     props.isOnline = false;
   }
@@ -101,26 +46,26 @@ const createVariant = (
     // To make this specific, let's assume the next slot is within the hour
     // For this, we need to be outside working hours but a slot is available soon.
     // Let's say current time is 8:50 AM, office opens at 9:00 AM.
-    props.time = new Date('2024-07-15T08:50:00.000Z');
+    props.time = new Date(2024, 6, 15, 8, 50);
     props.isInWorkingHours = false;
     props.isOnline = false;
   }
   if (title.includes('Back Same Day - In Hours')) {
     // Monday 07:30 AM, office opens at 9:00 AM (in 1.5 hours, rounds to 2 hours)
-    props.time = new Date('2024-07-15T07:30:00.000Z');
+    props.time = new Date(2024, 6, 15, 7, 30);
     props.isInWorkingHours = false;
     props.isOnline = false;
   }
   if (title.includes('in 1 hour')) {
     // Monday 08:00 AM, office opens at 9:00 AM (exactly in 1 hour)
     // At exactly 1 hour difference, remainingMinutes = 0
-    props.time = new Date('2024-07-15T08:00:00.000Z');
+    props.time = new Date(2024, 6, 15, 8);
     props.isInWorkingHours = false;
     props.isOnline = false;
   }
   if (title.includes('Back Same Day - At Time')) {
     // Monday 05:00 AM, office opens at 9:00 AM (at 9:00 AM)
-    props.time = new Date('2024-07-15T05:00:00.000Z');
+    props.time = new Date(2024, 6, 15, 5);
     props.isInWorkingHours = false;
     props.isOnline = false;
   }
@@ -147,10 +92,7 @@ const variants = [
   createVariant(
     'All Day Closed - Offline',
     {
-      workingHours: defaultProps.workingHours.map(wh => ({
-        ...wh,
-        closedAllDay: true,
-      })),
+      workingHours: [],
     },
     false,
     false
@@ -204,7 +146,6 @@ const variants = [
     <Variant v-for="(variant, i) in variants" :key="i" :title="variant.title">
       <AvailabilityText
         :time="variant.props.time"
-        :utc-offset="variant.props.utcOffset"
         :working-hours="variant.props.workingHours"
         :working-hours-enabled="variant.props.workingHoursEnabled"
         :reply-time="variant.props.replyTime"

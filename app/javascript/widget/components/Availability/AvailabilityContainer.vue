@@ -44,9 +44,6 @@ const workingHours = computed(() => inboxConfig.value.workingHours || []);
 const workingHoursEnabled = computed(
   () => inboxConfig.value.workingHoursEnabled || false
 );
-const utcOffset = computed(
-  () => inboxConfig.value.utcOffset || inboxConfig.value.timezone || 'UTC'
-);
 const replyTime = computed(
   () => inboxConfig.value.replyTime || 'in_a_few_minutes'
 );
@@ -72,7 +69,6 @@ const headerText = computed(() =>
 
       <AvailabilityText
         :time="currentTime"
-        :utc-offset="utcOffset"
         :working-hours="workingHours"
         :working-hours-enabled="workingHoursEnabled"
         :has-online-agents="hasOnlineAgents"

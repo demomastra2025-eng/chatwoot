@@ -16,7 +16,7 @@ RSpec.describe 'Widget availability', type: :request do
 
     expect(response).to have_http_status(:ok)
     data = response.parsed_body
-    expect(data.keys).to contain_exactly('timezone', 'valid_from', 'valid_until', 'intervals')
+    expect(data.keys).to contain_exactly('configured', 'timezone', 'valid_from', 'valid_until', 'intervals')
     expect(data.to_json).not_to include('Private event')
     expect(response.headers['Cache-Control']).to include('public', 'max-age=60')
   end

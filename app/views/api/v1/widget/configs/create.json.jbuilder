@@ -13,15 +13,16 @@ json.website_channel_config do
   json.pre_chat_form_enabled @web_widget.pre_chat_form_enabled
   json.pre_chat_form_options @web_widget.pre_chat_form_options
   json.reply_time @web_widget.reply_time
-  json.timezone @web_widget.inbox.timezone
-  json.utc_off_set ActiveSupport::TimeZone[@web_widget.inbox.timezone].now.formatted_offset
+  json.timezone @web_widget.account.workspace_working_hours_timezone
+  json.utc_off_set @web_widget.account.workspace_working_hours_timezone
   json.website_name @web_widget.inbox.name
   json.website_token @web_widget.website_token
   json.welcome_tagline @web_widget.welcome_tagline
   json.welcome_title @web_widget.welcome_title
   json.widget_color @web_widget.widget_color
-  json.working_hours @web_widget.inbox.working_hours
-  json.working_hours_enabled @web_widget.inbox.working_hours_enabled
+  json.working_hours @web_widget.account.workspace_working_hours_schedule
+  json.working_hours_enabled @web_widget.account.workspace_working_hours_configured?
+  json.workspace_availability Account::WorkspaceAvailabilitySnapshot.new(account: @web_widget.account).as_json
 end
 
 json.contact do

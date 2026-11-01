@@ -1,125 +1,122 @@
-import { ref } from 'vue';
+import { effectScope, ref } from 'vue';
+import { flushPromises } from '@vue/test-utils';
+import { API } from 'widget/helpers/axios';
 import { useAvailability } from '../useAvailability';
 
-const mockIsOnline = vi.fn();
-const mockIsInWorkingHours = vi.fn();
-const mockUseCamelCase = vi.fn(obj => obj);
+vi.mock('widget/helpers/axios', () => ({ API: { get: vi.fn() } }));
 
-vi.mock('widget/helpers/availabilityHelpers', () => ({
-  isOnline: (...args) => mockIsOnline(...args),
-  isInWorkingHours: (...args) => mockIsInWorkingHours(...args),
-}));
-
-vi.mock('dashboard/composables/useTransformKeys', () => ({
-  useCamelCase: obj => mockUseCamelCase(obj),
-}));
+const scopes = [];
+const useScopedAvailability = agents => {
+  const scope = effectScope();
+  scopes.push(scope);
+  return scope.run(() => useAvailability(agents));
+};
+const projection = {
+  configured: true,
+  timezone: 'Asia/Almaty',
+  intervals: [
+    { starts_at: '2026-09-07T04:00:00Z', ends_at: '2026-09-07T07:00:00Z' },
+    { starts_at: '2026-09-07T08:00:00Z', ends_at: '2026-09-07T12:00:00Z' },
+  ],
+};
 
 describe('useAvailability', () => {
-  const originalWindow = window.chatwootWebChannel;
-
   beforeEach(() => {
-    vi.clearAllMocks();
-
-    // Reset mocks to return true by default
-    mockIsOnline.mockReturnValue(true);
-    mockIsInWorkingHours.mockReturnValue(true);
-    mockUseCamelCase.mockImplementation(obj => obj);
-
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-07T06:59:59Z'));
     window.chatwootWebChannel = {
-      workingHours: [],
+      websiteToken: 'public-widget',
+      workspaceAvailability: structuredClone(projection),
+      replyTime: 'in_a_day',
+      // Old channel settings must not override the company policy.
       workingHoursEnabled: false,
-      timezone: 'UTC',
-      utcOffset: 'UTC',
-      replyTime: 'in_a_few_minutes',
+      workingHours: [],
+      timezone: 'America/New_York',
     };
+    API.get.mockResolvedValue({ data: projection });
   });
 
   afterEach(() => {
-    window.chatwootWebChannel = originalWindow;
+    scopes.splice(0).forEach(scope => scope.stop());
+    vi.useRealTimers();
+    delete window.chatwootWebChannel;
   });
 
-  describe('initial state', () => {
-    it('should initialize with default values', () => {
-      const { availableAgents, hasOnlineAgents, isInWorkingHours, isOnline } =
-        useAvailability();
-
-      expect(availableAgents.value).toEqual([]);
-      expect(hasOnlineAgents.value).toBe(false);
-      expect(isInWorkingHours.value).toBe(true);
-      expect(isOnline.value).toBe(true);
+  it('uses company availability and reactive agents', () => {
+    const agents = ref([{ id: 1 }]);
+    const availability = useScopedAvailability(agents);
+    expect(availability.inboxConfig.value).toMatchObject({
+      timezone: 'Asia/Almaty',
+      workingHoursEnabled: true,
+      replyTime: 'in_a_day',
     });
+    expect(availability.isOnline.value).toBe(true);
+    agents.value = [];
+    expect(availability.hasOnlineAgents.value).toBe(false);
+    expect(availability.isOnline.value).toBe(false);
+    expect(availability.isInWorkingHours.value).toBe(true);
   });
 
-  describe('with agents', () => {
-    it('should handle agents array', () => {
-      const agents = [{ id: 1 }, { id: 2 }];
-      const { availableAgents, hasOnlineAgents } = useAvailability(agents);
-
-      expect(availableAgents.value).toEqual(agents);
-      expect(hasOnlineAgents.value).toBe(true);
-    });
-
-    it('should handle reactive agents', () => {
-      const agents = ref([{ id: 1 }]);
-      const { hasOnlineAgents } = useAvailability(agents);
-
-      expect(hasOnlineAgents.value).toBe(true);
-
-      agents.value = [];
-      expect(hasOnlineAgents.value).toBe(false);
-    });
+  it('updates at lunch and reopening without a remount or network response', async () => {
+    const availability = useScopedAvailability([{ id: 1 }]);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(availability.isInWorkingHours.value).toBe(false);
+    expect(availability.isOnline.value).toBe(false);
+    vi.setSystemTime(new Date('2026-09-07T08:00:00Z'));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(availability.isOnline.value).toBe(true);
   });
 
-  describe('working hours', () => {
-    const workingHours = [{ dayOfWeek: 1, openHour: 9, closeHour: 17 }];
-
-    beforeEach(() => {
-      window.chatwootWebChannel = {
-        workingHours,
-        workingHoursEnabled: true,
-        utcOffset: '+05:30',
-      };
+  it('shares one refresh loop between consumers and stops after disposal', async () => {
+    const first = useScopedAvailability();
+    const second = useScopedAvailability();
+    expect(first.currentTime).toBe(second.currentTime);
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(API.get).toHaveBeenCalledTimes(1);
+    expect(API.get).toHaveBeenCalledWith('/api/v1/widget/availability', {
+      params: { website_token: 'public-widget' },
     });
-
-    it('should check working hours', () => {
-      mockIsInWorkingHours.mockReturnValueOnce(true);
-      const { isInWorkingHours } = useAvailability();
-      const result = isInWorkingHours.value;
-
-      expect(result).toBe(true);
-      expect(mockIsInWorkingHours).toHaveBeenCalledWith(
-        expect.any(Date),
-        '+05:30',
-        workingHours
-      );
-    });
-
-    it('should determine online status based on working hours and agents', () => {
-      mockIsOnline.mockReturnValueOnce(true);
-      const { isOnline } = useAvailability([{ id: 1 }]);
-      const result = isOnline.value;
-
-      expect(result).toBe(true);
-      expect(mockIsOnline).toHaveBeenCalledWith(
-        true,
-        expect.any(Date),
-        '+05:30',
-        workingHours,
-        true
-      );
-    });
+    scopes.splice(0).forEach(scope => scope.stop());
+    await vi.advanceTimersByTimeAsync(120000);
+    expect(API.get).toHaveBeenCalledTimes(1);
   });
 
-  describe('config changes', () => {
-    it('should react to window.chatwootWebChannel changes', () => {
-      const { inboxConfig } = useAvailability();
+  it('refreshes changed holidays on focus and retains the projection on network failure', async () => {
+    const availability = useScopedAvailability([{ id: 1 }]);
+    API.get.mockResolvedValueOnce({ data: { ...projection, intervals: [] } });
+    window.dispatchEvent(new Event('focus'));
+    await flushPromises();
+    expect(availability.isOnline.value).toBe(false);
+    API.get.mockRejectedValueOnce(new Error('offline'));
+    window.dispatchEvent(new Event('focus'));
+    await flushPromises();
+    expect(availability.isOnline.value).toBe(false);
+  });
 
-      window.chatwootWebChannel = {
-        ...window.chatwootWebChannel,
-        replyTime: 'in_a_day',
-      };
+  it('loads the server projection if the initial payload is missing', async () => {
+    delete window.chatwootWebChannel.workspaceAvailability;
+    const availability = useScopedAvailability([{ id: 1 }]);
+    expect(availability.isOnline.value).toBe(false);
+    await flushPromises();
+    expect(availability.isOnline.value).toBe(true);
+    expect(API.get).toHaveBeenCalledTimes(1);
+  });
 
-      expect(inboxConfig.value.replyTime).toBe('in_a_day');
-    });
+  it('does not invent availability after all projected intervals expire', () => {
+    vi.setSystemTime(new Date('2026-09-21T12:00:00Z'));
+    expect(useScopedAvailability([{ id: 1 }]).isOnline.value).toBe(false);
+  });
+
+  it('remains open with online agents if the company has no configured hours', () => {
+    window.chatwootWebChannel.workspaceAvailability = {
+      ...projection,
+      configured: false,
+      intervals: [
+        { starts_at: '2026-09-07T00:00:00Z', ends_at: '2026-09-21T00:00:00Z' },
+      ],
+    };
+    const availability = useScopedAvailability([{ id: 1 }]);
+    expect(availability.inboxConfig.value.workingHoursEnabled).toBe(false);
+    expect(availability.isOnline.value).toBe(true);
   });
 });
