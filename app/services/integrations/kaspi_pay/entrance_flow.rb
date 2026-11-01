@@ -10,10 +10,11 @@ module Integrations::KaspiPay::EntranceFlow
   def auth_init
     resp, body = request_json(:post, "#{ENTRANCE_BASE_URL}/api/v1/entrance/step",
                               headers: entrance_headers(referer: init_referer, user_token: nil), body: init_payload_json)
-    process_id = body.dig('meta', 'pId').presence
-    raise_init_error!(body) unless process_id
+    safe_body = body.is_a?(Hash) ? body : {}
+    process_id = safe_body.dig('meta', 'pId').presence
+    raise_init_error!(safe_body) if init_failed?(safe_body, process_id)
 
-    { process_id: process_id, user_token: extract_user_token(resp), view: body.dig('view', 'code'), body: body }
+    { process_id: process_id, user_token: extract_user_token(resp), view: safe_body.dig('view', 'code'), body: safe_body }
   end
 
   def auth_send_phone(process_id:, phone_10:, user_token: nil)
@@ -33,6 +34,12 @@ module Integrations::KaspiPay::EntranceFlow
   end
 
   private
+
+  def init_failed?(body, process_id)
+    process_id.blank? ||
+      ActiveModel::Type::Boolean.new.cast(body['isClosed']) ||
+      extract_entrance_error_code(body).present?
+  end
 
   def init_referer
     "#{ENTRANCE_BASE_URL}/process/entrance/?auth=2&appBuild=#{@app[:build]}&appVersion=#{@app[:version]}" \

@@ -561,7 +561,7 @@ onMounted(() => {
                     :label="
                       t('INTEGRATION_SETTINGS.KASPI_PAY.AUTH.APP_BUILD_LABEL')
                     "
-                    placeholder="1115"
+                    placeholder="1116"
                   />
                 </div>
               </div>

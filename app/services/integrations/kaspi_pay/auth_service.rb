@@ -27,7 +27,7 @@ class Integrations::KaspiPay::AuthService
   def send_otp!(raw_phone:, app_version: nil, app_build: nil)
     phone_10 = Integrations::KaspiPay::PhoneNormalizer.to_kaspi_10_digits!(raw_phone)
     device = resolve_device_identity
-    explicit_overrides = { version: app_version.presence, build: app_build.presence }.compact
+    explicit_overrides = VERSION_RESOLVER.sanitize_overrides(version: app_version, build: app_build)
     otp_res, effective_overrides = send_otp_with_version_retry(device, phone_10, explicit_overrides)
 
     save_pending_otp!(otp_res, device: device, phone_10: phone_10, app_overrides: effective_overrides, explicit_overrides: explicit_overrides)
@@ -85,9 +85,8 @@ class Integrations::KaspiPay::AuthService
     device, token_sn, vtoken_b64 = extract_hook_secrets!(target_hook)
     s = target_hook.settings || {}
     Integrations::KaspiPay::ApiClient.new(
-      device: device,
-      session: { 'token_sn' => token_sn, 'vtoken_secret_b64' => vtoken_b64, 'profile_id' => s['profile_id'] },
-      app_overrides: { version: VERSION_RESOLVER.sanitize_saved_version(s['app_version']), build: s['app_build'] }
+      device: device, session: { 'token_sn' => token_sn, 'vtoken_secret_b64' => vtoken_b64, 'profile_id' => s['profile_id'] },
+      app_overrides: VERSION_RESOLVER.sanitize_overrides(version: s['app_version'], build: s['app_build'])
     )
   end
 
@@ -95,14 +94,15 @@ class Integrations::KaspiPay::AuthService
 
   def send_otp_with_version_retry(device, phone_10, explicit_overrides)
     client = Integrations::KaspiPay::ApiClient.new(device: device, app_overrides: explicit_overrides)
-    [perform_entrance_otp(client, phone_10), explicit_overrides.merge(version: client.app_version)]
+    [perform_entrance_otp(client, phone_10), explicit_overrides.merge(version: client.app_version, build: client.app_build)]
   rescue Integrations::KaspiPay::ApiClient::ApiError => e
-    raise unless explicit_overrides[:version].blank? && old_version_error?(e)
+    raise unless VERSION_RESOLVER.old_version_error?(e)
 
-    refreshed = VERSION_RESOLVER.resolve(force_refresh: true)
-    raise if refreshed.blank? || refreshed == client&.app_version
+    retry_overrides = VERSION_RESOLVER.resolve_retry_overrides(
+      failed_version: client&.app_version, failed_build: client&.app_build, explicit_overrides: explicit_overrides
+    )
+    raise unless retry_overrides
 
-    retry_overrides = explicit_overrides.merge(version: refreshed)
     retry_client = Integrations::KaspiPay::ApiClient.new(device: device, app_overrides: retry_overrides)
     [perform_entrance_otp(retry_client, phone_10), retry_overrides]
   end
@@ -111,8 +111,6 @@ class Integrations::KaspiPay::AuthService
     init_res = client.auth_init
     client.auth_send_phone(process_id: init_res[:process_id], phone_10: phone_10, user_token: init_res[:user_token])
   end
-
-  def old_version_error?(err) = err.code.to_s == 'OldVersionToUpdate' || err.details.to_s.include?('OldVersionToUpdate')
 
   def resolve_device_identity
     existing = hook&.secret_settings&.dig('device')
@@ -150,8 +148,8 @@ class Integrations::KaspiPay::AuthService
       'profile_id' => org['profile_id']&.to_s, 'organizations' => org['organizations'] || [],
       'cashier_phone_masked' => Integrations::KaspiPay::PhoneNormalizer.mask(pending['phone_10']),
       'auto_send_link_to_chat' => prev.fetch('auto_send_link_to_chat', true),
-      'app_version' => overrides['version'].presence,
-      'app_build' => overrides['build'].presence || prev['app_build'],
+      'app_version' => VERSION_RESOLVER.sanitize_saved_version(overrides['version']),
+      'app_build' => VERSION_RESOLVER.sanitize_saved_build(overrides['build']),
       'connected_at' => now_iso, 'last_verified_at' => now_iso, 'last_error' => nil
     ).compact
   end
@@ -192,7 +190,7 @@ class Integrations::KaspiPay::AuthService
       next unless params.key?(field)
 
       raw = params[field].to_s.strip.presence
-      val = field == :app_version ? VERSION_RESOLVER.sanitize_saved_version(raw) : raw
+      val = field == :app_version ? VERSION_RESOLVER.sanitize_saved_version(raw) : VERSION_RESOLVER.sanitize_saved_build(raw)
       val ? (settings[field.to_s] = val) : settings.delete(field.to_s)
     end
   end
@@ -211,8 +209,10 @@ class Integrations::KaspiPay::AuthService
       session_status: s['session_status'].presence || 'active', organization_name: s['organization_name'],
       organization_bin: s['organization_bin'], organization_id: s['organization_id'], profile_id: s['profile_id'],
       organizations: s['organizations'] || [], cashier_phone_masked: s['cashier_phone_masked'],
-      auto_send_link_to_chat: s.fetch('auto_send_link_to_chat', true), app_version: s['app_version'],
-      app_build: s['app_build'], connected_at: s['connected_at'], last_verified_at: s['last_verified_at'], last_error: s['last_error']
+      auto_send_link_to_chat: s.fetch('auto_send_link_to_chat', true),
+      app_version: VERSION_RESOLVER.sanitize_saved_version(s['app_version']),
+      app_build: VERSION_RESOLVER.sanitize_saved_build(s['app_build']),
+      connected_at: s['connected_at'], last_verified_at: s['last_verified_at'], last_error: s['last_error']
     )
   end
 end
