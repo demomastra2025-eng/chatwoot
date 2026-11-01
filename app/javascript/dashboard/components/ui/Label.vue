@@ -125,6 +125,8 @@ export default {
     <a v-else :href="href" :style="anchorStyle">{{ title }}</a>
     <button
       v-if="showClose"
+      type="button"
+      :aria-label="$t('GENERAL.REMOVE_ITEM', { name: title })"
       class="label-close--button p-0"
       :style="{ color: textColor }"
       @click="onClick"

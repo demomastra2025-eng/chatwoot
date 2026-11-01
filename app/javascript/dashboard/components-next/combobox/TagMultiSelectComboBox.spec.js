@@ -123,12 +123,66 @@ describe('TagMultiSelectComboBox', () => {
       },
     });
 
-    const selectedLabel = wrapper.get('button span[title]');
+    const selectedLabel = wrapper.get('span[title]');
     expect(selectedLabel.classes()).toContain('whitespace-normal');
     expect(selectedLabel.classes()).not.toContain('truncate');
     expect(selectedLabel.attributes('title')).toBe(
       'Полное наименование медицинской услуги'
     );
+  });
+
+  it('exposes separate native tag actions, preserves links and moves focus after removal', async () => {
+    const wrapper = mount(TagMultiSelectComboBox, {
+      attachTo: document.body,
+      props: {
+        options: [
+          { value: 1, label: 'First', href: '/app/first' },
+          { value: 2, label: 'Second' },
+        ],
+        modelValue: [1, 2],
+      },
+      global: {
+        stubs: { OnClickOutside: { template: '<div><slot /></div>' } },
+      },
+    });
+    const trigger = wrapper.get('button[aria-haspopup="listbox"]');
+    const link = wrapper.get('a');
+    expect(link.element.closest('button')).toBeNull();
+    expect(link.attributes('href')).toBe('/app/first');
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+    link.element.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(false);
+    expect(wrapper.vm.open).toBe(false);
+    const remove = wrapper.get('[data-tag-remove]');
+    expect(remove.element.tagName).toBe('BUTTON');
+    expect(remove.attributes('type')).toBe('button');
+    expect(remove.attributes('aria-label')).toBe('Remove First');
+    remove.element.focus();
+    remove.element.click();
+    await wrapper.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted('update:modelValue').at(-1)).toEqual([[2]]);
+    expect(document.activeElement).toBe(
+      wrapper.get('[data-tag-remove]').element
+    );
+    wrapper.get('[data-tag-remove]').element.click();
+    await wrapper.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+    expect(document.activeElement).toBe(trigger.element);
+    expect(wrapper.vm.open).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('keeps removal and the list trigger disabled without mutating selected values', () => {
+    const wrapper = mount(TagMultiSelectComboBox, {
+      props: { options, modelValue: [1], disabled: true },
+    });
+    const remove = wrapper.get('[data-tag-remove]');
+    expect(remove.element.disabled).toBe(true);
+    remove.element.click();
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined();
+    expect(wrapper.get('button[aria-haspopup]').element.disabled).toBe(true);
+    wrapper.unmount();
   });
 
   it('previews the full selected label on open without changing selection', async () => {

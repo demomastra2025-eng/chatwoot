@@ -81,7 +81,9 @@ const selectClasses = computed(() => [
   !props.error && !props.disabled
     ? 'outline-n-weak hover:outline-n-slate-6 focus:outline-n-brand'
     : '',
-  props.error && !props.disabled ? 'outline-n-red-9 focus:outline-n-red-9' : '',
+  props.error && !props.disabled
+    ? 'outline-n-ruby-9 focus:outline-n-ruby-9'
+    : '',
   props.disabled
     ? 'cursor-not-allowed bg-n-slate-2 opacity-60 outline-n-weak'
     : '',
@@ -112,12 +114,12 @@ const selectOption = option => {
       v-if="hasOptionIcons"
       type="button"
       :disabled="disabled"
+      class="flex w-full items-center justify-between gap-2 rounded-lg border-0 bg-n-surface-1 py-2 pl-3 pr-2.5 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] transition-all duration-200"
       :class="[
-        'flex w-full items-center justify-between gap-2 rounded-lg border-0 bg-n-surface-1 py-2 pl-3 pr-2.5 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] transition-all duration-200',
         !error && !disabled
           ? 'outline-n-weak hover:outline-n-slate-6 focus:outline-n-brand'
           : '',
-        error && !disabled ? 'outline-n-red-9 focus:outline-n-red-9' : '',
+        error && !disabled ? 'outline-n-ruby-9 focus:outline-n-ruby-9' : '',
         disabled
           ? 'cursor-not-allowed bg-n-slate-2 opacity-60 outline-n-weak'
           : '',

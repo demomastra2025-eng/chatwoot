@@ -88,11 +88,14 @@ const open = ref(false);
 const search = ref('');
 const dropdownRef = ref(null);
 const comboboxRef = ref(null);
+const triggerRef = ref(null);
 const dropdownStyle = ref({});
 const teleportTarget = ref('body');
 
 const resolveTeleportTarget = () => {
-  const dialogElement = comboboxRef.value?.closest('dialog[open]');
+  const dialogElement = comboboxRef.value?.closest(
+    'dialog[open], [data-legacy-modal]'
+  );
   teleportTarget.value = dialogElement || 'body';
 };
 
@@ -192,11 +195,16 @@ const toggleOption = option => {
   emit('update:modelValue', selectedValues.value);
 };
 
-const removeTag = value => {
+const removeTag = async value => {
+  if (props.disabled) return;
   const index = selectedValues.value.indexOf(value);
   if (index !== -1) {
     selectedValues.value.splice(index, 1);
-    emit('update:modelValue', selectedValues.value);
+    emit('update:modelValue', [...selectedValues.value]);
+    await nextTick();
+    const remaining = comboboxRef.value.querySelectorAll('[data-tag-remove]');
+    const nextControl = remaining[Math.min(index, remaining.length - 1)];
+    (nextControl || triggerRef.value)?.focus();
   }
 };
 
@@ -262,16 +270,13 @@ defineExpose({
       },
     ]"
     :style="attrs.style"
-    @click.prevent
   >
     <OnClickOutside
       :options="{ ignore: ['.dashboard-combobox-dropdown'] }"
       @trigger="open = false"
     >
-      <button
-        :id="triggerId"
-        type="button"
-        class="flex flex-wrap w-full gap-2 px-2 py-2.5 border rounded-lg cursor-pointer bg-n-alpha-black2 min-h-[42px] transition-all duration-500 ease-in-out"
+      <div
+        class="relative flex flex-wrap w-full gap-2 px-2 py-2.5 border rounded-lg cursor-pointer bg-n-alpha-black2 min-h-[42px] transition-all duration-500 ease-in-out"
         :class="{
           'border-n-ruby-8': hasError,
           'border-n-weak dark:border-n-weak hover:border-n-slate-6 dark:hover:border-n-slate-6':
@@ -279,13 +284,23 @@ defineExpose({
           'border-n-brand': open,
           'cursor-not-allowed pointer-events-none opacity-50': disabled,
         }"
-        :disabled="disabled"
-        @click="toggleDropdown"
       >
+        <button
+          :id="triggerId"
+          ref="triggerRef"
+          type="button"
+          class="reset-base absolute inset-0 p-0 h-full w-full rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-brand"
+          :disabled="disabled"
+          :aria-label="attrs['aria-label'] || selectPlaceholder"
+          :aria-labelledby="attrs['aria-labelledby']"
+          :aria-expanded="open"
+          aria-haspopup="listbox"
+          @click="toggleDropdown"
+        />
         <div
           v-for="tag in selectedTags"
           :key="tag.value"
-          class="flex items-center justify-center gap-1 rounded-lg bg-n-blue-5/70 px-2 py-0.5 outline outline-1 outline-n-blue-7/60"
+          class="relative flex items-center justify-center gap-1 rounded-lg bg-n-blue-5/70 px-2 py-0.5 outline outline-1 outline-n-blue-7/60"
           :class="wrapLabels ? 'max-w-full' : 'max-w-[75%]'"
           @click.stop
         >
@@ -317,18 +332,24 @@ defineExpose({
           >
             <span class="i-lucide-external-link size-3" aria-hidden="true" />
           </a>
-          <span
-            class="i-lucide-x size-3 flex-shrink-0 cursor-pointer text-n-blue-10 hover:text-n-blue-12"
-            @click="removeTag(tag.value)"
-          />
+          <button
+            type="button"
+            data-tag-remove
+            class="reset-base flex size-3 p-0 flex-shrink-0 items-center justify-center cursor-pointer text-n-blue-10 hover:text-n-blue-12"
+            :disabled="disabled"
+            :aria-label="t('GENERAL.REMOVE_ITEM', { name: tag.label })"
+            @click.stop="removeTag(tag.value)"
+          >
+            <span class="i-lucide-x size-3" aria-hidden="true" />
+          </button>
         </div>
         <span
           v-if="selectedTags.length === 0"
-          class="flex items-center text-sm text-n-slate-10"
+          class="pointer-events-none relative flex items-center text-sm text-n-slate-10"
         >
           {{ selectPlaceholder }}
         </span>
-      </button>
+      </div>
 
       <ComboBoxDropdown
         ref="dropdownRef"

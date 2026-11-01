@@ -45,6 +45,7 @@ const onClickSetView = (type, mode) => {
       ghost
       xs
       icon="i-lucide-chevron-left"
+      :aria-label="$t('GENERAL.CALENDAR.PREVIOUS')"
       class="rtl:rotate-180"
       @click.stop="onClickPrev(calendarType)"
     />
@@ -70,6 +71,7 @@ const onClickSetView = (type, mode) => {
       ghost
       xs
       icon="i-lucide-chevron-right"
+      :aria-label="$t('GENERAL.CALENDAR.NEXT')"
       class="rtl:rotate-180"
       @click.stop="onClickNext(calendarType)"
     />

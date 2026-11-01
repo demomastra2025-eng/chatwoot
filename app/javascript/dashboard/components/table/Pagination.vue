@@ -123,6 +123,7 @@ onMounted(() => {
         <nav class="isolate inline-flex items-center gap-1.5">
           <Button
             icon="i-lucide-chevrons-left"
+            :aria-label="$t('GENERAL.PAGINATION.FIRST_PAGE')"
             ghost
             slate
             sm
@@ -132,6 +133,7 @@ onMounted(() => {
           />
           <Button
             icon="i-lucide-chevron-left"
+            :aria-label="$t('GENERAL.PAGINATION.PREVIOUS_PAGE')"
             ghost
             slate
             sm
@@ -157,6 +159,7 @@ onMounted(() => {
           </Button>
           <Button
             icon="i-lucide-chevron-right"
+            :aria-label="$t('GENERAL.PAGINATION.NEXT_PAGE')"
             ghost
             slate
             sm
@@ -166,6 +169,7 @@ onMounted(() => {
           />
           <Button
             icon="i-lucide-chevrons-right"
+            :aria-label="$t('GENERAL.PAGINATION.LAST_PAGE')"
             ghost
             slate
             sm

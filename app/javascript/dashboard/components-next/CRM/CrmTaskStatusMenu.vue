@@ -87,7 +87,9 @@ const buttonClass = computed(() => {
 });
 
 const resolveTeleportTarget = () => {
-  const overlayElement = triggerRef.value?.closest('dialog[open], .modal-mask');
+  const overlayElement = triggerRef.value?.closest(
+    'dialog[open], [data-legacy-modal], .modal-mask'
+  );
   teleportTarget.value = overlayElement || 'body';
 };
 

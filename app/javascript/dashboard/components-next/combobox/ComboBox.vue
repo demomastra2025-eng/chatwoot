@@ -91,7 +91,9 @@ const dropdownStyle = ref({});
 const teleportTarget = ref('body');
 
 const resolveTeleportTarget = () => {
-  const dialogElement = comboboxRef.value?.closest('dialog[open]');
+  const dialogElement = comboboxRef.value?.closest(
+    'dialog[open], [data-legacy-modal]'
+  );
   teleportTarget.value = dialogElement || 'body';
 };
 

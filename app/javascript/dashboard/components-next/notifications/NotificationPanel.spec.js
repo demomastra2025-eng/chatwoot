@@ -278,6 +278,28 @@ describe('NotificationPanel', () => {
     expect(wrapper.find('.notification-side-panel').exists()).toBe(false);
   });
 
+  it('offers a named native open button separate from the archive action', async () => {
+    const wrapper = mountPanel();
+    await wrapper.vm.open();
+    const openButton = wrapper.get('[data-test="open-notification"]');
+    expect(openButton.element.tagName).toBe('BUTTON');
+    expect(openButton.attributes('type')).toBe('button');
+    expect(openButton.attributes('aria-label')).toBe('Notification title');
+    expect(
+      wrapper
+        .get('[data-test="archive-notification"]')
+        .element.closest('[data-test="open-notification"]')
+    ).toBeNull();
+    await openButton.trigger('click');
+    await flushPromises();
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(
+      dispatch.mock.calls.filter(
+        ([action]) => action === 'notifications/archive'
+      )
+    ).toHaveLength(1);
+  });
+
   // The notifications API attaches the thread display id when the
   // conversation belongs to a communication thread (G track).
   it('opens a thread notification in the unified thread view', async () => {

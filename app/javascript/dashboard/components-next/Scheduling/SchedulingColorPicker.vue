@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import {
   ColorAreaArea,
   ColorAreaRoot,
@@ -41,6 +41,13 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue']);
 const hexLabel = 'HEX';
 const popoverOpen = ref(false);
+const triggerRef = ref(null);
+const teleportTarget = ref('body');
+watch(popoverOpen, visible => {
+  if (!visible) return;
+  teleportTarget.value =
+    triggerRef.value?.closest('dialog[open], [data-legacy-modal]') || 'body';
+});
 
 const colorValue = computed({
   get: () => props.modelValue || '#0EA5E9',
@@ -59,6 +66,7 @@ const selectPaletteColor = color => {
   <PopoverRoot v-model:open="popoverOpen">
     <PopoverTrigger as-child>
       <button
+        ref="triggerRef"
         type="button"
         :disabled="disabled"
         :aria-label="compact ? triggerLabel : undefined"
@@ -88,7 +96,7 @@ const selectPaletteColor = color => {
       </button>
     </PopoverTrigger>
 
-    <PopoverPortal>
+    <PopoverPortal :to="teleportTarget">
       <PopoverContent
         align="start"
         :side-offset="8"

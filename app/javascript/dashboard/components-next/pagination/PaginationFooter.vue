@@ -81,6 +81,7 @@ const pageInfo = computed(() => {
     <div class="flex items-center gap-2">
       <Button
         icon="i-lucide-chevrons-left"
+        :aria-label="$t('GENERAL.PAGINATION.FIRST_PAGE')"
         variant="ghost"
         size="sm"
         color="slate"
@@ -90,6 +91,7 @@ const pageInfo = computed(() => {
       />
       <Button
         icon="i-lucide-chevron-left"
+        :aria-label="$t('GENERAL.PAGINATION.PREVIOUS_PAGE')"
         variant="ghost"
         color="slate"
         size="sm"
@@ -109,6 +111,7 @@ const pageInfo = computed(() => {
       </div>
       <Button
         icon="i-lucide-chevron-right"
+        :aria-label="$t('GENERAL.PAGINATION.NEXT_PAGE')"
         variant="ghost"
         color="slate"
         size="sm"
@@ -118,6 +121,7 @@ const pageInfo = computed(() => {
       />
       <Button
         icon="i-lucide-chevrons-right"
+        :aria-label="$t('GENERAL.PAGINATION.LAST_PAGE')"
         variant="ghost"
         color="slate"
         size="sm"
