@@ -1,4 +1,6 @@
 class Api::V1::Accounts::Scheduling::ResourceBreakRulesController < Api::V1::Accounts::Scheduling::BaseController
+  include Scheduling::ResourceScheduleInput
+
   before_action :check_admin_authorization?, only: [:update]
   before_action :set_resource
 
@@ -8,7 +10,7 @@ class Api::V1::Accounts::Scheduling::ResourceBreakRulesController < Api::V1::Acc
   end
 
   def update
-    rules_payload = params.permit(break_rules: [:weekday, :start_minute, :end_minute, :title, :active])[:break_rules] || []
+    rules_payload = raw_schedule_rule_sets.fetch(:break_rules, [])
     Scheduling::ResourceScheduleUpdateService.new(resource: @scheduling_resource).update!(break_rules: rules_payload)
 
     rules = @scheduling_resource.break_rules.reload.ordered

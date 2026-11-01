@@ -1,4 +1,6 @@
 class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Scheduling::BaseController
+  include Scheduling::ResourceScheduleInput
+
   TERMINAL_APPOINTMENT_STATUSES = %w[completed cancelled no_show].freeze
   BLOCKING_APPOINTMENT_STATUSES = (Scheduling::Constants::APPOINTMENT_STATUSES - TERMINAL_APPOINTMENT_STATUSES).freeze
   BLOCKING_APPOINTMENT_DETAIL_LIMIT = 10
@@ -36,8 +38,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   def update
     Scheduling::ResourceScheduleUpdateService.new(resource: @scheduling_resource).update!(
       attributes: resource_params,
-      work_rules: schedule_params[:work_rules],
-      break_rules: schedule_params[:break_rules]
+      **raw_schedule_rule_sets
     )
     render_payload(Scheduling::PayloadBuilder.resource(@scheduling_resource))
   end
@@ -77,11 +78,6 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
     @scheduling_resource = Current.account.scheduling_resources.find(params[:id])
   end
 
-  def schedule_params
-    params.permit(work_rules: [:weekday, :start_minute, :end_minute, :active],
-                  break_rules: [:weekday, :start_minute, :end_minute, :title, :active])
-  end
-
   def validate_provider_owned_attributes!
     incoming = params.permit(custom_attributes: {})[:custom_attributes]
     Integrations::Medelement::ProviderOwnedAttributesGuard.validate!(
@@ -92,7 +88,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
 
   def ensure_provider_writable_resource!
     return if @scheduling_resource.custom_attributes['medelement_specialist_code'].blank?
-    return if resource_params.to_h.keys == ['specialty'] && schedule_params.empty?
+    return if resource_params.to_h.keys == ['specialty'] && raw_schedule_rule_sets.empty?
 
     raise Scheduling::Error.new(
       code: 'RESOURCE_READ_ONLY',
