@@ -9,15 +9,15 @@ From the repository root, with its development dependencies installed:
 
 ```sh
 /opt/node22/bin/node script/design/catalogue/build.mjs /tmp/onelink-catalogue
-/opt/node22/bin/node script/design/catalogue/build.mjs /tmp/onelink-catalogue --cdn
 ```
 
 - `onelink-design-system-offline.html`: one self-contained file, including
   JavaScript, styles, normal-style Geist/Geist Mono fonts and icons. Open it in
   a browser or download it; it does not require the application or a server.
-- `onelink-design-system-cdn.html`: smaller than 512 KiB for Orca inline visuals.
-  Component code, styles, translations and fonts remain inline. Pinned public
-  library modules load from `esm.sh`, so this variant needs a network connection.
+- `onelink-design-system-inline.html`: smaller than 512 KiB for Orca inline visuals.
+  It contains the same complete offline document in a gzip payload and expands
+  it locally using the browser DecompressionStream API. No CDN or external
+  network connection is needed. There is one component implementation.
 
 The five groups cover foundations, actions, fields, layouts and data. Light and
 dark themes and ru/kk/en are available. Controls retain state between groups;

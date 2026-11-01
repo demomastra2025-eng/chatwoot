@@ -33,6 +33,7 @@ const setTheme = value => {
   document.documentElement.classList.toggle('dark', value);
   document.documentElement.style.colorScheme = value ? 'dark' : 'light';
 };
+setTheme(false);
 watch(i18n.global.locale, value => {
   document.documentElement.lang = value;
   document.title = i18n.global.t('CATALOGUE.TITLE');

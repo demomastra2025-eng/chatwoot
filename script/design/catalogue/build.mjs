@@ -8,13 +8,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../../..');
 const output = path.resolve(
   process.argv[2] || path.join(os.tmpdir(), 'onelink-catalogue')
 );
-const mode = process.argv.includes('--cdn') ? 'cdn' : 'offline';
 await fs.mkdir(output, { recursive: true });
 
 // Collect only the gallery and its real UI dependencies. Product tokens/plugins
@@ -63,20 +63,6 @@ const visit = async file => {
 };
 await visit(path.join(here, 'main.js'));
 const productTheme = loadConfig(path.join(root, 'tailwind.config.js'));
-const dependencies = {
-  vue: '3.5.12',
-  'vue-i18n': '9.14.5',
-  vuex: '4.1.0',
-  'reka-ui': '2.9.0',
-  '@vueuse/components': '12.0.0',
-  '@vueuse/core': '12.0.0',
-  'floating-vue': '5.2.2',
-  'vue3-click-away': '1.2.4',
-  '@chatwoot/prosemirror-schema': '1.3.10',
-  '@chatwoot/utils': '0.0.52',
-  '@sentry/vue': '8.55.0',
-  'camelcase-keys': '9.1.3',
-};
 
 const result = await build({
   configFile: false,
@@ -115,11 +101,10 @@ const result = await build({
     sourcemap: false,
     lib: {
       entry: path.join(here, 'main.js'),
-      formats: [mode === 'cdn' ? 'es' : 'iife'],
+      formats: ['iife'],
       name: 'OneLinkCatalogue',
     },
     rollupOptions: {
-      external: mode === 'cdn' ? Object.keys(dependencies) : [],
       output: { inlineDynamicImports: true },
     },
   },
@@ -174,29 +159,26 @@ css = fontReplacements.reduce(
 if (/url\(["']?\/(?!\/)/.test(css))
   throw new Error('Unresolved absolute asset URL in catalogue CSS');
 
-const imports = Object.fromEntries(
-  Object.entries(dependencies).map(([name, version]) => [
-    name,
-    `https://esm.sh/${name}@${version}${name === 'vue' ? '' : '?external=vue'}`,
-  ])
-);
-const importMap =
-  mode === 'cdn'
-    ? `<script type="importmap">${JSON.stringify({ imports })}</script>`
-    : '';
-const scriptType = mode === 'cdn' ? ' type="module"' : '';
 js = js.replace(/<\/script/gi, '<\\/script');
 css = css.replace(/<\/style/gi, '<\\/style');
-const html = `<!doctype html><html lang="ru" dir="ltr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>OneLink — дизайн-система</title><style>${css}</style>${importMap}</head><body class="onelink-catalogue"><div id="app"></div><script${scriptType}>${js}</script></body></html>`;
-const filename = path.join(output, `onelink-design-system-${mode}.html`);
-if (mode === 'cdn' && Buffer.byteLength(html) >= 512 * 1024)
+const html = `<!doctype html><html lang="ru" dir="ltr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>OneLink — дизайн-система</title><style>${css}</style></head><body class="onelink-catalogue"><div id="app"></div><script>${js}</script></body></html>`;
+const packed = gzipSync(Buffer.from(html), { level: 9 }).toString('base64');
+// The inline visual expands the SAME offline document locally. No CDN, API,
+// service or second component implementation is involved. Retain the document
+// and window so Orca theme/resize bridge listeners survive expansion.
+const inline = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OneLink — дизайн-система</title><style id="catalogue-loader-style">body{margin:24px;font:14px system-ui;color:var(--foreground);background:var(--background)}</style></head><body><p role="status">Открываю дизайн-систему OneLink…</p><script>const catalogueNonce=document.currentScript?.nonce;(async()=>{const b=Uint8Array.from(atob("${packed}"),c=>c.charCodeAt(0));const stream=new Blob([b]).stream().pipeThrough(new DecompressionStream("gzip"));const html=await new Response(stream).text();const page=new DOMParser().parseFromString(html,"text/html");document.title=page.title;document.documentElement.lang=page.documentElement.lang;document.documentElement.dir=page.documentElement.dir;page.head.querySelectorAll("style").forEach(style=>document.head.appendChild(style));document.getElementById("catalogue-loader-style").remove();document.body.className=page.body.className;const scripts=Array.from(page.body.querySelectorAll("script"));scripts.forEach(script=>script.remove());document.body.replaceChildren(...page.body.childNodes);scripts.forEach(original=>{const script=document.createElement("script");if(catalogueNonce)script.nonce=catalogueNonce;script.textContent=original.textContent;document.body.appendChild(script)})})().catch(()=>{document.body.textContent="Не удалось открыть каталог. Откройте отдельный HTML-файл из сообщения."})</script></body></html>`;
+if (Buffer.byteLength(inline) >= 512 * 1024)
   throw new Error('Inline catalogue exceeds Orca 512 KiB limit');
+const filename = path.join(output, 'onelink-design-system-offline.html');
+const inlineFilename = path.join(output, 'onelink-design-system-inline.html');
 await fs.writeFile(filename, html);
+await fs.writeFile(inlineFilename, inline);
 process.stdout.write(
   JSON.stringify({
     filename,
+    inlineFilename,
     bytes: Buffer.byteLength(html),
-    mode,
+    inlineBytes: Buffer.byteLength(inline),
     sourceFiles: sources.size,
   }) + '\n'
 );
