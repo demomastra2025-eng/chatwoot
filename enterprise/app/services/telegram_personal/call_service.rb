@@ -156,8 +156,8 @@ class TelegramPersonal::CallService
   def reserve_acceptance!
     call.with_lock do
       call.reload
-      ensure_ringing!
       ensure_not_already_taken!
+      ensure_ringing!
       call.update!(accepted_by_agent_id: agent.id)
     end
   end
@@ -204,8 +204,8 @@ class TelegramPersonal::CallService
   end
 
   def ensure_not_already_taken!
-    already_reserved_by_other_agent = call.accepted_by_agent_id.present? && call.accepted_by_agent_id != agent.id
-    return unless call.in_progress? || already_reserved_by_other_agent
+    taken_by_other = (call.accepted_by_agent_id.present? || call.in_progress?) && call.accepted_by_agent_id != agent.id
+    return unless taken_by_other
 
     raise TelegramPersonal::CallErrors::AlreadyAccepted, 'Call already accepted by another agent'
   end

@@ -285,5 +285,17 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
       expect(inbound_call.reload.status).to eq('failed')
       expect(inbound_call.end_reason).to eq('rejected')
     end
+
+    it 'returns already accepted error when another agent accepts an already-taken in_progress call' do
+      other_agent = create(:user, account: account, role: :agent)
+      inbound_call.update!(status: 'in_progress', started_at: 2.seconds.ago, accepted_by_agent: other_agent)
+
+      post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}/accept",
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body['error']).to include('already accepted')
+    end
   end
 end
