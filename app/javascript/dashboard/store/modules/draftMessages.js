@@ -11,14 +11,19 @@ const state = {
 
 export const getters = {
   get: _state => key => {
-    return _state.records[key] || '';
+    const record = _state.records[key];
+    return typeof record === 'string' ? record : record?.message || '';
+  },
+  getRecord: _state => key => {
+    const record = _state.records[key];
+    return typeof record === 'string' ? { message: record } : record || null;
   },
   getReplyEditorMode: _state => _state.replyEditorMode,
 };
 
 export const actions = {
-  set: async ({ commit }, { key, message }) => {
-    commit(types.SET_DRAFT_MESSAGES, { key, message });
+  set: async ({ commit }, payload) => {
+    commit(types.SET_DRAFT_MESSAGES, payload);
   },
   delete: ({ commit }, { key }) => {
     commit(types.SET_DRAFT_MESSAGES, { key });
@@ -29,12 +34,19 @@ export const actions = {
 };
 
 export const mutations = {
-  [types.SET_DRAFT_MESSAGES]($state, { key, message }) {
-    $state.records = {
-      ...$state.records,
-      [key]: message,
-    };
-    LocalStorage.set(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES, $state.records);
+  [types.SET_DRAFT_MESSAGES](
+    $state,
+    { key, message, context = null, aiIdentity = null }
+  ) {
+    const records = { ...$state.records };
+    if (message === undefined) {
+      delete records[key];
+    } else {
+      records[key] = { message, context, aiIdentity };
+    }
+    // Text, context and identity are one durable record; there is no separate provenance write.
+    LocalStorage.set(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES, records);
+    $state.records = records;
   },
   [types.REMOVE_DRAFT_MESSAGES]($state, { key }) {
     const { [key]: draftToBeRemoved, ...updatedRecords } = $state.records;

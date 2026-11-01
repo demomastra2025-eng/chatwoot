@@ -38,6 +38,10 @@ describe('ReplyBox', () => {
       maxLength: 5000,
       conversationIdByRoute: 42,
       replyType: 'reply',
+      accountId: 1,
+      currentUser: { id: 7 },
+      copilotAcceptedMeta: {},
+      draftContext: ReplyBox.methods.draftContext,
       saveDraft: ReplyBox.methods.saveDraft,
       getDraftKey: ReplyBox.methods.getDraftKey,
       $store: {
@@ -55,7 +59,16 @@ describe('ReplyBox', () => {
     ReplyBox.methods.flushDraftBeforeStaleChunkRefresh.call(context);
 
     expect(LocalStorage.get(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES)).toEqual({
-      'draft-42-reply': '  Latest unsaved reply  ',
+      'draft-42-reply': {
+        message: '  Latest unsaved reply  ',
+        context: {
+          accountId: 1,
+          userId: 7,
+          conversationId: 42,
+          replyType: 'reply',
+        },
+        aiIdentity: null,
+      },
     });
   });
 
@@ -91,7 +104,11 @@ describe('ReplyBox', () => {
     ReplyBox.methods.flushDraftBeforeStaleChunkRefresh.call(context);
 
     expect(LocalStorage.get(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES)).toEqual({
-      'draft-42-reply': 'Saved composed reply',
+      'draft-42-reply': {
+        message: 'Saved composed reply',
+        context: null,
+        aiIdentity: null,
+      },
     });
   });
 
@@ -603,6 +620,7 @@ describe('ReplyBox', () => {
             edited_before_send: true,
             action: 'reply_suggestion',
             request_id: 'req-99',
+            suggestion_request_id: 'sr-99',
             follow_up_count: 1,
           },
         }),

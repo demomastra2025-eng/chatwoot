@@ -7,6 +7,9 @@ import { BUS_EVENTS } from 'shared/constants/busEvents';
 import TasksAPI from 'dashboard/api/captain/tasks';
 import en from 'dashboard/i18n/locale/en/conversation.json';
 import ReplyBox from './ReplyBox.vue';
+import draftMessages from 'dashboard/store/modules/draftMessages';
+import { LocalStorage } from 'shared/helpers/localStorage';
+import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
 
 const LABELS = en.CONVERSATION.REPLYBOX.COPILOT_SUGGESTION;
 
@@ -132,8 +135,20 @@ const draft = () =>
     },
   });
 
-const buildStore = () =>
+const buildStore = (persistentDrafts = false) =>
   createStore({
+    modules: persistentDrafts
+      ? {
+          draftMessages: {
+            ...draftMessages,
+            state: () => ({
+              records:
+                LocalStorage.get(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES) || {},
+              replyEditorMode: 'REPLY',
+            }),
+          },
+        }
+      : {},
     getters: {
       getSelectedChat: () => mockChat.value,
       getMessageSignature: () => '',
@@ -148,23 +163,31 @@ const buildStore = () =>
       }),
       'inboxes/getConversationWhatsAppTemplates': () => () => [],
       'contacts/getContact': () => () => ({ id: 5 }),
-      'draftMessages/get': () => () => '',
-      'draftMessages/getReplyEditorMode': () => 'reply',
+      ...(persistentDrafts
+        ? {}
+        : {
+            'draftMessages/get': () => () => '',
+            'draftMessages/getReplyEditorMode': () => 'reply',
+          }),
       'attributes/getAttributesByModel': () => () => [],
     },
     actions: {
-      'draftMessages/setReplyEditorMode': vi.fn(),
-      'draftMessages/set': vi.fn(),
-      'draftMessages/delete': vi.fn(),
-      'draftMessages/get': vi.fn(),
+      ...(persistentDrafts
+        ? {}
+        : {
+            'draftMessages/setReplyEditorMode': vi.fn(),
+            'draftMessages/set': vi.fn(),
+            'draftMessages/delete': vi.fn(),
+            'draftMessages/get': vi.fn(),
+          }),
     },
   });
 
-const mountReplyBox = async () => {
+const mountReplyBox = async (store = buildStore()) => {
   const wrapper = shallowMount(ReplyBox, {
     attachTo: document.body,
     global: {
-      plugins: [buildStore()],
+      plugins: [store],
       mocks: { $t: key => key },
       directives: { 'on-clickaway': {} },
       // The notice is the unit under test: render it for real, stub the rest
@@ -203,6 +226,7 @@ describe('ReplyBox reply suggestion outcomes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    LocalStorage.remove(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES);
     mockChat.value = chatOf(42);
     mockConversationId.value = 42;
     mockCancelReplySuggestion.mockResolvedValue({ ok: true });
@@ -1010,6 +1034,183 @@ describe('ReplyBox reply suggestion outcomes', () => {
         payload => payload.contentAttributes?.copilot?.suggestion_request_id
       )
     ).toEqual(['sr-split', ...Array(6).fill(undefined)]);
+  });
+
+  it('persists an accepted draft immediately and restores its identity after a fresh store/component reload before an edited send', async () => {
+    mockGetReplySuggestionStatus.mockResolvedValueOnce({ suggestion: draft() });
+    wrapper = await mountReplyBox(buildStore(true));
+    wrapper.vm.onSubmitCopilotReply();
+    const record = LocalStorage.get(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES)[
+      'draft-42-REPLY'
+    ];
+    expect(record.aiIdentity).toEqual({ suggestionRequestId: 'sr-42' });
+    expect(Object.keys(record)).toEqual(['message', 'context', 'aiIdentity']);
+    wrapper.unmount();
+    wrapper = await mountReplyBox(buildStore(true));
+    expect(wrapper.vm.getCopilotAcceptedMessage()).toBe('');
+    expect(wrapper.vm.getCopilotAcceptedMeta().suggestionRequestId).toBe(
+      'sr-42'
+    );
+    expect(wrapper.vm.message).toBe(record.message);
+    wrapper.vm.message = 'Completely edited after reload';
+    wrapper.vm.flushDraftBeforeStaleChunkRefresh();
+    const dispatch = vi
+      .spyOn(wrapper.vm.$store, 'dispatch')
+      .mockResolvedValue({ id: 774 });
+    await wrapper.vm.sendMessage(
+      { message: wrapper.vm.message, private: false },
+      wrapper.vm.message,
+      '',
+      wrapper.vm.getCopilotAcceptedMeta()
+    );
+    expect(dispatch).toHaveBeenCalledWith(
+      'createPendingMessageAndSend',
+      expect.objectContaining({
+        contentAttributes: {
+          copilot: expect.objectContaining({
+            suggestion_request_id: 'sr-42',
+            assisted: true,
+          }),
+        },
+      })
+    );
+  });
+
+  it('retains the restored identity and durable draft across save failure, then retries with the same identity and removes the whole draft only on success', async () => {
+    const store = buildStore(true);
+    await store.dispatch('draftMessages/set', {
+      key: 'draft-42-REPLY',
+      message: 'Restored draft',
+      context: {
+        accountId: 1,
+        userId: 7,
+        conversationId: 42,
+        replyType: 'REPLY',
+      },
+      aiIdentity: { suggestionRequestId: 'sr-reload-retry' },
+    });
+    wrapper = await mountReplyBox(store);
+    const originalDispatch = store.dispatch.bind(store);
+    let attempts = 0;
+    const dispatch = vi
+      .spyOn(store, 'dispatch')
+      .mockImplementation((type, payload) => {
+        if (type !== 'createPendingMessageAndSend')
+          return originalDispatch(type, payload);
+        attempts += 1;
+        return attempts === 1
+          ? Promise.reject(new Error('save unavailable'))
+          : Promise.resolve({ id: 775 });
+      });
+    const send = () =>
+      wrapper.vm.sendMessage(
+        { message: wrapper.vm.message, private: false },
+        wrapper.vm.message,
+        '',
+        wrapper.vm.getCopilotAcceptedMeta()
+      );
+    await send();
+    expect(
+      LocalStorage.get(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES)['draft-42-REPLY']
+        .aiIdentity.suggestionRequestId
+    ).toBe('sr-reload-retry');
+    await send();
+    expect(
+      dispatch.mock.calls
+        .filter(([type]) => type === 'createPendingMessageAndSend')
+        .map(
+          ([, payload]) =>
+            payload.contentAttributes.copilot.suggestion_request_id
+        )
+    ).toEqual(['sr-reload-retry', 'sr-reload-retry']);
+    expect(
+      LocalStorage.get(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES)['draft-42-REPLY']
+    ).toBeUndefined();
+  });
+
+  it.each([
+    { accountId: 2 },
+    { userId: 8 },
+    { conversationId: 99 },
+    { replyType: 'NOTE' },
+  ])(
+    'does not restore AI provenance or text owned by a different draft context %o',
+    async mismatch => {
+      const store = buildStore(true);
+      await store.dispatch('draftMessages/set', {
+        key: 'draft-42-REPLY',
+        message: 'Other context draft',
+        context: {
+          accountId: 1,
+          userId: 7,
+          conversationId: 42,
+          replyType: 'REPLY',
+          ...mismatch,
+        },
+        aiIdentity: { suggestionRequestId: 'other-context-request' },
+      });
+      wrapper = await mountReplyBox(store);
+      expect(wrapper.vm.message).toBe('');
+      expect(wrapper.vm.getCopilotAcceptedMeta()).toBeNull();
+    }
+  );
+
+  it('restores legacy text-only and ordinary human drafts without an AI marker', async () => {
+    LocalStorage.set(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES, {
+      'draft-42-REPLY': 'Human typed legacy text',
+    });
+    wrapper = await mountReplyBox(buildStore(true));
+    expect(wrapper.vm.message).toBe('Human typed legacy text');
+    expect(wrapper.vm.getCopilotAcceptedMeta()).toBeNull();
+    wrapper.vm.message = 'Edited human reply';
+    wrapper.vm.saveDraft(42, 'REPLY');
+    wrapper.unmount();
+    wrapper = await mountReplyBox(buildStore(true));
+    const dispatch = vi
+      .spyOn(wrapper.vm.$store, 'dispatch')
+      .mockResolvedValue({ id: 776 });
+    await wrapper.vm.sendMessage(
+      { message: wrapper.vm.message, private: false },
+      wrapper.vm.message,
+      '',
+      wrapper.vm.getCopilotAcceptedMeta()
+    );
+    const [, payload] = dispatch.mock.calls.find(
+      ([type]) => type === 'createPendingMessageAndSend'
+    );
+    expect(payload.contentAttributes?.copilot).toBeUndefined();
+  });
+
+  it('keeps private drafts free of persisted AI identity and does not overwrite a reply draft while editing an existing message', async () => {
+    wrapper = await mountReplyBox(buildStore(true));
+    wrapper.vm.message = 'Accepted public draft';
+    wrapper.vm.setCopilotAcceptedMessage('Accepted public draft', 'REPLY', {
+      action: 'reply_suggestion',
+      suggestionRequestId: 'sr-public',
+    });
+    wrapper.vm.saveDraft(42, 'REPLY');
+    wrapper.vm.editingMessage = { id: 900, content: 'Already sent' };
+    wrapper.vm.message = 'Edit an existing message';
+    wrapper.vm.saveDraft(42, 'REPLY');
+    expect(
+      LocalStorage.get(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES)['draft-42-REPLY']
+        .message
+    ).toBe('Accepted public draft');
+    wrapper.vm.editingMessage = null;
+    wrapper.vm.message = 'Internal staff note';
+    wrapper.vm.setCopilotAcceptedMessage('AI note', 'NOTE', {
+      action: 'reply_suggestion',
+      suggestionRequestId: 'sr-note',
+    });
+    wrapper.vm.saveDraft(42, 'NOTE');
+    expect(
+      LocalStorage.get(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES)['draft-42-NOTE']
+        .aiIdentity
+    ).toBeNull();
+    expect(
+      LocalStorage.get(LOCAL_STORAGE_KEYS.DRAFT_MESSAGES)['draft-42-REPLY']
+        .aiIdentity.suggestionRequestId
+    ).toBe('sr-public');
   });
 
   it('never carries a suggestion of one conversation into another', async () => {

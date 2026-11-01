@@ -1161,14 +1161,44 @@ export default {
       // Reset attached files
       this.attachedFiles = [];
     },
+    draftContext(
+      conversationId = this.conversationIdByRoute,
+      replyType = this.replyType
+    ) {
+      return {
+        accountId: this.accountId,
+        userId: this.currentUser?.id,
+        conversationId,
+        replyType,
+      };
+    },
+    ownsDraftContext(context) {
+      if (!context) return false;
+      const expected = this.draftContext();
+      return Object.keys(expected).every(
+        key =>
+          expected[key] != null &&
+          String(context[key]) === String(expected[key])
+      );
+    },
     saveDraft(conversationId, replyType) {
+      if (this.isEditingMessage) return;
       if (this.message || this.message === '') {
         const key = this.getDraftKey(conversationId, replyType);
         const draftToSave = trimContent(this.message || '', this.maxLength);
+        const meta = this.copilotAcceptedMeta[key];
+        const requestId =
+          meta?.action === 'reply_suggestion' && meta?.suggestionRequestId;
+        const aiIdentity =
+          draftToSave && replyType === REPLY_EDITOR_MODES.REPLY && requestId
+            ? { suggestionRequestId: requestId }
+            : null;
 
         this.$store.dispatch('draftMessages/set', {
           key,
           message: draftToSave,
+          context: this.draftContext(conversationId, replyType),
+          aiIdentity,
         });
       }
     },
@@ -1181,13 +1211,30 @@ export default {
       this.message = '';
     },
     getFromDraft() {
-      if (this.conversationIdByRoute) {
-        const key = this.getDraftKey();
-        const messageFromStore =
-          this.$store.getters['draftMessages/get'](key) || '';
-
-        // ensure that the message has signature set based on the ui setting
-        this.message = this.toggleSignatureForDraft(messageFromStore);
+      if (this.isEditingMessage || !this.conversationIdByRoute) return;
+      const key = this.getDraftKey();
+      const record = this.$store.getters['draftMessages/getRecord']?.(key) || {
+        message: this.$store.getters['draftMessages/get'](key) || '',
+      };
+      const owned = this.ownsDraftContext(record.context);
+      this.clearCopilotAcceptedMessage();
+      if (record.context && !owned) {
+        this.message = '';
+        return;
+      }
+      this.message = this.toggleSignatureForDraft(record.message || '');
+      if (
+        owned &&
+        this.replyType === REPLY_EDITOR_MODES.REPLY &&
+        record.message &&
+        typeof record.aiIdentity?.suggestionRequestId === 'string' &&
+        record.aiIdentity.suggestionRequestId
+      ) {
+        this.copilotAcceptedMeta[key] = {
+          action: 'reply_suggestion',
+          suggestionRequestId: record.aiIdentity.suggestionRequestId,
+          conversationId: this.conversationId,
+        };
       }
     },
     toggleSignatureForDraft(message) {
@@ -1456,9 +1503,14 @@ export default {
         });
       }
 
-      if (normalizedAcceptedMessage && normalizedEditorMessage) {
-        const editedBeforeSend =
-          normalizedAcceptedMessage !== normalizedEditorMessage;
+      if (
+        (normalizedAcceptedMessage ||
+          copilotAcceptedMeta?.suggestionRequestId) &&
+        normalizedEditorMessage
+      ) {
+        const editedBeforeSend = normalizedAcceptedMessage
+          ? normalizedAcceptedMessage !== normalizedEditorMessage
+          : null;
         useTrack(CAPTAIN_EVENTS.AI_ASSISTED_MESSAGE_SENT, {
           conversationId: this.conversationIdByRoute,
           channelType: this.channelType,
@@ -1544,13 +1596,18 @@ export default {
         editorMessage,
         payload.private
       );
-      if (normalizedAcceptedMessage && normalizedEditorMessage) {
+      if (
+        (normalizedAcceptedMessage ||
+          copilotAcceptedMeta?.suggestionRequestId) &&
+        normalizedEditorMessage
+      ) {
         payload.contentAttributes = {
           ...payload.contentAttributes,
           copilot: {
             assisted: true,
-            edited_before_send:
-              normalizedAcceptedMessage !== normalizedEditorMessage,
+            edited_before_send: normalizedAcceptedMessage
+              ? normalizedAcceptedMessage !== normalizedEditorMessage
+              : null,
             action: copilotAcceptedMeta?.action || 'reply_suggestion',
             request_id: copilotAcceptedMeta?.requestId || null,
             suggestion_request_id:
@@ -2054,6 +2111,7 @@ export default {
         this.replyType,
         acceptedMeta
       );
+      this.saveDraft(this.conversationIdByRoute, this.replyType);
     },
   },
 };

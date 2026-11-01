@@ -12,7 +12,11 @@ describe('#mutations', () => {
         message: 'Hey how ',
       });
       expect(state.records).toEqual({
-        'draft-32-REPLY': 'Hey how ',
+        'draft-32-REPLY': {
+          message: 'Hey how ',
+          context: null,
+          aiIdentity: null,
+        },
       });
     });
   });
