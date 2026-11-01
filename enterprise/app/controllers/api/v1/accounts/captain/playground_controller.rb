@@ -9,6 +9,7 @@ class Api::V1::Accounts::Captain::PlaygroundController < Api::V1::Accounts::Base
   wrap_parameters false
   before_action :current_account
   before_action -> { authorize(Captain::Assistant, :playground?) }
+  before_action :reject_clinic_model_controls, only: :create
 
   def create
     test_overrides, invalid_override = Captain::Playground::TestOverrides.new(playground_params, account: Current.account).resolve
@@ -26,6 +27,13 @@ class Api::V1::Accounts::Captain::PlaygroundController < Api::V1::Accounts::Base
   end
 
   private
+
+  def reject_clinic_model_controls
+    return if Captain::PromptInspectorAccess.allowed?(user: Current.user, impersonation: @super_admin_impersonation)
+
+    field = %i[test_model test_temperature test_thinking_effort].find { |key| playground_params.key?(key) }
+    render json: { error: 'unsupported_playground_setting', field: field }, status: :unprocessable_content if field
+  end
 
   def render_timeout_response(error)
     Rails.logger.warn("#{self.class.name} playground timed out for account #{Current.account.id}: #{error.class} - #{error.message}")

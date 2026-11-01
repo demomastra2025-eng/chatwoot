@@ -37,12 +37,23 @@ RSpec.describe Captain::AssistantConfigContract, type: :request do
   it 'permits platform read/write in a verified impersonation session' do
     grant = SuperAdmin::ImpersonationService.issue_grant!(actor: platform, account: account, target_user: admin)
     post '/auth/sign_in', params: { email: admin.email, sso_auth_token: grant.token }, as: :json
+    expect(payload.dig('data', 'captain_platform_access')).to be(true)
     headers = response.headers.slice('access-token', 'client', 'uid')
 
     patch "#{path}/#{assistant.id}", params: { assistant: { description: 'Impersonated platform instructions' } }, headers: headers, as: :json
 
     expect(response).to have_http_status(:ok)
     expect(payload['description']).to eq('Impersonated platform instructions')
+  end
+
+  it 'publishes a server-derived platform flag for client controls without trusting local impersonation state' do
+    get '/api/v1/profile', headers: admin_headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(payload['captain_platform_access']).to be(false)
+
+    get '/api/v1/profile', headers: platform.create_new_auth_token, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(payload['captain_platform_access']).to be(true)
   end
 
   it 'rejects ordinary prompt writes atomically while preserving business metadata updates' do
@@ -69,7 +80,12 @@ RSpec.describe Captain::AssistantConfigContract, type: :request do
     expect(payload['description']).to eq('Platform instruction')
   end
 
-  Captain::AssistantConfigContract::UNSUPPORTED_FIELDS.each do |field|
+  %w[
+    model temperature thinking_effort feature_faq feature_memory feature_citation feature_web feature_document_reading
+    feature_image_understanding use_audio_transcriptions handoff_enabled auto_completion_enabled auto_reply_on_last_incoming
+    handoff_message handoff_message_enabled handoff_message_mode resolution_message resolution_message_enabled
+    resolution_message_mode message_collapse_window_seconds history_message_limit safety_settings welcome_message
+  ].each do |field|
     it "rejects ignored per-agent #{field} settings without partial mutation" do
       patch "#{path}/#{assistant.id}", params: { assistant: { name: 'Must not save', config: { field => false } } },
                                        headers: admin_headers, as: :json
@@ -82,7 +98,7 @@ RSpec.describe Captain::AssistantConfigContract, type: :request do
 
   it 'hides archived settings while reporting effective behavior without rewriting storage' do
     stored = { 'feature_memory' => true, 'history_message_limit' => 5, 'message_collapse_window_seconds' => 99,
-               'thinking_effort' => 'high', 'temperature' => 1, 'model' => 'retired/model' }
+               'thinking_effort' => 'high', 'temperature' => 1, 'model' => ' retired/model ' }
     assistant.update_column(:config, stored) # rubocop:disable Rails/SkipsModelValidations -- reproduce a saved retired model
     allow(Llm::Config).to receive(:model_for).and_return('platform/model')
 
@@ -130,5 +146,75 @@ RSpec.describe Captain::AssistantConfigContract, type: :request do
     expect(response).to have_http_status(:unprocessable_content)
     expect(payload).to include('error' => 'platform_managed_prompt', 'fields' => ['config.voice_settings.system_prompt'])
     expect(assistant.reload.config.dig('voice_settings', 'system_prompt')).to eq('Private voice instructions')
+  end
+
+  %w[tool_access capabilities].each do |field|
+    it "keeps #{field} writes platform-only even before migration" do
+      patch "#{path}/#{assistant.id}", params: { assistant: { config: { field => {} } } }, headers: admin_headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(payload).to include('error' => 'platform_managed_capabilities', 'fields' => ["config.#{field}"])
+    end
+  end
+
+  it 'updates a migrated canonical set atomically through the platform legacy alias and hides its provenance' do
+    canonical = { 'version' => 1, 'scopes' => {
+      'agent' => { 'enabled' => true, 'tool_ids' => ['add_private_note'] },
+      'assistant' => { 'enabled' => false, 'tool_ids' => [] }
+    } }
+    assistant.update!(config: { 'capabilities' => canonical, 'tool_access' => { 'agent' => { 'tool_ids' => ['send_notification'] } },
+                                'capabilities_migration' => { 'legacy_tool_access' => { 'private' => 'Private source marker' } } })
+    patch "#{path}/#{assistant.id}", params: { assistant: { config: { tool_access: { agent: { tool_ids: ['add_contact_note'] } } } } },
+                                     headers: platform.create_new_auth_token, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(assistant.reload.allowed_agent_tool_ids).to include('add_contact_note')
+    expect(assistant.allowed_agent_tool_ids).not_to include('send_notification', 'add_private_note')
+    expect(assistant.config.dig('tool_access', 'agent', 'tool_ids')).to eq(['send_notification'])
+    expect(payload['config']).not_to have_key('tool_access')
+    expect(response.body).not_to include('Private source marker')
+  end
+
+  it 'protects the account transcription prompt from client reads and writes' do
+    account.update!(captain_runtime: { 'audio_transcription_prompt' => 'Private transcription instructions' })
+    preferences_path = "/api/v1/accounts/#{account.id}/captain/preferences"
+    get preferences_path, headers: admin_headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.body).not_to include('Private transcription instructions')
+
+    put preferences_path, params: { captain_runtime: { audio_transcription_prompt: 'Client instruction' } }, headers: admin_headers, as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(payload).to include('error' => 'platform_managed_prompt', 'fields' => ['captain_runtime.audio_transcription_prompt'])
+    expect(account.reload.captain_runtime['audio_transcription_prompt']).to eq('Private transcription instructions')
+  end
+
+  %w[test_model test_temperature test_thinking_effort].each do |field|
+    it "rejects the #{field} Playground bypass before constructing the runtime" do
+      expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
+      [admin, agent].each do |user|
+        post "/api/v1/accounts/#{account.id}/captain/playground", params: { 'message_content' => 'Hello', field => 'override' },
+                                                                  headers: user.create_new_auth_token, as: :json
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(payload).to include('error' => 'unsupported_playground_setting', 'field' => field)
+      end
+    end
+  end
+
+  it 'does not restore archived scenario grants when a platform operator edits only its instructions' do
+    scenario = create(:captain_scenario, assistant: assistant, account: account, instruction: 'Use [Note](tool://add_private_note).')
+    result = Captain::LegacyScenarioConversionService.new.convert!(scenario.id)
+    mapped = account.captain_assistants.find(result[:assistant_id])
+    mapped.update!(config: mapped.config.merge('capabilities' => { 'version' => 1, 'scopes' => {
+                                                 'agent' => { 'enabled' => true, 'tool_ids' => [] },
+                                                 'assistant' => { 'enabled' => false, 'tool_ids' => [] }
+                                               } }))
+
+    instructions = 'Platform edit [Note](tool://add_private_note).'
+    patch "#{path}/#{assistant.id}/scenarios/#{scenario.id}", params: { scenario: { instruction: instructions } },
+                                                              headers: platform.create_new_auth_token, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(mapped.reload.config.dig('capabilities', 'scopes', 'agent', 'tool_ids')).to eq([])
+    expect(mapped.allowed_agent_tool_ids).not_to include('add_private_note')
+    expect(payload['tools']).to eq([])
+    expect(scenario.reload.tools).to eq(['add_private_note'])
   end
 end

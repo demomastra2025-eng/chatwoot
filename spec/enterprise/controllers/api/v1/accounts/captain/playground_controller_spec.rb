@@ -3,6 +3,7 @@ require 'rails_helper'
 RSpec.describe 'Api::V1::Accounts::Captain::Playground', type: :request do
   let(:account) { create(:account) }
   let(:admin) { create(:user, account: account, role: :administrator) }
+  let(:platform_user) { create(:super_admin).tap { |user| create(:account_user, account: account, user: user, role: :administrator) } }
   let(:agent) { create(:user, account: account, role: :agent) }
   let!(:first_agent) { create(:captain_assistant, account: account) }
   let!(:second_agent) { create(:captain_assistant, account: account) }
@@ -142,7 +143,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Playground', type: :request do
         expect(json_response[:error]).to eq('invalid_playground_scenario')
       end
 
-      it 'passes supported playground overrides to one runtime request without saving any agent' do
+      it 'lets the platform pass supported playground overrides to one runtime request without saving any agent' do
         original_configs = account.captain_assistants.order(:id).map { |item| item.config.deep_dup }
         requested_overrides = { model: 'openai/gpt-5.4', temperature: 0.4, thinking_effort: 'high' }
         allow(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account).and_return('openai/gpt-6-luna')
@@ -157,7 +158,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Playground', type: :request do
         allow(agent_runner_service).to receive(:generate_response).and_return({ response: 'Test response' })
 
         post path, params: valid_params.merge(test_model: 'openai/gpt-5.4', test_temperature: 0.4, test_thinking_effort: 'high'),
-                   headers: agent.create_new_auth_token, as: :json
+                   headers: platform_user.create_new_auth_token, as: :json
 
         expect(response).to have_http_status(:success)
         expect(Captain::Assistant::AgentRunnerService).to have_received(:new).with(**runner_options(test_overrides: requested_overrides))
@@ -175,7 +176,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Playground', type: :request do
         expect(json_response).to eq(error: 'unsupported_playground_setting', field: 'test_temperature')
       end
 
-      it 'passes zero and an advertised none override without persisting agent or workspace settings' do
+      it 'lets the platform pass zero and an advertised none override without persisting agent or workspace settings' do
         original_runtime = account.captain_runtime.deep_dup
         overrides = { temperature: 0.0, thinking_effort: 'none' }
         allow(Llm::Models).to receive(:supports_temperature?).and_return(true)
@@ -184,7 +185,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Playground', type: :request do
                                                                       .and_return(agent_runner_service)
 
         post path, params: valid_params.merge(test_temperature: 0, test_thinking_effort: 'none'),
-                   headers: agent.create_new_auth_token, as: :json
+                   headers: platform_user.create_new_auth_token, as: :json
 
         expect(response).to have_http_status(:success)
         expect(Captain::Assistant::AgentRunnerService).to have_received(:new).with(**runner_options(test_overrides: overrides))

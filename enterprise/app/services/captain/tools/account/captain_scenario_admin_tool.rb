@@ -63,6 +63,10 @@ class Captain::Tools::Account::CaptainScenarioAdminTool < Captain::Tools::Accoun
 
   def apply_tool_references(instruction, assistant, tool_ids_json)
     ensure_platform_prompt_access!('instruction')
+    if tool_ids_json.present? && Captain::Capabilities.configured?(assistant.config)
+      raise Captain::AssistantConfigContract::Violation.new('legacy_scenario_capabilities_removed', ['tool_ids_json'])
+    end
+
     if tool_ids_json.blank?
       validate_no_tool_references!(instruction)
       return instruction

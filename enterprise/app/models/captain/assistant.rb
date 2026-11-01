@@ -413,6 +413,7 @@ class Captain::Assistant < ApplicationRecord
   validate :validate_instruction_fields
   validate :validate_fish_voice_reference
   validate :validate_conversational_model
+  validate :validate_capabilities_contract
   validate :validate_follow_up_settings
 
   scope :ordered, -> { order(created_at: :desc) }
@@ -520,6 +521,8 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def scenario_agent_tool_ids(referenced_tool_ids: [])
+    return allowed_agent_tool_ids if Captain::Capabilities.configured?(config)
+
     return [] unless tool_scope_enabled?(Captain::ToolAccess::SCOPE_AGENT)
 
     available_ids = available_tool_ids
@@ -589,6 +592,7 @@ class Captain::Assistant < ApplicationRecord
 
   def voice_runtime_agent_tools
     return [] unless tool_scope_enabled?(Captain::ToolAccess::SCOPE_AGENT)
+    return allowed_agent_tools.reject { |tool| tool[:id].to_s == 'get_appointment_provider_status' } if Captain::Capabilities.configured?(config)
 
     selected_ids = selected_agent_tool_ids
     referenced_ids = prompt_referenced_tool_ids_for_template(:assistant)
@@ -759,6 +763,7 @@ class Captain::Assistant < ApplicationRecord
 
   def reload(*)
     remove_instance_variable(:@faq_entries) if defined?(@faq_entries)
+    remove_instance_variable(:@account_settings) if defined?(@account_settings)
     super
   end
 
@@ -835,9 +840,16 @@ class Captain::Assistant < ApplicationRecord
     errors.add(:config, :assistant_model_not_allowed)
   end
 
+  def validate_capabilities_contract
+    return unless Captain::Capabilities.configured?(config)
+    return if Captain::Capabilities.valid?(config['capabilities'])
+
+    errors.add(:config, :invalid_capabilities)
+  end
+
   # Only a newly chosen model has to be on the platform allowlist: an agent keeps the model it already has.
   def conversational_model_changed?
-    config_in_database.to_h.with_indifferent_access[:model].to_s.strip != model
+    config_in_database.to_h.with_indifferent_access[:model].to_s.strip != model.to_s.strip
   end
 
   def validate_follow_up_settings
@@ -1144,6 +1156,7 @@ class Captain::Assistant < ApplicationRecord
 
     available_ids = available_tool_ids_for_scope(scope_name)
     selected_ids = selected_tool_ids_for_scope(scope_name)
+    referenced_tool_ids = [] if Captain::Capabilities.configured?(config)
     explicit_tool_ids = companion_expanded_tool_ids(Array(referenced_tool_ids).map(&:to_s))
     explicit_tool_ids -= capability_controlled_tool_ids_for_scope(scope_name)
 

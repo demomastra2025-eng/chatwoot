@@ -138,13 +138,13 @@ RSpec.describe Llm::Config do
       expect(described_class.installation_default_model).to eq('gpt-4.1-mini')
     end
 
-    it 'uses an agent-only model override without changing Copilot or the legacy installation default' do
+    it 'ignores the retired agent-only installation override in favor of the visible platform setting' do
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
       upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.6-luna')
       copilot_model = described_class.model_for(feature: :copilot)
       upsert_installation_config('CAPTAIN_AI_AGENT_DEFAULT_MODEL', 'openai/gpt-6-luna')
 
-      expect(described_class.model_for(feature: :assistant)).to eq('openai/gpt-6-luna')
+      expect(described_class.model_for(feature: :assistant)).to eq('openai/gpt-5.6-luna')
       expect(described_class.model_for(feature: :copilot)).to eq(copilot_model)
       expect(described_class.installation_default_model).to eq('openai/gpt-5.6-luna')
     end
@@ -459,56 +459,37 @@ RSpec.describe Llm::Config do
       expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-6-luna')
     end
 
-    it 'maps legacy account-selected direct model ids to OpenRouter equivalents for normal Captain features' do
-      account = create(:account)
-      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
-      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
-        'openai/gpt-5.4' => {
-          'provider' => 'openrouter',
-          'type' => 'chat',
-          'capabilities' => %w[structured_output tool_calling tool_choice streaming]
-        }
-      )
-      account.update!(captain_models: { 'assistant' => 'gpt-5.4' })
-
-      selected_model = described_class.model_for(feature: 'assistant', account: account)
-
-      expect(selected_model).to eq('openai/gpt-5.4')
-      expect(described_class.provider_for_model(selected_model, account: account)).to eq('openrouter')
-    end
-
-    it 'prefers an account-selected model when that account has provider credentials' do
+    it 'ignores archived account model overrides for assistant' do
       account = create(:account)
       account.enable_features!('captain_openrouter_byok')
-      create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'account-openrouter-key', settings: {})
-      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
-        'openai/gpt-4o' => {
-          'provider' => 'openrouter',
-          'type' => 'chat',
-          'capabilities' => %w[structured_output tool_calling tool_choice image_input streaming]
-        }
-      )
-      account.update!(captain_models: { 'assistant' => 'openai/gpt-4o' })
+      create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'test-account-key', settings: {})
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'test-platform-key')
+      upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-6-luna')
+      allow(account).to receive(:captain_models).and_return('assistant' => 'openai/gpt-4o')
 
-      expect(described_class.model_for(feature: 'assistant', account: account)).to eq('openai/gpt-4o')
-      expect(described_class.provider_for_model('openai/gpt-4o', account: account)).to eq('openrouter')
+      expect(described_class.model_for(feature: 'assistant', account: account)).to eq('openai/gpt-6-luna')
     end
 
-    it 'allows an account-selected OpenRouter model to use the global OpenRouter key' do
+    it 'ignores archived account model overrides for editor' do
       account = create(:account)
-      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
-      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
-        'openai/gpt-4o' => {
-          'provider' => 'openrouter',
-          'type' => 'chat',
-          'capabilities' => %w[structured_output tool_calling tool_choice image_input streaming]
-        }
-      )
-      account.update!(captain_models: { 'assistant' => 'openai/gpt-4o' })
+      account.enable_features!('captain_openrouter_byok')
+      create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'test-account-key', settings: {})
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'test-platform-key')
+      upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-6-luna')
+      allow(account).to receive(:captain_models).and_return('editor' => 'openai/gpt-4o')
 
-      expect(described_class.model_for(feature: 'assistant', account: account)).to eq('openai/gpt-4o')
-      expect(described_class.account_provider_available?('openrouter', account: account)).to be false
-      expect(described_class.provider_available?('openrouter', account: account)).to be true
+      expect(described_class.model_for(feature: 'editor', account: account)).to eq('openai/gpt-6-luna')
+    end
+
+    it 'ignores archived account model overrides for copilot' do
+      account = create(:account)
+      account.enable_features!('captain_openrouter_byok')
+      create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'test-account-key', settings: {})
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'test-platform-key')
+      upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-6-luna')
+      allow(account).to receive(:captain_models).and_return('copilot' => 'openai/gpt-4o')
+
+      expect(described_class.model_for(feature: 'copilot', account: account)).to eq('openai/gpt-6-luna')
     end
 
     it 'prefers a native OpenRouter transcription model over an audio chat model when OpenRouter is configured' do

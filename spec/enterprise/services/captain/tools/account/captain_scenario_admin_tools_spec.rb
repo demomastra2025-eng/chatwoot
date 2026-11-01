@@ -16,7 +16,7 @@ RSpec.describe 'Captain scenario admin copilot tools' do
       instruction: 'Collect context before escalating.'
     )
   end
-  let(:admin) { create(:user, :administrator, account: account) }
+  let(:admin) { create(:super_admin).tap { |user| create(:account_user, account: account, user: user, role: :administrator) } }
 
   before do
     confirmation_gate = instance_double(Captain::Tools::ToolConfirmationGate, call: nil)

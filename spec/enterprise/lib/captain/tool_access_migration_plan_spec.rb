@@ -15,9 +15,9 @@ RSpec.describe Captain::ToolAccessMigrationPlan do
 
     plan = described_class.for(assistant)
 
-    expect(plan).to include(status: 'inventory_only', runtime_cutover_required: true, unknown_scopes: ['future_scope'])
+    expect(plan).to include(status: 'blocked', blockers: include('unknown_scopes', 'unknown_tool_ids'))
     expect(plan[:scopes]['agent'][:proposed_tool_ids]).to include('old_unavailable_tool', 'add_private_note')
-    expect(plan[:scopes]['agent'][:unavailable_tool_ids]).to include('old_unavailable_tool')
+    expect(plan[:scopes]['agent'][:unknown_tool_ids]).to include('old_unavailable_tool')
     expect(plan[:scopes]['assistant']).to include(enabled: false, proposed_tool_ids: ['get_contact'])
     expect(assistant.reload.attributes).to eq(original)
   end

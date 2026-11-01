@@ -46,7 +46,7 @@ module CaptainFeaturable
 
       # Define model accessor methods (e.g., captain_editor_model)
       define_method("captain_#{feature_key}_model") do
-        captain_models_with_defaults[feature_key]
+        Llm::Config.model_for(feature: feature_key, account: self)
       end
     end
 
@@ -92,16 +92,8 @@ module CaptainFeaturable
   private
 
   def captain_models_with_defaults
-    stored_models = captain_models || {}
-    Llm::Models.feature_keys.each_with_object({}) do |feature_key, result|
-      if Llm::Config.installation_managed_model_feature?(feature_key)
-        result[feature_key] = Llm::Config.model_for(feature: feature_key, account: self)
-        next
-      end
-
-      stored_value = stored_models[feature_key]
-      result[feature_key] = resolved_captain_model_for(feature_key, stored_value) ||
-                            Llm::Models.default_model_for(feature_key, account: self)
+    Llm::Models.feature_keys.index_with do |feature_key|
+      Llm::Config.model_for(feature: feature_key, account: self)
     end
   end
 

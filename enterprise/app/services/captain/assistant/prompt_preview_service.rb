@@ -138,6 +138,11 @@ class Captain::Assistant::PromptPreviewService
   end
 
   def effective_runtime_tools_note
+    if Captain::Capabilities.configured?(assistant.config)
+      return 'Runtime tools use the versioned platform capability set; prompt references do not grant tools. ' \
+             'Workspace capability policies still apply.'
+    end
+
     'Prompt-visible tools come from tool_access plus explicit tool:// references ' \
       'in the editable main prompt; capability tools follow their switches.'
   end

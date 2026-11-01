@@ -5,7 +5,11 @@ json.description standalone_agent ? standalone_agent.routing_description : scena
 if Captain::PromptInspectorAccess.allowed?(user: Current.user, impersonation: @super_admin_impersonation)
   json.instruction standalone_agent ? standalone_agent.description : scenario.instruction
 end
-json.tools scenario.tools
+if standalone_agent && Captain::Capabilities.configured?(standalone_agent.config)
+  json.tools Captain::Capabilities.scope(standalone_agent.config, Captain::ToolAccess::SCOPE_AGENT)['tool_ids']
+else
+  json.tools scenario.tools
+end
 json.enabled standalone_agent ? standalone_agent.active? : scenario.enabled
 json.standalone_agent_id standalone_agent&.id
 json.assistant_id scenario.assistant_id

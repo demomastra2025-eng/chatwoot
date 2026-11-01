@@ -190,8 +190,7 @@ module Concerns::Agentable
     agent_account = respond_to?(:account) ? account : nil
     Llm::Config.model_for(
       feature: :assistant,
-      account: agent_account,
-      fallback: LlmConstants::DEFAULT_MODEL
+      account: agent_account
     )
   end
 

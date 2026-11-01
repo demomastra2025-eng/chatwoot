@@ -26,6 +26,9 @@ json.role account_user&.role
 json.ui_settings resource.ui_settings
 json.uid resource.uid
 json.type resource.type
+if defined?(Captain::PromptInspectorAccess)
+  json.captain_platform_access Captain::PromptInspectorAccess.allowed?(user: resource, impersonation: impersonation_context)
+end
 json.owner_finance_enabled true if OwnerFinance::AccessPolicy.allowed?(resource, impersonation_context: impersonation_context)
 json.accounts do
   json.array! account_users do |account_user|

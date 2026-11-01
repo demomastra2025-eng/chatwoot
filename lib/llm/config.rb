@@ -24,7 +24,10 @@ module Llm::Config
     'council_split' => 'CAPTAIN_COUNCIL_SPLIT_MODEL'
   }.freeze
   INSTALLATION_DEFAULT_MODEL_FEATURES = %w[assistant editor copilot].freeze
-  INSTALLATION_MANAGED_MODEL_FEATURES = (INSTALLATION_MANAGED_MODEL_CONFIGS.keys + INSTALLATION_DEFAULT_MODEL_FEATURES).freeze
+  INSTALLATION_MANAGED_MODEL_FEATURES = (
+    INSTALLATION_MANAGED_MODEL_CONFIGS.keys + INSTALLATION_DEFAULT_MODEL_FEATURES +
+    %w[agent_routing fact_check_gate inbound_triage knowledge_rerank]
+  ).freeze
   # The image readers have a platform default of their own (config/llm.yml): a blank slot is that default, never the installation default
   # model (CAPTAIN_DEFAULT_MODEL), so moving the agent to another model never moves the reading of images with it.
   OWN_DEFAULT_MODEL_FEATURES = %w[image_recognition image_handwriting].freeze
@@ -322,34 +325,11 @@ module Llm::Config
       end
     end
 
-    def account_model_for(account, feature_key)
-      return if account.blank? || feature_key.blank?
-
-      model_name = account.captain_models.to_h.with_indifferent_access[feature_key]
-      return if model_name.blank?
-
-      model_name = normal_feature_model_name(feature_key, model_name, account: account)
-      return if model_name.blank?
-      return unless feature_model_allowed?(feature_key, model_name, account: account)
-
-      canonical_model = Llm::Models.canonical_model_name(model_name)
-      return unless runtime_usable_model?(canonical_model, account: account)
-
-      provider = provider_for_model(canonical_model, account: account)
-      return unless provider_available?(provider, account: account)
-
-      canonical_model
-    end
-
-    # The model fixed for the feature: the platform's own for a platform-managed feature, else the account's choice.
+    # Every model is selected by its platform feature slot or the platform default.
     def explicit_model_for(feature_key, account: nil)
-      return if INSTALLATION_DEFAULT_MODEL_FEATURES.include?(feature_key)
+      return unless INSTALLATION_MANAGED_MODEL_CONFIGS.key?(feature_key)
 
-      if installation_managed_model_feature?(feature_key)
-        installation_managed_model_for(feature_key, account: account)
-      else
-        account_model_for(account, feature_key)
-      end
+      installation_managed_model_for(feature_key, account: account)
     end
 
     def installation_managed_model_for(feature_key, account: nil)
@@ -370,8 +350,7 @@ module Llm::Config
     end
 
     def installation_model_for(feature_key, account: nil)
-      model_name = installation_config_value('CAPTAIN_AI_AGENT_DEFAULT_MODEL').presence if feature_key.to_s == 'assistant'
-      model_name ||= installation_default_model
+      model_name = installation_default_model
       return if model_name.blank?
 
       model_name = normal_feature_model_name(feature_key, model_name, account: account) if feature_key.present?

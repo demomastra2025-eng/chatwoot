@@ -39,6 +39,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   before_action :current_account
   before_action :authorize_account_update, only: [:show, :update]
   before_action :reject_installation_managed_models, :reject_unselectable_models, :reject_disallowed_provider_keys, only: :update
+  before_action :reject_client_transcription_prompt, only: :update
 
   def show
     render json: preferences_payload
@@ -97,6 +98,18 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     return if unselectable_model_keys.empty?
 
     render json: { error: 'model_not_allowed', fields: unselectable_model_keys }, status: :unprocessable_content
+  end
+
+  def reject_client_transcription_prompt
+    runtime = params[:captain_runtime]
+    return unless runtime.respond_to?(:key?) && runtime.key?(:audio_transcription_prompt)
+    return if platform_prompt_access?
+
+    render json: { error: 'platform_managed_prompt', fields: ['captain_runtime.audio_transcription_prompt'] }, status: :unprocessable_content
+  end
+
+  def platform_prompt_access?
+    Captain::PromptInspectorAccess.allowed?(user: Current.user, impersonation: @super_admin_impersonation)
   end
 
   # Removing a stored account key stays possible so that a workspace can drop a key it may no longer use.
@@ -277,7 +290,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     account_features = preferences[:features] || {}
 
     Llm::Models.feature_keys.index_with do |feature_key|
-      selected_model = Llm::Config.model_for(feature: feature_key, account: Current.account)
+      selected_model = preferences.dig(:models, feature_key)
       config = client_feature_config(feature_key, selected_model)
       selected_diagnostics = if selected_model.present?
                                Llm::Models.capability_diagnostics_for(
@@ -299,22 +312,14 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     end
   end
 
-  # The client gets the curated list plus the model the account uses now (marked as the current one when it is
-  # off the list); never the OpenRouter catalog.
+  # A client reads the platform selection; the platform's model editor owns its catalog and choices.
   def client_feature_config(feature_key, selected_model)
-    curated_models = Llm::Models.curated_model_names_for(feature_key, account: Current.account)
-    config = Llm::Models.feature_config(
-      feature_key,
-      account: Current.account,
-      model_names: (curated_models + [selected_model]).compact_blank.uniq
-    )
-    return config unless Llm::Models.curated_model_feature?(feature_key)
-
-    config.merge(models: config[:models].map { |model| curated_models.include?(model[:id]) ? model : model.merge(current_only: true) })
+    Llm::Models.feature_config(feature_key, account: Current.account, model_names: [selected_model].compact_blank)
   end
 
   def runtime_with_account_preferences
-    Current.account.captain_preferences[:runtime] || {}
+    runtime = Current.account.captain_runtime_preferences
+    platform_prompt_access? ? runtime : runtime.except('audio_transcription_prompt', :audio_transcription_prompt)
   end
 
   def runtime_metadata_payload

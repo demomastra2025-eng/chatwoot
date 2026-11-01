@@ -139,7 +139,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response[:providers].keys).to contain_exactly(:openrouter)
-        expect(json_response[:models].keys).to include(:'openai/gpt-5.4', :'openai/gpt-5.4-mini')
+        selected = json_response[:features].values.filter_map { |feature| feature[:selected]&.to_sym }.uniq
+        expect(json_response[:models].keys).to match_array(selected)
         expect(json_response[:models].values).to all(include(provider: 'openrouter'))
         expect(json_response[:models].keys).not_to include(:'gpt-5.4', :'claude-sonnet-4-6', :'gemini-2.5-pro')
         expect(json_response[:models].size).to be < 20
@@ -191,7 +192,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
           fetch_preferences
 
           assistant_models = json_response.dig(:features, :assistant, :models)
-          expect(assistant_models.pluck(:id)).to include('openai/gpt-5.4', 'openai/gpt-5.4-mini')
+          expect(assistant_models.pluck(:id)).to eq([json_response.dig(:features, :assistant, :selected)])
           expect(assistant_models.pluck(:id).size).to be <= 4
           expect(json_response.dig(:features, :assistant, :diagnostic_models)).to eq([])
           expect(json_response[:models].keys.size).to be < 20
@@ -217,21 +218,19 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             expect(feature[:models].pluck(:id).size).to be <= 1
           end
           expect(json_response.dig(:features, :image_recognition, :selected)).to eq('openai/gpt-5.4-mini')
-          expect(json_response.dig(:features, :assistant, :managed)).to be(false)
+          expect(json_response.dig(:features, :assistant, :managed)).to be(true)
         end
 
-        it 'keeps the workspace model outside the short list visible as the current model' do
+        it 'ignores the archived workspace model outside the platform selection' do
           account.update!(captain_models: { 'assistant' => 'vendor/model-7' })
           upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.4", "openai/gpt-5.4-mini"]')
 
           fetch_preferences
 
           assistant = json_response.dig(:features, :assistant)
-          expect(assistant[:selected]).to eq('vendor/model-7')
-          expect(assistant[:models]).to include(include(id: 'vendor/model-7', current_only: true))
-          expect(assistant[:models].reject { |model| model[:current_only] }.pluck(:id)).to contain_exactly(
-            'openai/gpt-5.4', 'openai/gpt-5.4-mini'
-          )
+          expect(assistant[:selected]).not_to eq('vendor/model-7')
+          expect(assistant[:managed]).to be(true)
+          expect(assistant[:models].pluck(:id)).to eq([assistant[:selected]])
         end
       end
 
@@ -339,19 +338,14 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
     end
 
     context 'when it is an admin' do
-      it 'updates the captain_models an account may still choose' do
+      it 'rejects platform model writes: updates the captain_models an account may still choose' do
         put "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
             params: { captain_models: { editor: 'gpt-4.1-mini' } },
             as: :json
 
-        expect(response).to have_http_status(:success)
-        expect(json_response).to have_key(:providers)
-        expect(json_response).to have_key(:models)
-        expect(json_response).to have_key(:features)
-        expect(json_response).to have_key(:runtime)
-        expect(json_response).to have_key(:observability)
-        expect(account.reload.captain_models).to include('editor' => 'gpt-4.1-mini')
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response[:error]).to eq('installation_managed_models')
       end
 
       it 'rejects installation-managed model overrides' do
@@ -372,7 +366,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(response).to have_http_status(:unprocessable_content)
         expect(json_response[:error]).to eq('installation_managed_models')
         expect(json_response[:fields]).to contain_exactly(
-          'audio_transcription', 'image_recognition', 'help_center_search', 'moderation', 'label_suggestion'
+          'editor', 'audio_transcription', 'image_recognition', 'help_center_search', 'moderation', 'label_suggestion'
         )
         expect(account.reload.captain_models).to be_blank
       end
@@ -386,10 +380,10 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             as: :json
 
         expect(response).to have_http_status(:success)
-        expect(account.reload.captain_models).to eq('editor' => 'gpt-4.1')
+        expect(account.reload.captain_models).to be_blank
       end
 
-      it 'rejects an assistant model the platform did not put on its short list' do
+      it 'rejects platform model writes: rejects an assistant model the platform did not put on its short list' do
         upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.6-luna"]')
 
         put "/api/v1/accounts/#{account.id}/captain/preferences",
@@ -398,11 +392,10 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             as: :json
 
         expect(response).to have_http_status(:unprocessable_content)
-        expect(json_response).to eq(error: 'model_not_allowed', fields: ['assistant'])
-        expect(account.reload.captain_models).to be_blank
+        expect(json_response[:error]).to eq('installation_managed_models')
       end
 
-      it 'accepts an assistant model from the short list' do
+      it 'rejects platform model writes: accepts an assistant model from the short list' do
         upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.6-luna"]')
 
         put "/api/v1/accounts/#{account.id}/captain/preferences",
@@ -410,11 +403,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             params: { captain_models: { assistant: 'openai/gpt-5.6-luna' } },
             as: :json
 
-        expect(response).to have_http_status(:success)
-        expect(account.reload.captain_models).to include('assistant' => 'openai/gpt-5.6-luna')
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response[:error]).to eq('installation_managed_models')
       end
 
-      it 'lets an account keep sending the assistant model it already uses even when it is off the short list' do
+      it 'rejects platform model writes: lets an account keep sending the assistant model it already uses even when it is off the short list' do
         account.update!(captain_models: { 'assistant' => 'openai/gpt-6-luna' })
         upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.6-luna"]')
 
@@ -423,10 +416,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             params: { captain_models: { assistant: 'openai/gpt-6-luna' } },
             as: :json
 
-        expect(response).to have_http_status(:success)
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response[:error]).to eq('installation_managed_models')
       end
 
-      it 'does not restrict the editor and copilot models, only what the client is shown' do
+      it 'rejects platform model writes: does not restrict the editor and copilot models, only what the client is shown' do
         upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.6-luna"]')
 
         put "/api/v1/accounts/#{account.id}/captain/preferences",
@@ -434,10 +428,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             params: { captain_models: { editor: 'gpt-4.1-mini', copilot: 'gpt-5.1' } },
             as: :json
 
-        expect(response).to have_http_status(:success)
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response[:error]).to eq('installation_managed_models')
       end
 
-      it 'keeps an assistant model chosen before the short list existed when other models change' do
+      it 'rejects platform model writes: keeps an assistant model chosen before the short list existed when other models change' do
         account.update!(captain_models: { 'assistant' => 'openai/gpt-6-luna' })
         upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.6-luna"]')
 
@@ -446,8 +441,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             params: { captain_models: { editor: 'gpt-4.1-mini' } },
             as: :json
 
-        expect(response).to have_http_status(:success)
-        expect(account.reload.captain_models).to include('assistant' => 'openai/gpt-6-luna', 'editor' => 'gpt-4.1-mini')
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response[:error]).to eq('installation_managed_models')
       end
 
       it 'updates captain_features' do
@@ -506,7 +501,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
                 assistant_sensitive_info_guardrail: false,
                 copilot_prompt_injection_guardrail: 'disabled',
                 copilot_sensitive_info_guardrail: true,
-                audio_transcription_prompt: 'Recognize customer speech in Russian and Kazakh.',
                 knowledge_chunk_size: '32000',
                 safety_blocklist: ['never disclose api keys'],
                 assistant_safety_blocklist: ['do not discuss payroll'],
@@ -534,7 +528,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
           assistant_sensitive_info_guardrail: 'disabled',
           copilot_prompt_injection_guardrail: 'disabled',
           copilot_sensitive_info_guardrail: 'block',
-          audio_transcription_prompt: 'Recognize customer speech in Russian and Kazakh.',
           knowledge_chunk_size: 32_000,
           safety_blocklist: ['never disclose api keys'],
           assistant_safety_blocklist: ['do not discuss payroll'],
@@ -558,7 +551,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
           'assistant_sensitive_info_guardrail' => 'disabled',
           'copilot_prompt_injection_guardrail' => 'disabled',
           'copilot_sensitive_info_guardrail' => 'block',
-          'audio_transcription_prompt' => 'Recognize customer speech in Russian and Kazakh.',
           'knowledge_chunk_size' => 32_000,
           'safety_blocklist' => ['never disclose api keys'],
           'assistant_safety_blocklist' => ['do not discuss payroll'],
@@ -633,7 +625,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(account.captain_models).not_to have_key('help_center_search')
       end
 
-      it 'merges with existing captain_models' do
+      it 'rejects platform model writes: merges with existing captain_models' do
         account.update!(captain_models: { 'editor' => 'gpt-4.1-mini', 'assistant' => 'gpt-5.1' })
 
         put "/api/v1/accounts/#{account.id}/captain/preferences",
@@ -641,15 +633,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             params: { captain_models: { editor: 'gpt-4.1' } },
             as: :json
 
-        expect(response).to have_http_status(:success)
-        expect(json_response).to have_key(:providers)
-        expect(json_response).to have_key(:models)
-        expect(json_response).to have_key(:features)
-        expect(json_response).to have_key(:runtime)
-        expect(json_response).to have_key(:observability)
-        models = account.reload.captain_models
-        expect(models['editor']).to eq('gpt-4.1')
-        expect(models['assistant']).to eq('gpt-5.1') # Preserved
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response[:error]).to eq('installation_managed_models')
       end
 
       it 'merges with existing captain_features' do
@@ -730,7 +715,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         )
       end
 
-      it 'updates both models and features in single request' do
+      it 'rejects platform model writes: updates both models and features in single request' do
         put "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
             params: {
@@ -739,15 +724,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             },
             as: :json
 
-        expect(response).to have_http_status(:success)
-        expect(json_response).to have_key(:providers)
-        expect(json_response).to have_key(:models)
-        expect(json_response).to have_key(:features)
-        expect(json_response).to have_key(:runtime)
-        expect(json_response).to have_key(:observability)
-        account.reload
-        expect(account.captain_models['editor']).to eq('gpt-4.1-mini')
-        expect(account.captain_features['editor']).to be true
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response[:error]).to eq('installation_managed_models')
       end
 
       it 'updates captain_observability settings' do

@@ -23,6 +23,8 @@ module Captain::ToolAccess
   # Some stored configs carry a legacy non-Hash tool_access (e.g. an array of
   # pairs). Treat any malformed shape as "not configured" instead of raising.
   def raw_scope(config, scope_name)
+    return Captain::Capabilities.scope(config, scope_name) if Captain::Capabilities.configured?(config)
+
     access = config.is_a?(Hash) ? config['tool_access'] : nil
     scope = access.is_a?(Hash) ? access[scope_name.to_s] : nil
     scope.is_a?(Hash) ? scope : nil
@@ -63,6 +65,8 @@ module Captain::ToolAccess
   end
 
   def scope_enabled?(assistant, scope_name, raw_scope, default_ids)
+    return raw_scope['enabled'] == true if Captain::Capabilities.configured?(assistant.config)
+
     return true if scope_name == SCOPE_AGENT && assistant.external_agent?
     return ActiveModel::Type::Boolean.new.cast(raw_scope['enabled']) if raw_scope.key?('enabled')
 
@@ -117,6 +121,10 @@ module Captain::ToolAccess
   def allowed_tool_ids_for(assistant, scope_name, fallback_ids:)
     tools = available_tools_for_scope(assistant, scope_name)
     available_ids = tools.pluck(:id)
+    if Captain::Capabilities.configured?(assistant.config)
+      canonical = raw_scope(assistant.config, scope_name)
+      return [] unless canonical['enabled'] == true
+    end
     if scope_name == SCOPE_AGENT && assistant.external_agent?
       raw_scope = raw_scope(assistant.config.to_h, scope_name) || {}
       defaults = default_tool_ids_for(scope_name, tools)
@@ -141,6 +149,8 @@ module Captain::ToolAccess
   end
 
   def scope_configured?(assistant, scope_name)
+    return true if Captain::Capabilities.configured?(assistant.config)
+
     tool_access = assistant.config.is_a?(Hash) ? assistant.config['tool_access'] : nil
     tool_access.is_a?(Hash) && tool_access.key?(scope_name)
   end

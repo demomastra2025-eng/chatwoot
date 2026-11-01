@@ -5,12 +5,12 @@ class Captain::Tools::Account::UpdateCaptainAssistantService < Captain::Tools::A
     'update_captain_assistant'
   end
 
-  CONFIG_JSON_DESCRIPTION = 'Optional JSON object with supported config fields: feature_citation, tool_access, context_access, voice_settings'
+  CONFIG_JSON_DESCRIPTION = 'Optional JSON object with supported config fields: capabilities, tool_access, context_access, voice_settings'
 
-  description 'Update one Captain assistant profile, main instructions, config or tool access in the current account. Requires operator confirmation.'
+  description 'Update an assistant profile. Instructions and tool bindings require platform permission. Requires operator confirmation.'
   param :assistant_id, type: :integer, desc: 'Captain assistant ID', required: true
   param :name, type: :string, desc: 'Optional assistant name', required: false
-  param :description, type: :string, desc: 'Optional assistant instructions/description', required: false
+  param :description, type: :string, desc: 'Optional assistant instructions, platform team only', required: false
   param :usage_mode, type: :string, desc: 'Optional usage mode: external_agent or internal_assistant', required: false
   param :config_json, type: :string, desc: CONFIG_JSON_DESCRIPTION, required: false
 
@@ -18,20 +18,18 @@ class Captain::Tools::Account::UpdateCaptainAssistantService < Captain::Tools::A
     ensure_account_administrator!
 
     assistant = find_captain_assistant!(assistant_id)
-    attributes = build_update_attributes(assistant: assistant, kwargs: kwargs)
-    raise ArgumentError, 'No supported assistant fields were provided' if attributes.blank?
+    payload = assistant.with_lock do
+      attributes = build_update_attributes(assistant: assistant, kwargs: kwargs)
+      raise ArgumentError, 'No supported assistant fields were provided' if attributes.blank?
 
-    before_payload = assistant_payload(assistant, include_config: true)
-    assistant.update!(attributes)
-
-    formatted_payload(
-      action: 'update_captain_assistant',
-      assistant: assistant_payload(assistant.reload, include_config: true),
-      previous_assistant: before_payload,
-      updated_fields: attributes.keys.map(&:to_s)
-    )
-  rescue Captain::AssistantConfigContract::Violation => e
-    formatted_payload(error: e.code, fields: e.fields)
+      before_payload = assistant_payload(assistant, include_config: true)
+      assistant.update!(attributes)
+      {
+        action: 'update_captain_assistant', assistant: assistant_payload(assistant, include_config: true),
+        previous_assistant: before_payload, updated_fields: attributes.keys.map(&:to_s)
+      }
+    end
+    formatted_payload(payload)
   rescue StandardError => e
     tool_failure(e)
   end
@@ -66,6 +64,7 @@ class Captain::Tools::Account::UpdateCaptainAssistantService < Captain::Tools::A
 
   def merged_config(assistant, config_json)
     current_config = assistant.config || {}
-    current_config.deep_stringify_keys.merge(filtered_config_updates(config_json))
+    incoming = Captain::Capabilities.normalize_updates(current_config, filtered_config_updates(config_json))
+    current_config.deep_stringify_keys.merge(incoming)
   end
 end

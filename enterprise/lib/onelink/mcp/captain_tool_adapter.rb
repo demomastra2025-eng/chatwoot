@@ -123,6 +123,8 @@ module Onelink
       end
 
       def assistant_tool_selected?(tool_definition)
+        return canonical_tool_ids.include?(tool_definition[:id].to_s) if Captain::Capabilities.configured?(auth_context.assistant.config)
+
         raw_access = auth_context.assistant.config.is_a?(Hash) ? auth_context.assistant.config['tool_access'] : nil
         raw_access = raw_access.to_h.deep_stringify_keys if raw_access.respond_to?(:to_h)
         return true unless raw_access.is_a?(Hash) && raw_access.key?(auth_context.scope_name)
@@ -172,6 +174,8 @@ module Onelink
 
       def allowed_tool_ids_for(available_tools)
         available_ids = available_tools.map { |tool| tool[:id].to_s }
+        return canonical_tool_ids & available_ids if Captain::Capabilities.configured?(auth_context.assistant.config)
+
         raw_access = auth_context.assistant.config.is_a?(Hash) ? auth_context.assistant.config['tool_access'] : nil
         raw_access = raw_access.to_h.deep_stringify_keys if raw_access.respond_to?(:to_h)
         return available_ids unless raw_access.is_a?(Hash) && raw_access.key?(auth_context.scope_name)
@@ -186,6 +190,10 @@ module Onelink
         configured_ids = Array(raw_scope['tool_ids']).map(&:to_s)
         selected_ids = raw_scope.key?('tool_ids') ? configured_ids : default_ids
         Captain::ToolAccess.sanitize_tool_ids(selected_ids, available_ids)
+      end
+
+      def canonical_tool_ids
+        auth_context.assistant.public_send("allowed_#{auth_context.scope_name}_tool_ids")
       end
 
       def with_llm_runtime_cache(&)
@@ -447,6 +455,9 @@ module Onelink
           isError: normalized[:success] == false
         }
         payload[:structuredContent] = parsed if parsed.is_a?(Hash) || parsed.is_a?(Array)
+        if normalized[:success] == false && normalized[:data].is_a?(Hash)
+          payload[:structuredContent] = redact_value(normalized[:data]).deep_stringify_keys
+        end
         payload
       end
 

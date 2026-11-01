@@ -31,8 +31,8 @@ RSpec.describe Captain::Assistant, type: :model do
     it 'uses the platform model even when a valid per-assistant override is stored' do
       account = create(:account)
       assistant = build(:captain_assistant, account: account, config: { 'model' => 'openai/gpt-5.4' })
-      expect(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account, fallback: LlmConstants::DEFAULT_MODEL)
-                                              .and_return('openai/gpt-6-luna')
+      expect(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account)
+                                                .and_return('openai/gpt-6-luna')
 
       expect(assistant.resolved_agent_model).to eq('openai/gpt-6-luna')
     end
@@ -43,8 +43,7 @@ RSpec.describe Captain::Assistant, type: :model do
 
       expect(Llm::Config).to receive(:model_for).with(
         feature: :assistant,
-        account: account,
-        fallback: LlmConstants::DEFAULT_MODEL
+        account: account
       ).and_return('openai/gpt-6-luna')
 
       expect(assistant.resolved_agent_model).to eq('openai/gpt-6-luna')
@@ -130,7 +129,8 @@ RSpec.describe Captain::Assistant, type: :model do
 
         assistant.name = 'Renamed agent'
         expect(assistant).to be_valid
-        expect(assistant.resolved_agent_model).to eq(Llm::Config.model_for(feature: :assistant, account: account, fallback: LlmConstants::DEFAULT_MODEL))
+        platform_model = Llm::Config.model_for(feature: :assistant, account: account)
+        expect(assistant.resolved_agent_model).to eq(platform_model)
 
         assistant.config = assistant.config.merge('model' => listed_model)
         expect(assistant).to be_valid

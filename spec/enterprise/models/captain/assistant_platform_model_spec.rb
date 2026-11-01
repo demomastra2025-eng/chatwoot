@@ -4,8 +4,8 @@ RSpec.describe Captain::Assistant do
   it 'builds the runtime agent with the platform model and ignores saved per-agent parameters' do
     assistant = create(:captain_assistant)
     assistant.update_column(:config, { 'model' => 'retired/model', 'temperature' => 1, 'thinking_effort' => 'high' }) # rubocop:disable Rails/SkipsModelValidations
-    allow(Llm::Config).to receive(:model_for).with(feature: :assistant, account: assistant.account, fallback: LlmConstants::DEFAULT_MODEL)
-                        .and_return('platform/current-model')
+    allow(Llm::Config).to receive(:model_for).with(feature: :assistant, account: assistant.account)
+                                             .and_return('platform/current-model')
     allow(Captain::Runtime::Agent).to receive(:new).and_call_original
 
     assistant.agent
