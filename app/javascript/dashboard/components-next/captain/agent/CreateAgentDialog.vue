@@ -15,10 +15,9 @@ import { usePolicy } from 'dashboard/composables/usePolicy';
 
 const emit = defineEmits(['close', 'created']);
 
-// Every new assistant is a customer-facing AI agent: there is no choice of
-// kind. Only the defaults below are sent: feature_faq / feature_memory /
-// feature_citation / context_access stay server defaults (sending
-// feature_faq: false silently disabled FAQ lookup for new agents).
+// New agents use explicit canonical bindings. Prompt mentions are text; tools
+// are selected separately after creation. Workspace/model settings stay owned
+// by their existing server mechanisms.
 const NEW_AGENT_USAGE_MODE = 'external_agent';
 const DESCRIPTION_MAX_LENGTH = 400;
 
@@ -114,6 +113,15 @@ const buildCreatePayload = () => ({
     routing_description: trimmedDescription.value,
     usage_mode: NEW_AGENT_USAGE_MODE,
     description: state.instruction.trim(),
+    config: {
+      capabilities: {
+        version: 1,
+        scopes: {
+          agent: { enabled: true, tool_ids: [] },
+          assistant: { enabled: false, tool_ids: [] },
+        },
+      },
+    },
   },
 });
 

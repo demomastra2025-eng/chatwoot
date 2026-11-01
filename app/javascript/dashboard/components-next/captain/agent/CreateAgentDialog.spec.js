@@ -126,6 +126,15 @@ const expectedPayload = {
     routing_description: 'Записывает на приём и отвечает о ценах',
     usage_mode: 'external_agent',
     description: 'Synthetic platform instruction',
+    config: {
+      capabilities: {
+        version: 1,
+        scopes: {
+          agent: { enabled: true, tool_ids: [] },
+          assistant: { enabled: false, tool_ids: [] },
+        },
+      },
+    },
   },
 };
 
@@ -220,7 +229,10 @@ describe('CreateAgentDialog', () => {
       expectedPayload
     );
     const [, payload] = mocks.dispatch.mock.calls[0];
-    expect(payload.assistant).not.toHaveProperty('config');
+    expect(Object.keys(payload.assistant.config)).toEqual(['capabilities']);
+    expect(payload.assistant.config.capabilities.scopes.agent.tool_ids).toEqual(
+      []
+    );
     expect(payload.assistant.description).toBe(
       'Synthetic platform instruction'
     );
