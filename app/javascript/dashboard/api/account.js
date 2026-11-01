@@ -4,6 +4,7 @@ import ApiClient from './ApiClient';
 class AccountAPI extends ApiClient {
   constructor() {
     super('', { accountScoped: true });
+    this.pendingUpdates = new Map();
   }
 
   get currentAccountUrl() {
@@ -21,10 +22,25 @@ class AccountAPI extends ApiClient {
     return axios.post(`${this.apiVersion}/accounts`, data);
   }
 
-  update(id, { logo, ...accountAttributes }) {
+  update(id, attributes) {
     const url = id
       ? `${this.apiVersion}/accounts/${id}`
       : this.currentAccountUrl;
+    const previous = this.pendingUpdates.get(url);
+    const patch = () => AccountAPI.patchAccount(url, attributes);
+    const request = previous
+      ? previous.catch(() => undefined).then(patch)
+      : patch();
+    this.pendingUpdates.set(url, request);
+    const clear = () => {
+      if (this.pendingUpdates.get(url) === request)
+        this.pendingUpdates.delete(url);
+    };
+    request.then(clear, clear);
+    return request;
+  }
+
+  static patchAccount(url, { logo, ...accountAttributes }) {
     if (!logo) {
       return axios.patch(url, accountAttributes);
     }
