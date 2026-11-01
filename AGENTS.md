@@ -52,28 +52,33 @@ Repo paths below are relative to the One Link application repository root unless
 
 - Integration and deployment branch: `onelink-dev`.
 - `onelink-main` is the upstream-sync baseline; do not deploy it directly.
-- Normal product work happens directly in `onelink-dev`: verify, commit, and push. A green
-  push deploys automatically to DEV; a failed gate leaves the previous DEV release running.
-- Use a temporary `feature/*` or `fix/*` branch and pull request only for large, risky, or
-  parallel work. Delete it after merge.
+- Before taking work, read current `Khamzauly/brain` rules and `NOW.md` using
+  `brain-cat`. The brain is the source of owner rules; do not keep a permanent clone.
+- Every task uses a new branch and isolated worktree from a known application SHA.
+  Record or coordinate the task lock in `NOW.md` before edits; respect other agents'
+  files, branches and live DEV checks. Do not push product work directly to `onelink-dev`.
+- Require independent fresh-context review of `git diff <base>..<head>` and relevant
+  isolated tests before integration. DEV browser checks on desktop and phone, then
+  owner verification, precede any production promotion.
+- A push is not deployment authorization. Use the current brain release runbook for
+  DEV gates and deployment; do not overwrite an occupied live DEV environment.
+- PROD and KZ are read-only until the owner explicitly approves the specific change,
+  deployment or restart. Production restarts follow the rolling order in the brain.
 - Only a SHA that ran successfully in DEV is eligible for manual production promotion.
 - The delivery pipeline and operator setup are documented in `script/onelink/README.md`.
 - Do not use this fork's `develop` as the main base branch.
-- Remote layout:
-  - `origin` = `git@github.com:demomastra2025-eng/chatwoot.git`
-  - `upstream` = `https://github.com/chatwoot/chatwoot.git`
-- Push to `origin` over SSH.
+- Product remote: `onelink` = `git@github.com:Khamzauly/onelink.git`.
+- Inspect the checkout's remotes before fetching or pushing. Legacy `origin` is not
+  the current product destination; never push product work to upstream.
 - Docs repo layout:
   - `docs/` is a git submodule for `demomastra2025-eng/onelink-docs`
   - docs content commits belong in `docs/` first
   - the parent repo stores only the updated submodule pointer afterward
-- Hermes skill family:
-  - shared OneLink Hermes domain skills live in `/root/.hermes/shared-skills/onelink` and are loaded via `skills.external_dirs` from `/root/.hermes/shared-skills`
-  - active Hermes profiles expected to see these shared skills: `default`, `tg-codex55`, `cli-spark`, `cto`
-  - do not recreate repo-local `.codex/skills`; Codex skill sync was retired in favor of Hermes shared external skills
-  - internal build-and-maintain skills: `onelink-builder`, `onelink-backend`, `onelink-frontend`, `onelink-api`, `onelink-integrations`, `onelink-captain`, `onelink-documentation`, `onelink-deployment`, `onelink-gitops`
-  - internal Hermes operations skills include `onelink-hermes-skill-architecture`, `onelink-prod-rca`, `onelink-testing-matrix`, `onelink-notion-kanban`, `onelink-captain-runtime-deep`, and `onelink-crm-outbound-ai`
-  - external API-consumer skill: `onelink-integrator`; the Claude Code bundle remains in `.claude/skills/onelink-integrator`
+- Personal Hermes/Jarvis and the owner's mail integrations were disabled by the
+  owner on 30.10.2026. Do not start personal `hermes*`, `jarvis*` or
+  `onelink-watcher-*` services, reconnect mail, or use old profile/skill paths as
+  permission to reactivate them. Consult current brain rules and installed Orca
+  skills for work; client-owned isolated agents are outside this repository task.
 - Upstream sync:
   - fetch tags with `git fetch upstream --tags`
   - branch upstream synchronization work from `onelink-main`
@@ -170,6 +175,6 @@ Do not treat public product pages as proof of runtime implementation when code d
 
 ## Worktree Workflow
 
-- Prefer a separate git worktree plus branch per task when isolation helps.
+- Use a separate git worktree plus new branch per task from a known base SHA.
 - Keep Codex-specific setup under `.codex/`.
 - Use `Procfile.worktree` and the local worktree environment setup, when present, for per-worktree DB and port isolation.
