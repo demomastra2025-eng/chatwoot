@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import camelcaseKeys from 'camelcase-keys';
 import { useI18n } from 'vue-i18n';
 
@@ -60,7 +60,6 @@ const resourceDeleteDialogRef = ref(null);
 const resourcePendingDelete = ref(null);
 
 const resourceForm = reactive({
-  active: true,
   color: RESOURCE_COLORS[0],
   description: '',
   id: null,
@@ -69,16 +68,19 @@ const resourceForm = reactive({
   slotDurationMin: 30,
   specialty: '',
   timezone: 'Asia/Almaty',
-  inheritWorkingHoursFromAccount: true,
   userId: '',
 });
 
 const SCHEDULING_TIMEZONE = DEFAULT_WORKSPACE_TIMEZONE;
 
 const scheduleForm = reactive({
+  inheritWorkingHoursFromAccount: true,
   breakRules: [],
   workRules: [],
 });
+const scheduleReady = ref(false);
+const savingSchedule = ref(false);
+let scheduleGeneration = 0;
 
 const overrideForm = reactive({
   breakEndMinute: '',
@@ -123,7 +125,7 @@ const resetTimeOffForm = () => {
 };
 
 const tabs = computed(() => {
-  const personalTabs = activeResource.value?.inheritWorkingHoursFromAccount
+  const personalTabs = scheduleForm.inheritWorkingHoursFromAccount
     ? []
     : [
         { label: t('SCHEDULING.RESOURCES.WORK_RULES'), value: 'work' },
@@ -144,6 +146,31 @@ const activeScheduleTabIndex = computed(() =>
     tabs.value.findIndex(tab => tab.value === scheduleTab.value),
     0
   )
+);
+
+watch(
+  () => scheduleForm.inheritWorkingHoursFromAccount,
+  inherited => {
+    if (!inherited) scheduleTab.value = 'work';
+    else if (['work', 'break'].includes(scheduleTab.value)) {
+      scheduleTab.value = 'workday_overrides';
+    }
+  }
+);
+
+const duplicateWorkdays = computed(() => {
+  const weekdays = scheduleForm.workRules.map(rule => rule.weekday);
+  return [
+    ...new Set(
+      weekdays.filter((day, index) => weekdays.indexOf(day) !== index)
+    ),
+  ];
+});
+
+const hasDuplicateWorkdays = computed(
+  () =>
+    !scheduleForm.inheritWorkingHoursFromAccount &&
+    duplicateWorkdays.value.length > 0
 );
 
 const timeOffKindOptions = computed(() => [
@@ -296,7 +323,6 @@ const minuteToTime = minute => {
 
 const resetResourceForm = () => {
   Object.assign(resourceForm, {
-    active: true,
     color: defaultResourceColor(),
     description: '',
     id: null,
@@ -305,7 +331,6 @@ const resetResourceForm = () => {
     slotDurationMin: 30,
     specialty: '',
     timezone: 'Asia/Almaty',
-    inheritWorkingHoursFromAccount: true,
     userId: '',
   });
 };
@@ -415,11 +440,11 @@ const replaceScheduleRules = (type, rows) => {
   scheduleForm.breakRules = rows;
 };
 
-const addScheduleRule = (type, weekday) => {
-  const rows = scheduleRulesForType(type);
+const addBreakRule = weekday => {
+  const rows = scheduleForm.breakRules;
   const weekdayRows = rows.filter(row => row.weekday === weekday);
   const lastWeekdayRow = weekdayRows[weekdayRows.length - 1];
-  const defaultRule = defaultScheduleRuleForType(type, weekday);
+  const defaultRule = defaultScheduleRuleForType('break', weekday);
   const nextRow = createScheduleRow({
     ...defaultRule,
     active: true,
@@ -435,7 +460,7 @@ const addScheduleRule = (type, weekday) => {
     title: lastWeekdayRow?.title ?? defaultRule.title,
   });
 
-  replaceScheduleRules(type, sortScheduleRows([...rows, nextRow]));
+  scheduleForm.breakRules = sortScheduleRows([...rows, nextRow]);
 };
 
 const removeScheduleRule = (type, rowKey) => {
@@ -495,7 +520,6 @@ const openCreateResource = () => {
 const openEditResource = resource => {
   activeResource.value = resource;
   Object.assign(resourceForm, {
-    active: resource.active,
     color: resource.color || RESOURCE_COLORS[0],
     description: resource.description || '',
     id: resource.id,
@@ -504,8 +528,6 @@ const openEditResource = resource => {
     slotDurationMin: resource.slotDurationMin || 30,
     specialty: resource.specialty || '',
     timezone: resource.timezone || 'Asia/Almaty',
-    inheritWorkingHoursFromAccount:
-      resource.inheritWorkingHoursFromAccount === true,
     userId: resource.userId || '',
   });
   resourceDrawerOpen.value = true;
@@ -530,7 +552,6 @@ const saveResource = async () => {
     }
 
     await referencesStore.saveResource({
-      active: resourceForm.active,
       color: resourceForm.color,
       description: resourceForm.description,
       id: resourceForm.id,
@@ -542,8 +563,6 @@ const saveResource = async () => {
       ),
       specialty: resourceForm.specialty,
       timezone: resourceForm.timezone,
-      inherit_working_hours_from_account:
-        resourceForm.inheritWorkingHoursFromAccount,
       user_id: toNumeric(resourceForm.userId),
     });
     closeResourceDrawer();
@@ -557,15 +576,7 @@ const toggleResourceActive = async resource => {
   try {
     await referencesStore.saveResource({
       active: !resource.active,
-      color: resource.color,
-      description: resource.description,
       id: resource.id,
-      name: resource.name,
-      photo_url: resource.photoUrl,
-      slot_duration_min: resource.slotDurationMin,
-      specialty: resource.specialty,
-      timezone: resource.timezone,
-      user_id: resource.userId,
     });
     useAlert(t('SCHEDULING.RESOURCES.SUCCESS_SAVE'));
   } catch (error) {
@@ -691,7 +702,14 @@ const deleteResourceTimeOff = async id => {
 };
 
 const openScheduleEditor = async resource => {
+  scheduleGeneration += 1;
+  const generation = scheduleGeneration;
   activeResource.value = resource;
+  scheduleReady.value = false;
+  scheduleForm.inheritWorkingHoursFromAccount =
+    resource.inheritWorkingHoursFromAccount === true;
+  scheduleForm.workRules = [];
+  scheduleForm.breakRules = [];
   scheduleDrawerOpen.value = true;
   resetOverrideForm();
   resetTimeOffForm();
@@ -699,17 +717,13 @@ const openScheduleEditor = async resource => {
     ? 'workday_overrides'
     : 'work';
 
-  const tasks = [referencesStore.loadExceptions?.()];
-  if (!resource.inheritWorkingHoursFromAccount) {
-    tasks.push(
+  try {
+    const [, workRules = [], breakRules = []] = await Promise.all([
+      referencesStore.loadExceptions?.(),
       referencesStore.loadWorkRules?.(resource.id),
-      referencesStore.loadBreakRules?.(resource.id)
-    );
-  }
-
-  const [, workRules = [], breakRules = []] = await Promise.all(tasks);
-
-  if (!resource.inheritWorkingHoursFromAccount) {
+      referencesStore.loadBreakRules?.(resource.id),
+    ]);
+    if (generation !== scheduleGeneration || !scheduleDrawerOpen.value) return;
     scheduleForm.workRules = buildScheduleRows(
       'work',
       workRules.length ? workRules : buildDefaultWorkRules()
@@ -718,10 +732,15 @@ const openScheduleEditor = async resource => {
       'break',
       breakRules.length ? breakRules : buildDefaultBreakRules()
     );
+    scheduleReady.value = true;
+  } catch (error) {
+    if (generation === scheduleGeneration) useAlert(formatErrorMessage(error));
   }
 };
 
 const closeScheduleDrawer = () => {
+  scheduleGeneration += 1;
+  scheduleReady.value = false;
   scheduleDrawerOpen.value = false;
   activeResource.value = null;
   scheduleForm.workRules = [];
@@ -731,31 +750,23 @@ const closeScheduleDrawer = () => {
 };
 
 const saveSchedule = async () => {
-  if (!activeResource.value) return;
-
-  if (scheduleTab.value === 'workday_overrides') {
-    if (overrideForm.date || overrideForm.id) {
-      await saveResourceOverride();
-    } else {
-      closeScheduleDrawer();
-    }
+  if (
+    !activeResource.value ||
+    !scheduleReady.value ||
+    savingSchedule.value ||
+    hasDuplicateWorkdays.value
+  )
     return;
-  }
 
-  if (scheduleTab.value === 'time_offs') {
-    if (timeOffForm.startsAt || timeOffForm.endsAt || timeOffForm.id) {
-      await saveResourceTimeOff();
-    } else {
-      closeScheduleDrawer();
-    }
-    return;
-  }
-
+  const generation = scheduleGeneration;
+  savingSchedule.value = true;
   try {
-    await Promise.all([
-      referencesStore.saveWorkRules(
-        activeResource.value.id,
-        scheduleForm.workRules.map(rule => ({
+    await referencesStore.saveResource({
+      id: activeResource.value.id,
+      inherit_working_hours_from_account:
+        scheduleForm.inheritWorkingHoursFromAccount,
+      ...(!scheduleForm.inheritWorkingHoursFromAccount && {
+        work_rules: scheduleForm.workRules.map(rule => ({
           active: rule.active,
           end_minute: timeToMinute(
             rule.endMinuteText || minuteToTime(rule.endMinute)
@@ -764,11 +775,8 @@ const saveSchedule = async () => {
             rule.startMinuteText || minuteToTime(rule.startMinute)
           ),
           weekday: rule.weekday,
-        }))
-      ),
-      referencesStore.saveBreakRules(
-        activeResource.value.id,
-        scheduleForm.breakRules.map(rule => ({
+        })),
+        break_rules: scheduleForm.breakRules.map(rule => ({
           active: rule.active,
           end_minute: timeToMinute(
             rule.endMinuteText || minuteToTime(rule.endMinute)
@@ -778,13 +786,30 @@ const saveSchedule = async () => {
           ),
           title: rule.title,
           weekday: rule.weekday,
-        }))
-      ),
-    ]);
+        })),
+      }),
+    });
+    if (generation !== scheduleGeneration || !scheduleDrawerOpen.value) return;
+    if (
+      scheduleTab.value === 'workday_overrides' &&
+      (overrideForm.date || overrideForm.id)
+    ) {
+      await saveResourceOverride();
+      return;
+    }
+    if (
+      scheduleTab.value === 'time_offs' &&
+      (timeOffForm.startsAt || timeOffForm.endsAt || timeOffForm.id)
+    ) {
+      await saveResourceTimeOff();
+      return;
+    }
     closeScheduleDrawer();
     useAlert(t('SCHEDULING.RESOURCES.SUCCESS_SAVE'));
   } catch (error) {
     useAlert(formatErrorMessage(error));
+  } finally {
+    savingSchedule.value = false;
   }
 };
 
@@ -1012,30 +1037,6 @@ onMounted(async () => {
           :title="$t('SCHEDULING.RESOURCES.BASIC')"
           :description="$t('SCHEDULING.RESOURCES.BASIC_DESCRIPTION')"
         >
-          <template v-if="!editingImportedResource" #headerActions>
-            <label class="flex items-center gap-2 text-sm text-n-slate-12">
-              <Switch v-model="resourceForm.active" />
-              <span>{{ $t('SCHEDULING.GENERAL.ACTIVE') }}</span>
-            </label>
-          </template>
-
-          <label
-            v-if="!editingImportedResource"
-            class="flex items-center gap-2 text-sm text-n-slate-12"
-          >
-            <Switch v-model="resourceForm.inheritWorkingHoursFromAccount" />
-            <span>{{ $t('SCHEDULING.RESOURCES.INHERIT_HOURS') }}</span>
-          </label>
-          <p
-            v-if="
-              !editingImportedResource &&
-              resourceForm.inheritWorkingHoursFromAccount
-            "
-            class="mb-0 text-sm text-n-slate-11"
-          >
-            {{ $t('SCHEDULING.RESOURCES.INHERIT_HOURS_HINT') }}
-          </p>
-
           <div class="grid gap-4 md:grid-cols-2">
             <Input
               v-if="!editingImportedResource"
@@ -1140,7 +1141,8 @@ onMounted(async () => {
         })
       "
       :confirm-label="$t('SCHEDULING.GENERAL.SAVE')"
-      :is-loading="referencesStore.ui.isSaving"
+      :is-loading="savingSchedule || referencesStore.ui.isSaving"
+      :disable-confirm="!scheduleReady || hasDuplicateWorkdays"
       @close="closeScheduleDrawer"
       @confirm="saveSchedule"
     >
@@ -1148,11 +1150,29 @@ onMounted(async () => {
         <p v-if="isTemplateSchedule" class="mb-0 text-sm text-n-slate-11">
           {{ $t('SCHEDULING.RESOURCES.MEDELEMENT_TEMPLATE_HINT') }}
         </p>
+        <div class="flex flex-col gap-1">
+          <label class="flex items-center gap-2 text-sm text-n-slate-12">
+            <Switch
+              v-model="scheduleForm.inheritWorkingHoursFromAccount"
+              :disabled="!scheduleReady || savingSchedule"
+              :aria-label="$t('SCHEDULING.RESOURCES.INHERIT_HOURS')"
+            />
+            <span>{{ $t('SCHEDULING.RESOURCES.INHERIT_HOURS') }}</span>
+          </label>
+          <p class="mb-0 text-sm text-n-slate-11">
+            {{ $t('SCHEDULING.RESOURCES.INHERIT_HOURS_HINT') }}
+          </p>
+        </div>
         <p
-          v-if="activeResource?.inheritWorkingHoursFromAccount"
-          class="mb-0 text-xs text-n-slate-11"
+          v-if="hasDuplicateWorkdays"
+          role="alert"
+          class="mb-0 text-sm text-n-ruby-11"
         >
-          {{ $t('SCHEDULING.RESOURCES.INHERIT_HOURS') }}
+          {{
+            $t('SCHEDULING.RESOURCES.DUPLICATE_WORKDAYS', {
+              days: duplicateWorkdays.map(weekDayLabel).join(', '),
+            })
+          }}
         </p>
         <TabBar
           active-text-class="text-n-slate-12 scale-100"
@@ -1168,13 +1188,18 @@ onMounted(async () => {
           <div
             v-for="rule in scheduleForm.workRules"
             :key="rule.rowKey"
+            data-testid="resource-work-rule-row"
+            :data-weekday="rule.weekday"
             class="grid items-center gap-4 py-3 md:grid-cols-[160px_100px_1fr_1fr_88px]"
           >
             <span class="text-sm font-medium text-n-slate-12">
               {{ weekDayLabel(rule.weekday) }}
             </span>
             <label class="flex items-center gap-2 text-sm text-n-slate-12">
-              <Switch v-model="rule.active" />
+              <Switch
+                v-model="rule.active"
+                :aria-label="`${weekDayLabel(rule.weekday)} — ${$t('SCHEDULING.GENERAL.ACTIVE')}`"
+              />
               <span>{{ $t('SCHEDULING.GENERAL.ACTIVE') }}</span>
             </label>
             <SchedulingDateTimeField
@@ -1189,16 +1214,9 @@ onMounted(async () => {
             />
             <div class="flex items-center justify-end gap-1">
               <Button
-                size="xs"
-                variant="ghost"
-                color="slate"
-                icon="i-lucide-plus"
-                :aria-label="$t('SCHEDULING.GENERAL.CREATE')"
-                :title="$t('SCHEDULING.GENERAL.CREATE')"
-                @click="addScheduleRule('work', rule.weekday)"
-              />
-              <Button
-                size="xs"
+                v-if="duplicateWorkdays.includes(rule.weekday)"
+                size="sm"
+                type="button"
                 variant="ghost"
                 color="ruby"
                 icon="i-lucide-trash-2"
@@ -1217,6 +1235,8 @@ onMounted(async () => {
           <div
             v-for="rule in scheduleForm.breakRules"
             :key="rule.rowKey"
+            data-testid="resource-break-rule-row"
+            :data-weekday="rule.weekday"
             class="grid items-center gap-4 py-3 md:grid-cols-[160px_100px_1fr_1fr_1.2fr_88px]"
           >
             <span class="text-sm font-medium text-n-slate-12">
@@ -1248,7 +1268,7 @@ onMounted(async () => {
                 icon="i-lucide-plus"
                 :aria-label="$t('SCHEDULING.GENERAL.CREATE')"
                 :title="$t('SCHEDULING.GENERAL.CREATE')"
-                @click="addScheduleRule('break', rule.weekday)"
+                @click="addBreakRule(rule.weekday)"
               />
               <Button
                 size="xs"
@@ -1269,7 +1289,7 @@ onMounted(async () => {
           class="flex flex-col gap-4"
         >
           <SchedulingFormFieldGroup
-            :framed="true"
+            framed
             :title="
               overrideForm.id
                 ? $t('SCHEDULING.EXCEPTIONS.EDIT_OVERRIDE')
@@ -1346,11 +1366,19 @@ onMounted(async () => {
                   {{ formatMinuteRange(item.startMinute, item.endMinute) }}
                 </p>
                 <p
-                  v-if="item.breakStartMinute !== null && item.breakEndMinute !== null"
+                  v-if="
+                    item.breakStartMinute !== null &&
+                    item.breakEndMinute !== null
+                  "
                   class="mb-0 text-xs text-n-slate-11"
                 >
                   {{ $t('SCHEDULING.EXCEPTIONS.BREAK') }}:
-                  {{ formatMinuteRange(item.breakStartMinute, item.breakEndMinute) }}
+                  {{
+                    formatMinuteRange(
+                      item.breakStartMinute,
+                      item.breakEndMinute
+                    )
+                  }}
                   <span v-if="item.breakTitle">({{ item.breakTitle }})</span>
                 </p>
               </div>
@@ -1380,7 +1408,7 @@ onMounted(async () => {
           class="flex flex-col gap-4"
         >
           <SchedulingFormFieldGroup
-            :framed="true"
+            framed
             :title="
               timeOffForm.id
                 ? $t('SCHEDULING.EXCEPTIONS.EDIT_TIME_OFF')

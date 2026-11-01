@@ -26,4 +26,16 @@ RSpec.describe Scheduling::Resource do
 
     expect(personal_rule.reload).to have_attributes(start_minute: 600, end_minute: 900, active: true)
   end
+
+  it 'keeps legacy extra intervals inactive when applying the company schedule' do
+    resource = create(:scheduling_resource, account: account, inherit_working_hours_from_account: false)
+    create(:scheduling_work_rule, account: account, resource: resource, weekday: 1, start_minute: 540, end_minute: 720)
+    extra = create(:scheduling_work_rule, account: account, resource: resource, weekday: 1, start_minute: 780, end_minute: 1080)
+
+    resource.update!(inherit_working_hours_from_account: true)
+    resource.apply_workspace_working_hours!
+
+    expect(resource.work_rules.active.where(weekday: 1).pluck(:start_minute, :end_minute)).to eq([[540, 1020]])
+    expect(extra.reload).to have_attributes(start_minute: 780, end_minute: 1080, active: false)
+  end
 end

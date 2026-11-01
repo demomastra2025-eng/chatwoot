@@ -34,10 +34,11 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   def update
-    was_inheriting = @scheduling_resource.inherit_working_hours_from_account?
-    @scheduling_resource.update!(resource_params)
-    @scheduling_resource.use_personal_working_hours! if was_inheriting && !@scheduling_resource.inherit_working_hours_from_account?
-    @scheduling_resource.apply_workspace_working_hours! if @scheduling_resource.inherit_working_hours_from_account?
+    Scheduling::ResourceScheduleUpdateService.new(resource: @scheduling_resource).update!(
+      attributes: resource_params,
+      work_rules: schedule_params[:work_rules],
+      break_rules: schedule_params[:break_rules]
+    )
     render_payload(Scheduling::PayloadBuilder.resource(@scheduling_resource))
   end
 
@@ -76,6 +77,11 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
     @scheduling_resource = Current.account.scheduling_resources.find(params[:id])
   end
 
+  def schedule_params
+    params.permit(work_rules: [:weekday, :start_minute, :end_minute, :active],
+                  break_rules: [:weekday, :start_minute, :end_minute, :title, :active])
+  end
+
   def validate_provider_owned_attributes!
     incoming = params.permit(custom_attributes: {})[:custom_attributes]
     Integrations::Medelement::ProviderOwnedAttributesGuard.validate!(
@@ -86,7 +92,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
 
   def ensure_provider_writable_resource!
     return if @scheduling_resource.custom_attributes['medelement_specialist_code'].blank?
-    return if resource_params.to_h.keys == ['specialty']
+    return if resource_params.to_h.keys == ['specialty'] && schedule_params.empty?
 
     raise Scheduling::Error.new(
       code: 'RESOURCE_READ_ONLY',
