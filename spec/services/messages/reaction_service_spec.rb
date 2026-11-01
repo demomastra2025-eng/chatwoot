@@ -88,6 +88,18 @@ RSpec.describe Messages::ReactionService do
       expect(stub).to have_been_requested.twice
       expect(message.reload.content_attributes.dig('whatsapp_reactions', 'business')).to be_nil
     end
+
+    it 'preserves the WhatsApp emoji presentation selector in the provider payload' do
+      request = stub_request(:post, "https://graph.facebook.com/v25.0/#{channel.provider_config['phone_number_id']}/messages")
+                .with(body: hash_including(reaction: { message_id: message.source_id, emoji: '❤️' }))
+                .to_return(status: 200, body: { messages: [{ id: 'wamid.reaction1' }] }.to_json,
+                           headers: { 'Content-Type' => 'application/json' })
+
+      described_class.new(message: message, user: user, emoji: '❤️').perform
+
+      expect(request).to have_been_requested.once
+      expect(message.reload.content_attributes.dig('whatsapp_reactions', 'business', 'emoji')).to eq('❤️')
+    end
   end
 
   describe '#perform on Telegram Bot channel' do
@@ -120,6 +132,201 @@ RSpec.describe Messages::ReactionService do
           }
         ]
       )
+    end
+
+    it 'sends the canonical Telegram heart rather than its UI presentation selector' do
+      request = stub_request(:post, "https://api.telegram.org/bot#{channel.bot_token}/setMessageReaction")
+                .with(body: hash_including(reaction: [{ type: 'emoji', emoji: '❤' }].to_json))
+                .to_return(status: 200, body: { ok: true, result: true }.to_json,
+                           headers: { 'Content-Type' => 'application/json' })
+
+      described_class.new(message: message, user: user, emoji: '❤️').perform
+
+      expect(request).to have_been_requested.once
+    end
+  end
+
+  describe '#perform on Telegram Personal channel' do
+    around do |example|
+      with_modified_env('TELEGRAM_PERSONAL_GATEWAY_URL' => 'http://telegram-personal-gateway.test',
+                        'TELEGRAM_PERSONAL_GATEWAY_TOKEN' => 'test-gateway-token') { example.run }
+    end
+
+    let(:channel) { create(:channel_telegram_personal, account: account) }
+    let(:contact_inbox) { create(:contact_inbox, inbox: channel.inbox, source_id: '-1001234567890') }
+    let(:conversation) do
+      create(:conversation, account: account, inbox: channel.inbox, contact_inbox: contact_inbox,
+                            contact: contact_inbox.contact, additional_attributes: { chat_id: '-1001234567890' })
+    end
+    let(:message) do
+      create(:message, account: account, inbox: channel.inbox, conversation: conversation,
+                       source_id: 'tg_group:-1001234567890:42', content: 'Original message')
+    end
+    let(:gateway_path) { "http://telegram-personal-gateway.test/internal/channels/#{channel.id}/messages/react" }
+
+    def expect_reaction_request(emoji)
+      stub_request(:post, gateway_path).with(
+        body: {
+          recipient_id: '-1001234567890', chat_id: '-1001234567890', message_id: '42', emoji: emoji
+        }.to_json,
+        headers: { 'Authorization' => 'Bearer test-gateway-token' }
+      ).to_return(status: 200, body: { message_id: '42' }.to_json, headers: { 'Content-Type' => 'application/json' })
+    end
+
+    it 'delivers a quick-reaction heart using Telegram canonical emoji without changing its local display' do
+      stub_request(:post, gateway_path).to_return(
+        status: 400, body: { error: 'REACTION_INVALID' }.to_json, headers: { 'Content-Type' => 'application/json' }
+      )
+      accepted = expect_reaction_request('❤')
+
+      described_class.new(message: message, user: user, emoji: '❤️').perform
+
+      expect(accepted).to have_been_requested.once
+      expect(message.reload.content_attributes.dig('agent_reactions', "user:#{user.id}", 'emoji')).to eq('❤️')
+    end
+
+    it 'normalizes presentation selectors while preserving a joined Telegram emoji' do
+      accepted = expect_reaction_request('❤‍🔥')
+
+      described_class.new(message: message, user: user, emoji: '❤️‍🔥').perform
+
+      expect(accepted).to have_been_requested.once
+    end
+
+    it 'removes a provider heart snapshot when clicked in its emoji-presentation form' do
+      message.update!(content_attributes: {
+                        telegram_reactions: {
+                          total_count: 1, results: [{ reaction: { type: 'emoji', emoji: '❤' }, count: 1, chosen: true }]
+                        }
+                      })
+      request = expect_reaction_request('')
+
+      described_class.new(message: message, user: user, emoji: '❤️').perform
+
+      expect(request).to have_been_requested.once
+      expect(message.reload.content_attributes['telegram_reactions']).to eq('total_count' => 0, 'results' => [])
+    end
+
+    it 'removes only the account reaction when local and provider emoji encodings differ' do
+      message.update!(content_attributes: {
+                        agent_reactions: { "user:#{user.id}" => { emoji: '❤️' } },
+                        telegram_reactions: {
+                          total_count: 2, results: [{ reaction: { type: 'emoji', emoji: '❤' }, count: 2, chosen: true }]
+                        }
+                      })
+      request = expect_reaction_request('')
+
+      described_class.new(message: message, user: user, emoji: '❤️').perform
+
+      expect(request).to have_been_requested.once
+      expect(message.reload.content_attributes['agent_reactions']).to be_nil
+      expect(message.content_attributes['telegram_reactions']).to eq(
+        'total_count' => 1, 'results' => [{ 'reaction' => { 'type' => 'emoji', 'emoji' => '❤' }, 'count' => 1 }]
+      )
+    end
+
+    it 'merges the account reaction into an existing provider heart without a duplicate emoji group' do
+      message.update!(content_attributes: {
+                        telegram_reactions: {
+                          total_count: 1, results: [{ reaction: { type: 'emoji', emoji: '❤' }, count: 1 }]
+                        }
+                      })
+      request = expect_reaction_request('❤')
+
+      described_class.new(message: message, user: user, emoji: '❤️').perform
+
+      expect(request).to have_been_requested.once
+      expect(message.reload.content_attributes['telegram_reactions']).to eq(
+        'total_count' => 2, 'results' => [{ 'reaction' => { 'type' => 'emoji', 'emoji' => '❤' }, 'count' => 2, 'chosen' => true }]
+      )
+    end
+
+    it 'sends one reaction through the gateway and removes it externally when toggled off' do
+      add_request = expect_reaction_request('👍')
+      described_class.new(message: message, user: user, emoji: '👍').perform
+      expect(add_request).to have_been_requested.once
+      expect(message.reload.content_attributes.dig('telegram_reactions', 'total_count')).to eq(1)
+
+      remove_request = expect_reaction_request('')
+      described_class.new(message: message, user: user, emoji: '👍').perform
+      expect(remove_request).to have_been_requested.once
+      expect(message.reload.content_attributes['agent_reactions']).to be_nil
+      expect(message.content_attributes['telegram_reactions']).to eq('total_count' => 0, 'results' => [])
+    end
+
+    it 'returns a provider error without recording a false local success' do
+      stub_request(:post, gateway_path).to_return(
+        status: 503, body: { error: 'Gateway unavailable' }.to_json, headers: { 'Content-Type' => 'application/json' }
+      )
+
+      expect do
+        described_class.new(message: message, user: user, emoji: '👍').perform
+      end.to raise_error(Messages::ReactionService::Error, 'Gateway unavailable')
+      expect(message.reload.content_attributes['agent_reactions']).to be_nil
+      expect(message.content_attributes['telegram_reactions']).to be_nil
+    end
+
+    it 'preserves the previous local reaction when removing it externally fails' do
+      expect_reaction_request('👍')
+      described_class.new(message: message, user: user, emoji: '👍').perform
+      snapshot = message.reload.content_attributes.deep_dup
+      stub_request(:post, gateway_path).with(body: hash_including(emoji: '')).to_return(status: 503, body: 'Gateway unavailable')
+
+      expect do
+        described_class.new(message: message, user: user, emoji: '👍').perform
+      end.to raise_error(Messages::ReactionService::Error)
+      expect(message.reload.content_attributes).to eq(snapshot)
+    end
+
+    it 'replaces the shared external account reaction without keeping a previous operator reaction' do
+      expect_reaction_request('👍')
+      described_class.new(message: message, user: user, emoji: '👍').perform
+      other_user = create(:user, account: account)
+      expect_reaction_request('🔥')
+      described_class.new(message: message, user: other_user, emoji: '🔥').perform
+
+      expect(message.reload.content_attributes['agent_reactions'].keys).to eq(["user:#{other_user.id}"])
+      expect(message.content_attributes['telegram_reactions']).to eq(
+        'total_count' => 1,
+        'results' => [{ 'reaction' => { 'type' => 'emoji', 'emoji' => '🔥' }, 'count' => 1, 'chosen' => true }]
+      )
+    end
+  end
+
+  describe '#perform on WhatsApp Web channel' do
+    let(:channel) { create(:channel_whatsapp_web, account: account) }
+    let(:contact_inbox) { create(:contact_inbox, inbox: channel.inbox, source_id: '77015551122@s.whatsapp.net') }
+    let(:conversation) do
+      create(:conversation, account: account, inbox: channel.inbox, contact_inbox: contact_inbox, contact: contact_inbox.contact)
+    end
+    let(:message) do
+      create(:message, account: account, inbox: channel.inbox, conversation: conversation,
+                       message_type: :outgoing, source_id: 'external-message-42', content: 'Original message')
+    end
+    let(:reaction_path) { "#{ENV.fetch('EVOLUTION_API_URL')}/message/sendReaction/#{channel.instance_name}" }
+
+    it 'sends the original key and direction to Evolution and sends empty emoji to remove it' do
+      request = stub_request(:post, reaction_path).with(body: {
+        key: { remoteJid: '77015551122@s.whatsapp.net', fromMe: true, id: 'external-message-42' }, reaction: '👍'
+      }.to_json).to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
+      described_class.new(message: message, user: user, emoji: '👍').perform
+      expect(request).to have_been_requested.once
+
+      remove = stub_request(:post, reaction_path).with(body: hash_including(reaction: '')).to_return(
+        status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' }
+      )
+      described_class.new(message: message, user: user, emoji: '👍').perform
+      expect(remove).to have_been_requested.once
+      expect(message.reload.content_attributes['whatsapp_reactions']).to be_nil
+    end
+
+    it 'does not record a reaction when Evolution rejects it' do
+      stub_request(:post, reaction_path).to_return(status: 500, body: '{}', headers: { 'Content-Type' => 'application/json' })
+      expect do
+        described_class.new(message: message, user: user, emoji: '👍').perform
+      end.to raise_error(Messages::ReactionService::Error)
+      expect(message.reload.content_attributes['agent_reactions']).to be_nil
+      expect(message.content_attributes['whatsapp_reactions']).to be_nil
     end
   end
 end

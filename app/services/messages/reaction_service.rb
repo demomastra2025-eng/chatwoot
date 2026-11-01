@@ -9,7 +9,7 @@ class Messages::ReactionService
     validate_emoji!(normalized_emoji)
 
     effective_emoji = resolve_effective_emoji(normalized_emoji)
-    dispatch_to_provider!(effective_emoji) if should_dispatch_to_provider?
+    dispatch_to_provider!(effective_emoji)
 
     message.with_lock do
       apply_reaction_attributes!(effective_emoji)
@@ -67,8 +67,7 @@ class Messages::ReactionService
   def resolve_effective_emoji(requested_emoji)
     return '' if requested_emoji.blank?
 
-    current_emoji = current_actor_emoji
-    current_emoji == requested_emoji ? '' : requested_emoji
+    reaction_key(current_actor_emoji) == reaction_key(requested_emoji) ? '' : requested_emoji
   end
 
   def current_actor_emoji
@@ -90,11 +89,13 @@ class Messages::ReactionService
     nil
   end
 
-  def should_dispatch_to_provider?
-    !message.private? && message.source_id.present?
+  def reaction_key(value)
+    # Telegram reaction identifiers omit emoji-presentation selectors.
+    telegram_like_channel? ? value.to_s.delete("\uFE0F") : value.to_s
   end
 
   def dispatch_to_provider!(effective_emoji)
+    effective_emoji = reaction_key(effective_emoji)
     case channel
     when Channel::Whatsapp
       dispatch_whatsapp_cloud_reaction!(effective_emoji)
@@ -138,8 +139,6 @@ class Messages::ReactionService
       message: message,
       emoji: effective_emoji
     )
-  rescue TelegramPersonal::GatewayClient::GatewayError => e
-    Rails.logger.warn("[TELEGRAM PERSONAL] Reaction gateway call failed for message=#{message.id}: #{e.message}")
   end
 
   def apply_reaction_attributes!(effective_emoji)
@@ -154,25 +153,16 @@ class Messages::ReactionService
   end
 
   def update_agent_reactions!(content_attributes, effective_emoji)
-    agent_reactions = content_attributes['agent_reactions'].to_h
-    if whatsapp_like_channel? || telegram_like_channel?
-      # Single outgoing account identity on external messenger channels
-      agent_reactions.clear if effective_emoji.blank?
-    end
-
+    # All supported external channels have one outgoing account identity.
     if effective_emoji.present?
-      agent_reactions[actor_key] = {
-        'emoji' => effective_emoji,
-        'user_id' => user&.id,
-        'user_name' => user&.name,
-        'updated_at' => Time.current.iso8601
-      }.compact
-    else
-      agent_reactions.delete(actor_key)
-    end
-
-    if agent_reactions.present?
-      content_attributes['agent_reactions'] = agent_reactions
+      content_attributes['agent_reactions'] = {
+        actor_key => {
+          'emoji' => effective_emoji,
+          'user_id' => user&.id,
+          'user_name' => user&.name,
+          'updated_at' => Time.current.iso8601
+        }.compact
+      }
     else
       content_attributes.delete('agent_reactions')
     end
@@ -214,7 +204,7 @@ class Messages::ReactionService
     end
 
     if previous_emoji.present?
-      prev_item = results.find { |r| r.dig('reaction', 'emoji') == previous_emoji }
+      prev_item = find_telegram_reaction(results, previous_emoji)
       if prev_item
         prev_item['count'] = [prev_item['count'].to_i - 1, 0].max
         prev_item.delete('chosen')
@@ -222,7 +212,7 @@ class Messages::ReactionService
     end
 
     if effective_emoji.present?
-      target_item = results.find { |r| r.dig('reaction', 'emoji') == effective_emoji }
+      target_item = find_telegram_reaction(results, effective_emoji)
       if target_item
         target_item['count'] = target_item['count'].to_i + 1
         target_item['chosen'] = true
@@ -240,6 +230,10 @@ class Messages::ReactionService
       'total_count' => results.sum { |r| r['count'].to_i },
       'results' => results
     }
+  end
+
+  def find_telegram_reaction(results, emoji)
+    results.find { |item| reaction_key(item.dig('reaction', 'emoji')) == reaction_key(emoji) }
   end
 
   def whatsapp_like_channel?
