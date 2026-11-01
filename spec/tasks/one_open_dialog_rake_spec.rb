@@ -134,14 +134,13 @@ RSpec.describe 'onelink:one_open_dialog_per_thread rake task' do # rubocop:disab
     end
 
     it 'resolves silently and leaves nothing to do on a second run', :aggregate_failures do
-      allow(CsatSurveyService).to receive(:new).and_call_original
       dispatcher = Rails.configuration.dispatcher
       allow(dispatcher).to receive(:dispatch).and_call_original
 
       run_task(account.id.to_s, 'false')
       perform_enqueued_jobs(only: Conversations::ActivityMessageJob)
 
-      expect(CsatSurveyService).not_to have_received(:new)
+      expect(Message.where(account_id: account.id, content_type: :input_csat)).to be_empty
       expect(dispatcher).not_to have_received(:dispatch).with(Events::Types::CONVERSATION_RESOLVED, anything, anything)
       expect(Message.where(account_id: account.id, message_type: %w[outgoing template])).to be_empty
       expect(current_chat.messages.activity).to be_empty # the merge writes no line into the dialog that stays

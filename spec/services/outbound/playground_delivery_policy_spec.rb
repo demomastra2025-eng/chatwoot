@@ -103,17 +103,13 @@ RSpec.describe Outbound::PlaygroundDeliveryPolicy do
     expect(reminder.last_error).to eq(described_class::BLOCKED_MESSAGE)
   end
 
-  it 'blocks a direct channel service and CSAT before a provider call' do
+  it 'blocks a direct channel service before a provider call' do
     sms_channel = create(:channel_sms, account: account)
     sms_conversation = create(:conversation, account: account, inbox: sms_channel.inbox)
     message = create(:message, message_type: :outgoing, account: account, inbox: sms_channel.inbox, conversation: sms_conversation)
     expect(HTTParty).not_to receive(:post)
     described_class.with(policy) do
       expect(Sms::SendOnSmsService.new(message: message).perform).to be(false)
-      survey = CsatSurveyService.new(conversation: sms_conversation)
-      allow(survey).to receive(:should_send_csat_survey?).and_return(true)
-      expect(survey).not_to receive(:template_available_and_approved?)
-      expect(survey.perform).to be(false)
     end
     expect(message.reload).to be_failed
   end
@@ -141,7 +137,7 @@ RSpec.describe Outbound::PlaygroundDeliveryPolicy do
 
   it 'retains a confirmation causal policy after its appointment stamp is cleared by an ordinary mutation' do
     appointment = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation,
-                                                 custom_attributes: { described_class::ATTRIBUTE_KEY => policy })
+                                                  custom_attributes: { described_class::ATTRIBUTE_KEY => policy })
     request = create(:confirmation_request, account: account, conversation: conversation, subject: appointment)
     appointment.update_columns(custom_attributes: {}) # rubocop:disable Rails/SkipsModelValidations
     action = instance_double(Confirmations::ResponseActionService)
@@ -175,7 +171,7 @@ RSpec.describe Outbound::PlaygroundDeliveryPolicy do
 
   it 'restores a confirmation causal policy for direct redelivery after its appointment stamp is cleared' do
     appointment = create(:scheduling_appointment, account: account, contact: contact, conversation: conversation,
-                                                 custom_attributes: { described_class::ATTRIBUTE_KEY => policy })
+                                                  custom_attributes: { described_class::ATTRIBUTE_KEY => policy })
     request = create(:confirmation_request, account: account, conversation: conversation, subject: appointment)
     appointment.update_columns(custom_attributes: {}) # rubocop:disable Rails/SkipsModelValidations
 

@@ -38,28 +38,27 @@ describe CsatSurveyListener do
 
   describe '#conversation_status_changed' do
     let(:event_name) { 'conversation.status_changed' }
-    let(:csat_service) { double }
 
     before do
       allow(resolved_conversation).to receive(:saved_change_to_status?).and_return(true)
     end
 
     context 'when conversation is resolved and CSAT is enabled' do
-      it 'does not trigger legacy CSAT survey service' do
+      it 'does not create another CSAT survey' do
         event = Events::Base.new(event_name, Time.zone.now, conversation: resolved_conversation)
-        expect(CsatSurveyService).not_to receive(:new)
 
-        listener.conversation_status_changed(event)
+        expect { listener.conversation_status_changed(event) }
+          .not_to(change { Message.where(content_type: :input_csat).count })
       end
     end
 
     context 'when conversation is not resolved' do
-      it 'does not trigger CSAT survey service' do
+      it 'does not create another CSAT survey' do
         open_conversation = create(:conversation, account: account, inbox: csat_enabled_inbox, status: :open)
         event = Events::Base.new(event_name, Time.zone.now, conversation: open_conversation)
 
-        expect(CsatSurveyService).not_to receive(:new)
-        listener.conversation_status_changed(event)
+        expect { listener.conversation_status_changed(event) }
+          .not_to(change { Message.where(content_type: :input_csat).count })
       end
     end
   end

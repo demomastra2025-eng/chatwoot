@@ -186,14 +186,12 @@ RSpec.describe CommunicationThreads::SingleOpenDialogService do
 
     it 'sends nothing to the customer and starts no CSAT survey', :aggregate_failures do
       messages_before = Message.where(account_id: account.id).pluck(:id)
-      allow(CsatSurveyService).to receive(:new).and_call_original
 
       described_class.new(thread: thread).perform
       perform_enqueued_jobs(only: Conversations::ActivityMessageJob)
 
       new_messages = Message.where(account_id: account.id).where.not(id: messages_before)
       expect(new_messages).to be_empty
-      expect(CsatSurveyService).not_to have_received(:new)
       expect(SendReplyJob).not_to have_been_enqueued
       expect(voice.reload).to be_resolved
     end
