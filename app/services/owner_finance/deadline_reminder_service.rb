@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class OwnerFinance::DeadlineReminderService
+  MAX_SYNC_ATTEMPTS = 3
   CATEGORY_LABELS = {
     'hosting' => 'Хостинг/Сервер',
     'client_domain' => 'Домен клиента',
@@ -37,8 +38,10 @@ class OwnerFinance::DeadlineReminderService
       diff = deadline.days_left(@reference_date)
       next unless should_remind?(deadline, diff)
 
-      task = find_or_create_crm_task(deadline, diff)
+      task = sync_crm_task_for_deadline(deadline, diff)
       deadline.update!(last_reminded_on: @reference_date, last_reminded_offset: diff)
+      next unless task
+
       reminded << { deadline_id: deadline.id, title: deadline.title, days_left: diff, crm_task_id: task.id }
     end
     reminded
@@ -55,18 +58,97 @@ class OwnerFinance::DeadlineReminderService
 
     acc = Account.find_by(id: OwnerFinance::AccessPolicy.workspace_account_id)
     return nil unless acc
-
-    member_ids = acc.account_users.pluck(:user_id)
-    return acc if member_ids == [owner.id]
+    return acc if acc.account_users.pluck(:user_id) == [owner.id]
 
     Rails.logger.warn("[OwnerFinance::DeadlineReminderService] Workspace ##{acc.id} is not exclusive to owner ##{owner.id}")
     nil
   end
 
-  def find_or_create_crm_task(deadline, diff)
-    idem_key = "owner_finance:deadline:#{deadline.id}:#{deadline.due_on.iso8601}:d#{diff}"
-    Crm::Task.find_by(account_id: @workspace_account.id, idempotency_key: idem_key) ||
-      Crm::Task.create!(crm_task_attributes(deadline, diff, idem_key))
+  def sync_crm_task_for_deadline(deadline, diff)
+    key = cycle_idempotency_key(deadline)
+    attempts = 0
+    begin
+      attempts += 1
+      ActiveRecord::Base.uncached { upsert_cycle_task!(deadline, diff, key) }
+    rescue ActiveRecord::StaleObjectError, ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+      retry if attempts < MAX_SYNC_ATTEMPTS && retryable_sync_error?(e)
+      raise
+    end
+  end
+
+  def upsert_cycle_task!(deadline, diff, key)
+    existing = resolve_existing_cycle_task(deadline, diff, key)
+    return existing[:task] if existing[:handled]
+
+    Crm::Task.create!(crm_task_attributes(deadline, diff, key))
+  end
+
+  def retryable_sync_error?(error)
+    return true unless error.is_a?(ActiveRecord::RecordInvalid)
+
+    errs = error.record&.errors
+    return false unless errs
+
+    errs.of_kind?(:idempotency_key, :taken) || errs.of_kind?(:external_ref, :taken)
+  end
+
+  def resolve_existing_cycle_task(deadline, diff, key)
+    canonical = canonical_cycle_tasks(key)
+    return resolve_from_scope(canonical, deadline, diff, key) if canonical.exists?
+
+    legacy = legacy_cycle_tasks(key)
+    return resolve_from_scope(legacy, deadline, diff, key) if legacy.exists?
+
+    { handled: false, task: nil }
+  end
+
+  def resolve_from_scope(scope, deadline, diff, key)
+    open_task = scope.where(completed_at: nil, cancelled_at: nil, archived_at: nil).order(id: :desc).first
+    return { handled: true, task: update_open_task!(open_task, deadline, diff, key) } if open_task
+
+    { handled: true, task: nil }
+  end
+
+  def update_open_task!(task, deadline, diff, key)
+    attrs = {
+      priority: elevated_priority(task.priority, diff),
+      title: build_title(deadline, diff),
+      description: build_description(deadline, diff)
+    }
+    attrs[:due_on] = [task.due_on, @reference_date].compact.max if task.all_day?
+    assign_canonical_refs!(attrs, task, key)
+    task.update!(attrs)
+    task
+  end
+
+  def assign_canonical_refs!(attrs, task, key)
+    %i[idempotency_key external_ref].each do |column|
+      current = task.public_send(column)
+      next unless (current.blank? || current.start_with?("#{key}:d")) && !other_task_claims?(column, task.id, key)
+
+      attrs[column] = key
+    end
+  end
+
+  def other_task_claims?(column, task_id, key)
+    workspace_tasks.where.not(id: task_id).exists?(column => key)
+  end
+
+  def cycle_idempotency_key(deadline)
+    "owner_finance:deadline:#{deadline.id}:#{deadline.due_on.iso8601}"
+  end
+
+  def workspace_tasks
+    Crm::Task.where(account_id: @workspace_account.id)
+  end
+
+  def canonical_cycle_tasks(key)
+    workspace_tasks.where('idempotency_key = :key OR external_ref = :key', key: key)
+  end
+
+  def legacy_cycle_tasks(key)
+    legacy = "#{ActiveRecord::Base.sanitize_sql_like(key)}:d%"
+    workspace_tasks.where('idempotency_key LIKE :legacy OR external_ref LIKE :legacy', legacy: legacy)
   end
 
   def resolve_todo_status
@@ -79,11 +161,19 @@ class OwnerFinance::DeadlineReminderService
       Crm::TaskType.where(account_id: @workspace_account.id).order(:position, :id).first
   end
 
+  def priority_for(diff)
+    diff <= 2 ? 'high' : 'medium'
+  end
+
+  def elevated_priority(current_priority, diff)
+    [current_priority, priority_for(diff)].max_by { |val| Crm::Task::PRIORITIES.index(val) || -1 }
+  end
+
   def crm_task_attributes(deadline, diff, idem_key)
     {
       account_id: @workspace_account.id, status_id: @todo_status.id,
       task_type_id: @task_type.id, activity_type: @task_type.code,
-      assignee_id: @owner.id, creator_id: @owner.id, priority: diff <= 2 ? 'high' : 'medium',
+      assignee_id: @owner.id, creator_id: @owner.id, priority: priority_for(diff),
       all_day: true, due_on: @reference_date, idempotency_key: idem_key, external_ref: idem_key,
       title: build_title(deadline, diff), description: build_description(deadline, diff)
     }
