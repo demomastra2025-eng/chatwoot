@@ -16,6 +16,7 @@ class Llm::OpenRouterDecisionClient
     perplexity/pplx-decider-v1.2 perplexity/pplx-decider-flash-v1.2 typesafe/jev-1.14 liquid/d1-ultra respan/span-02
     nace-ai/drex-max
   ].freeze
+  NON_ZDR_MODELS = %w[openai/gpt-6-luna-decisions respan/span-02].freeze
   DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'
   REQUEST_TIMEOUT_SECONDS = 110
   MAX_RESPONSE_BYTES = 1_048_576
@@ -37,6 +38,10 @@ class Llm::OpenRouterDecisionClient
   class << self
     def supported_model?(model)
       SUPPORTED_MODELS.include?(model)
+    end
+
+    def zdr_supported_model?(model)
+      supported_model?(model) && NON_ZDR_MODELS.exclude?(model.to_s)
     end
 
     # One question: criteria: + instructions:. Several questions: questions: { name => { criteria:, instructions: } }.
@@ -118,7 +123,7 @@ class Llm::OpenRouterDecisionClient
     # The Decisions endpoint rejects `"provider": null` (HTTP 400), so a blank preference is left out of the body.
     def build_request(uri, state, questions, options)
       redacted_state = Llm::OutboundIinRedactor.redact_payload(state)
-      redacted_questions = Llm::OutboundIinRedactor.redact_payload(question_bodies(questions))
+      redacted_questions = Llm::OutboundIinRedactor.redact_iin_only(question_bodies(questions))
       body = JSON.generate({ model: options[:model], state: redacted_state, questions: redacted_questions,
                              provider: options[:provider].presence }.compact)
       raise ArgumentError, 'Decision request too large.' if body.bytesize > (options[:max_request_bytes] || MAX_REQUEST_BYTES)

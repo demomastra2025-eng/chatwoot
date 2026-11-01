@@ -39,9 +39,13 @@ class Telephony::BrowserRecordingUploadService
 
     stored_recording = persist_recording!
     updated_call_session = ingest_recording_ready!(stored_recording)
+    result_session = updated_call_session || call_session.reload
+    if Storage::VoiceRecordingRemoteStorage.raw_wav_key?(stored_recording.storage_key)
+      Telephony::CompressRecordingsJob.perform_later(call_session_id: result_session.id)
+    end
 
     Result.new(
-      call_session: updated_call_session || call_session.reload,
+      call_session: result_session,
       storage_key: stored_recording.storage_key,
       path: stored_recording.path,
       byte_size: stored_recording.byte_size,
@@ -92,7 +96,9 @@ class Telephony::BrowserRecordingUploadService
 
     FileUtils.mkdir_p(final_path.dirname)
     FileUtils.mv(tmp_path, final_path) unless File.file?(final_path)
-    Storage::VoiceRecordingRemoteStorage.upload_file(storage_key, final_path, content_type: recording_content_type)
+    @offloaded_to_s3 = Storage::VoiceRecordingRemoteStorage.offload_file!(
+      storage_key, final_path, content_type: recording_content_type
+    )
     final_path
   end
 
@@ -140,13 +146,16 @@ class Telephony::BrowserRecordingUploadService
   end
 
   def recording_metadata
+    provider = @offloaded_to_s3 ? 's3' : 'local'
+    recording_hash = {
+      writer: 'browser_janus_media_recorder',
+      storage_provider: provider,
+      recorded_by: 'browser'
+    }
+    recording_hash[:remote_stored_at] = Time.current.iso8601 if @offloaded_to_s3
     {
       source: 'browser_webphone_recording',
-      recording: {
-        writer: 'browser_janus_media_recorder',
-        storage_provider: 'local',
-        recorded_by: 'browser'
-      }
+      recording: recording_hash
     }
   end
 

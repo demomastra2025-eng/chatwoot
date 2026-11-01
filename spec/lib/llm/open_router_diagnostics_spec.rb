@@ -170,7 +170,7 @@ RSpec.describe Llm::OpenRouterDiagnostics do
     expect(diagnostics.dig(:workspace_policy, :provider_preferences)).to include(
       allow_fallbacks: true,
       data_collection: 'deny',
-      zdr: false
+      zdr: true
     )
     expect(diagnostics.dig(:workspace_policy, :guardrails, :prompt_injection)).to include(status: 'local_enforced')
     expect(diagnostics.dig(:guardrails, :features, 'assistant', :server_tools)).to include(status: 'allowlist_enforced')

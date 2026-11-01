@@ -11,8 +11,11 @@ class Captain::Playground::ActionApproval
   end
 
   def preview(tool_id, arguments)
-    Llm::IinTokenVault.with_scope(account_id: @session.account.id, scope_id: "pg:#{@session.id}") do
-      preview_in_vault(tool_id, arguments)
+    scope_id = "pg:#{@session.id}"
+    Llm::IinTokenVault.with_scope(account_id: @session.account.id, scope_id: scope_id) do
+      Llm::PiiSessionPseudonymizer.with_scope(account_id: @session.account.id, scope_id: scope_id) do
+        preview_in_vault(tool_id, arguments)
+      end
     end
   end
 
@@ -49,8 +52,11 @@ class Captain::Playground::ActionApproval
   end
 
   def confirm(id:, digest:)
-    Llm::IinTokenVault.with_scope(account_id: @session.account.id, scope_id: "pg:#{@session.id}") do
-      confirm_in_vault(id: id, digest: digest)
+    scope_id = "pg:#{@session.id}"
+    Llm::IinTokenVault.with_scope(account_id: @session.account.id, scope_id: scope_id) do
+      Llm::PiiSessionPseudonymizer.with_scope(account_id: @session.account.id, scope_id: scope_id) do
+        confirm_in_vault(id: id, digest: digest)
+      end
     end
   end
 

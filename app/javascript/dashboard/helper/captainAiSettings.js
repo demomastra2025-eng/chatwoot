@@ -258,6 +258,10 @@ export const toAiSettingsDraft = (payload, options = {}) => {
     },
     safety: {
       moderation_enabled: readBoolean(safety.moderation_enabled, false),
+      require_explicit_ai_consent: readBoolean(
+        safety.require_explicit_ai_consent,
+        false
+      ),
       prompt_injection_action: readValue(
         'safetyAction',
         safety.prompt_injection_action,
@@ -332,6 +336,7 @@ const SECTION_SERIALIZERS = {
   }),
   safety: value => ({
     moderation_enabled: value.moderation_enabled === true,
+    require_explicit_ai_consent: value.require_explicit_ai_consent === true,
     prompt_injection_action: writeValue(
       'safetyAction',
       value.prompt_injection_action

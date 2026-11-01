@@ -6,13 +6,13 @@ class Llm::OpenRouterWorkspacePolicy
     'standard' => {
       allow_fallbacks: true,
       data_collection: 'deny',
-      zdr: false,
+      zdr: true,
       trace_capture_allowed: true
     },
     'sensitive' => {
       allow_fallbacks: true,
       data_collection: 'deny',
-      zdr: false,
+      zdr: true,
       trace_capture_allowed: false
     },
     'zdr_required' => {
@@ -28,8 +28,12 @@ class Llm::OpenRouterWorkspacePolicy
       PRIVACY_PROFILES.fetch(privacy_profile).fetch(:trace_capture_allowed)
     end
 
-    def zdr_required?
+    def zdr_enforced?
       provider_preferences[:zdr] == true
+    end
+
+    def zdr_required?
+      privacy_profile == 'zdr_required'
     end
 
     def to_h
@@ -130,8 +134,8 @@ class Llm::OpenRouterWorkspacePolicy
       { status: status, enforcement: enforcement }
     end
 
-    def zdr_status_for(profile_key)
-      profile_key == 'zdr_required' ? 'provider_required' : 'not_required'
+    def zdr_status_for(_profile_key)
+      'provider_required'
     end
   end
 end

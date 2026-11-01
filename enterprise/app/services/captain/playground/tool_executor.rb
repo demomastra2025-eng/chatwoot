@@ -62,7 +62,9 @@ class Captain::Playground::ToolExecutor
     @session.assert_context!(context.state)
     @context = Struct.new(:state, :context).new(@session.namespace.decode(context.state), context.context)
     @tool_id = tool_id.to_s
-    @args = Llm::IinTokenVault.detokenize_deep(@session.namespace.decode(arguments.to_h)).deep_stringify_keys.compact
+    @args = Llm::PiiSessionPseudonymizer.unmask_deep(
+      Llm::IinTokenVault.detokenize_deep(@session.namespace.decode(arguments.to_h))
+    ).deep_stringify_keys.compact
     authorize_tool!
     @original_data = @data.deep_dup
     result = dispatch

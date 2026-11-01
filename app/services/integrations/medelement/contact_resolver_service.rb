@@ -15,10 +15,13 @@ class Integrations::Medelement::ContactResolverService
 
   def sync_patient!(patient_code, preferred_contact: nil, prefetched_patient: :not_prefetched, require_verified_card: false)
     validate_preferred_contact!(preferred_contact)
+    return nil if tombstoned_patient?(patient_code: patient_code)
+
     existing_contact = preferred_contact || find_by_patient_code(patient_code)
     return existing_contact if use_fresh_contact?(existing_contact, require_verified_card)
 
     patient, patient_code, existing_contact = fetch_or_resolve_patient(patient_code, existing_contact, prefetched_patient)
+    return nil if tombstoned_patient?(patient: patient, patient_code: patient_code)
     return verified_fallback(existing_contact, require_verified_card) if patient.blank?
 
     validate_patient!(patient, expected_patient_code: patient_code)
@@ -34,6 +37,8 @@ class Integrations::Medelement::ContactResolverService
   def sync_patient_payload!(patient, preferred_contact:)
     validate_preferred_contact!(preferred_contact)
     patient_code = patient['PROFILE_CODE'].presence || patient['PATIENT_CODE'].presence
+    return nil if tombstoned_patient?(patient: patient, patient_code: patient_code)
+
     validate_patient!(
       patient,
       expected_patient_code: preferred_contact.custom_attributes['medelement_patient_code'].presence,
@@ -47,8 +52,10 @@ class Integrations::Medelement::ContactResolverService
   end
 
   def sync_verified_demographic_candidate!(patient_code, candidate_contact:)
+    return if tombstoned_patient?(patient_code: patient_code)
+
     patient = client.get_patient(patient_code: patient_code)
-    return if patient.blank?
+    return if patient.blank? || tombstoned_patient?(patient: patient, patient_code: patient_code)
 
     validate_patient!(patient, expected_patient_code: patient_code)
     iin = normalize_iin(patient['IIN'])
@@ -422,8 +429,36 @@ class Integrations::Medelement::ContactResolverService
 
   # Coordinates identity lookup, uniqueness checks and custom-attribute persistence as one unit.
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+  def tombstoned_patient?(patient: nil, patient_code: nil)
+    blocked = Compliance::DeletedSubjectTombstone.blocked_medelement_patient?(
+      account_id: account.id,
+      patient: patient,
+      patient_code: patient_code
+    )
+    propagate_tombstone_patient_code!(patient, patient_code) if blocked
+    blocked
+  end
+
+  def propagate_tombstone_patient_code!(patient, patient_code)
+    code = patient_code.to_s.presence ||
+           (patient.is_a?(Hash) && (patient['PROFILE_CODE'].to_s.presence || patient['PATIENT_CODE'].to_s.presence))
+    return if code.blank?
+    return if Compliance::DeletedSubjectTombstone.blocked?(account_id: account.id, identifiers: { medelement_patient_code: code })
+
+    Compliance::DeletedSubjectTombstone.upsert_entries!(
+      account_id: account.id,
+      entries: { medelement_patient_code: code },
+      certificate_uid: "ALIAS-#{Time.current.utc.strftime('%Y%m%d%H%M%S')}",
+      reason: 'medelement_recreated_patient_alias'
+    )
+  rescue StandardError => e
+    Rails.logger.warn("[Medelement::ContactResolverService] tombstone alias propagation warning: #{e.class}")
+  end
+
   def upsert_contact(patient, preferred_contact: nil)
     patient_code = patient['PROFILE_CODE'].presence || patient['PATIENT_CODE'].presence
+    return nil if tombstoned_patient?(patient: patient, patient_code: patient_code)
+
     iin = normalize_iin(patient['IIN'])
     email = patient['PATIENT_EMAIL'].to_s.downcase.presence
     Contact.transaction do

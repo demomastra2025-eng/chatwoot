@@ -51,9 +51,9 @@ class Storage::RecordingInventory
 
   def sessions
     Telephony::CallSession.where(account_id: @account.id)
-                         .where("NULLIF(recording_ref, '') IS NOT NULL OR metadata->'trash' IS NOT NULL " \
-                                "OR metadata #> '{recording,retained_original}' IS NOT NULL")
-                         .select(:id, :account_id, :inbox_id, :conversation_id, :created_at, :external_call_ref, :recording_ref, :metadata)
+                          .where("NULLIF(recording_ref, '') IS NOT NULL OR metadata->'trash' IS NOT NULL " \
+                                 "OR metadata #> '{recording,retained_original}' IS NOT NULL")
+                          .select(:id, :account_id, :inbox_id, :conversation_id, :created_at, :external_call_ref, :recording_ref, :metadata)
   end
 
   def missing_primary_sizes?
@@ -101,7 +101,7 @@ class Storage::RecordingInventory
     entries = []
     if session.recording_ref.present?
       entries << { ref: session.recording_ref, byte_size: Storage::RecordingMetadata.declared_primary_size(session),
-                   role: 'primary', trash: false }
+                   role: 'primary', trash: false, remote: Storage::RecordingMetadata.remote_stored?(recording) }
     end
     retained = Storage::RecordingMetadata.hash(recording['retained_original'])
     return entries if retained.blank? || retained['purged_at'].present?
@@ -122,8 +122,10 @@ class Storage::RecordingInventory
     manifest = [{ 'trash_path' => trash['trash_path'], 'byte_size' => trash['bytes'] }] if manifest.empty?
     manifest.map do |entry|
       bytes = entry['byte_size'] || (trash['bytes'] if manifest.one?)
-      { ref: entry['trash_path'], identity_ref: entry['original_path'] || entry['storage_key'],
-        byte_size: Storage::RecordingMetadata.size(bytes), role: 'trash', trash: true }
+      ref = entry['trash_path'].presence || (entry['remote'] == true ? entry['storage_key'].presence : nil)
+      { ref: ref, identity_ref: entry['original_path'] || entry['storage_key'],
+        byte_size: Storage::RecordingMetadata.size(bytes), role: 'trash', trash: true,
+        remote: entry['remote'] == true }
     end
   end
 
@@ -134,14 +136,18 @@ class Storage::RecordingInventory
     key = Storage::RecordingMetadata.local_key(entry[:ref], account_id: @account.id)
     if @files
       file = key ? @by_path[key] : unique_basename(entry[:ref])
+      if file.nil? && entry[:remote] && key.present? && !entry[:byte_size].nil?
+        return entry.merge(key: key, byte_size: entry[:byte_size], identity: "remote:#{key}", measured: true)
+      end
       return entry.merge(key: key, byte_size: 0, identity: "missing:#{entry[:ref]}", measured: true) unless file
 
       return entry.merge(file.except(:trash), measured: true)
     end
     sample = Storage::RecordingMetadata.hash(samples[entry[:ref]])
     bytes = Storage::RecordingMetadata.measured_size(sample, reference: entry[:ref], account_id: @account.id,
-                                                           declared_size: entry[:byte_size])
+                                                             declared_size: entry[:byte_size])
     return entry.merge(key: sample['key'], byte_size: bytes, identity: sample['identity']) unless bytes.nil?
+
     if key && !entry[:byte_size].nil?
       old_key = Storage::RecordingMetadata.local_key(entry[:identity_ref], account_id: @account.id)
       return entry.merge(identity: @identities[key] || @identities[old_key] || "path:#{key}")

@@ -111,10 +111,14 @@ class Telephony::RecordingCompressionService
     File.unlink(compressed.temp_path)
 
     session = update_database_records!(compressed)
-    Storage::VoiceRecordingRemoteStorage.upload_file(
+    uploaded = Storage::VoiceRecordingRemoteStorage.upload_file(
       compressed.storage_key, compressed.target_path, content_type: Telephony::RecordingReferenceUpdater::CONTENT_TYPE
-    )
+    ) && Storage::VoiceRecordingRemoteStorage.exist?(compressed.storage_key)
     purge_source_wav!(source_path, compressed.target_path)
+    if uploaded
+      mark_session_remote_stored!(session, compressed.storage_key)
+      unlink_published_file_if_owned(compressed.target_path, published_identity)
+    end
     refresh_storage_breakdown(session)
   rescue Errno::EEXIST
     raise CompressionError, 'Compressed output already exists'
@@ -214,6 +218,20 @@ class Telephony::RecordingCompressionService
     raise CompressionError, 'Call session not found for recording reference' unless session
 
     Telephony::RecordingReferenceUpdater.new(session: session, old_key: storage_key, compressed: compressed).perform!
+  end
+
+  def mark_session_remote_stored!(session, target_key)
+    session.with_lock do
+      session.reload
+      return unless session.recording_ref == target_key
+
+      meta = session.metadata.is_a?(Hash) ? session.metadata.deep_dup : {}
+      recording = meta['recording'].is_a?(Hash) ? meta['recording'].deep_dup : {}
+      recording['storage_provider'] = 's3'
+      recording['remote_stored_at'] = Time.current.iso8601
+      meta['recording'] = recording
+      session.update!(metadata: meta)
+    end
   end
 
   def refresh_storage_breakdown(session)

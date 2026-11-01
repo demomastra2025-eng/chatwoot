@@ -55,10 +55,8 @@ class Telephony::AiVoice::ContextBuilder
     ensure_voice_agent_enabled!
     session = call_session || create_call_session!
     @call_session ||= session
-    return Llm::IinTokenVault.with_scope(
-      account_id: account&.id,
-      scope_id: Llm::IinTokenVault.voice_scope_id(session)
-    ) do
+    v_scope_id = Llm::IinTokenVault.voice_scope_id(session)
+    Llm::IinTokenVault.with_scope(account_id: account&.id, scope_id: v_scope_id) do
       build_voice_context_payload(session)
     end
   end

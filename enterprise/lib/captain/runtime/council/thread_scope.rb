@@ -18,7 +18,8 @@ class Captain::Runtime::Council::ThreadScope
       current: CURRENT_ATTRIBUTES.index_with { |name| copy(Current.public_send(name)) },
       locale: I18n.locale, time_zone: Time.zone, event_context: Llm::EventBus.snapshot_context,
       run_control: Captain::ReplySuggestion::RunControl.current,
-      iin_vault_scope: Llm::IinTokenVault.current_scope&.slice(:account_id, :scope_id)
+      iin_vault_scope: Llm::IinTokenVault.current_scope&.slice(:account_id, :scope_id),
+      pii_vault_snapshot: Llm::PiiSessionPseudonymizer.snapshot_scope
     )
   end
 
@@ -26,13 +27,14 @@ class Captain::Runtime::Council::ThreadScope
     value.respond_to?(:deep_dup) && !value.is_a?(ActiveRecord::Base) ? value.deep_dup : value
   end
 
-  def initialize(current:, locale:, time_zone:, event_context:, run_control: nil, iin_vault_scope: nil) # rubocop:disable Metrics/ParameterLists
+  def initialize(current:, locale:, time_zone:, event_context:, run_control: nil, iin_vault_scope: nil, pii_vault_snapshot: nil) # rubocop:disable Metrics/ParameterLists
     @current = current
     @locale = locale
     @time_zone = time_zone
     @event_context = event_context
     @run_control = run_control
     @iin_vault_scope = iin_vault_scope
+    @pii_vault_snapshot = pii_vault_snapshot
   end
 
   # Runs the block on the current thread, which must be a thread of its own: Current is reset when the block ends. The executor
@@ -53,9 +55,11 @@ class Captain::Runtime::Council::ThreadScope
   private
 
   def with_iin_vault(&)
-    return yield if @iin_vault_scope.blank?
+    Llm::PiiSessionPseudonymizer.adopt_scope(@pii_vault_snapshot) do
+      return yield if @iin_vault_scope.blank?
 
-    Llm::IinTokenVault.with_scope(**@iin_vault_scope, &)
+      Llm::IinTokenVault.with_scope(**@iin_vault_scope, &)
+    end
   end
 
   def restore(executed_by)

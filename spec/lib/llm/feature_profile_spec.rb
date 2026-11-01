@@ -72,7 +72,7 @@ RSpec.describe Llm::FeatureProfile do
   it 'derives the decision features from the profiles instead of a fixed list' do
     expect(described_class.decision_feature_keys).to contain_exactly(
       'outcome_classification', 'language_detection', 'custom_guardrail', 'agent_routing', 'fact_check_gate', 'inbound_triage',
-      'image_routing'
+      'image_routing', 'reply_claim_check'
     )
     expect(described_class.decision_feature?(:agent_routing)).to be(true)
     expect(described_class.decision_feature?('custom_guardrail')).to be(true)

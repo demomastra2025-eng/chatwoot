@@ -731,40 +731,44 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
     )
   end
 
-  it 'enables OpenRouter response caching only for read-only cache policies' do
-    compiled = compile(feature: :editor, request_options: { openrouter_response_cache_ttl: 120 })
+  it 'disables OpenRouter response caching under enforced workspace ZDR even if runtime requests zdr: false' do
+    default_zdr = compile(feature: :editor, request_options: { openrouter_response_cache_ttl: 120 })
+    runtime_override_attempt = compile(
+      feature: :editor,
+      runtime_preferences: { openrouter_zdr: false },
+      request_options: { openrouter_response_cache_ttl: 120 }
+    )
     captain = compile(
       feature: :captain_agent,
       runtime_preferences: { openrouter_cache_policy: 'read_only' },
       request_options: { openrouter_response_cache: true }
     )
-    sensitive = compile(
+
+    expect(default_zdr.headers).not_to include('X-OpenRouter-Cache')
+    expect(default_zdr.metadata).to include(openrouter_response_cache: 'disabled', openrouter_response_cache_reason: 'zdr_required')
+    expect(runtime_override_attempt.headers).not_to include('X-OpenRouter-Cache')
+    expect(runtime_override_attempt.metadata).to include(openrouter_response_cache: 'disabled', openrouter_response_cache_reason: 'zdr_required')
+    expect(captain.headers).not_to include('X-OpenRouter-Cache')
+    expect(captain.metadata).to include(openrouter_cache_policy: 'session', openrouter_response_cache_reason: 'policy_session')
+  end
+
+  it 'enables OpenRouter response caching only when workspace policy does not enforce ZDR and profile is read_only' do
+    sensitive = compile(feature: :editor, privacy_profile: 'sensitive', request_options: { openrouter_response_cache: true })
+    non_zdr_policy = Llm::OpenRouterWorkspacePolicy::Policy.new(
+      privacy_profile: 'standard',
+      provider_preferences: { data_collection: 'deny', zdr: false, allow_fallbacks: true }.freeze
+    )
+    allow(Llm::OpenRouterWorkspacePolicy).to receive(:resolve).and_return(non_zdr_policy)
+    non_zdr_compiled = compile(
       feature: :editor,
-      privacy_profile: 'sensitive',
-      request_options: { openrouter_response_cache: true }
+      runtime_preferences: { openrouter_zdr: false },
+      request_options: { openrouter_response_cache_ttl: 120 }
     )
 
-    expect(compiled.headers).to include(
-      'X-OpenRouter-Cache' => 'true',
-      'X-OpenRouter-Cache-TTL' => '120'
-    )
-    expect(compiled.metadata).to include(
-      openrouter_response_cache: 'enabled',
-      openrouter_response_cache_ttl: 120
-    )
-    expect(captain.headers).not_to include('X-OpenRouter-Cache')
-    expect(captain.metadata).to include(
-      openrouter_cache_policy: 'session',
-      openrouter_response_cache: 'disabled',
-      openrouter_response_cache_reason: 'policy_session'
-    )
     expect(sensitive.headers).not_to include('X-OpenRouter-Cache')
-    expect(sensitive.metadata).to include(
-      openrouter_cache_policy: 'read_only',
-      openrouter_privacy_profile: 'sensitive',
-      openrouter_response_cache: 'disabled',
-      openrouter_response_cache_reason: 'privacy_sensitive'
-    )
+    expect(sensitive.metadata).to include(openrouter_privacy_profile: 'sensitive', openrouter_response_cache_reason: 'privacy_sensitive')
+    expect(non_zdr_compiled.headers).to include('X-OpenRouter-Cache' => 'true', 'X-OpenRouter-Cache-TTL' => '120')
+    expect(non_zdr_compiled.metadata).to include(openrouter_response_cache: 'enabled', openrouter_response_cache_ttl: 120)
   end
 
   it 'compiles service tiers only from feature policy and strips raw caller tiers' do

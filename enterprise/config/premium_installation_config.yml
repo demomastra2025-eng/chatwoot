@@ -14,9 +14,9 @@
 - name: BRAND_NAME
   value: 'OneLink'
 - name: TERMS_URL
-  value: 'https://one-link.kz'
+  value: '/legal/ru/terms'
 - name: PRIVACY_URL
-  value: 'https://one-link.kz'
+  value: '/legal/ru/privacy'
 - name: DISPLAY_MANIFEST
   value: true
 # ------- End of Branding Related Config ------- #

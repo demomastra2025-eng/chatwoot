@@ -25,10 +25,8 @@ class Telephony::AiVoice::ToolExecutionService
     @owned_event = event
     raise_call_session_terminal! if call_session.terminal?
     mark_execution_started!(event)
-    result = Llm::IinTokenVault.with_scope(
-      account_id: call_session.account_id,
-      scope_id: Llm::IinTokenVault.voice_scope_id(call_session)
-    ) do
+    v_scope_id = Llm::IinTokenVault.voice_scope_id(call_session)
+    result = Llm::IinTokenVault.with_scope(account_id: call_session.account_id, scope_id: v_scope_id) do
       dispatch_with_current_capability!
     end
     if business_failure_result?(result)

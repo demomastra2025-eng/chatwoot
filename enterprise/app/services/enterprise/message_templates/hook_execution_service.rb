@@ -5,7 +5,11 @@ module Enterprise::MessageTemplates::HookExecutionService
     return super unless should_process_captain_response?
 
     auto_reply_allowed = inbox.captain_auto_reply_allowed?
-    return schedule_captain_response if auto_reply_allowed && inbox.captain_active?
+    if auto_reply_allowed && inbox.captain_active?
+      return unless Compliance::ExplicitAiConsentGate.evaluate_incoming!(conversation: conversation, message: message) == :allow
+
+      return schedule_captain_response
+    end
 
     # The channel is ready for the AI (switched on, an agent is enabled) but it is not active: the workspace quota is used up.
     open_conversation_for_human_response(quota_used_up: auto_reply_allowed && channel_ready_for_ai?)
