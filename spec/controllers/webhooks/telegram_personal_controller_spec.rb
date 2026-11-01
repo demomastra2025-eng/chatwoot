@@ -6,6 +6,54 @@ RSpec.describe 'Webhooks::TelegramPersonalController', type: :request do
   let(:channel) { create(:channel_telegram_personal) }
 
   describe 'POST /webhooks/telegram_personal/:webhook_identifier' do
+    context 'with provider edit metadata on message.updated' do
+      let(:token) { JWT.encode({ iss: 'telegram-personal-gateway' }, channel.webhook_secret, 'HS256') }
+      let(:data) { { message_id: '123', chat_id: '23', text: 'Potential real edit' } }
+
+      def send_update(attributes)
+        post "/webhooks/telegram_personal/#{channel.webhook_identifier}",
+             params: { event: 'message.updated', data: attributes }, headers: { 'Authorization' => "Bearer #{token}" }, as: :json
+      end
+
+      it 'returns 503 without enqueueing an unsupported legacy full callback' do
+        expect { send_update(data) }.not_to have_enqueued_job(Channels::TelegramPersonal::ProcessWebhookEventJob)
+
+        expect(response).to have_http_status(:service_unavailable)
+        expect(response.parsed_body['error']).to include('require provider edit metadata')
+        expect(response.body).not_to include('Potential real edit')
+      end
+
+      it 'preserves explicit null and false metadata in the queued callback' do
+        attributes = data.merge(message_edited_at: nil, message_edit_hidden: false)
+        expect { send_update(attributes) }.to have_enqueued_job(Channels::TelegramPersonal::ProcessWebhookEventJob)
+
+        expect(response).to have_http_status(:success)
+        expect(enqueued_jobs.last[:args].second.dig('telegram_personal', 'data')).to include(
+          'message_edited_at' => nil, 'message_edit_hidden' => false
+        )
+      end
+
+      it 'rejects malformed or partial edit metadata without returning a false success' do
+        invalid = [
+          data.merge(message_edited_at: 'not-a-timestamp', message_edit_hidden: false),
+          data.merge(message_edited_at: nil),
+          data.merge(message_edit_hidden: false),
+          data.merge(message_edited_at: nil, message_edit_hidden: 'false')
+        ]
+        invalid.each do |attributes|
+          expect { send_update(attributes) }.not_to have_enqueued_job(Channels::TelegramPersonal::ProcessWebhookEventJob)
+          expect(response).to have_http_status(:service_unavailable)
+        end
+      end
+
+      it 'keeps reaction-only callbacks compatible without text or caption' do
+        attributes = { message_id: '123', chat_id: '23', reactions: { total_count: 0, results: [] } }
+        expect { send_update(attributes) }.to have_enqueued_job(Channels::TelegramPersonal::ProcessWebhookEventJob)
+
+        expect(response).to have_http_status(:success)
+      end
+    end
+
     it 'enqueues signed webhook payloads for async processing' do
       token = JWT.encode({ iss: 'telegram-personal-gateway' }, channel.webhook_secret, 'HS256')
 
