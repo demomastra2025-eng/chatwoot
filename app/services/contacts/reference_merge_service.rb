@@ -3,6 +3,8 @@ class Contacts::ReferenceMergeService
 
   # [table, column] pairs: one table may reference contacts through several columns.
   REFERENCE_COLUMNS = [
+    %w[account_ai_usage_events contact_id],
+    %w[account_ai_dialog_states contact_id],
     %w[assignment_client_ownerships contact_id],
     %w[assignment_quota_usages contact_id],
     %w[calls contact_id],
@@ -27,29 +29,35 @@ class Contacts::ReferenceMergeService
   ].freeze
 
   HANDLED_BY_CONTACT_MERGE = %w[
-    communication_threads contact_channel_profiles contact_inboxes conversations crm_deal_contacts notes
+    account_ai_usage_events account_ai_dialog_states communication_threads contact_channel_profiles
+    contact_inboxes conversations crm_deal_contacts notes
   ].freeze
 
-  def initialize(account:, base_contact:, mergee_contact:, lock_patient_bindings: true)
+  def initialize(account:, base_contact:, mergee_contact:, lock_patient_bindings: true, merge_ai_usage: true)
     @account = account
     @base_contact = base_contact
     @mergee_contact = mergee_contact
-    @lock_patient_bindings = lock_patient_bindings
+    @merge_options = { lock_patient_bindings: lock_patient_bindings, ai_usage: merge_ai_usage }
   end
 
   def perform
-    ensure_safe_to_merge!
-    reassign_remaining_references!
+    ActiveRecord::Base.transaction do
+      prepare!
+      reassign_remaining_references!
+    end
   end
 
-  def ensure_safe_to_merge!
+  def prepare!
+    Contacts::PhoneIdentityLock.acquire!(account_id: account.id)
     ensure_patient_bindings_are_settled!
     ensure_provider_commands_do_not_collide!
     ensure_assignment_ownerships_do_not_collide!
     ensure_campaign_deliveries_do_not_collide!
+    @ai_usage_merge = Accounts::MergeAiUsageService.new(account: account, source: mergee_contact, target: base_contact).capture!
   end
 
   def reassign_remaining_references!
+    @ai_usage_merge.perform if @merge_options[:ai_usage]
     deduplicate_assignment_quota_usages!
     self.class.merge_reminder_references!(base_contact: base_contact, mergee_contact: mergee_contact)
     self.class.merge_automation_rule_references!(base_contact: base_contact, mergee_contact: mergee_contact)
@@ -104,9 +112,7 @@ class Contacts::ReferenceMergeService
     end
   end
 
-  def self.safe_to_delete?(contact)
-    no_direct_references?(contact) && no_contact_messages?(contact)
-  end
+  def self.safe_to_delete?(contact) = no_direct_references?(contact) && !Message.exists?(sender_type: 'Contact', sender_id: contact.id)
 
   def self.no_direct_references?(contact)
     REFERENCE_COLUMNS.none? do |table, column|
@@ -119,13 +125,7 @@ class Contacts::ReferenceMergeService
     end
   end
 
-  def self.no_contact_messages?(contact)
-    !Message.exists?(sender_type: 'Contact', sender_id: contact.id)
-  end
-
-  def self.connection
-    ActiveRecord::Base.connection
-  end
+  def self.connection = ActiveRecord::Base.connection
 
   private
 
@@ -136,7 +136,7 @@ class Contacts::ReferenceMergeService
   end
 
   def ensure_patient_bindings_are_settled!
-    Contacts::PatientIdentityMergeGuard.lock_patient_bindings!(base_contact, mergee_contact) if @lock_patient_bindings
+    Contacts::PatientIdentityMergeGuard.lock_patient_bindings!(base_contact, mergee_contact) if @merge_options[:lock_patient_bindings]
     return unless Contacts::PatientIdentityMergeGuard.patient_binding_write_in_flight?(base_contact, mergee_contact)
 
     raise UnsafeMergeError, 'A MedElement write for this patient card is in progress or awaits verification. Finish it before merging.'

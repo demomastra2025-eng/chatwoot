@@ -29,8 +29,8 @@ class Captain::ReplySuggestion::FeedbackService
   USED_OUTCOMES = %w[applied sent].freeze
 
   def perform
-    record = load_record!
     record_sent_provenance!
+    record = load_record!
     record_event(record)
     return unless record
 
@@ -46,17 +46,26 @@ class Captain::ReplySuggestion::FeedbackService
   # Feedback may arrive before or after the provider ack. Keep provenance on the persisted
   # message so both orderings use the same Message callback and source identity.
   def record_sent_provenance!
-    return unless outcome == 'sent' && copilot_action == 'reply_suggestion'
+    return unless sent_suggestion?
     return unless conversation&.account_id == account.id
+    return if suggestion_request_id.blank?
 
     message = sent_message
     return unless message
 
     message.with_lock do
-      attrs = message.additional_attributes.to_h.deep_dup
-      attrs['captain_ai_suggestion'] = { 'request_id' => suggestion_request_id }.compact
+      provenance = Captain::ReplySuggestion::SentIdentity.attributes(
+        request_id: suggestion_request_id, account: account, conversation: conversation, user: user
+      )
+      attrs = message.additional_attributes.to_h.merge(provenance)
       message.update!(additional_attributes: attrs)
     end
+  rescue Captain::ReplySuggestion::SentIdentity::OwnershipError
+    raise NotFoundError
+  end
+
+  def sent_suggestion?
+    outcome == 'sent' && copilot_action == 'reply_suggestion'
   end
 
   # A rejected suggestion leaves no approval card and no sticky agent of its own behind.

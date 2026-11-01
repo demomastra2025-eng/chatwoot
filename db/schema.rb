@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_11_02_013100) do
+ActiveRecord::Schema[7.2].define(version: 2026_11_02_013200) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1086,6 +1086,18 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_02_013100) do
     t.index ["account_id", "slug"], name: "index_captain_mcp_servers_on_account_id_and_slug", unique: true
     t.index ["account_id"], name: "index_captain_mcp_servers_on_account_id"
     t.index ["oauth_state_param"], name: "index_captain_mcp_servers_on_oauth_state_param", unique: true, where: "(oauth_state_param IS NOT NULL)"
+  end
+
+  create_table "captain_reply_suggestion_identities", force: :cascade do |t|
+    t.string "request_id", null: false
+    t.bigint "account_id", null: false
+    t.bigint "conversation_id", null: false
+    t.bigint "user_id", null: false
+    t.datetime "generated_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["conversation_id"], name: "idx_reply_suggestion_identity_conversation"
+    t.index ["request_id"], name: "idx_reply_suggestion_identity_request", unique: true
   end
 
   create_table "captain_scenarios", force: :cascade do |t|
@@ -4551,6 +4563,9 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_02_013100) do
   add_foreign_key "captain_knowledge_grants", "captain_assistants", column: "assistant_id", on_delete: :cascade
   add_foreign_key "captain_knowledge_nodes", "accounts"
   add_foreign_key "captain_mcp_servers", "accounts"
+  add_foreign_key "captain_reply_suggestion_identities", "accounts", on_delete: :cascade
+  add_foreign_key "captain_reply_suggestion_identities", "conversations", on_delete: :cascade
+  add_foreign_key "captain_reply_suggestion_identities", "users", on_delete: :cascade
   add_foreign_key "captain_skills", "accounts"
   add_foreign_key "communication_thread_conversations", "accounts"
   add_foreign_key "communication_thread_conversations", "communication_threads"

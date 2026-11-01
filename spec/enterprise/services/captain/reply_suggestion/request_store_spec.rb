@@ -2,9 +2,9 @@ require 'rails_helper'
 
 RSpec.describe Captain::ReplySuggestion::RequestStore do
   # Redis is not cleared between examples: every example has ids of its own.
-  let(:account_id) { SecureRandom.random_number(1_000_000_000) + 1 }
-  let(:user_id) { SecureRandom.random_number(1_000_000_000) + 1 }
-  let(:conversation_id) { SecureRandom.random_number(1_000_000_000) + 1 }
+  let(:account_id) { create(:account).id }
+  let(:user_id) { create(:user, account: Account.find(account_id)).id }
+  let(:conversation_id) { create(:conversation, account: Account.find(account_id)).id }
   let(:attributes) do
     { 'account_id' => account_id, 'user_id' => user_id, 'conversation_id' => conversation_id, 'conversation_display_id' => 1490, 'engine' => 'agent',
       'assistant_id' => 84, 'based_on_message_id' => 1_240_074 }

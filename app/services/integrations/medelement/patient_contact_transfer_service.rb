@@ -16,7 +16,8 @@ class Integrations::Medelement::PatientContactTransferService
     Contacts::ReferenceMergeService.new(
       account: account,
       base_contact: destination_contact,
-      mergee_contact: source_contact
+      mergee_contact: source_contact,
+      merge_ai_usage: false # Clinical references move; communication contacts and their billing histories stay distinct.
     ).perform
     transfer_notes!
     transfer_labels!

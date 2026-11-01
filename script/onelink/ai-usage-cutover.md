@@ -1,14 +1,14 @@
 # Переключение учёта отправленных AI-ответов
 
 Этот runbook относится к `Accounts::AiUsageOutbox`, миграциям
-`20261102013000` и `20261102013100`. Команды выполняет релизный агент на
+`20261102013000`, `20261102013100` и `20261102013200`. Команды выполняет релизный агент на
 разрешённом стенде. Для PROD нужно отдельное разрешение владельца на релиз.
 Нельзя включать старый и новый механизмы начисления одновременно.
 
 ## 1. Схема
 
 Схему и prepare запускать одноразовым maintenance-процессом нового образа,
-не переключая live AI writers на этом шаге. Применить обе миграции до запуска
+не переключая live AI writers на этом шаге. Применить все три миграции до запуска
 новой версии приложения. Первая содержит
 только короткий DDL (`lock_timeout = 5s`), без исторического INSERT. Вторая
 создаёт partial index `idx_messages_pending_ai_usage` через `CONCURRENTLY`,
@@ -21,7 +21,9 @@ transaction wrapper. Если concurrent build прервался, повтор�
 Проверить колонки `messages.ai_usage_version`, `ai_usage_sent_at`,
 `ai_usage_pending`, `ai_usage_retry_at`, таблицы `account_ai_usage_events`,
 `account_ai_dialog_states`, `account_ai_usage_rollouts` и валидность индекса.
-Состояние rollout изначально неактивно. Миграция не списывает исторический расход.
+Третья миграция создаёт пустую таблицу `captain_reply_suggestion_identities` и
+уникальный индекс `idx_reply_suggestion_identity_request`; только короткий DDL
+с `lock_timeout = 5s`, без backfill. Состояние rollout изначально неактивно. Миграция не списывает исторический расход.
 
 ## 2. Подготовка истории
 
@@ -71,7 +73,7 @@ AI_USAGE_LEGACY_WRITERS_DRAINED=1 bundle exec rake accounts:ai_usage:activate
 bundle exec rake accounts:ai_usage:preflight
 ```
 
-Activation откажет без завершённого prepare, валидного partial index,
+Activation откажет без завершённого prepare, валидных pending/identity индексов,
 зарегистрированного enabled cron с нужным классом/расписанием и явного
 подтверждения drain. Повтор activation не меняет уже активное состояние.
 Затем проверить уменьшение числа pending и однократный ledger event на
@@ -110,3 +112,38 @@ Pause отключает reconciler, сохраняя ack, provenance, source hi
 billable AI writers и сохранение нового reconciler для накопленного pending.
 Простая переписка продолжает работать; повторная отправка принятых сообщений
 не является способом восстановления учёта.
+
+## 6. Идентичность подсказки и слияние контактов
+
+Backend этого этапа требует companion `fix/logic-metering-transport`: ReplyBox
+передаёт `content_attributes.copilot.suggestion_request_id` в основном запросе
+создания сообщения. Только первый текстовый сегмент одного ответа несёт ID.
+Mapper уже передаёт content attributes; менять его не требуется. Схема → drain
+старых writers → одновременный допуск нового backend и transport → preflight →
+активация остаются отдельными воротами. Между drain и допуском нового кода
+закрыть старые вкладки ReplyBox/сбросить старые cached drafts: подсказки,
+сгенерированные до новой таблицы, нужно создать заново, без догадок по тексту.
+Не активировать backend отдельно от companion и не допускать старые клиенты,
+которые могут отправлять принятые подсказки без этого поля.
+
+Сгенерированный draft сначала получает SQL identity, затем публикуется в Redis.
+Хранятся только request/account/conversation/creator IDs и время, без текста.
+Один SQL-путь проверяет исходную принадлежность и текущий ConversationPolicy;
+основное сохранение Message не зависит от feedback или Redis. Изменённый текст
+не меняет идентичность. Придуманный ID/чужая беседа/другой автор отклоняются.
+Доступ к подсказкам в существующем UI персональный (latest key и cable stream
+автора); новый межсотруднический handoff этим релизом не вводится.
+
+Merge блокирует account PhoneIdentityLock до Contact/Message, сохраняет обе
+истории до переноса бесед и удаления duplicate, затем пересчитывает общий
+24ч/20 timeline. Manual merge, ReferenceMergeService и ChannelSync используют
+один MergeAiUsageService. Outbox берёт тот же gate до Message lock; события
+переносятся без изменения source keys. Разные accounts не объединяются. Клинический перенос ссылок
+`PatientContactTransferService` сохраняет conversations и их metering на каждой
+стороне отдельно (`merge_ai_usage: false`); общий телефон не объединяет окна.
+Если две новые оплаченные истории после merge оказались одним окном, monthly
+usage получает точную разницу по исходным месяцам; уже выставленные счета и
+платежи этот код не переписывает. Legacy credits обеих сторон сохраняются,
+включая одинаковые по времени seeds: одинаковые записи не дедуплицируются.
+Откат: pause, сохранить SQL identities/events/pending, исправить код вперёд;
+не удалять таблицу identities и не возвращать старые writers после активации.

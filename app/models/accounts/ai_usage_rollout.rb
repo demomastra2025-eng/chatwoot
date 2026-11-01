@@ -12,6 +12,14 @@ class Accounts::AiUsageRollout < ApplicationRecord
     where(name: NAME).where.not(activated_at: nil).exists?
   end
 
+  def self.indexes_ready?
+    connection.select_value(<<~SQL.squish)
+      SELECT COUNT(*) = 2 FROM pg_index
+      WHERE indisvalid AND indexrelid IN (
+        to_regclass('idx_messages_pending_ai_usage'), to_regclass('idx_reply_suggestion_identity_request'))
+    SQL
+  end
+
   def activate!(legacy_writers_drained: false)
     with_lock do
       return if activated_at

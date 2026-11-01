@@ -11,10 +11,7 @@ namespace :accounts do
     desc 'Verify the prepared schema and show the pending message count'
     task preflight: :environment do
       rollout = Accounts::AiUsageRollout.current
-      index = ActiveRecord::Base.connection.select_value(<<~SQL.squish)
-        SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('idx_messages_pending_ai_usage')
-      SQL
-      abort 'NO-GO: pending index is missing or invalid' unless index
+      abort 'NO-GO: pending or generated identity index is missing or invalid' unless Accounts::AiUsageRollout.indexes_ready?
       abort 'NO-GO: historical preparation incomplete' unless rollout.prepared_at && rollout.cursor >= rollout.cutoff_message_id
       job = Sidekiq::Cron::Job.find('drain_ai_usage_job')
       unless job&.enabled? && job.klass == 'Accounts::DrainAiUsageJob' && job.cron == '17 * * * * *'

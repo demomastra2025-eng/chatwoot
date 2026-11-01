@@ -93,17 +93,29 @@ class Accounts::MonthlyAiUsageService
     return false unless source_owned?(conversation)
     return false if message_id.blank?
 
-    contact = @account.contacts.find_by(id: conversation.contact_id)
-    return false unless contact
+    Contact.transaction do
+      Contacts::PhoneIdentityLock.acquire!(account_id: @account.id)
+      contact_id = Conversation.where(account_id: @account.id, id: conversation.id).pick(:contact_id)
+      contact = @account.contacts.find_by(id: contact_id)
+      next false unless contact
 
-    contact.with_lock do
-      window = Accounts::AiDialogWindow.new(contact, at: at)
-      window.import_legacy_events!
-      next :duplicate unless insert_event!("message:#{message_id}", AI_DIALOGS_MONTHLY_KEY, at, 1, contact.id)
+      contact.with_lock do
+        window = Accounts::AiDialogWindow.new(contact, at: at)
+        window.import_legacy_events!
+        next :duplicate unless insert_event!("message:#{message_id}", AI_DIALOGS_MONTHLY_KEY, at, 1, contact.id)
 
-      opened = window.record_reply!
-      window.period_deltas.each { |period, delta| increment_monthly_bucket!(AI_DIALOGS_MONTHLY_KEY, period, delta) }
-      opened ? :new_dialog : :existing_dialog
+        opened = apply_dialog_history!(window)
+        opened ? :new_dialog : :existing_dialog
+      end
+    end
+  end
+
+  def reconcile_ai_dialogs!(contact, at: Time.current)
+    raise ArgumentError, 'Contact belongs to another account' unless source_owned?(contact)
+
+    Contact.transaction do
+      Contacts::PhoneIdentityLock.acquire!(account_id: @account.id)
+      contact.with_lock { apply_dialog_history!(Accounts::AiDialogWindow.new(contact, at: at)) }
     end
   end
 
@@ -126,6 +138,12 @@ class Accounts::MonthlyAiUsageService
   end
 
   private
+
+  def apply_dialog_history!(window)
+    opened = window.record_reply!
+    window.period_deltas.each { |period, delta| increment_monthly_bucket!(AI_DIALOGS_MONTHLY_KEY, period, delta) }
+    opened
+  end
 
   def record_historical_message!(message)
     insert_event!("message:#{message.id}", AI_DIALOGS_MONTHLY_KEY, message.ai_usage_sent_at || message.created_at, 0)

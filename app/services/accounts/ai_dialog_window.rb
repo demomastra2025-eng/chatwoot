@@ -26,6 +26,11 @@ class Accounts::AiDialogWindow
     @state.state = { 'legacy_seeds' => seeds }
   end
 
+  def snapshot
+    import_legacy_events!
+    @state.state.deep_dup
+  end
+
   def record_reply!
     previous = @state.state.fetch('period_counts', {})
     windows = Accounts::AiDialogTimeline.new(timeline).windows

@@ -14,6 +14,10 @@ class Accounts::AiUsageOutbox
     return false unless Accounts::AiUsageRollout.active?
 
     Message.transaction(requires_new: true) do
+      account_id = Message.where(id: message_id).pick(:account_id)
+      next false unless account_id
+
+      Contacts::PhoneIdentityLock.acquire!(account_id: account_id)
       message = Message.lock('FOR UPDATE SKIP LOCKED').find_by(id: message_id)
       next false unless message&.ai_usage_pending?
 
