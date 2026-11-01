@@ -714,6 +714,8 @@ export default {
     scrollToBottom() {
       if (!this.conversationPanel) return false;
 
+      this.hasUserScrolled = false;
+      this.hasUserScrolledUp = false;
       this.isProgrammaticScroll = true;
 
       // Conversations always open at the newest message. Unread messages keep
@@ -873,8 +875,13 @@ export default {
         // Reset the flag
         this.isProgrammaticScroll = false;
         this.programmaticScrollTop = null;
-        this.hasUserScrolled = false;
-        this.hasUserScrolledUp = false;
+        // Restoring the anchor after prepending history is not a request to
+        // follow new messages. Only initial loading or an explicit bottom jump
+        // resets the user's history-reading state.
+        if (this.currentChat?.dataFetched !== true) {
+          this.hasUserScrolled = false;
+          this.hasUserScrolledUp = false;
+        }
         this.lastScrollTop = currentScrollTop;
         emitter.emit(BUS_EVENTS.ON_MESSAGE_LIST_SCROLL);
         return;
