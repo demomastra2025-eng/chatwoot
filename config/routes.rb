@@ -858,6 +858,7 @@ Rails.application.routes.draw do
       end
 
       namespace :widget do
+        resource :availability, only: [:show], controller: 'availability'
         resource :direct_uploads, only: [:create]
         resource :config, only: [:create]
         resources :campaigns, only: [:index]

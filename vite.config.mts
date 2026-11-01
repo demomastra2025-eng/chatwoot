@@ -164,7 +164,14 @@ export default defineConfig({
     },
     server: {
       deps: {
-        inline: ['tinykeys', '@material/mwc-icon'],
+        // VueUse shares Vue's active effect scope. Keep the same Vue instance
+        // in jsdom so disposal of shared clocks/listeners matches the browser.
+        inline: [
+          'tinykeys',
+          '@material/mwc-icon',
+          '@vueuse/core',
+          '@vueuse/shared',
+        ],
       },
     },
     setupFiles: ['fake-indexeddb/auto', 'vitest.setup.js'],

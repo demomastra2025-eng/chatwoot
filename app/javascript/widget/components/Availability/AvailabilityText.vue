@@ -2,15 +2,11 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getTime } from 'dashboard/routes/dashboard/settings/inbox/helpers/businessHour.js';
-import { findNextAvailableSlotDetails } from 'widget/helpers/availabilityHelpers';
+import { nextOpening } from 'widget/helpers/workspaceAvailability';
 
 const props = defineProps({
   time: {
     type: Date,
-    required: true,
-  },
-  utcOffset: {
-    type: String,
     required: true,
   },
   workingHours: {
@@ -51,11 +47,7 @@ const dayNames = computed(() => [
   t('DAY_NAMES.SATURDAY'),
 ]);
 
-// Check if all days in working hours are closed
-const allDayClosed = computed(() => {
-  if (!props.workingHours.length) return false;
-  return props.workingHours.every(slot => slot.closedAllDay);
-});
+const allDayClosed = computed(() => props.workingHours.length === 0);
 
 const replyTimeMessage = computed(() => {
   const replyTimeKey = `REPLY_TIME.${props.replyTime.toUpperCase()}`;
@@ -71,11 +63,7 @@ const nextSlot = computed(() => {
     return null;
   }
 
-  const slot = findNextAvailableSlotDetails(
-    props.time,
-    props.utcOffset,
-    props.workingHours
-  );
+  const slot = nextOpening(props.time, props.workingHours);
   if (!slot) return null;
 
   return {
@@ -112,7 +100,7 @@ const formattedOpeningTime = computed(() => {
 <template>
   <span>
     <!-- 1. If currently in working hours, show reply time -->
-    <template v-if="isInWorkingHours">
+    <template v-if="workingHoursEnabled && isInWorkingHours">
       {{ replyTimeMessage }}
     </template>
 

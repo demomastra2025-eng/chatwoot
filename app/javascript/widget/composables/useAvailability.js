@@ -1,72 +1,70 @@
-import { computed, unref } from 'vue';
+import { computed, ref, unref } from 'vue';
 import {
-  isOnline as checkIsOnline,
-  isInWorkingHours as checkInWorkingHours,
-} from 'widget/helpers/availabilityHelpers';
-import { useCamelCase } from 'dashboard/composables/useTransformKeys';
+  createSharedComposable,
+  useEventListener,
+  useIntervalFn,
+  useNow,
+} from '@vueuse/core';
+import { API } from 'widget/helpers/axios';
+import { isWithinAvailability } from 'widget/helpers/workspaceAvailability';
 
-const DEFAULT_TIMEZONE = 'UTC';
-const DEFAULT_REPLY_TIME = 'in_a_few_minutes';
+// One clock and refresh loop for the header and availability text together.
+const useWorkspaceAvailability = createSharedComposable(() => {
+  const snapshot = ref(window.chatwootWebChannel?.workspaceAvailability);
+  const currentTime = useNow({ interval: 1000 });
+  let fetching = false;
 
-/**
- * Composable for availability-related logic
- * @param {Ref|Array} agents - Available agents (can be ref or raw array)
- * @returns {Object} Availability utilities and computed properties
- */
+  const refresh = async () => {
+    const websiteToken = window.chatwootWebChannel?.websiteToken;
+    if (fetching || !websiteToken) return;
+    fetching = true;
+    try {
+      const { data } = await API.get('/api/v1/widget/availability', {
+        params: { website_token: websiteToken },
+      });
+      snapshot.value = data;
+    } catch {
+      // Keep the last server projection during a temporary network failure.
+      // Expired intervals naturally stop reporting availability.
+    } finally {
+      fetching = false;
+    }
+  };
+
+  useIntervalFn(refresh, 60000);
+  useEventListener(window, 'focus', refresh);
+  if (!snapshot.value) refresh();
+  return { snapshot, currentTime };
+});
+
 export function useAvailability(agents = []) {
-  // Now receives toRef(props, 'agents') from caller, which maintains reactivity.
-  // Use unref() inside computed to unwrap the ref value properly.
-  // This ensures availableAgents updates when the parent's agents prop changes
-  // (e.g., after API response updates the Vuex store).
+  const { snapshot, currentTime } = useWorkspaceAvailability();
   const availableAgents = computed(() => unref(agents));
-
   const channelConfig = computed(() => window.chatwootWebChannel || {});
-
   const inboxConfig = computed(() => ({
-    workingHours: channelConfig.value.workingHours?.map(useCamelCase) || [],
-    workingHoursEnabled: channelConfig.value.workingHoursEnabled || false,
-    timezone: channelConfig.value.timezone || DEFAULT_TIMEZONE,
-    utcOffset:
-      channelConfig.value.utcOffset ||
-      channelConfig.value.timezone ||
-      DEFAULT_TIMEZONE,
-    replyTime: channelConfig.value.replyTime || DEFAULT_REPLY_TIME,
+    workingHours: snapshot.value?.intervals || [],
+    workingHoursEnabled: snapshot.value?.configured || false,
+    timezone: snapshot.value?.timezone || 'UTC',
+    utcOffset: snapshot.value?.timezone || 'UTC',
+    replyTime: channelConfig.value.replyTime || 'in_a_few_minutes',
   }));
-
-  const currentTime = computed(() => new Date());
-
   const hasOnlineAgents = computed(() => {
     const agentList = availableAgents.value || [];
-    return Array.isArray(agentList) ? agentList.length > 0 : false;
+    return Array.isArray(agentList) && agentList.length > 0;
   });
-
   const isInWorkingHours = computed(() =>
-    checkInWorkingHours(
-      currentTime.value,
-      inboxConfig.value.utcOffset,
-      inboxConfig.value.workingHours
-    )
+    isWithinAvailability(currentTime.value, inboxConfig.value.workingHours)
   );
-
-  // Check if online (considering both working hours and agents)
-  const isOnline = computed(() =>
-    checkIsOnline(
-      inboxConfig.value.workingHoursEnabled,
-      currentTime.value,
-      inboxConfig.value.utcOffset,
-      inboxConfig.value.workingHours,
-      hasOnlineAgents.value
-    )
+  const isOnline = computed(
+    () => isInWorkingHours.value && hasOnlineAgents.value
   );
 
   return {
     channelConfig,
     inboxConfig,
-
     currentTime,
     availableAgents,
     hasOnlineAgents,
-
     isOnline,
     isInWorkingHours,
   };
