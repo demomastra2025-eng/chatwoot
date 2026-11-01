@@ -3,4 +3,5 @@ module TelegramPersonal::CallErrors
   class NotRinging < Error; end
   class AlreadyAccepted < Error; end
   class NotCallOwner < Error; end
+  class NotInProgress < Error; end
 end

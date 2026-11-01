@@ -5,6 +5,8 @@ class Api::V1::Accounts::TelegramPersonalCallsController < Api::V1::Accounts::Ba
 
   def show
     render json: TelegramPersonal::CallSerializer.show(@call, current_user)
+  rescue TelegramPersonal::JanusMediaConfig::InvalidConfig => e
+    render_janus_config_error(e)
   end
 
   def active
@@ -21,11 +23,13 @@ class Api::V1::Accounts::TelegramPersonalCallsController < Api::V1::Accounts::Ba
     return render json: { error: error }, status: :unprocessable_entity if error
 
     call = with_operator_call_lock { outbound_service.prepare!(conversation) }
-    render json: TelegramPersonal::CallSerializer.outbound_initiate(call)
+    render json: TelegramPersonal::CallSerializer.outbound_initiate(call, current_user)
   rescue Telephony::Error => e
     render_operator_busy(e)
   rescue ActiveRecord::RecordNotFound
     render json: { error: 'Conversation not found' }, status: :not_found
+  rescue TelegramPersonal::JanusMediaConfig::InvalidConfig => e
+    render_janus_config_error(e)
   rescue StandardError => e
     Rails.logger.error "[TELEGRAM CALL] prepare_outbound failed: #{e.message}"
     render json: { error: e.message }, status: :unprocessable_entity
@@ -38,6 +42,8 @@ class Api::V1::Accounts::TelegramPersonalCallsController < Api::V1::Accounts::Ba
 
     provider_call_id = outbound_service.dial!(@call)
     render json: TelegramPersonal::CallSerializer.dial(@call, provider_call_id)
+  rescue TelegramPersonal::JanusMediaConfig::InvalidConfig => e
+    render_janus_config_error(e)
   rescue StandardError => e
     Rails.logger.error "[TELEGRAM CALL] dial failed: #{e.message}"
     render json: { error: e.message }, status: :unprocessable_entity
@@ -47,12 +53,14 @@ class Api::V1::Accounts::TelegramPersonalCallsController < Api::V1::Accounts::Ba
     with_operator_call_lock(excluding_whatsapp_call: @call) do
       service = TelegramPersonal::CallService.new(call: @call, agent: current_user)
       call = service.accept
-      render json: TelegramPersonal::CallSerializer.media_server_accept(call, service.agent_offer)
+      render json: TelegramPersonal::CallSerializer.media_server_accept(call, service.agent_offer, current_user)
     end
   rescue Telephony::Error => e
     render_operator_busy(e)
   rescue TelegramPersonal::CallErrors::NotRinging, TelegramPersonal::CallErrors::AlreadyAccepted => e
     render json: { error: e.message }, status: :unprocessable_entity
+  rescue TelegramPersonal::JanusMediaConfig::InvalidConfig => e
+    render_janus_config_error(e)
   rescue TelegramPersonal::GatewayClient::GatewayError => e
     return render_media_leg_closed if e.media_leg_closed?
 
@@ -64,19 +72,9 @@ class Api::V1::Accounts::TelegramPersonalCallsController < Api::V1::Accounts::Ba
   end
 
   def agent_answer
-    return render json: { error: 'sdp_answer is required' }, status: :unprocessable_entity if params[:sdp_answer].blank?
-    return render json: { error: 'No media session' }, status: :unprocessable_entity if @call.media_session_id.blank?
     return render_call_taken_by_another_agent unless call_owned_by_current_user?
 
-    gateway_client(@call).set_call_agent_answer!(
-      call_ref: gateway_call_ref(@call), sdp_answer: params[:sdp_answer], peer_id: params[:peer_id]
-    )
-    render json: { success: true }
-  rescue TelegramPersonal::GatewayClient::GatewayError => e
-    return render_media_leg_closed if e.media_leg_closed?
-
-    Rails.logger.error "[TELEGRAM CALL] agent_answer failed: #{e.message}"
-    render json: { error: 'Failed to set agent answer' }, status: :internal_server_error
+    render_janus_config_error(TelegramPersonal::JanusMediaConfig::InvalidConfig.new('Telegram calls require Janus media'))
   end
 
   def reconnect
@@ -84,9 +82,14 @@ class Api::V1::Accounts::TelegramPersonalCallsController < Api::V1::Accounts::Ba
     return render json: { error: error }, status: :unprocessable_entity if error
     return render_call_taken_by_another_agent unless call_owned_by_current_user?
 
-    response = gateway_client(@call).reconnect_call!(call_ref: gateway_call_ref(@call))
-    offer = TelegramPersonal::CallSerializer.normalize_offer(response[:agent_offer] || response) || {}
-    render json: offer.slice('peer_id', 'sdp_offer', 'ice_servers')
+    TelegramPersonal::ReconnectCallService.new(call: @call, agent: current_user).perform
+    render json: TelegramPersonal::JanusMediaConfig.browser_payload(call: @call, user: current_user)
+  rescue TelegramPersonal::CallErrors::NotCallOwner
+    render_call_taken_by_another_agent
+  rescue TelegramPersonal::CallErrors::NotInProgress
+    render json: { error: 'Call is not in progress' }, status: :unprocessable_entity
+  rescue TelegramPersonal::JanusMediaConfig::InvalidConfig => e
+    render_janus_config_error(e)
   rescue TelegramPersonal::GatewayClient::GatewayError => e
     return render_media_leg_closed if e.media_leg_closed?
 
@@ -160,14 +163,6 @@ class Api::V1::Accounts::TelegramPersonalCallsController < Api::V1::Accounts::Ba
     GROUP_CHAT_TYPES.include?(chat_type) || conversation.contact_inbox&.source_id.to_s.start_with?('-')
   end
 
-  def gateway_client(call)
-    TelegramPersonal::GatewayClient.new(channel: call.inbox.channel)
-  end
-
-  def gateway_call_ref(call)
-    call.media_session_id.presence || call.provider_call_id
-  end
-
   def call_owned_by_current_user?
     @call.accepted_by_agent_id.present? && @call.accepted_by_agent_id == current_user.id
   end
@@ -182,6 +177,10 @@ class Api::V1::Accounts::TelegramPersonalCallsController < Api::V1::Accounts::Ba
 
   def render_operator_busy(error)
     render json: { error: error.message, code: error.code, details: error.details }, status: error.status
+  end
+
+  def render_janus_config_error(error)
+    render json: { error: error.message, code: 'janus_media_required' }, status: :unprocessable_entity
   end
 
   def render_media_leg_closed

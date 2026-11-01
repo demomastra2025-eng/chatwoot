@@ -5,9 +5,6 @@ class TelegramPersonal::CallBroadcaster
       contact = call.contact || conversation&.contact
       thread_id = communication_thread_display_id(conversation)
       data = incoming_payload(call, conversation, contact, thread_id)
-      offer = call.meta&.dig('agent_offer')
-      data[:agent_offer] = offer if offer.is_a?(Hash) && offer['sdp_offer'].present?
-
       broadcast(call.account_id, 'telegram_personal_call.incoming', data)
     end
 
@@ -40,9 +37,7 @@ class TelegramPersonal::CallBroadcaster
           conversation_id: call.conversation_id,
           conversation_display_id: call.conversation&.display_id,
           accepted_by_agent_id: agent.id,
-          sdp_offer: offer['sdp_offer'],
-          peer_id: offer['peer_id'],
-          ice_servers: offer['ice_servers']
+          media_ready: true
         }
       )
     end
@@ -97,10 +92,7 @@ class TelegramPersonal::CallBroadcaster
     end
 
     def normalize_agent_offer(offer)
-      return if offer.blank?
-
-      normalized = offer.to_h.stringify_keys.slice('peer_id', 'sdp_offer', 'ice_servers')
-      normalized['sdp_offer'].present? ? normalized : nil
+      TelegramPersonal::JanusMediaConfig.normalize(offer)
     end
 
     def merged_agent_offer_meta(raw_meta, agent_id, offer)

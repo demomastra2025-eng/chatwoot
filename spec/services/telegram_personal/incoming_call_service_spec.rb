@@ -83,9 +83,11 @@ RSpec.describe TelegramPersonal::IncomingCallService do
         username: 'arman_k',
         phone_number: '+77015550101',
         agent_offer: {
-          peer_id: 'peer-b-1',
-          sdp_offer: 'v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\n',
-          ice_servers: [{ 'urls' => ['stun:stun.l.google.com:19302'] }]
+          transport: 'janus_audiobridge',
+          room_id: 45_001,
+          pin: 'room-pin',
+          token: 'browser-token',
+          peer_id: 'peer-b-1'
         }
       }
     end
@@ -128,6 +130,10 @@ RSpec.describe TelegramPersonal::IncomingCallService do
             media_server_enabled: true
           )
         )
+      )
+      expect(ActionCable.server).not_to have_received(:broadcast).with(
+        anything,
+        hash_including(event: 'telegram_personal_call.incoming', data: hash_including(agent_offer: anything))
       )
     end
 
