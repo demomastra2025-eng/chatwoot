@@ -174,6 +174,60 @@ RSpec.describe 'CommunicationThreads calls_only filter API', type: :request do
       expect(meta[:mine_count]).to eq(1)
       expect(meta[:unassigned_count]).to eq(1)
     end
+
+    it 'keeps an open thread whose open conversation is text-only when another linked conversation is a resolved call' do
+      split_contact = create(:contact, account: account, name: 'Пациент Открытый WA + Завершённый Звонок')
+      split_thread = create(:communication_thread, account: account, contact: split_contact, status: 'open', assignee: agent)
+      open_wa_text = create(:conversation, account: account, inbox: whatsapp_text_inbox, contact: split_contact,
+                                           status: :open, assignee: agent)
+      create(:message, account: account, inbox: whatsapp_text_inbox, conversation: open_wa_text,
+                       message_type: :incoming, content: 'Пишу в открытый WhatsApp после звонка')
+      resolved_voice_call = create(:conversation, account: account, inbox: voice_inbox, contact: split_contact,
+                                                  status: :resolved, assignee: agent)
+      voice_binding = Telephony::NumberBinding.find_by!(inbox: voice_inbox)
+      create(:telephony_call_session, account: account, conversation: resolved_voice_call,
+                                      number_binding: voice_binding, provider: 'sipuni')
+
+      attach_to_thread!(split_thread, open_wa_text, primary: true)
+      attach_to_thread!(split_thread, resolved_voice_call)
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/filter?calls_only=true&include_meta=true",
+           headers: headers,
+           params: {
+             payload: [
+               {
+                 attribute_key: 'status',
+                 filter_operator: 'equal_to',
+                 values: ['open'],
+                 query_operator: 'and'
+               },
+               {
+                 attribute_key: 'inbox_id',
+                 filter_operator: 'equal_to',
+                 values: [whatsapp_text_inbox.id],
+                 query_operator: nil
+               }
+             ]
+           },
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      body = response.parsed_body.deep_symbolize_keys
+      payload = body.dig(:data, :payload) || body[:payload]
+      meta = body.dig(:data, :meta) || body[:meta]
+
+      expect(payload.pluck(:id)).to contain_exactly(
+        mixed_mine_thread.display_id,
+        split_thread.display_id
+      )
+      expect(payload.pluck(:has_calls)).to all(be(true))
+      expect(meta).to include(
+        mine_count: 2,
+        assigned_count: 2,
+        unassigned_count: 0,
+        all_count: 2
+      )
+    end
   end
 
   describe 'BulkActions::SelectionSnapshot integration' do

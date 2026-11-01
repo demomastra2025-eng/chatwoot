@@ -2,8 +2,7 @@ class TelegramPersonal::CreateActivityMessageService
   pattr_initialize [:inbox!, :params!]
 
   def perform
-    return if chat_id.blank? || message_id.blank? || activity_content.blank?
-    return if inbox.messages.exists?(source_id: message_id)
+    return if skip_creation?
     return unless lock_message_source_id!
 
     set_contact
@@ -16,6 +15,10 @@ class TelegramPersonal::CreateActivityMessageService
   end
 
   private
+
+  def skip_creation?
+    chat_id.blank? || message_id.blank? || activity_content.blank? || inbox.messages.exists?(source_id: message_id)
+  end
 
   def set_contact
     @contact_inbox = TelegramPersonal::ContactSyncService.new(
@@ -35,6 +38,7 @@ class TelegramPersonal::CreateActivityMessageService
   end
 
   def create_activity_message
+    sync_call_conversation_attributes!
     @conversation.messages.create!(
       account_id: inbox.account_id,
       inbox_id: inbox.id,
@@ -85,6 +89,18 @@ class TelegramPersonal::CreateActivityMessageService
       peer_user_id: peer_user_id,
       username: params[:username]
     }.compact
+  end
+
+  def sync_call_conversation_attributes!
+    return unless activity_type.to_s.end_with?('_voice_call', '_video_call')
+
+    attrs = (@conversation.additional_attributes || {}).merge('call_provider' => 'telegram_personal')
+    attrs['call_status'] = activity_call_status unless %w[ringing in-progress].include?(attrs['call_status'].to_s)
+    @conversation.update!(additional_attributes: attrs) if attrs != @conversation.additional_attributes
+  end
+
+  def activity_call_status
+    activity_type.to_s.sub(/_(?:voice|video)_call\z/, '')
   end
 
   def lock_message_source_id!

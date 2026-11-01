@@ -140,7 +140,7 @@ class Conversations::FilterService < FilterService
   end
 
   def apply_calls_only_filter(scope)
-    Conversations::CallsOnlyScope.apply(scope)
+    Conversations::CallsOnlyScope.apply(scope, account_id: @account&.id)
   end
 
   def apply_unread_filter(scope)

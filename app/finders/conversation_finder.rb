@@ -383,7 +383,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
   def apply_calls_only_filter(scope)
     return scope unless calls_only?
 
-    Conversations::CallsOnlyScope.apply(scope)
+    Conversations::CallsOnlyScope.apply(scope, account_id: current_account&.id)
   end
 
   def apply_source_id_filter(scope)

@@ -128,6 +128,12 @@ export const filterByUnread = (shouldFilter, unread, unreadCount = 0) => {
 export const conversationHasCalls = conversation => {
   if (!conversation) return false;
   if (conversation.has_calls === true) return true;
+  if (
+    conversation.is_communication_thread &&
+    typeof conversation.has_calls === 'boolean'
+  ) {
+    return conversation.has_calls;
+  }
 
   const inboxChannel =
     conversation?.meta?.channel || conversation?.channel || '';

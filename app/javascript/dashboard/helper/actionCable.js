@@ -50,6 +50,8 @@ const SIDEBAR_UNREAD_COUNTS_CONTEXT_KEYS = [
   'crmStageId',
   'appointmentStatus',
   'unread',
+  'waitingForCallback',
+  'callsOnly',
   'queryData',
 ];
 const CRM_PIPELINES_REFRESH_DELAY = 500;

@@ -72,6 +72,19 @@ RSpec.describe Conversations::CallsOnlyScope do
     )
   end
 
+  let!(:empty_string_call_attrs_conversation) do
+    create(
+      :conversation,
+      account: account,
+      inbox: text_inbox,
+      additional_attributes: {
+        'call_status' => '',
+        'call_provider' => '',
+        'call_direction' => ''
+      }
+    )
+  end
+
   describe '.apply' do
     it 'returns conversations across all call channels and excludes text-only conversations' do
       matched_ids = described_class.apply(account.conversations).pluck(:id)
@@ -83,7 +96,46 @@ RSpec.describe Conversations::CallsOnlyScope do
         voice_inbox_conversation.id,
         whatsapp_web_call_conversation.id
       )
-      expect(matched_ids).not_to include(text_only_conversation.id)
+      expect(matched_ids).not_to include(
+        text_only_conversation.id,
+        empty_string_call_attrs_conversation.id
+      )
+    end
+
+    it 'treats empty-string call_* JSONB attributes as non-call across account-scoped SQL, fallback SQL, and Ruby helpers' do
+      candidate_ids = [
+        whatsapp_web_call_conversation.id,
+        empty_string_call_attrs_conversation.id
+      ]
+
+      scoped_ids = described_class.apply(
+        account.conversations.where(id: candidate_ids),
+        account_id: account.id
+      ).pluck(:id)
+      unscoped_relation = Conversation.where(id: candidate_ids)
+      expect(unscoped_relation.where_values_hash).not_to have_key('account_id')
+      fallback_ids = described_class.apply(unscoped_relation).pluck(:id)
+      preloaded_ids = described_class.conversation_ids_with_calls(
+        account_id: account.id,
+        conversations: [whatsapp_web_call_conversation, empty_string_call_attrs_conversation]
+      )
+
+      expect(scoped_ids).to eq([whatsapp_web_call_conversation.id])
+      expect(fallback_ids).to eq([whatsapp_web_call_conversation.id])
+      expect(preloaded_ids).to contain_exactly(whatsapp_web_call_conversation.id)
+      expect(described_class.conversation_has_calls?(empty_string_call_attrs_conversation)).to be(false)
+    end
+
+    it 'isolates single-tenant call subqueries by account_id without leaking other accounts' do
+      other_account = create(:account)
+      other_call = create(:call, account: other_account)
+
+      matched_ids = described_class.apply(
+        account.conversations,
+        account_id: account.id
+      ).pluck(:id)
+
+      expect(matched_ids).not_to include(other_call.conversation_id)
     end
 
     it 'does not duplicate a conversation that has multiple call records' do

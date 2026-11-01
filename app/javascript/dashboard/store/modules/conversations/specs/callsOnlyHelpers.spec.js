@@ -64,6 +64,37 @@ describe('Calls-only conversation store helpers', () => {
         })
       ).toBe(false);
     });
+
+    it('promotes a conversation initially loaded with has_calls=false when a live call message or call_status arrives', () => {
+      expect(
+        conversationHasCalls({
+          id: 8,
+          has_calls: false,
+          meta: { channel: 'Channel::Whatsapp' },
+          messages: [{ id: 99, content_type: 'voice_call' }],
+        })
+      ).toBe(true);
+
+      expect(
+        conversationHasCalls({
+          id: 9,
+          has_calls: false,
+          meta: { channel: 'Channel::Whatsapp' },
+          additional_attributes: { call_status: 'ringing' },
+        })
+      ).toBe(true);
+    });
+
+    it('respects authoritative has_calls=false on communication threads', () => {
+      expect(
+        conversationHasCalls({
+          id: 10,
+          is_communication_thread: true,
+          has_calls: false,
+          channels: [{ channel: 'Channel::Whatsapp' }],
+        })
+      ).toBe(false);
+    });
   });
 
   describe('#filterByCallsOnly and #applyPageFilters', () => {

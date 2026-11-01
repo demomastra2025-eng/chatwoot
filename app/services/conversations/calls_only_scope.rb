@@ -1,6 +1,40 @@
+# frozen_string_literal: true
+
 class Conversations::CallsOnlyScope
   CALL_ATTRIBUTE_KEYS = %w[call_status call_provider call_direction].freeze
-  VOICE_CHANNEL_TYPE = 'Channel::Voice'.freeze
+  VOICE_CHANNEL_TYPE = 'Channel::Voice'
+
+  JSONB_CALL_ATTRIBUTES_SQL = <<~SQL.squish.freeze
+    COALESCE(
+      NULLIF(conversations.additional_attributes ->> 'call_status', ''),
+      NULLIF(conversations.additional_attributes ->> 'call_provider', ''),
+      NULLIF(conversations.additional_attributes ->> 'call_direction', '')
+    ) IS NOT NULL
+  SQL
+
+  ACCOUNT_SCOPED_PREDICATE_SQL = <<~SQL.squish.freeze
+    (
+      conversations.id IN (
+        SELECT tcs.conversation_id
+        FROM telephony_call_sessions tcs
+        WHERE tcs.account_id IN (:account_id)
+          AND tcs.conversation_id IS NOT NULL
+      )
+      OR conversations.id IN (
+        SELECT c.conversation_id
+        FROM calls c
+        WHERE c.account_id IN (:account_id)
+          AND c.conversation_id IS NOT NULL
+      )
+      OR conversations.inbox_id IN (
+        SELECT i.id
+        FROM inboxes i
+        WHERE i.account_id IN (:account_id)
+          AND i.channel_type = 'Channel::Voice'
+      )
+      OR #{JSONB_CALL_ATTRIBUTES_SQL}
+    )
+  SQL
 
   PREDICATE_SQL = <<~SQL.squish.freeze
     (
@@ -22,17 +56,19 @@ class Conversations::CallsOnlyScope
         WHERE i.id = conversations.inbox_id
           AND i.channel_type = 'Channel::Voice'
       )
-      OR COALESCE(
-        conversations.additional_attributes ->> 'call_status',
-        conversations.additional_attributes ->> 'call_provider',
-        conversations.additional_attributes ->> 'call_direction'
-      ) IS NOT NULL
+      OR #{JSONB_CALL_ATTRIBUTES_SQL}
     )
   SQL
 
   class << self
-    def apply(scope)
-      scope.where(Arel.sql(PREDICATE_SQL))
+    def apply(scope, account_id: nil)
+      account_ids = resolve_account_ids(scope, account_id)
+      return scope.where(Arel.sql(PREDICATE_SQL)) if account_ids.empty?
+
+      predicate = ActiveRecord::Base.sanitize_sql_array(
+        [ACCOUNT_SCOPED_PREDICATE_SQL, { account_id: account_ids }]
+      )
+      scope.where(Arel.sql(predicate))
     end
 
     def conversation_has_calls?(conversation)
@@ -56,7 +92,7 @@ class Conversations::CallsOnlyScope
       remaining = records.reject { |conversation| matched_ids.include?(conversation.id) }
       return matched_ids if remaining.empty?
 
-      matched_ids.merge(voice_inbox_conversation_ids(remaining))
+      matched_ids.merge(voice_inbox_conversation_ids(account_id, remaining))
       remaining_ids = remaining.map(&:id) - matched_ids.to_a
       return matched_ids if remaining_ids.empty?
 
@@ -64,6 +100,22 @@ class Conversations::CallsOnlyScope
     end
 
     private
+
+    def resolve_account_ids(scope, account_id)
+      raw = account_id.presence || scope_account_id(scope)
+      return [] if raw.blank? || raw.is_a?(ActiveRecord::Relation)
+
+      Array.wrap(raw).flatten.filter_map { |value| parse_account_id(value) }.uniq
+    end
+
+    def scope_account_id(scope)
+      scope.where_values_hash['account_id'] if scope.respond_to?(:where_values_hash)
+    end
+
+    def parse_account_id(value)
+      parsed = Integer(value, exception: false)
+      parsed if parsed&.positive?
+    end
 
     def in_memory_call_conversation_ids(records)
       records.each_with_object(Set.new) do |conversation, ids|
@@ -73,21 +125,25 @@ class Conversations::CallsOnlyScope
 
     def additional_attributes_indicate_call?(conversation)
       attrs = conversation.additional_attributes
-      attrs.is_a?(Hash) && CALL_ATTRIBUTE_KEYS.any? { |key| attrs[key].present? }
+      return false unless attrs.is_a?(Hash)
+
+      CALL_ATTRIBUTE_KEYS.any? { |key| attrs[key].present? || attrs[key.to_sym].present? }
     end
 
     def preloaded_voice_inbox?(conversation)
       conversation.association(:inbox).loaded? && conversation.inbox&.channel_type == VOICE_CHANNEL_TYPE
     end
 
-    def voice_inbox_conversation_ids(records)
+    def voice_inbox_conversation_ids(account_id, records)
       unloaded = records.reject { |conversation| conversation.association(:inbox).loaded? }
       return [] if unloaded.empty?
 
-      voice_inbox_ids = Inbox.where(
+      inbox_scope = Inbox.where(
         id: unloaded.filter_map(&:inbox_id).uniq,
         channel_type: VOICE_CHANNEL_TYPE
-      ).pluck(:id).to_set
+      )
+      inbox_scope = inbox_scope.where(account_id: account_id) if account_id.present?
+      voice_inbox_ids = inbox_scope.pluck(:id).to_set
       unloaded.select { |conversation| voice_inbox_ids.include?(conversation.inbox_id) }.map(&:id)
     end
 

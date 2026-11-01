@@ -116,7 +116,6 @@ class CommunicationThreads::FilterService < FilterService # rubocop:disable Metr
   def apply_conversation_scopes(scope)
     scope = conversations_with_any_label(scope) if labels_scope_any?
     scope = conversations_waiting_for_callback(scope) if waiting_for_callback_only?
-    scope = conversations_with_calls(scope) if calls_only?
     scope
   end
 
@@ -127,14 +126,23 @@ class CommunicationThreads::FilterService < FilterService # rubocop:disable Metr
     )
   end
 
-  def conversations_with_calls(scope)
-    Conversations::CallsOnlyScope.apply(scope)
-  end
-
   def apply_thread_scopes(scope, include_unread: true)
     scope = scope.where.not(team_id: nil) if team_scope_any?
+    scope = apply_calls_only_thread_filter(scope) if calls_only?
     scope = unread_thread_scope(scope) if include_unread && unread_only?
     scope
+  end
+
+  def apply_calls_only_thread_filter(scope)
+    call_conversation_ids = Conversations::CallsOnlyScope.apply(
+      base_relation.except(:includes, :eager_load, :preload),
+      account_id: @account&.id
+    ).reselect(:id)
+    scope.where(
+      id: CommunicationThreadConversation
+        .where(account_id: @account.id, conversation_id: call_conversation_ids)
+        .select(:communication_thread_id)
+    )
   end
 
   def crm_pipeline_id

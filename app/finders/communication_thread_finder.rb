@@ -554,7 +554,10 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   def apply_calls_only_filter(scope)
     return scope unless calls_only?
 
-    matching_conversation_ids = Conversations::CallsOnlyScope.apply(accessible_conversations).select(:id)
+    matching_conversation_ids = Conversations::CallsOnlyScope.apply(
+      accessible_conversations,
+      account_id: current_account&.id
+    ).select(:id)
     scope.where(id: linked_thread_ids(conversation_ids: matching_conversation_ids))
   end
 
