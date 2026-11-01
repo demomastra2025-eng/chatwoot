@@ -1241,15 +1241,16 @@ class ActionCableConnector extends BaseActionCableConnector {
       });
   };
 
+  // eslint-disable-next-line class-methods-use-this
   connectTelegramCallMedia = async activeCall => {
     const store = useWhatsappCallsStore();
+    const callScope = store.captureActiveCallScope();
     store.updateActiveCall({ agentWebrtcConnecting: true });
     try {
       // Broadcasts are readiness notifications only. Credentials are issued by
       // this authenticated API exclusively to the operator owning the call.
       const { data } = await callsApiFor(activeCall).show(activeCall.id);
-      if (!this.matchesActiveCall(store.activeCall, { id: activeCall.id }))
-        return;
+      if (!store.matchesActiveCallScope(callScope)) return;
       if (!data.agent_offer || store.activeCall.agentWebrtcConnected) return;
       await handleCallAgentOffer(activeCall.id, data.agent_offer, {
         provider: 'telegram_personal',
@@ -1257,7 +1258,7 @@ class ActionCableConnector extends BaseActionCableConnector {
           activeCall.direction
         ),
       });
-      if (String(store.activeCall?.id) !== String(activeCall.id)) return;
+      if (!store.matchesActiveCallScope(callScope)) return;
       store.updateActiveCall({
         agentWebrtcConnected: true,
         agentWebrtcConnecting: false,
@@ -1271,10 +1272,10 @@ class ActionCableConnector extends BaseActionCableConnector {
         emitter.emit('whatsapp_call:agent_webrtc_connected');
       }
     } catch (error) {
-      if (String(store.activeCall?.id) !== String(activeCall.id)) return;
+      if (!store.matchesActiveCallScope(callScope)) return;
       if (isMediaLegClosedError(error)) handleMediaLegClosed(store);
     } finally {
-      if (String(store.activeCall?.id) === String(activeCall.id)) {
+      if (store.matchesActiveCallScope(callScope)) {
         store.updateActiveCall({ agentWebrtcConnecting: false });
         store.setReconnecting(false);
       }
@@ -1305,10 +1306,12 @@ class ActionCableConnector extends BaseActionCableConnector {
       agentWebrtcConnecting: true,
     });
 
+    const callScope = whatsappCallsStore.captureActiveCallScope();
     try {
       const { data: reconnectData } = await callsApiFor(activeCall).reconnect(
         activeCall.id
       );
+      if (!whatsappCallsStore.matchesActiveCallScope(callScope)) return;
       const options = {
         direction: activeCall.direction || 'unknown',
         context: 'reconnect',
@@ -1327,8 +1330,7 @@ class ActionCableConnector extends BaseActionCableConnector {
           options
         );
       }
-      if (String(whatsappCallsStore.activeCall?.id) !== String(activeCall.id))
-        return;
+      if (!whatsappCallsStore.matchesActiveCallScope(callScope)) return;
       whatsappCallsStore.updateActiveCall({
         agentWebrtcConnected: true,
         agentWebrtcConnecting: false,
@@ -1336,12 +1338,7 @@ class ActionCableConnector extends BaseActionCableConnector {
       whatsappCallsStore.markActiveCallConnected();
       emitter.emit('whatsapp_call:agent_webrtc_connected');
     } catch (err) {
-      if (
-        !this.matchesActiveCall(whatsappCallsStore.activeCall, {
-          id: activeCall.id,
-        })
-      )
-        return;
+      if (!whatsappCallsStore.matchesActiveCallScope(callScope)) return;
       whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: false });
       if (isMediaLegClosedError(err)) {
         handleMediaLegClosed(whatsappCallsStore);
@@ -1350,11 +1347,7 @@ class ActionCableConnector extends BaseActionCableConnector {
       // eslint-disable-next-line no-console
       console.error('[WhatsApp Call] Failed to reconnect agent:', err);
     } finally {
-      if (
-        this.matchesActiveCall(whatsappCallsStore.activeCall, {
-          id: activeCall.id,
-        })
-      ) {
+      if (whatsappCallsStore.matchesActiveCallScope(callScope)) {
         whatsappCallsStore.setReconnecting(false);
       }
     }

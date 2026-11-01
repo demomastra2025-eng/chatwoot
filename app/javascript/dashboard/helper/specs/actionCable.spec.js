@@ -1220,6 +1220,58 @@ describe('ActionCableConnector', () => {
       expect(callsStore.activeCall.agentWebrtcConnecting).toBe(false);
     });
 
+    it.each([
+      { id: 43, provider: 'telegram_personal' },
+      { id: 42, provider: 'telegram_personal' },
+      { id: 42, provider: 'whatsapp' },
+    ])(
+      'ignores an old reconnect response after the active call lifetime changes to $id/$provider',
+      async nextCall => {
+        const callsStore = useWhatsappCallsStore();
+        callsStore.setActiveCall({
+          id: 42,
+          callId: 'old-call',
+          provider: 'telegram_personal',
+        });
+        let resolveReconnect;
+        reconnectMock.mockReturnValue(
+          new Promise(resolve => {
+            resolveReconnect = resolve;
+          })
+        );
+        const pending = actionCable.onWhatsappCallAgentDisconnected({
+          id: 42,
+          call_id: 'old-call',
+        });
+        expect(reconnectMock).toHaveBeenCalledWith(42);
+        callsStore.handleCallEnded('old-call', 42);
+        callsStore.setActiveCall({
+          ...nextCall,
+          callId: 'new-call',
+          agentWebrtcConnected: true,
+          agentWebrtcConnecting: false,
+        });
+        callsStore.setReconnecting(true);
+        resolveReconnect({
+          data: {
+            transport: 'janus_audiobridge',
+            room_id: 123,
+            peer_id: 'obsolete-peer',
+          },
+        });
+        await pending;
+        expect(handleCallAgentOfferMock).not.toHaveBeenCalled();
+        expect(handleAgentOfferMock).not.toHaveBeenCalled();
+        expect(callsStore.activeCall).toMatchObject({
+          ...nextCall,
+          callId: 'new-call',
+          agentWebrtcConnected: true,
+          agentWebrtcConnecting: false,
+        });
+        expect(callsStore.isReconnecting).toBe(true);
+      }
+    );
+
     it('clears the active media-server call when reconnect sees closed media leg', async () => {
       const callsStore = useWhatsappCallsStore();
       callsStore.setActiveCall({ id: 42, callId: 'provider-call-1' });

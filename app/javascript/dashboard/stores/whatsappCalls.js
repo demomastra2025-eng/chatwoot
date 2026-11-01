@@ -58,6 +58,8 @@ export const useWhatsappCallsStore = defineStore('whatsappCalls', {
     incomingCalls: [],
     // The single active call (accepted + audio connected)
     activeCall: null,
+    // Changes only when the active call lifetime changes, not on status updates.
+    activeCallGeneration: 0,
     // Cleanup callback registered by the composable — called when a call ends externally
     cleanupCallback: null,
     // True from the first accept click until provider/WebRTC acceptance settles.
@@ -103,7 +105,27 @@ export const useWhatsappCallsStore = defineStore('whatsappCalls', {
     },
 
     setActiveCall(callData) {
+      this.activeCallGeneration += 1;
       this.activeCall = callData;
+    },
+
+    captureActiveCallScope() {
+      if (!this.activeCall) return null;
+      return {
+        id: this.activeCall.id,
+        provider: this.activeCall.provider,
+        generation: this.activeCallGeneration,
+      };
+    },
+
+    matchesActiveCallScope(scope) {
+      return Boolean(
+        scope &&
+          this.activeCall &&
+          scope.generation === this.activeCallGeneration &&
+          String(scope.id) === String(this.activeCall.id) &&
+          scope.provider === this.activeCall.provider
+      );
     },
 
     updateActiveCall(updates) {
@@ -113,6 +135,7 @@ export const useWhatsappCallsStore = defineStore('whatsappCalls', {
     },
 
     clearActiveCall() {
+      this.activeCallGeneration += 1;
       this.activeCall = null;
       this.callTimerOffset = 0;
       this.isReconnecting = false;
@@ -220,6 +243,7 @@ export const useWhatsappCallsStore = defineStore('whatsappCalls', {
         if (this.cleanupCallback) {
           this.cleanupCallback();
         }
+        this.activeCallGeneration += 1;
         this.activeCall = null;
         this.callTimerOffset = 0;
         this.isReconnecting = false;
