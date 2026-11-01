@@ -184,4 +184,33 @@ RSpec.context 'with valid schedule.yml' do
       'queue' => 'scheduled_jobs'
     )
   end
+
+  it 'schedules BCC B2B auto-billing jobs on the scheduled jobs queue' do
+    schedule = YAML.safe_load(file.read)
+
+    expect(schedule['billing_generate_upcoming_invoices_job']).to include(
+      'cron' => '0 5 * * *',
+      'class' => 'Billing::GenerateUpcomingInvoicesJob',
+      'queue' => 'scheduled_jobs',
+      'active_job' => true
+    )
+    expect(schedule['billing_bcc_statement_sync_job']).to include(
+      'cron' => '*/15 * * * *',
+      'class' => 'Billing::BccStatementSyncJob',
+      'queue' => 'scheduled_jobs',
+      'active_job' => true
+    )
+    expect(schedule['billing_bcc_recurring_charge_job']).to include(
+      'cron' => '15 * * * *',
+      'class' => 'Billing::BccRecurringChargeJob',
+      'queue' => 'scheduled_jobs',
+      'active_job' => true
+    )
+    expect(schedule['billing_dunning_job']).to include(
+      'cron' => '30 5 * * *',
+      'class' => 'Billing::DunningJob',
+      'queue' => 'scheduled_jobs',
+      'active_job' => true
+    )
+  end
 end

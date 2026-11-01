@@ -772,6 +772,14 @@ Rails.application.routes.draw do
               end
             end
           end
+          namespace :billing do
+            resources :invoices, only: [:index, :show] do
+              member do
+                get :pdf
+              end
+            end
+          end
+
           resources :working_hours, only: [:update]
 
           resources :portals do
@@ -1040,6 +1048,7 @@ Rails.application.routes.draw do
   post 'webhooks/tiktok', to: 'webhooks/tiktok#events'
   post 'webhooks/shopify', to: 'webhooks/shopify#events'
   post 'webhooks/macrocrm/:webhook_key/manager_changed', to: 'webhooks/macrocrm#manager_changed'
+  post 'webhooks/bcc_ecom', to: 'webhooks/bcc_ecom#process_payload'
   namespace :twitter do
     resource :callback, only: [:show]
   end
