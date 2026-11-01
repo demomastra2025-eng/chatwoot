@@ -835,6 +835,24 @@ describe('one Playground workspace', () => {
     wrapper.unmount();
   });
 
+  it('does not prefetch diagnostic models for an ordinary Sandbox visitor', async () => {
+    mocks.currentUser = { type: 'User', captain_platform_access: false };
+    mocks.assistants = [{ id: 15, active: true }];
+    const wrapper = mount(PlaygroundIndex, {
+      global: {
+        stubs: {
+          PageLayout: { template: '<div><slot name="body" /></div>' },
+          CaptainPaywall: true,
+          AssistantPlayground: true,
+        },
+      },
+    });
+    await flushPromises();
+    expect(mocks.dispatch).toHaveBeenCalledWith('captainAssistants/get');
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it('shows only a sentence on the Sandbox page when the workspace has no agent', async () => {
     mocks.assistants = [];
     mocks.dispatch.mockResolvedValue();
