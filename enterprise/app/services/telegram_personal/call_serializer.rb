@@ -36,7 +36,8 @@ class TelegramPersonal::CallSerializer
     def outbound_initiate(call)
       payload = {
         status: 'calling', call_id: call.provider_call_id, provider: 'telegram_personal',
-        id: call.id, message_id: call.message_id, media_session_id: call.media_session_id
+        id: call.id, message_id: call.message_id, media_session_id: call.media_session_id,
+        media_server_enabled: true
       }.compact
       offer = normalize_offer(call.meta&.dig('agent_offer'))
       payload[:agent_offer] = offer if offer.present?

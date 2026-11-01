@@ -185,9 +185,18 @@ class Api::V1::Accounts::TelegramPersonalCallsController < Api::V1::Accounts::Ba
   end
 
   def render_media_leg_closed
+    finalize_closed_media_leg_call
     render json: {
       error: 'media_leg_closed', code: 'media_leg_closed',
       status: 'media_leg_closed', message: 'Call media leg already closed'
     }, status: :conflict
+  end
+
+  def finalize_closed_media_leg_call
+    return if @call.blank? || @call.terminal?
+
+    TelegramPersonal::CallService.new(call: @call, agent: current_user).terminate
+  rescue StandardError => e
+    Rails.logger.warn "[TELEGRAM CALL] Failed to finalize media_leg_closed call #{@call&.id}: #{e.message}"
   end
 end

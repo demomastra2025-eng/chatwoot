@@ -961,14 +961,18 @@ export async function acceptWhatsappCallById(callId, callSource = 'whatsapp') {
  * Works reliably inside beforeunload / pagehide where axios won't complete.
  * Used ONLY in legacy mode. Server-relay mode does NOT terminate on unload.
  */
-function terminateCallOnUnload(callId) {
+export function terminateCallOnUnload(callId, provider = 'whatsapp') {
   const authData = Auth.hasAuthCookie() ? Auth.getAuthData() : {};
   const accountId =
     window.location.pathname.includes('/app/accounts') &&
     window.location.pathname.split('/')[3];
   if (!accountId) return;
 
-  const url = `/api/v1/accounts/${accountId}/whatsapp_calls/${callId}/terminate`;
+  const endpoint =
+    provider === 'telegram_personal'
+      ? 'telegram_personal_calls'
+      : 'whatsapp_calls';
+  const url = `/api/v1/accounts/${accountId}/${endpoint}/${callId}/terminate`;
   fetch(url, {
     method: 'POST',
     keepalive: true,
@@ -1039,7 +1043,7 @@ export function useWhatsappCallSession() {
       cleanupInboundWebRTC();
     } else {
       // Legacy: terminate and clean up
-      terminateCallOnUnload(call.id);
+      terminateCallOnUnload(call.id, call.provider);
       cleanupInboundWebRTC();
     }
   };

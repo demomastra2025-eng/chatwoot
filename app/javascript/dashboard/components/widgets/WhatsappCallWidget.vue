@@ -136,15 +136,20 @@ onMounted(() => {
   emitter.on('whatsapp_call:permission_granted', onPermissionGranted);
 });
 
-// Auto-dismiss ringing calls after 30 seconds
+// Auto-dismiss ringing calls (90s for Telegram Personal, 30s for WhatsApp)
+const TELEGRAM_RING_TIMEOUT_MS = 90000;
+const WHATSAPP_RING_TIMEOUT_MS = 30000;
 const autoRejectTimers = new Map();
 
 const startAutoRejectTimer = call => {
   if (autoRejectTimers.has(call.callId)) return;
+  const timeoutMs = isTelegramCall(call)
+    ? TELEGRAM_RING_TIMEOUT_MS
+    : WHATSAPP_RING_TIMEOUT_MS;
   const timer = setTimeout(() => {
     dismissIncomingCall(call);
     autoRejectTimers.delete(call.callId);
-  }, 30000);
+  }, timeoutMs);
   autoRejectTimers.set(call.callId, timer);
 };
 

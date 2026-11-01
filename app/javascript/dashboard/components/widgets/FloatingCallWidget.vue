@@ -19,6 +19,7 @@ import {
   OUTBOUND_CALL_STAGE_LABEL_KEYS,
   outboundCallStageShowsDuration,
 } from 'dashboard/helper/voiceCallStage';
+import { labelDisplayTitle } from 'dashboard/helper/labels';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 
 const props = defineProps({
@@ -1011,6 +1012,42 @@ watch(
   { immediate: true }
 );
 
+const CALL_CARD_TEXT = {
+  company: 'Компания:',
+  manager: 'Ответственный менеджер:',
+  deal: 'Текущее обращение / Сделка:',
+  scheduledEvent: 'Запланированное событие:',
+  note: 'Заметка:',
+  transferCall: 'Перевести звонок',
+  quickNote: 'Быстрая заметка по звонку',
+  quickNotePlaceholder: 'Быстрая заметка по звонку...',
+  save: 'Сохранить',
+  generalGroup: 'Общая группа (2001)',
+  transferPlaceholder: 'Внутр. номер (напр. 1002 / 2001)',
+  transferSubmit: 'Перевести',
+};
+
+const accountLabelDisplayBySlug = computed(() => {
+  const accountLabels = store.getters['labels/getLabels'] || [];
+  const map = new Map();
+  accountLabels.forEach(item => {
+    const slug = String(item?.title || '')
+      .trim()
+      .toLowerCase();
+    const display = labelDisplayTitle(item).trim();
+    if (slug && display) {
+      map.set(slug, display);
+    }
+  });
+  return map;
+});
+
+const resolveLabelDisplay = rawLabel => {
+  const text = String(rawLabel || '').trim();
+  if (!text) return '';
+  return accountLabelDisplayBySlug.value.get(text.toLowerCase()) || text;
+};
+
 const getCallClientContext = call => {
   if (!isCallCardExpandedFor(call)) {
     return null;
@@ -1064,7 +1101,7 @@ const getCallClientContext = call => {
   ]);
 
   const labels = Array.isArray(conversation?.labels)
-    ? conversation.labels.filter(Boolean).slice(0, 4)
+    ? conversation.labels.map(resolveLabelDisplay).filter(Boolean).slice(0, 4)
     : [];
 
   const latestNote = firstPresent([
@@ -1289,7 +1326,9 @@ onUnmounted(stopElapsedTimer);
                 class="flex items-center gap-1.5 min-w-0"
                 data-testid="floating-call-context-company"
               >
-                <span class="text-n-slate-11 shrink-0">Компания:</span>
+                <span class="text-n-slate-11 shrink-0">{{
+                  CALL_CARD_TEXT.company
+                }}</span>
                 <span class="font-medium text-n-slate-12 truncate">
                   {{ getCallClientContext(call).company }}
                 </span>
@@ -1300,7 +1339,7 @@ onUnmounted(stopElapsedTimer);
                 data-testid="floating-call-context-manager"
               >
                 <span class="text-n-slate-11 shrink-0">
-                  Ответственный менеджер:
+                  {{ CALL_CARD_TEXT.manager }}
                 </span>
                 <span class="font-medium text-n-slate-12 truncate">
                   {{ getCallClientContext(call).assigneeName }}
@@ -1312,7 +1351,7 @@ onUnmounted(stopElapsedTimer);
                 data-testid="floating-call-context-deal"
               >
                 <span class="text-n-slate-11 shrink-0">
-                  Текущее обращение / Сделка:
+                  {{ CALL_CARD_TEXT.deal }}
                 </span>
                 <span class="font-medium text-n-slate-12 truncate">
                   {{ getCallClientContext(call).dealSummary }}
@@ -1324,7 +1363,7 @@ onUnmounted(stopElapsedTimer);
                 data-testid="floating-call-context-event"
               >
                 <span class="text-n-slate-11 shrink-0">
-                  Запланированное событие:
+                  {{ CALL_CARD_TEXT.scheduledEvent }}
                 </span>
                 <span class="font-medium text-n-slate-12 truncate">
                   {{ getCallClientContext(call).scheduledEvent }}
@@ -1348,7 +1387,9 @@ onUnmounted(stopElapsedTimer);
                 class="text-[11px] text-n-slate-11 truncate"
                 data-testid="floating-call-context-note"
               >
-                <span class="font-medium text-n-slate-12">Заметка:</span>
+                <span class="font-medium text-n-slate-12">{{
+                  CALL_CARD_TEXT.note
+                }}</span>
                 {{ getCallClientContext(call).latestNote }}
               </div>
             </div>
@@ -1444,8 +1485,8 @@ onUnmounted(stopElapsedTimer);
                     ? 'bg-n-brand text-white shadow-sm'
                     : 'bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-1'
                 "
-                title="Перевести звонок"
-                aria-label="Перевести звонок"
+                :title="CALL_CARD_TEXT.transferCall"
+                :aria-label="CALL_CARD_TEXT.transferCall"
                 data-testid="floating-call-transfer"
                 @click="toggleTransferPanel(call)"
               >
@@ -1460,8 +1501,8 @@ onUnmounted(stopElapsedTimer);
                     ? 'bg-n-brand text-white shadow-sm'
                     : 'bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-1'
                 "
-                title="Быстрая заметка по звонку"
-                aria-label="Быстрая заметка по звонку"
+                :title="CALL_CARD_TEXT.quickNote"
+                :aria-label="CALL_CARD_TEXT.quickNote"
                 data-testid="floating-call-quick-note-toggle"
                 @click="toggleQuickNote(call)"
               >
@@ -1487,7 +1528,7 @@ onUnmounted(stopElapsedTimer);
               <input
                 v-model="quickNoteDraft"
                 type="text"
-                placeholder="Быстрая заметка по звонку..."
+                :placeholder="CALL_CARD_TEXT.quickNotePlaceholder"
                 class="min-w-0 flex-1 rounded border border-n-weak bg-n-solid-1 px-2 py-1 text-xs text-n-slate-12"
                 data-testid="floating-call-quick-note-input"
                 @keyup.enter="submitQuickNote(call)"
@@ -1499,14 +1540,12 @@ onUnmounted(stopElapsedTimer);
                 data-testid="floating-call-quick-note-submit"
                 @click="submitQuickNote(call)"
               >
-                Сохранить
+                {{ CALL_CARD_TEXT.save }}
               </button>
             </div>
             <div
               v-if="
-                transferPanelOpen &&
-                callIsActive(call) &&
-                !isWhatsappCall(call)
+                transferPanelOpen && callIsActive(call) && !isWhatsappCall(call)
               "
               class="mt-2 flex items-center gap-1.5 rounded-md bg-n-alpha-1 p-1.5"
               data-testid="floating-call-transfer-panel"
@@ -1524,13 +1563,13 @@ onUnmounted(stopElapsedTimer);
                 >
                   {{ target.name }} ({{ target.internal_extension }})
                 </option>
-                <option value="2001">Общая группа (2001)</option>
+                <option value="2001">{{ CALL_CARD_TEXT.generalGroup }}</option>
               </select>
               <input
                 v-else
                 v-model="transferExtension"
                 type="text"
-                placeholder="Внутр. номер (напр. 1002 / 2001)"
+                :placeholder="CALL_CARD_TEXT.transferPlaceholder"
                 class="min-w-0 flex-1 rounded border border-n-weak bg-n-solid-1 px-2 py-1 text-xs text-n-slate-12"
                 data-testid="floating-call-transfer-input"
               />
@@ -1541,7 +1580,7 @@ onUnmounted(stopElapsedTimer);
                 data-testid="floating-call-transfer-submit"
                 @click="submitCallTransfer(call)"
               >
-                Перевести
+                {{ CALL_CARD_TEXT.transferSubmit }}
               </button>
             </div>
           </div>

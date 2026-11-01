@@ -73,7 +73,35 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
       expect(body.dig('agent_offer', 'sdp_offer')).to be_present
       call = Call.telegram_personal.find(body['id'])
       expect(call.media_session_id).to eq('tg-out-sess-1')
-      expect(call.message&.content_type).to eq('voice_call')
+      expect(call.message&.content_attributes&.dig('data')).to include(
+        'provider' => 'telegram_personal', 'media_server_enabled' => true
+      )
+      expect(conversation.reload.additional_attributes['call_status']).to eq('ringing')
+    end
+
+    it 'transitions call, message, and conversation call_status to failed when dial fails' do
+      call = Call.create!(
+        provider: :telegram_personal, account: account, inbox: inbox, conversation: conversation,
+        contact: contact, provider_call_id: 'pending_tg-out-fail-1', media_session_id: 'tg-out-fail-1',
+        direction: :outgoing, status: 'ringing', accepted_by_agent: agent,
+        meta: { 'outbound_prepare_pending' => true }
+      )
+      msg = TelegramPersonal::CallMessageBuilder.create!(conversation: conversation, call: call, user: agent)
+      call.update!(message_id: msg.id)
+      conversation.update!(additional_attributes: conversation.additional_attributes.merge('call_status' => 'ringing'))
+
+      dial_err = TelegramPersonal::GatewayClient::GatewayError.new('Peer privacy restricted', http_status: 422)
+      allow(gateway_client).to receive(:dial_call!).and_raise(dial_err)
+      allow(gateway_client).to receive(:terminate_call!).and_return({ ok: true })
+
+      post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{call.id}/dial",
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(call.reload.status).to eq('failed')
+      expect(msg.reload.content_attributes.dig('data', 'status')).to eq('failed')
+      expect(conversation.reload.additional_attributes['call_status']).to eq('failed')
     end
 
     it 'posts agent_answer and dials Telegram on a prepared outbound call' do
@@ -149,6 +177,7 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
 
       expect(response).to have_http_status(:conflict)
       expect(response.parsed_body['code']).to eq('media_leg_closed')
+      expect(call.reload.status).to eq('failed')
     end
   end
 
