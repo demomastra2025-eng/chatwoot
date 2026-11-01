@@ -343,6 +343,10 @@ class Whatsapp::IncomingCallService
     mapped = Whatsapp::CallMessageBuilder::CALL_TO_VOICE_STATUS[final_status] || final_status
     update_conversation_call_status(call.conversation, mapped, call.direction_label)
     broadcast_call_ended(call)
+    TelegramCalls::CallDispatcher.cancel_legs_for_source!(
+      source_type: 'whatsapp', account_id: call.account_id, source_call_ref: call.id.to_s,
+      status_text: '✅ <b>Звонок завершён</b>', include_claimed: true
+    )
     Whatsapp::CallRecordingFetchJob.perform_later(call.id) if call.media_session_id.present?
   end
 
@@ -458,6 +462,7 @@ class Whatsapp::IncomingCallService
     end
 
     ActionCable.server.broadcast("account_#{inbox.account_id}", { event: 'whatsapp_call.incoming', data: data })
+    TelegramCalls::CallDispatcher.dispatch_whatsapp_call(call)
   end
 
   def broadcast_ai_accepting_call(call, routing_decision)

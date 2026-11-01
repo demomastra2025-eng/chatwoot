@@ -61,6 +61,7 @@ class TelegramPersonal::CallService
     update_conversation_call_status('in-progress')
     TelegramPersonal::CallBroadcaster.broadcast_agent_offer(call, agent, @agent_offer)
     TelegramPersonal::CallBroadcaster.broadcast_accepted(call, agent)
+    TelegramCalls::LegCanceller.cancel_voip_on_accept!(call, source_type: 'telegram_personal', agent: agent)
   end
 
   def mark_call_rejected!
@@ -182,6 +183,7 @@ class TelegramPersonal::CallService
     )
     update_conversation_call_status(TelegramPersonal::CallMessageBuilder::CALL_TO_VOICE_STATUS[status] || status)
     TelegramPersonal::CallBroadcaster.broadcast_ended(call)
+    TelegramCalls::LegCanceller.cancel_voip_on_end!(call, source_type: 'telegram_personal')
   end
 
   def ensure_ringing!

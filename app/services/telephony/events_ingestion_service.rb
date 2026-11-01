@@ -273,11 +273,22 @@ class Telephony::EventsIngestionService
       run_side_effects!(call_session, account, event, linked_runtime_call_sessions: linked_runtime_call_sessions)
     end
     close_sibling_legs!(call_session) if call_session.present? && operator_answered_inbound_leg?(call_session)
+    cancel_telegram_legs_if_terminal!(call_session) if call_session.present? && call_session.terminal?
     call_session
   end
 
   # One operator answered: the other operators' legs of the same physical call
   # are over for them (see Telephony::SiblingLegCloser).
+  def cancel_telegram_legs_if_terminal!(call_session)
+    %w[telephony_sip telephony_sip_outbound].each do |source_type|
+      TelegramCalls::CallDispatcher.cancel_legs_for_source!(
+        source_type: source_type, account_id: call_session.account_id,
+        source_call_ref: call_session.external_call_ref,
+        status_text: '✅ <b>Звонок завершён</b>', include_claimed: true
+      )
+    end
+  end
+
   def operator_answered_inbound_leg?(call_session)
     return false unless resolved_event_type.to_s.in?(%w[operator_answered answered])
 

@@ -583,6 +583,10 @@ Rails.application.routes.draw do
             post 'webphone/reject', to: 'webphone#reject'
             get 'webphone/channel_capacity', to: 'webphone#channel_capacity'
             post 'webphone/transfer', to: 'webphone#transfer'
+            get 'telegram_softphone', to: 'telegram_softphone#show'
+            post 'telegram_softphone/link_token', to: 'telegram_softphone#link_token'
+            patch 'telegram_softphone', to: 'telegram_softphone#update'
+            delete 'telegram_softphone', to: 'telegram_softphone#destroy'
           end
 
           resources :inbox_members, only: [:create, :show], param: :inbox_id do
@@ -1015,6 +1019,8 @@ Rails.application.routes.draw do
   post 'webhooks/line/:line_channel_id', to: 'webhooks/line#process_payload'
   post 'webhooks/telegram/:bot_token', to: 'webhooks/telegram#process_payload'
   post 'webhooks/telegram_notifications/:webhook_secret', to: 'webhooks/telegram_notifications#process_payload'
+  post 'webhooks/telegram_calls_bot', to: 'webhooks/telegram_calls_bot#process_payload'
+  post 'webhooks/telegram_calls_bot/:webhook_secret', to: 'webhooks/telegram_calls_bot#process_payload'
   post 'webhooks/telegram_personal/:webhook_identifier', to: 'webhooks/telegram_personal#process_payload'
 
   post 'webhooks/weixin/:webhook_identifier', to: 'webhooks/weixin#process_payload'
@@ -1075,6 +1081,7 @@ Rails.application.routes.draw do
   post 'internal/voice/ai/finalize', to: 'internal/voice/ai/finalizations#create'
   post 'internal/voice/recordings/ready', to: 'internal/voice/recordings#ready'
   post 'internal/voice/recordings/stored', to: 'internal/voice/recordings#stored'
+  post 'internal/voice/telegram_softphone/events', to: 'internal/voice/telegram_softphone_events#create'
   put 'internal/whatsapp/webhook_routes', to: 'internal/whatsapp/webhook_routes#update'
   delete 'internal/whatsapp/webhook_routes', to: 'internal/whatsapp/webhook_routes#destroy'
 

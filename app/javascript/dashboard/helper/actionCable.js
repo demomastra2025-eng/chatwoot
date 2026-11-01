@@ -1008,8 +1008,15 @@ class ActionCableConnector extends BaseActionCableConnector {
   onWhatsappCallAccepted = data => {
     const whatsappCallsStore = useWhatsappCallsStore();
     const currentUserId = this.app.$store.getters.getCurrentUserID;
-    // If accepted by a different agent, remove from incoming list for this agent
-    if (data.accepted_by_agent_id !== currentUserId) {
+    const answeredElsewhereBySameAgent =
+      data.accepted_by_agent_id === currentUserId &&
+      !whatsappCallsStore.isAccepting &&
+      !this.matchesActiveCall(whatsappCallsStore.activeCall, data);
+    // Remove incoming banner if accepted by another agent OR by the same agent on another device (e.g. Telegram softphone)
+    if (
+      data.accepted_by_agent_id !== currentUserId ||
+      answeredElsewhereBySameAgent
+    ) {
       whatsappCallsStore.handleCallAcceptedByOther(data.call_id, data.id);
       clearPreparedInboundAgentAnswer(data, {
         cleanupWebrtc: this.shouldCleanupPreparedInboundWebRTC(

@@ -12,6 +12,7 @@ import { usePhoneWidgetPosition } from 'dashboard/composables/usePhoneWidgetPosi
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { normalizeDialNumber } from 'dashboard/helper/phoneDialNumber';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
+import TelegramSoftphoneAPI from 'dashboard/api/telephony/telegramSoftphone';
 import {
   WEBPHONE_LINE_ELSEWHERE_REASON,
   WEBPHONE_TAKEOVER_REFUSED_CALL,
@@ -658,10 +659,56 @@ watch([selectedInboxId, hasCall], () => {
   fetchChannelCapacity();
 });
 
+const telegramSoftphone = ref({
+  configured: false,
+  connected: false,
+  on_line: false,
+  username: '',
+});
+const isTelegramSoftphoneBusy = ref(false);
+const fetchTelegramSoftphone = async () => {
+  if (!hasAnyPhoneLine.value) return;
+  try {
+    const payload = await TelegramSoftphoneAPI.getStatus();
+    if (payload && typeof payload === 'object') {
+      telegramSoftphone.value = { ...telegramSoftphone.value, ...payload };
+    }
+  } catch {
+    // Optional integration: leave hidden if unavailable.
+  }
+};
+const handleTelegramSoftphoneAction = async () => {
+  if (isTelegramSoftphoneBusy.value) return;
+  isTelegramSoftphoneBusy.value = true;
+  try {
+    if (!telegramSoftphone.value.connected) {
+      const payload = await TelegramSoftphoneAPI.issueLinkToken();
+      if (payload?.deep_link && typeof window !== 'undefined') {
+        window.open(payload.deep_link, '_blank', 'noopener,noreferrer');
+      }
+    } else {
+      const nextOnline = !telegramSoftphone.value.on_line;
+      const payload = await TelegramSoftphoneAPI.setOnLine(nextOnline);
+      telegramSoftphone.value = { ...telegramSoftphone.value, ...payload };
+      if (!nextOnline) {
+        WebphoneClient.bootstrapIncomingSupport?.().catch?.(() => null);
+      }
+    }
+  } catch {
+    useAlert(t('PROFILE_SETTINGS.FORM.TELEGRAM_SOFTPHONE.ERROR_GENERIC'));
+  } finally {
+    isTelegramSoftphoneBusy.value = false;
+  }
+};
+watch(hasAnyPhoneLine, available => {
+  if (available) fetchTelegramSoftphone();
+});
+
 onMounted(() => {
   WebphoneClient.addEventListener('call:sessions-changed', syncSessions);
   syncSessions();
   fetchChannelCapacity();
+  fetchTelegramSoftphone();
 });
 onUnmounted(() => {
   WebphoneClient.removeEventListener('call:sessions-changed', syncSessions);
@@ -1040,6 +1087,63 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
+          </div>
+          <div
+            v-if="telegramSoftphone.configured"
+            class="mb-2 flex items-center justify-between gap-2 rounded-md border border-n-weak bg-n-alpha-1 px-2.5 py-1.5 text-xs"
+            data-testid="phone-widget-telegram-softphone"
+          >
+            <div class="flex min-w-0 items-center gap-1.5">
+              <i
+                class="i-ri-telegram-fill shrink-0 text-sm text-n-blue-11"
+                aria-hidden="true"
+              />
+              <span class="truncate font-medium text-n-slate-12">
+                {{
+                  telegramSoftphone.connected && telegramSoftphone.username
+                    ? `@${telegramSoftphone.username}`
+                    : t('PHONE_WIDGET.TELEGRAM_CALLS_LABEL')
+                }}
+              </span>
+              <span
+                v-if="telegramSoftphone.connected"
+                class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
+                :class="
+                  telegramSoftphone.on_line
+                    ? 'bg-n-teal-3 text-n-teal-11'
+                    : 'bg-n-alpha-2 text-n-slate-11'
+                "
+                data-testid="phone-widget-telegram-status"
+              >
+                {{
+                  telegramSoftphone.on_line
+                    ? t('PHONE_WIDGET.TELEGRAM_ONLINE')
+                    : t('PHONE_WIDGET.TELEGRAM_OFFLINE')
+                }}
+              </span>
+            </div>
+            <button
+              type="button"
+              class="shrink-0 rounded px-2 py-0.5 text-[11px] font-medium transition-colors"
+              :class="
+                telegramSoftphone.connected && telegramSoftphone.on_line
+                  ? 'bg-n-ruby-3 text-n-ruby-11 hover:bg-n-ruby-4'
+                  : 'bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-3'
+              "
+              :disabled="isTelegramSoftphoneBusy"
+              data-testid="phone-widget-telegram-action"
+              @click="handleTelegramSoftphoneAction"
+            >
+              {{
+                !telegramSoftphone.connected
+                  ? t('PHONE_WIDGET.TELEGRAM_CONNECT')
+                  : telegramSoftphone.on_line
+                    ? t(
+                        'PROFILE_SETTINGS.FORM.TELEGRAM_SOFTPHONE.GO_OFFLINE_BTN'
+                      )
+                    : t('PHONE_WIDGET.TELEGRAM_GO_ONLINE')
+              }}
+            </button>
           </div>
           <div
             v-if="channelCapacityLabel"

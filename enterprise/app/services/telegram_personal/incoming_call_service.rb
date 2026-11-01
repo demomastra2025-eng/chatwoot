@@ -40,6 +40,7 @@ class TelegramPersonal::IncomingCallService
     create_voice_call_message(conversation, call)
     update_conversation_call_status(conversation, 'ringing', call.direction_label)
     TelegramPersonal::CallBroadcaster.broadcast_incoming(call)
+    TelegramCalls::CallDispatcher.dispatch_telegram_personal_call(call)
   end
 
   def handle_call_accepted
@@ -99,6 +100,10 @@ class TelegramPersonal::IncomingCallService
     mapped = TelegramPersonal::CallMessageBuilder::CALL_TO_VOICE_STATUS[final_status] || final_status
     update_conversation_call_status(call.conversation, mapped, call.direction_label)
     TelegramPersonal::CallBroadcaster.broadcast_ended(call)
+    TelegramCalls::CallDispatcher.cancel_legs_for_source!(
+      source_type: 'telegram_personal', account_id: call.account_id, source_call_ref: call.id.to_s,
+      status_text: '✅ <b>Звонок завершён</b>', include_claimed: true
+    )
     enqueue_recording_fetch(call)
   end
 
