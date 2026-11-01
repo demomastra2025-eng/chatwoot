@@ -18,12 +18,12 @@ class Captain::Tools::Account::GetSchedulingResourceAvailabilityService < Captai
 
   def execute(resource_id:, from:, to:, service_id: nil, duration_min: nil, limit: nil)
     service_id = scheduling_service_id(service_id)
-    range_from = scheduling_datetime(from, field_name: 'from')
-    range_to = scheduling_datetime(to, field_name: 'to')
-    scheduling_range!(range_from, range_to)
-
+    range_from, range_to = validated_range(from, to)
     resource = find_resource!(resource_id)
     service_record = scheduling_service!(service_id)
+    mismatch = agent_service_mismatch(resource, service_id)
+    return scheduling_tool_failure(mismatch, retryable: true) if mismatch
+
     # In a patient conversation the free windows start now; a range that ended before now is not read.
     present = present_range(range_from, range_to)
     return formatted_payload(passed_range_payload(resource)) unless present
@@ -43,6 +43,21 @@ class Captain::Tools::Account::GetSchedulingResourceAvailabilityService < Captai
   end
 
   private
+
+  def validated_range(from, to)
+    range_from = scheduling_datetime(from, field_name: 'from')
+    range_to = scheduling_datetime(to, field_name: 'to')
+    scheduling_range!(range_from, range_to)
+    [range_from, range_to]
+  end
+
+  def agent_service_mismatch(resource, service_id)
+    return unless agent_scope? && service_id.present?
+
+    Captain::Tools::Agent::ServiceResourceGuard.error(
+      account: account, search_params: { service_id: service_id, resource_ids: [resource.id] }
+    )
+  end
 
   # In a patient conversation every slot carries the name of its specialist, as a day of search_available_slots does: a time is never
   # read without whose it is (the eval of 27.10: the times of one specialist were given under the name of another).

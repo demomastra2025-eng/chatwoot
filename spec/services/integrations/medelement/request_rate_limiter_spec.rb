@@ -254,6 +254,7 @@ RSpec.describe Integrations::Medelement::RequestRateLimiter do
 
       expect { limited.wait!(operation: 'timetable', lane: :sync_far) }.to raise_error(described_class::BusyError) do |error|
         expect(error.retry_after_ms).to be_between(1, 30_000)
+        expect(error).to be_paused
       end
       expect { limited.wait!(operation: 'patient', lane: :live) }.not_to raise_error
     end

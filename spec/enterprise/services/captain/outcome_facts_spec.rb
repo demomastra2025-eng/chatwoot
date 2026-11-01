@@ -81,4 +81,19 @@ RSpec.describe Captain::OutcomeFacts do
                              'safety_blocks' => ['prompt_injection'])
     expect(facts.to_json).not_to include('Private provider details')
   end
+
+  it 'records calendar_unavailable on degraded availability across scheduling tools and ignores non-scheduling tools' do
+    context = {}
+    agent_degraded = { service_id: 457, total: 0, days: [], availability: 'degraded', availability_note: 'Unchecked' }.to_json
+    booking_results_degraded = { results: [{ query: 'терапевт', status: 'found', total: 0, days: [], availability: 'degraded' }] }.to_json
+    booking_specialists_degraded = { specialists: { total_count: 1, total: 0, days: [], availability: 'degraded' } }.to_json
+    unrelated_tool = { availability: 'degraded' }.to_json
+
+    described_class.record_tool(context, 'search_available_slots', agent_degraded)
+    described_class.record_tool(context, 'search_booking_options', booking_results_degraded)
+    described_class.record_tool(context, 'search_booking_options', booking_specialists_degraded)
+    described_class.record_tool(context, 'get_contact', unrelated_tool)
+
+    expect(described_class.from_run(context)['tool_failures']).to eq(%w[calendar_unavailable calendar_unavailable calendar_unavailable])
+  end
 end

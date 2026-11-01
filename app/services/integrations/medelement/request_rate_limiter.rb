@@ -10,16 +10,22 @@ class Integrations::Medelement::RequestRateLimiter # rubocop:disable Metrics/Cla
   class BusyError < StandardError
     attr_reader :operation, :retry_after_ms
 
-    def initialize(operation:, retry_after_ms:, write: false)
+    def initialize(operation:, retry_after_ms:, write: false, paused: false)
       super("Medelement request slot is busy for #{retry_after_ms} ms")
       @operation = operation
       @retry_after_ms = retry_after_ms
       @write = write
+      @paused = paused
     end
 
     # The refused request was a write; it was not sent either.
     def write?
       @write
+    end
+
+    # The refusal came from an active provider HTTP 429 pause rather than local pacing or minute-budget rollover.
+    def paused?
+      @paused
     end
   end
 
@@ -64,7 +70,7 @@ class Integrations::Medelement::RequestRateLimiter # rubocop:disable Metrics/Cla
     local minute = math.floor(second / 60)
     local remaining = (60 - (second % 60)) * 1000
     local pause = redis.call('PTTL', KEYS[1] .. ':pause')
-    if ARGV[1] ~= 'live' and pause > 0 then return -pause end
+    if ARGV[1] ~= 'live' and pause > 0 then return {-pause, 1} end
     local total_key = KEYS[1] .. ':' .. minute .. ':total'
     local background_key = KEYS[1] .. ':' .. minute .. ':background'
     local far_key = KEYS[1] .. ':' .. minute .. ':far'
@@ -187,8 +193,8 @@ class Integrations::Medelement::RequestRateLimiter # rubocop:disable Metrics/Cla
   end
 
   def reserve_budget_or_raise!(operation, lane, write)
-    result = reserve_budget(lane)
-    raise BusyError.new(operation: lane_name(operation), retry_after_ms: -result, write: write) if result.negative?
+    result, paused = reserve_budget(lane)
+    raise BusyError.new(operation: lane_name(operation), retry_after_ms: -result, write: write, paused: paused) if result.negative?
 
     result
   end
@@ -229,13 +235,12 @@ class Integrations::Medelement::RequestRateLimiter # rubocop:disable Metrics/Cla
 
   def reserve_budget(lane)
     argv = [lane.to_s, budget_per_minute, live_reserve_per_minute, near_reserve_per_minute]
-    pool.with do |connection|
-      if mock_redis?(connection)
-        reserve_budget_with_mock(connection, lane)
-      else
-        connection.call_with_namespace(:eval, BUDGET_SCRIPT, keys: [budget_key], argv: argv).to_i
-      end
+    raw = pool.with do |connection|
+      next reserve_budget_with_mock(connection, lane) if mock_redis?(connection)
+
+      connection.call_with_namespace(:eval, BUDGET_SCRIPT, keys: [budget_key], argv: argv)
     end
+    raw.is_a?(Array) ? [raw.first.to_i, raw.second.to_i == 1] : [raw.to_i, false]
   rescue Redis::BaseConnectionError, ConnectionPool::TimeoutError => e
     raise UnavailableError, "Medelement request budget is unavailable (#{e.class})"
   end
@@ -243,7 +248,7 @@ class Integrations::Medelement::RequestRateLimiter # rubocop:disable Metrics/Cla
   def reserve_budget_with_mock(connection, lane)
     now = clock.call.to_i
     pause = connection.pttl("#{budget_key}:pause")
-    return -pause if !live_lane?(lane) && pause.positive?
+    return [-pause, 1] if !live_lane?(lane) && pause.positive?
 
     minute = now / 60
     prefix = "#{budget_key}:#{minute}"

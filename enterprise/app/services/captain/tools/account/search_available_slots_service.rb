@@ -155,10 +155,16 @@ class Captain::Tools::Account::SearchAvailableSlotsService < Captain::Tools::Acc
 
   # Every free start of the range (a day is not cut at a count), grouped by specialist and day into the compact answer.
   def agent_answer(search_params, limit)
+    search_params, mismatch = Captain::Tools::Agent::ServiceResourceGuard.resolve(account: account, search_params: search_params)
+    return scheduling_tool_failure(mismatch, retryable: true) if mismatch
     return passed_range_answer(search_params) if range_passed?(search_params)
 
     payload = Scheduling::CompleteSlotSearchService.new(**search_params).perform
     publish_service_match(payload)
+    build_agent_payload(payload, search_params, limit)
+  end
+
+  def build_agent_payload(payload, search_params, limit)
     answer = Captain::Tools::Agent::SlotsPayload.answer(payload, days_limit: limit)
     answer = answer.merge(empty_range_fields(payload, search_params)) if payload[:total_slots].to_i.zero?
     absences = Scheduling::TimeOffPayload.for(account: account, resource_ids: payload[:candidate_resource_ids],

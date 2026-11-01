@@ -122,5 +122,21 @@ RSpec.describe Captain::Tools::Account::GetSchedulingResourceAvailabilityService
       expect(payload['slots']).to be_present
       expect(payload['service_link_status']).to eq('price_link_unverified')
     end
+
+    it 'rejects an incompatible indexed specialist in patient-agent scope while keeping staff scope permissive' do
+      other_doctor = create(:scheduling_resource, account: account, name: 'Dana', timezone: 'Asia/Almaty', slot_duration_min: 30)
+      other_service = create(:scheduling_service, account: account, name: 'MRI', duration_min: 30)
+      create(:scheduling_work_rule, resource: other_doctor, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
+      create(:scheduling_service_price, account: account, service: other_service, resource: other_doctor, active: true)
+      inbox = create(:inbox, account: account, timezone: 'Asia/Almaty')
+      conversation = create(:conversation, account: account, inbox: inbox)
+      agent_service = described_class.new(assistant, user: assistant, conversation: conversation).tap do |tool|
+        tool.patient_scope = Captain::Tools::Agent::PatientScope.new(assistant: assistant, conversation: conversation)
+      end
+
+      result = agent_service.execute(resource_id: resource.id, from: from_time.iso8601, to: to_time.iso8601, service_id: other_service.id)
+      expect(result).to start_with('ERROR:')
+      expect(result).to include('SERVICE_RESOURCE_MISMATCH', 'Dana')
+    end
   end
 end

@@ -157,6 +157,15 @@ RSpec.describe Captain::Tools::Agent::SlotsPayload do
 
       expect(answer[:availability_note]).to include('A price from search_scheduling_services does not depend on the schedule: give it.')
     end
+
+    it 'uses the partial-degradation note when confirmed slots exist alongside unchecked days or specialists' do
+      answer = described_class.answer({ slots: [slot(7, monday, 10)], availability: { status: 'degraded' } })
+
+      expect(answer[:total]).to eq(1)
+      expect(answer[:availability]).to eq('degraded')
+      expect(answer[:availability_note]).to include('Listed times are confirmed and can be offered and booked')
+      expect(answer[:availability_note]).to include('do not tell the patient that unlisted days or specialists have no free time')
+    end
   end
 
   describe '.next_available' do

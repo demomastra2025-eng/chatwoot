@@ -325,5 +325,33 @@ RSpec.describe Integrations::Medelement::Request do
       end.to raise_error(Integrations::Medelement::Client::RateLimitedError)
       expect(sleeps).to be_empty
     end
+
+    it 'waits once across a minute-budget rollover for retry_429: false syncs, but fails fast on an active provider 429 pause' do
+      calls = 0
+      allow(rate_limiter).to receive(:wait!) do
+        calls += 1
+        busy = Integrations::Medelement::RequestRateLimiter::BusyError.new(operation: 'timetable', retry_after_ms: 25_000)
+        raise busy if calls == 1
+      end
+      provider_request = stub_request(:get, "#{base_url}/v1/timetable/get_timetable")
+                         .to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
+
+      result = request.call(:get, '/v1/timetable/get_timetable', operation: 'timetable', retry_429: false, lane: :sync_near)
+
+      expect(result).to eq({})
+      expect(provider_request).to have_been_requested.once
+      expect(sleeps).to eq([25.5])
+
+      sleeps.clear
+      paused_busy = Integrations::Medelement::RequestRateLimiter::BusyError.new(
+        operation: 'timetable', retry_after_ms: 15_000, paused: true
+      )
+      allow(rate_limiter).to receive(:wait!).and_raise(paused_busy)
+
+      expect do
+        request.call(:get, '/v1/timetable/get_timetable', operation: 'timetable', retry_429: false, lane: :sync_near)
+      end.to raise_error(Integrations::Medelement::Client::RateLimitedError)
+      expect(sleeps).to be_empty
+    end
   end
 end

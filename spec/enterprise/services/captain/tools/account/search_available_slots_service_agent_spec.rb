@@ -39,6 +39,21 @@ RSpec.describe Captain::Tools::Account::SearchAvailableSlotsService do
     tool.execute(from: '2026-04-20', to: '2026-04-23', service_id: consultation.id, **arguments)
   end
 
+  def build_diagnostic_cabinets
+    ct_cabinet = create(:scheduling_resource, account: account, name: 'CT Cabinet', timezone: 'Asia/Almaty', slot_duration_min: 15)
+    mri_cabinet = create(:scheduling_resource, account: account, name: 'MRI Cabinet', timezone: 'Asia/Almaty', slot_duration_min: 30)
+    ct_service = create(:scheduling_service, account: account, name: 'CT Head', duration_min: 15)
+    mri_service = create(:scheduling_service, account: account, name: 'MRI Head', duration_min: 30)
+    [ct_cabinet, mri_cabinet].each do |cab|
+      create(:scheduling_work_rule, resource: cab, account: account, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
+    end
+    create(:scheduling_resource_service_stat, account: account, resource: ct_cabinet, service: ct_service,
+                                              status: 'auto', receptions_count: 20, median_duration_min: 15)
+    create(:scheduling_resource_service_stat, account: account, resource: mri_cabinet, service: mri_service,
+                                              status: 'auto', receptions_count: 35, median_duration_min: 30)
+    [ct_cabinet, mri_cabinet, mri_service]
+  end
+
   describe 'for the patient agent' do
     it 'groups the starts by specialist and day with five spread times and the count of the rest' do
       answer = JSON.parse(search(agent_tool, resource_ids: [aigerim.id]))
@@ -115,6 +130,42 @@ RSpec.describe Captain::Tools::Account::SearchAvailableSlotsService do
 
       expect(JSON.parse(search(staff_tool, **arguments))['slots'].size).to eq(100)
       expect(after).to be < before / 25
+    end
+
+    it 'rejects a mismatched resource_ids with retryable SERVICE_RESOURCE_MISMATCH and eligible_resources' do
+      ct_cabinet, mri_cabinet, mri_service = build_diagnostic_cabinets
+      result = agent_tool.execute(from: '2026-04-20', to: '2026-04-21', resource_ids: [ct_cabinet.id], service_id: mri_service.id)
+
+      expect(result).to start_with('ERROR:')
+      expect(result).to include('SERVICE_RESOURCE_MISMATCH', 'service_resource_mismatch', 'MRI Cabinet')
+      expect(Captain::Runtime::ToolFailure.describe(result)).to include(failure: true, retryable: true)
+      expect(Captain::Runtime::ToolFailure.classify(result)).to eq('business')
+      expect(Captain::Runtime::ToolFailure.facts(result).dig('details', 'eligible_resources'))
+        .to eq([{ 'id' => mri_cabinet.id, 'name' => 'MRI Cabinet' }])
+    end
+
+    it 'filters out incompatible indexed specialists when a multi-resource request includes a compatible one' do
+      ct_cabinet, mri_cabinet, mri_service = build_diagnostic_cabinets
+      answer = JSON.parse(
+        agent_tool.execute(from: '2026-04-20', to: '2026-04-21', resource_ids: [ct_cabinet.id, mri_cabinet.id], service_id: mri_service.id)
+      )
+
+      expect(answer['days'].pluck('resource_id').uniq).to eq([mri_cabinet.id])
+    end
+
+    it 'allows an unindexed specialist with zero recorded services even when the service has ServicePrice links on others' do
+      new_doctor = create(:scheduling_resource, account: account, name: 'New Neurologist', timezone: 'Asia/Almaty', slot_duration_min: 30)
+      create(:scheduling_work_rule, resource: new_doctor, account: account, weekday: 1, start_minute: 9 * 60, end_minute: 12 * 60)
+
+      answer = JSON.parse(
+        agent_tool.execute(from: '2026-04-20', to: '2026-04-21', resource_ids: [new_doctor.id], service_id: consultation.id)
+      )
+      expect(answer['total']).to be > 0
+      expect(answer['days'].first['resource_id']).to eq(new_doctor.id)
+
+      create(:scheduling_service_price, account: account, service: consultation, resource: new_doctor, active: false, price: 20_000)
+      rejected = agent_tool.execute(from: '2026-04-20', to: '2026-04-21', resource_ids: [new_doctor.id], service_id: consultation.id)
+      expect(rejected).to include('SERVICE_RESOURCE_MISMATCH')
     end
   end
 
