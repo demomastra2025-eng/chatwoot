@@ -5,7 +5,11 @@ import { defineComponent, h } from 'vue';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
 
-const state = vi.hoisted(() => ({ clients: [], reconnect: vi.fn() }));
+const state = vi.hoisted(() => ({
+  clients: [],
+  reconnect: vi.fn(),
+  accept: vi.fn(),
+}));
 vi.mock('dashboard/api/channel/voice/janusAudioBridgeCallClient', () => ({
   isJanusAudioBridgeOffer: offer => offer?.transport === 'janus_audiobridge',
   default: class FakeJanusClient {
@@ -33,7 +37,7 @@ vi.mock('dashboard/api/telegramPersonalCalls', async importOriginal => {
     ...original,
     callsApiFor: value =>
       original.isTelegramPersonalProvider(value)
-        ? { reconnect: state.reconnect }
+        ? { reconnect: state.reconnect, accept: state.accept }
         : original.callsApiFor(value),
   };
 });
@@ -44,6 +48,7 @@ import {
   handleAgentOffer,
   reconnectTelegramJanusMedia,
   useWhatsappCallSession,
+  acceptWhatsappCallById,
 } from '../useWhatsappCallSession';
 
 const offer = { transport: 'janus_audiobridge', peer_id: 'peer-1' };
@@ -72,6 +77,7 @@ beforeEach(() => {
   });
   state.clients.length = 0;
   state.reconnect.mockReset();
+  state.accept.mockReset();
   track = { kind: 'audio', stop: vi.fn() };
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
@@ -252,6 +258,105 @@ describe('Telegram Janus call session', () => {
     expect(freshTrack.enabled).toBe(true);
     expect(ui.isMuted.value).toBe(false);
   });
+
+  it.each(['widget', 'bubble'])(
+    'preserves an explicit mute chosen while %s Telegram acceptance is pending',
+    async path => {
+      const store = useWhatsappCallsStore();
+      store.clearActiveCall();
+      const call = {
+        id: 1,
+        callId: 'tg-pending-accept',
+        provider: 'telegram_personal',
+        direction: 'incoming',
+        mediaServerEnabled: true,
+      };
+      store.addIncomingCall(call);
+      const ui = mountCallSession();
+      let resolveAccept;
+      state.accept.mockReturnValue(
+        new Promise(resolve => {
+          resolveAccept = resolve;
+        })
+      );
+      const accepting =
+        path === 'widget'
+          ? ui.acceptCall(call)
+          : acceptWhatsappCallById(1, 'telegram_personal');
+      const pendingGeneration = store.activeCallGeneration;
+      expect(store.activeCall.providerAccepting).toBe(true);
+      ui.toggleMute();
+      expect(ui.isMuted.value).toBe(true);
+      resolveAccept({
+        data: { id: 1, status: 'in_progress', agent_offer: offer },
+      });
+      await vi.waitFor(() =>
+        expect(state.clients[0].connect).toHaveBeenCalledOnce()
+      );
+      expect(track.enabled).toBe(false);
+      expect(store.activeCallGeneration).toBe(pendingGeneration);
+      state.clients[0].resolve();
+      await accepting;
+      expect(ui.isMuted.value).toBe(true);
+      expect(store.activeCall.isMuted).toBe(true);
+      expect(track.enabled).toBe(false);
+    }
+  );
+
+  it.each(['widget', 'bubble'])(
+    'discards a late %s acceptance after the call ended and another call owns the media',
+    async path => {
+      const store = useWhatsappCallsStore();
+      store.clearActiveCall();
+      const call = {
+        id: 1,
+        callId: 'old-accept',
+        provider: 'telegram_personal',
+        direction: 'incoming',
+        mediaServerEnabled: true,
+      };
+      store.addIncomingCall(call);
+      const ui = mountCallSession();
+      let resolveAccept;
+      state.accept.mockReturnValue(
+        new Promise(resolve => {
+          resolveAccept = resolve;
+        })
+      );
+      const accepting =
+        path === 'widget'
+          ? ui.acceptCall(call)
+          : acceptWhatsappCallById(1, 'telegram_personal');
+      const observed =
+        path === 'bubble'
+          ? expect(accepting).rejects.toMatchObject({ cancelled: true })
+          : accepting;
+      ui.toggleMute();
+      store.handleCallEnded('old-accept', 1);
+      store.setActiveCall({
+        id: 2,
+        callId: 'new-call',
+        provider: 'telegram_personal',
+        isMuted: false,
+        agentWebrtcConnected: true,
+      });
+      const newGeneration = store.activeCallGeneration;
+      resolveAccept({
+        data: { id: 1, status: 'in_progress', agent_offer: offer },
+      });
+      await observed;
+      expect(state.clients).toHaveLength(0);
+      expect(store.activeCall).toMatchObject({
+        id: 2,
+        callId: 'new-call',
+        isMuted: false,
+        agentWebrtcConnected: true,
+      });
+      expect(store.activeCallGeneration).toBe(newGeneration);
+      expect(store.isAccepting).toBe(false);
+      expect(ui.isMuted.value).toBe(false);
+    }
+  );
 
   it('stops microphone permission resolving after the call was cancelled', async () => {
     let resolvePermission;

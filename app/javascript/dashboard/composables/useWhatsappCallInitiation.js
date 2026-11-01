@@ -171,6 +171,7 @@ export const useWhatsappCallInitiation = (options = {}) => {
   ) => {
     if (!hasAgentMediaOffer(agentOffer)) return false;
 
+    const callScope = whatsappCallsStore.captureActiveCallScope();
     whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: true });
     try {
       const mediaOptions = {
@@ -189,8 +190,7 @@ export const useWhatsappCallInitiation = (options = {}) => {
           mediaOptions
         );
       }
-      if (String(whatsappCallsStore.activeCall?.id) !== String(callId))
-        return false;
+      if (!whatsappCallsStore.matchesActiveCallScope(callScope)) return false;
       whatsappCallsStore.updateActiveCall({
         agentWebrtcConnected: true,
         agentWebrtcConnecting: false,
@@ -201,8 +201,7 @@ export const useWhatsappCallInitiation = (options = {}) => {
       }
       return true;
     } catch (err) {
-      if (String(whatsappCallsStore.activeCall?.id) !== String(callId))
-        return false;
+      if (!whatsappCallsStore.matchesActiveCallScope(callScope)) return false;
       whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: false });
       if (isMediaLegClosedError(err)) {
         handleMediaLegClosed(whatsappCallsStore);
@@ -217,7 +216,12 @@ export const useWhatsappCallInitiation = (options = {}) => {
     }
   };
 
-  const setOutboundActiveCall = response => {
+  const ownsOutboundPreparation = generation =>
+    whatsappCallsStore.activeCallGeneration === generation &&
+    !whatsappCallsStore.hasWhatsappCall;
+
+  const setOutboundActiveCall = (response, initialGeneration) => {
+    if (!ownsOutboundPreparation(initialGeneration)) return null;
     const outboundCallId = response.data?.call_id;
     const username = currentChat.value?.additional_attributes?.username;
     const fallbackHandle = username
@@ -285,6 +289,8 @@ export const useWhatsappCallInitiation = (options = {}) => {
     const api = callsApiFor(provider);
     let preparedCallId = null;
     let dialStarted = false;
+    let callScope = null;
+    const initialGeneration = whatsappCallsStore.activeCallGeneration;
 
     try {
       showCallingAlert();
@@ -292,7 +298,12 @@ export const useWhatsappCallInitiation = (options = {}) => {
       if (handleInitiatePermissionStatus(response)) return;
       preparedCallId = response.data?.id;
 
-      const activeCallData = setOutboundActiveCall(response);
+      const activeCallData = setOutboundActiveCall(response, initialGeneration);
+      if (!activeCallData) {
+        if (preparedCallId) api.terminate(preparedCallId).catch(() => {});
+        return;
+      }
+      callScope = whatsappCallsStore.captureActiveCallScope();
       const agentOffer =
         response.data?.agent_offer ||
         whatsappCallsStore.consumePendingAgentOffer(activeCallData);
@@ -308,15 +319,11 @@ export const useWhatsappCallInitiation = (options = {}) => {
         throw new Error(t('WHATSAPP_CALL.CALL_FAILED'));
       }
 
+      if (!whatsappCallsStore.matchesActiveCallScope(callScope)) return;
       dialStarted = true;
       const dialResponse = await api.dial(response.data?.id);
       const currentActive = whatsappCallsStore.activeCall;
-      if (
-        !currentActive ||
-        String(currentActive.id) !== String(preparedCallId)
-      ) {
-        return;
-      }
+      if (!whatsappCallsStore.matchesActiveCallScope(callScope)) return;
       if (handleInitiatePermissionStatus(dialResponse)) {
         whatsappCallsStore.clearActiveCall();
         return;
@@ -345,14 +352,10 @@ export const useWhatsappCallInitiation = (options = {}) => {
       if (preparedCallId && !dialStarted) {
         api.terminate(preparedCallId).catch(() => {});
       }
-      const activeAfterErr = whatsappCallsStore.activeCall;
-      if (
-        dialStarted &&
-        (!activeAfterErr ||
-          String(activeAfterErr.id) !== String(preparedCallId))
-      ) {
-        return;
-      }
+      const ownsCall = callScope
+        ? whatsappCallsStore.matchesActiveCallScope(callScope)
+        : ownsOutboundPreparation(initialGeneration);
+      if (!ownsCall) return;
       whatsappCallsStore.clearActiveCall();
       handleInitiateError(err);
     } finally {
@@ -365,8 +368,13 @@ export const useWhatsappCallInitiation = (options = {}) => {
     isInitiatingCall.value = true;
     let pc = null;
     let localStream = null;
+    const initialGeneration = whatsappCallsStore.activeCallGeneration;
     try {
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!ownsOutboundPreparation(initialGeneration)) {
+        localStream.getTracks().forEach(track => track.stop());
+        return;
+      }
       pc = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
       });
@@ -388,6 +396,11 @@ export const useWhatsappCallInitiation = (options = {}) => {
       await waitForOutboundIceGathering(pc);
       const completeSdp = pc.localDescription.sdp;
 
+      if (!ownsOutboundPreparation(initialGeneration)) {
+        pc.close();
+        localStream.getTracks().forEach(track => track.stop());
+        return;
+      }
       const response = await WhatsappCallsAPI.initiate(
         selectedConversationId.value,
         completeSdp
@@ -399,12 +412,18 @@ export const useWhatsappCallInitiation = (options = {}) => {
         return;
       }
 
+      if (!setOutboundActiveCall(response, initialGeneration)) {
+        pc.close();
+        localStream.getTracks().forEach(track => track.stop());
+        if (response.data?.id)
+          WhatsappCallsAPI.terminate(response.data.id).catch(() => {});
+        return;
+      }
       showCallingAlert();
       const outboundCallId = response.data?.call_id;
       setOutboundCallProperty('pc', pc);
       setOutboundCallProperty('stream', localStream);
       setOutboundCallProperty('callId', outboundCallId);
-      setOutboundActiveCall(response);
     } catch (err) {
       if (pc) pc.close();
       if (localStream) localStream.getTracks().forEach(track => track.stop());

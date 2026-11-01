@@ -139,6 +139,7 @@ export const useWhatsappCallsStore = defineStore('whatsappCalls', {
       this.activeCall = null;
       this.callTimerOffset = 0;
       this.isReconnecting = false;
+      this.isAccepting = false;
     },
 
     markActiveCallConnected() {
@@ -247,6 +248,7 @@ export const useWhatsappCallsStore = defineStore('whatsappCalls', {
         this.activeCall = null;
         this.callTimerOffset = 0;
         this.isReconnecting = false;
+        this.isAccepting = false;
       }
       if (outboundCall.callId === callId) {
         cleanupOutboundCall();

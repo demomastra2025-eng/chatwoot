@@ -30,7 +30,25 @@ const mockCallsStoreState = {
   hasWhatsappCall: false,
   hasActiveCall: false,
   activeCall: null,
+  activeCallGeneration: 0,
+  captureActiveCallScope: () =>
+    mockCallsStoreState.activeCall
+      ? {
+          id: mockCallsStoreState.activeCall.id,
+          provider: mockCallsStoreState.activeCall.provider,
+          generation: mockCallsStoreState.activeCallGeneration,
+        }
+      : null,
+  matchesActiveCallScope: scope =>
+    Boolean(
+      scope &&
+        mockCallsStoreState.activeCall &&
+        scope.id === mockCallsStoreState.activeCall.id &&
+        scope.provider === mockCallsStoreState.activeCall.provider &&
+        scope.generation === mockCallsStoreState.activeCallGeneration
+    ),
   setActiveCall: vi.fn(call => {
+    mockCallsStoreState.activeCallGeneration += 1;
     mockCallsStoreState.activeCall = call;
     mockCallsStoreState.hasActiveCall = Boolean(call);
     mockCallsStoreState.hasWhatsappCall = Boolean(call);
@@ -44,6 +62,7 @@ const mockCallsStoreState = {
     }
   }),
   clearActiveCall: vi.fn(() => {
+    mockCallsStoreState.activeCallGeneration += 1;
     mockCallsStoreState.activeCall = null;
     mockCallsStoreState.hasActiveCall = false;
     mockCallsStoreState.hasWhatsappCall = false;
@@ -160,6 +179,7 @@ describe('useWhatsappCallInitiation for Channel::TelegramPersonal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCallsStoreState.activeCall = null;
+    mockCallsStoreState.activeCallGeneration = 0;
     mockCallsStoreState.hasActiveCall = false;
     mockCallsStoreState.hasWhatsappCall = false;
   });
@@ -253,6 +273,65 @@ describe('useWhatsappCallInitiation for Channel::TelegramPersonal', () => {
       direction: 'outbound',
       serverRelay: true,
     });
+  });
+
+  it('does not overwrite a newer call when an old outbound preparation response arrives', async () => {
+    mockStore.getters.getConversationById.mockReturnValue({
+      id: 501,
+      inbox_id: 12,
+      additional_attributes: { chat_type: 'private' },
+      meta: { sender: { name: 'Synthetic contact' } },
+    });
+    mockStore.getters['inboxes/getInbox'].mockReturnValue({
+      id: 12,
+      channel_type: 'Channel::TelegramPersonal',
+      calling_enabled: true,
+      media_server_enabled: true,
+    });
+    let resolvePrepare;
+    vi.spyOn(TelegramPersonalCallsAPI, 'prepareOutbound').mockReturnValue(
+      new Promise(resolve => {
+        resolvePrepare = resolve;
+      })
+    );
+    const dial = vi
+      .spyOn(TelegramPersonalCallsAPI, 'dial')
+      .mockResolvedValue({ data: { id: 91, status: 'ringing' } });
+    const terminate = vi
+      .spyOn(TelegramPersonalCallsAPI, 'terminate')
+      .mockResolvedValue({});
+    mockHandleCallAgentOffer.mockResolvedValue({ success: true });
+    const ui = useWhatsappCallInitiation({
+      conversationId: ref(501),
+      inboxId: ref(12),
+    });
+    const pending = ui.initiateWhatsappCall();
+    mockCallsStoreState.setActiveCall({
+      id: 99,
+      provider: 'telegram_personal',
+      isMuted: false,
+      agentWebrtcConnected: true,
+    });
+    resolvePrepare({
+      data: {
+        id: 91,
+        provider: 'telegram_personal',
+        agent_offer: {
+          transport: 'janus_audiobridge',
+          room_id: 123,
+          peer_id: 'old-peer',
+        },
+      },
+    });
+    await pending;
+    expect(mockCallsStoreState.activeCall).toMatchObject({
+      id: 99,
+      isMuted: false,
+      agentWebrtcConnected: true,
+    });
+    expect(mockHandleCallAgentOffer).not.toHaveBeenCalled();
+    expect(dial).not.toHaveBeenCalled();
+    expect(terminate).toHaveBeenCalledWith(91);
   });
 
   it('disables call initiation for Telegram group conversations', () => {
