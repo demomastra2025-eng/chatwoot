@@ -194,5 +194,58 @@ RSpec.describe AutomationRules::AppointmentActionService do
       expect(account.reminders.where(remindable: appt14)).to be_empty
       expect(account.reminders.where(remindable: appt15).count).to eq(1)
     end
+
+    it 'isolates per-touch min_minutes_before_appointment on multi-action rules without leaking to sibling actions' do
+      multi_rule = create(
+        :automation_rule,
+        account: account, event_name: 'appointment_created', conditions: [],
+        actions: [
+          { action_name: 'create_touch', action_params: [{
+            action_type: 'send_message', content_kind: 'free_text', body: 'Touch A no min',
+            timing_mode: 'relative', relative_anchor: 'appointment.starts_at', relative_offset_seconds: -30.minutes.to_i,
+            target_inbox_id: conversation.inbox_id
+          }] },
+          { action_name: 'create_touch', action_params: [{
+            action_type: 'send_message', content_kind: 'free_text', body: 'Touch B 120m min',
+            timing_mode: 'relative', relative_anchor: 'touch.created_at', relative_offset_seconds: 0,
+            target_inbox_id: conversation.inbox_id, min_minutes_before_appointment: 120
+          }] },
+          { action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/multi'] }
+        ]
+      )
+      expect(multi_rule.min_minutes_before_appointment).to be_nil
+
+      appt90 = appointment_at(90.minutes)
+      appt120 = appointment_at(120.minutes)
+      clear_enqueued_jobs
+
+      described_class.new(multi_rule, account, appt90).perform
+      expect(account.reminders.where(remindable: appt90).pluck(:body)).to eq(['Touch A no min'])
+      expect(enqueued_jobs.count { |job| job[:job] == WebhookJob }).to eq(1)
+
+      described_class.new(multi_rule, account, appt120).perform
+      summary = Scheduling::AppointmentNotificationsSummary.new(account: account, appointment: appt120).perform
+      touch_a_id, touch_b_id = multi_rule.actions.first(2).map { |action| action['action_id'] }
+      expect(summary.find { |item| item[:action_id] == touch_a_id }[:min_minutes_before_appointment]).to be_nil
+      expect(summary.find { |item| item[:action_id] == touch_b_id }[:min_minutes_before_appointment]).to eq(120)
+    end
+
+    it 'never suppresses post-visit appointment_completed touches even if legacy execution_schedule had min_minutes' do
+      completed_rule = create(
+        :automation_rule,
+        account: account, event_name: 'appointment_completed', conditions: [],
+        actions: [{ action_name: 'create_touch', action_params: [{
+          action_type: 'send_message', content_kind: 'free_text', body: 'Thanks for visiting',
+          timing_mode: 'relative', relative_anchor: 'appointment.ends_at', relative_offset_seconds: 1.hour.to_i,
+          target_inbox_id: conversation.inbox_id
+        }] }]
+      )
+      completed_rule.update_columns(execution_schedule: { 'min_minutes_before_appointment' => 60 }) # rubocop:disable Rails/SkipsModelValidations
+      past_appt = appointment_at(-30.minutes)
+
+      described_class.new(completed_rule.reload, account, past_appt).perform
+
+      expect(account.reminders.where(remindable: past_appt).count).to eq(1)
+    end
   end
 end

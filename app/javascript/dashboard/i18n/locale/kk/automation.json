@@ -130,6 +130,7 @@
         "SKIP_LATE_IMPORT_NOTE": "Егер жазба MedElement-те жасалғаннан кейін бір сағаттан кеш OneLink-ке келсе, хабарлама жіберілмейді. Қабылдау басталып кетсе, жазылу немесе ауыстыру туралы хабарлама ешқашан жіберілмейді.",
         "MIN_MINUTES_BEFORE_LABEL": "Қабылдауға дейінгі минут",
         "MIN_MINUTES_BEFORE_NOTE": "Міндетті емес: қабылдау басталуына көрсетілген минуттан аз уақыт қалса, хабарлама жіберілмейді (мысалы, 60).",
+        "MIN_MINUTES_BEFORE_INVALID": "1 мен 43200 аралығындағы бүтін минут санын көрсетіңіз немесе бос қалдырыңыз",
         "TIMEZONE_LABEL": "Timezone",
         "RELATIVE_UNIT_LABEL": "Unit",
         "ATTACHMENTS_LABEL": "Attachments",
@@ -182,6 +183,7 @@
       "VALUE_MUST_BE_BETWEEN_1_AND_998": "Value must be between 1 and 998",
       "ACTION_PARAMETERS_REQUIRED": "Action parameters are required",
       "CREATE_TOUCH_DELAY_INVALID": "Еске салу кідірісі нөл немесе одан көп болуы керек",
+      "CREATE_TOUCH_MIN_MINUTES_BEFORE_INVALID": "1 мен 43200 аралығындағы бүтін минут санын көрсетіңіз немесе бос қалдырыңыз",
       "STAGE_OPTION_ARCHIVED": "Таңдалған кезең архивтелген немесе енді қолжетімді емес. Сақтамас бұрын белсенді кезеңді таңдаңыз.",
       "ATLEAST_ONE_CONDITION_REQUIRED": "At least one condition is required",
       "ATLEAST_ONE_ACTION_REQUIRED": "At least one action is required"

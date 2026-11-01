@@ -644,7 +644,7 @@ describe('AutomationTouchInput', () => {
     );
   });
 
-  it('sets, preserves and clears min_minutes_before_appointment for appointment touches only', async () => {
+  it('validates min_minutes_before_appointment without wiping invalid drafts and strips it on non-pre-visit events', async () => {
     const wrapper = mountComponent({
       eventName: 'appointment_created',
       modelValue: { body: 'Вы записаны' },
@@ -652,29 +652,50 @@ describe('AutomationTouchInput', () => {
 
     expect(wrapper.vm.canConfigureMinMinutesBefore).toBe(true);
     expect(wrapper.vm.minMinutesBeforeAppointment).toBe('');
+    expect(wrapper.vm.minMinutesBeforeError).toBe('');
 
     wrapper.vm.minMinutesBeforeAppointment = '60';
     let payload = await applyLastPayload(wrapper);
     expect(payload.min_minutes_before_appointment).toBe(60);
     expect(wrapper.vm.minMinutesBeforeAppointment).toBe('60');
+    expect(wrapper.vm.minMinutesBeforeError).toBe('');
 
     wrapper.vm.minMinutesBeforeAppointment = '0';
     payload = await applyLastPayload(wrapper);
-    expect(payload).not.toHaveProperty('min_minutes_before_appointment');
+    expect(payload.min_minutes_before_appointment).toBe('0');
+    expect(wrapper.vm.minMinutesBeforeAppointment).toBe('0');
+    expect(wrapper.vm.minMinutesBeforeError).toBe(
+      'AUTOMATION.ACTION.TOUCH_EDITOR.MIN_MINUTES_BEFORE_INVALID'
+    );
+
+    wrapper.vm.minMinutesBeforeAppointment = '50000';
+    payload = await applyLastPayload(wrapper);
+    expect(payload.min_minutes_before_appointment).toBe('50000');
+    expect(wrapper.vm.minMinutesBeforeError).toBe(
+      'AUTOMATION.ACTION.TOUCH_EDITOR.MIN_MINUTES_BEFORE_INVALID'
+    );
 
     wrapper.vm.minMinutesBeforeAppointment = '';
     payload = await applyLastPayload(wrapper);
     expect(payload).not.toHaveProperty('min_minutes_before_appointment');
+    expect(wrapper.vm.minMinutesBeforeAppointment).toBe('');
+    expect(wrapper.vm.minMinutesBeforeError).toBe('');
 
-    const conversationWrapper = mountComponent({
-      eventName: 'conversation_updated',
-      modelValue: { body: 'Follow up', min_minutes_before_appointment: 60 },
+    [
+      'appointment_cancelled',
+      'appointment_completed',
+      'conversation_updated',
+    ].forEach(unsupportedEvent => {
+      const unsupportedWrapper = mountComponent({
+        eventName: unsupportedEvent,
+        modelValue: { body: 'Follow up', min_minutes_before_appointment: 60 },
+      });
+      expect(unsupportedWrapper.vm.canConfigureMinMinutesBefore).toBe(false);
+      expect(
+        unsupportedWrapper.vm.cleanPayload(
+          unsupportedWrapper.vm.normalizedValue
+        )
+      ).not.toHaveProperty('min_minutes_before_appointment');
     });
-    expect(conversationWrapper.vm.canConfigureMinMinutesBefore).toBe(false);
-    expect(
-      conversationWrapper.vm.cleanPayload(
-        conversationWrapper.vm.normalizedValue
-      )
-    ).not.toHaveProperty('min_minutes_before_appointment');
   });
 });

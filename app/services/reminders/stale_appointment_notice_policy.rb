@@ -10,7 +10,7 @@
 # (appointment.starts_at / ends_at, e.g. «за 2 часа»), absolute follow-ups planned later than an hour after the event,
 # repeating series and AI wake-ups are not; a late visit-timed touch is handled by Reminders::MissedAutomationTouchPolicy.
 class Reminders::StaleAppointmentNoticePolicy
-  NOTICE_EVENT_NAMES = %w[appointment_created appointment_rescheduled].freeze
+  NOTICE_EVENT_NAMES = %w[appointment_created appointment_rescheduled appointment_updated].freeze
   VISIT_ANCHORS = Reminders::MissedAutomationTouchPolicy::APPOINTMENT_ANCHORS
   LATE_IMPORT_OPT_IN_KEY = 'skip_if_imported_late'
   MAX_IMPORT_LAG = 1.hour
@@ -61,18 +61,30 @@ class Reminders::StaleAppointmentNoticePolicy
     event_name = metadata[Reminder::AUTOMATION_EVENT_NAME_KEY].to_s
     rule = automation_rule
     action = matching_rule_action(rule)
-    if AutomationRules::AppointmentNotificationLeadTime.configured_minutes(rule, action: action).present?
-      return AutomationRules::AppointmentNotificationLeadTime.short?(
-        appointment,
-        rule: rule,
-        action: action,
-        event_name: event_name,
-        reference_time: notice_event_reference_time(event_name),
-        now: now
-      )
-    end
+    return configured_short_lead?(rule, action, event_name) if configured_lead_minutes?(rule, action)
 
     event_name == 'appointment_created' && AutomationRules::AppointmentNotificationLeadTime.short?(appointment, rule: rule, now: now)
+  end
+
+  def configured_lead_minutes?(rule, action)
+    AutomationRules::AppointmentNotificationLeadTime.configured_minutes(rule, action: action).present?
+  end
+
+  def configured_short_lead?(rule, action, event_name)
+    ref = notice_event_reference_time(event_name)
+    AutomationRules::AppointmentNotificationLeadTime.short?(
+      appointment,
+      rule: rule,
+      action: action,
+      event_name: event_name,
+      reference_time: ref,
+      enforce_remaining_time: enforce_remaining_time?(ref),
+      now: now
+    )
+  end
+
+  def enforce_remaining_time?(ref)
+    working_hours_rescheduled? || (now - ref > AutomationRules::AppointmentNotificationLeadTime::HOLD_RELEASE_GRACE)
   end
 
   def automation_rule
@@ -125,7 +137,13 @@ class Reminders::StaleAppointmentNoticePolicy
 
   # A notice goes out right after the event; a message planned for days later is a follow-up, not a notice.
   def prompt_notice?
+    return true if working_hours_rescheduled? && (!reminder.relative? || reminder.relative_offset_seconds.to_i <= MAX_NOTICE_DELAY.to_i)
+
     reminder.scheduled_at.blank? || reminder.scheduled_at - event_time <= MAX_NOTICE_DELAY
+  end
+
+  def working_hours_rescheduled?
+    Reminders::BooleanParam.truthy?(metadata['rescheduled_by_working_hours'])
   end
 
   def event_time

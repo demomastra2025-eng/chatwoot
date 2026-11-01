@@ -1,10 +1,20 @@
 class AutomationRules::AppointmentNotificationLeadTime
   MINUTES = 60
+  HOLD_RELEASE_GRACE = 15.minutes
 
   def self.configured_minutes(rule, action: nil)
-    action_minutes = extract_action_minutes(action)
-    return action_minutes if action_minutes.present?
+    return if non_pre_visit_rule?(rule)
+    return touch_configured_minutes(rule, action) if touch_action?(action)
+    return if mixed_touch_min_minutes?(rule)
 
+    rule_fallback_minutes(rule)
+  end
+
+  def self.touch_configured_minutes(rule, action)
+    extract_action_minutes(action) || (rule_fallback_minutes(rule) unless any_touch_defines_min_minutes?(rule))
+  end
+
+  def self.rule_fallback_minutes(rule)
     rule_minutes = rule&.min_minutes_before_appointment
     rule_minutes if rule_minutes.is_a?(Integer) && rule_minutes.positive?
   end
@@ -32,12 +42,33 @@ class AutomationRules::AppointmentNotificationLeadTime
     end
   end
 
+  def self.non_pre_visit_rule?(rule)
+    rule&.event_name.present? && AutomationRule::MIN_MINUTES_BEFORE_APPOINTMENT_EVENTS.exclude?(rule.event_name.to_s)
+  end
+
+  def self.touch_action?(action)
+    action.present? && action.to_h.with_indifferent_access[:action_name].to_s == 'create_touch'
+  end
+
+  def self.any_touch_defines_min_minutes?(rule)
+    rule_touch_actions(rule).any? { |touch| extract_action_minutes(touch).present? }
+  end
+
+  def self.mixed_touch_min_minutes?(rule)
+    touches = rule_touch_actions(rule)
+    return false if touches.empty?
+
+    touches.map { |touch| extract_action_minutes(touch) }.uniq.length > 1
+  end
+
+  def self.rule_touch_actions(rule)
+    Array(rule&.actions).select { |entry| touch_action?(entry) }
+  end
+
   def self.extract_action_minutes(action)
-    return if action.blank?
+    return unless touch_action?(action)
 
     action_hash = action.to_h.with_indifferent_access
-    return unless action_hash[:action_name].to_s == 'create_touch'
-
     params = Array.wrap(action_hash[:action_params]).first
     return unless params.is_a?(Hash) || params.respond_to?(:to_h)
 
@@ -58,7 +89,8 @@ class AutomationRules::AppointmentNotificationLeadTime
     value if value && AutomationRule::MIN_MINUTES_BEFORE_APPOINTMENT_RANGE.cover?(value)
   end
 
-  private_class_method :extract_action_minutes, :parse_positive_minutes
+  private_class_method :touch_configured_minutes, :rule_fallback_minutes, :non_pre_visit_rule?, :touch_action?, :any_touch_defines_min_minutes?,
+                       :mixed_touch_min_minutes?, :rule_touch_actions, :extract_action_minutes, :parse_positive_minutes
 
   def initialize(appointment, **options)
     @appointment = appointment
@@ -66,6 +98,7 @@ class AutomationRules::AppointmentNotificationLeadTime
     @action = options[:action]
     @event_name = options.key?(:event_name) ? options[:event_name] : @rule&.event_name
     @delayed_notification = options[:delayed_notification] == true
+    @enforce_remaining_time = options[:enforce_remaining_time] == true
     @reference_time = options[:reference_time]
     @now = options[:now] || Time.current
   end
@@ -84,7 +117,11 @@ class AutomationRules::AppointmentNotificationLeadTime
   def configured_short?(minutes)
     return true if @appointment.starts_at <= @now
 
-    @appointment.starts_at - effective_reference_time < minutes.minutes
+    ref = effective_reference_time
+    return true if @appointment.starts_at - ref < minutes.minutes
+    return false if @delayed_notification || !@enforce_remaining_time
+
+    @appointment.starts_at - @now < minutes.minutes
   end
 
   def effective_reference_time

@@ -392,6 +392,7 @@ export function useAutomation(startValue = null) {
    * Handles the event change for an automation.value.
    */
   const onEventChange = async () => {
+    delete automation.value.min_minutes_before_appointment;
     automation.value.conditions = getDefaultConditions(eventName.value);
     automation.value.actions = getDefaultActions(eventName.value);
     await loadAutomationReferences(eventName.value);

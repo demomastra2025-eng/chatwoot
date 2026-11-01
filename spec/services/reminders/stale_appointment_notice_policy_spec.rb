@@ -193,5 +193,60 @@ RSpec.describe Reminders::StaleAppointmentNoticePolicy do
       appointment.starts_at = now + 60.minutes
       expect(stale_reason).to be_nil
     end
+
+    it 'cancels an appointment_created notice deferred by quiet hours when fewer than configured minutes remain at send time' do
+      account = create(:account).tap { |record| record.enable_features!('scheduling') }
+      rule = create(:automation_rule, account: account, event_name: 'appointment_created',
+                                      min_minutes_before_appointment: 60, conditions: [],
+                                      actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hook'] }])
+      booked_at = Time.zone.parse('2026-10-19 23:00')
+      send_at = Time.zone.parse('2026-10-20 09:00')
+      appointment.assign_attributes(account: account, created_at: booked_at, starts_at: Time.zone.parse('2026-10-20 09:30'))
+      reminder.assign_attributes(timing_mode: 'absolute', relative_anchor: nil, created_at: booked_at, scheduled_at: send_at)
+      update_metadata(
+        { Reminder::AUTOMATION_EVENT_NAME_KEY => 'appointment_created', 'automation_rule_id' => rule.id,
+          'rescheduled_by_working_hours' => true },
+        without: [described_class::LATE_IMPORT_OPT_IN_KEY]
+      )
+
+      expect(described_class.new(reminder: reminder, now: send_at).stale_reason).to eq(described_class::SHORT_LEAD_REASON)
+
+      appointment.starts_at = Time.zone.parse('2026-10-20 10:00')
+      expect(described_class.new(reminder: reminder, now: send_at).stale_reason).to be_nil
+    end
+
+    it 'preserves MedElement hold-release grace when booked 62 minutes ahead and delivered 5 minutes later' do
+      account = create(:account).tap { |record| record.enable_features!('scheduling') }
+      rule = create(:automation_rule, account: account, event_name: 'appointment_created',
+                                      min_minutes_before_appointment: 60, conditions: [],
+                                      actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hook'] }])
+      booked_at = now - 5.minutes
+      appointment.assign_attributes(account: account, created_at: booked_at, starts_at: booked_at + 62.minutes)
+      reminder.assign_attributes(created_at: now, scheduled_at: now)
+      update_metadata(
+        { Reminder::AUTOMATION_EVENT_NAME_KEY => 'appointment_created', 'automation_rule_id' => rule.id },
+        without: [described_class::LATE_IMPORT_OPT_IN_KEY]
+      )
+
+      expect(stale_reason).to be_nil
+    end
+
+    it 'enforces configured min_minutes_before_appointment and after-start protection on appointment_updated notices' do
+      account = create(:account).tap { |record| record.enable_features!('scheduling') }
+      rule = create(:automation_rule, account: account, event_name: 'appointment_updated',
+                                      min_minutes_before_appointment: 60, conditions: [],
+                                      actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hook'] }])
+      appointment.assign_attributes(account: account, starts_at: now + 45.minutes)
+      reminder.assign_attributes(created_at: now, scheduled_at: now + 1.minute)
+      update_metadata(
+        { Reminder::AUTOMATION_EVENT_NAME_KEY => 'appointment_updated', 'automation_rule_id' => rule.id },
+        without: [described_class::LATE_IMPORT_OPT_IN_KEY]
+      )
+
+      expect(stale_reason).to eq(described_class::SHORT_LEAD_REASON)
+
+      appointment.starts_at = now - 1.minute
+      expect(stale_reason).to eq(described_class::STARTED_REASON)
+    end
   end
 end

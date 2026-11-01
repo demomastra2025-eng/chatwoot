@@ -30,6 +30,7 @@ class Reminders::MaterializeEnrollmentStepService
     return process_inactive_enrollment unless enrollment.active?
     return pause_enrollment! unless feature_enabled?
     return cancel_unusable_source! unless source_usable?
+    return if Reminders::AppointmentShortLeadCancellation.cancel_enrollment_if_short!(enrollment, now: now)
 
     schedule = Reminders::EnrollmentScheduleService.new(enrollment: enrollment)
     return cancel_terminal!(schedule) if schedule.terminal_remindable?

@@ -252,4 +252,37 @@ describe('validateAutomation', () => {
     const errors = validateAutomation(automation);
     expect(errors).toEqual({});
   });
+
+  it('validates create_touch min_minutes_before_appointment range (1..43200 or empty)', () => {
+    const buildTouchAutomation = minMinutes => ({
+      name: 'Booking notice',
+      description: 'Skip short lead bookings',
+      event_name: 'appointment_created',
+      conditions: [
+        {
+          attribute_key: 'source',
+          filter_operator: 'is_present',
+        },
+      ],
+      actions: [
+        {
+          action_name: 'create_touch',
+          action_params: {
+            body: 'Вы записаны',
+            delay_minutes: 0,
+            min_minutes_before_appointment: minMinutes,
+          },
+        },
+      ],
+    });
+
+    expect(validateAutomation(buildTouchAutomation('0'))).toEqual({
+      action_0: 'CREATE_TOUCH_MIN_MINUTES_BEFORE_INVALID',
+    });
+    expect(validateAutomation(buildTouchAutomation('50000'))).toEqual({
+      action_0: 'CREATE_TOUCH_MIN_MINUTES_BEFORE_INVALID',
+    });
+    expect(validateAutomation(buildTouchAutomation(''))).toEqual({});
+    expect(validateAutomation(buildTouchAutomation(60))).toEqual({});
+  });
 });

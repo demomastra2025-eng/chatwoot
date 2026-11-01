@@ -14,13 +14,7 @@ class Reminders::SyncEnrollmentService
     return if Current.medelement_reconciliation
 
     enrollment_scope.where(status: %w[active paused]).find_each do |enrollment|
-      enrollment.with_lock do
-        enrollment.reload
-        next unless enrollment.active? || enrollment.paused?
-
-        clear_terminal_at_activation!(enrollment)
-        Reminders::EnrollmentScheduleService.new(enrollment: enrollment).refresh_next_due!
-      end
+      sync_open_enrollment(enrollment)
     end
   end
 
@@ -67,6 +61,27 @@ class Reminders::SyncEnrollmentService
 
   def reason_for_cancelled_reminder
     'cancelled because the source entity became terminal'
+  end
+
+  def sync_open_enrollment(enrollment)
+    enrollment.with_lock do
+      enrollment.reload
+      next unless enrollment.active? || enrollment.paused?
+
+      clear_terminal_at_activation!(enrollment)
+      previous_due_at = enrollment.next_due_at
+      Reminders::EnrollmentScheduleService.new(enrollment: enrollment).refresh_next_due!
+      rescheduled = appointment_rescheduled?(previous_due_at, enrollment.next_due_at)
+      Reminders::AppointmentShortLeadCancellation.cancel_enrollment_if_short!(enrollment, rescheduled: rescheduled)
+    end
+  end
+
+  def appointment_rescheduled?(previous_due_at, current_due_at)
+    return false unless remindable.is_a?(Scheduling::Appointment)
+
+    remindable.saved_change_to_starts_at? ||
+      remindable.previous_changes.key?('starts_at') ||
+      (previous_due_at.present? && current_due_at != previous_due_at)
   end
 
   def clear_terminal_at_activation!(enrollment)

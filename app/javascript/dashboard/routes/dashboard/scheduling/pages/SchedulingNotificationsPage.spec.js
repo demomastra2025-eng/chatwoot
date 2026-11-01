@@ -496,7 +496,6 @@ describe('SchedulingNotificationsPage', () => {
     await flushPromises();
     expect(AutomationAPI.update).toHaveBeenCalledWith(58, {
       min_minutes_before_appointment: null,
-      calendar_managed: true,
       calendar_context: true,
     });
   });
@@ -520,5 +519,49 @@ describe('SchedulingNotificationsPage', () => {
     expect(mocks.alert).toHaveBeenCalledWith(
       'SCHEDULING.NOTIFICATIONS.MIN_MINUTES_BEFORE_INVALID'
     );
+  });
+
+  it('updates min_minutes_before_appointment on custom calendar_managed=false rules without forcing calendar_managed and hides it on cancellation rules', async () => {
+    mocks.rules = [
+      rule({
+        id: 58,
+        name: 'Custom booking rule',
+        description: '',
+        calendar_managed: false,
+        event_name: 'appointment_created',
+      }),
+      rule({
+        id: 59,
+        name: 'Custom cancellation rule',
+        description: '',
+        calendar_managed: false,
+        event_name: 'appointment_cancelled',
+        min_minutes_before_appointment: 60,
+      }),
+    ];
+    const wrapper = await mountPage();
+
+    const customBookingCard = wrapper.find(
+      '[data-testid="other-rule-card-58"]'
+    );
+    await customBookingCard
+      .find('[data-testid="other-rule-min-minutes-input"]')
+      .setValue('75');
+    await customBookingCard
+      .find('[data-testid="save-other-rule-min-minutes-btn"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(AutomationAPI.update).toHaveBeenCalledWith(58, {
+      min_minutes_before_appointment: 75,
+      calendar_context: true,
+    });
+
+    const customCancelCard = wrapper.find('[data-testid="other-rule-card-59"]');
+    expect(
+      customCancelCard
+        .find('[data-testid="other-rule-min-minutes-input"]')
+        .exists()
+    ).toBe(false);
   });
 });

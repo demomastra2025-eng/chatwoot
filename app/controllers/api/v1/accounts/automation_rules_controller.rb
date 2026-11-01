@@ -78,7 +78,7 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
     @automation_rule.actions = actions if params[:actions]
     apply_min_minutes_before_appointment
     @automation_rule.conditions = params[:conditions] if params[:conditions]
-    @automation_rule.calendar_managed = true if calendar_context_touch_rule?(@automation_rule.actions)
+    @automation_rule.calendar_managed = true if boolean_param?(:calendar_managed)
   end
 
   def persist_rule_with_blobs!(blobs)

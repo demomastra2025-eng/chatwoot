@@ -89,9 +89,8 @@ const ruleMinMinutes = rule => {
   return parsed.valid && !parsed.empty ? parsed.value : null;
 };
 
-const supportsMinMinutesBefore = (eventName, existingRule = null) =>
-  PRE_VISIT_MIN_LEAD_EVENTS.includes(eventName) ||
-  Boolean(ruleMinMinutes(existingRule));
+const supportsMinMinutesBefore = eventName =>
+  PRE_VISIT_MIN_LEAD_EVENTS.includes(eventName);
 
 const createDefaultPresetDraft = preset => ({
   enabled: false,
@@ -556,10 +555,7 @@ const saveInlinePreset = async (preset, { forceActive = null } = {}) => {
   }
 
   const existingRule = presetRule(preset);
-  const parsedMinMinutes = supportsMinMinutesBefore(
-    preset.eventName,
-    existingRule
-  )
+  const parsedMinMinutes = supportsMinMinutesBefore(preset.eventName)
     ? parsePositiveMinMinutes(state.minMinutesBeforeAppointment)
     : { empty: true, valid: true, value: null };
   if (!parsedMinMinutes.valid) {
@@ -674,7 +670,6 @@ const saveOtherRuleMinMinutes = async rule => {
   try {
     await AutomationAPI.update(rule.id, {
       min_minutes_before_appointment: parsed.value,
-      calendar_managed: true,
       calendar_context: true,
     });
     await store.dispatch('automations/get');
@@ -1109,12 +1104,7 @@ onMounted(async () => {
                     </div>
 
                     <div
-                      v-if="
-                        supportsMinMinutesBefore(
-                          preset.eventName,
-                          presetRule(preset)
-                        )
-                      "
+                      v-if="supportsMinMinutesBefore(preset.eventName)"
                       class="space-y-1.5"
                     >
                       <label class="block text-xs font-medium text-n-slate-12">
@@ -1299,7 +1289,7 @@ onMounted(async () => {
               <div
                 v-if="
                   (rule.calendar_managed || firstTouch(rule)) &&
-                  supportsMinMinutesBefore(rule.event_name, rule)
+                  supportsMinMinutesBefore(rule.event_name)
                 "
                 class="mt-2.5 flex flex-wrap items-center gap-2"
               >

@@ -108,20 +108,22 @@ const MIN_MINUTES_BEFORE_EVENTS = [
   'appointment_rescheduled',
   'appointment_updated',
 ];
-const normalizeMinMinutesBefore = raw => {
+const parseMinMinutesBefore = raw => {
   if (raw === null || raw === undefined || String(raw).trim() === '') {
-    return null;
+    return { empty: true, valid: true, value: null, raw: '' };
   }
   const trimmed = String(raw).trim();
-  if (!/^\d+$/.test(trimmed)) return null;
+  if (!/^\d+$/.test(trimmed)) {
+    return { empty: false, valid: false, value: null, raw: String(raw) };
+  }
   const parsed = Number(trimmed);
-  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 43200
-    ? parsed
-    : null;
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 43200) {
+    return { empty: false, valid: false, value: null, raw: String(raw) };
+  }
+  return { empty: false, valid: true, value: parsed, raw: String(parsed) };
 };
-const allowsMinMinutesBefore = (eventName, params) =>
-  MIN_MINUTES_BEFORE_EVENTS.includes(eventName) ||
-  Boolean(normalizeMinMinutesBefore(params?.[MIN_MINUTES_BEFORE_KEY]));
+const allowsMinMinutesBefore = eventName =>
+  MIN_MINUTES_BEFORE_EVENTS.includes(eventName);
 const normalizeArray = value => (Array.isArray(value) ? value : []);
 const normalizeAttachmentId = attachment => {
   if (typeof attachment === 'string') return attachment;
@@ -476,20 +478,37 @@ export default {
     canConfigureMinMinutesBefore() {
       return (
         this.entityKey === 'appointment' &&
-        allowsMinMinutesBefore(this.eventName, this.normalizedValue)
+        allowsMinMinutesBefore(this.eventName)
+      );
+    },
+    minMinutesBeforeState() {
+      return parseMinMinutesBefore(
+        this.normalizedValue[MIN_MINUTES_BEFORE_KEY]
+      );
+    },
+    minMinutesBeforeError() {
+      if (
+        !this.canConfigureMinMinutesBefore ||
+        this.minMinutesBeforeState.valid
+      ) {
+        return '';
+      }
+      return this.$t(
+        'AUTOMATION.ACTION.TOUCH_EDITOR.MIN_MINUTES_BEFORE_INVALID'
       );
     },
     minMinutesBeforeAppointment: {
       get() {
-        const val = normalizeMinMinutesBefore(
-          this.normalizedValue[MIN_MINUTES_BEFORE_KEY]
-        );
-        return val ? String(val) : '';
+        return this.minMinutesBeforeState.raw;
       },
       set(value) {
-        const parsed = normalizeMinMinutesBefore(value);
+        const parsed = parseMinMinutesBefore(value);
+        let nextValue = '';
+        if (!parsed.empty) {
+          nextValue = parsed.valid ? parsed.value : parsed.raw;
+        }
         this.emitValue({
-          [MIN_MINUTES_BEFORE_KEY]: parsed || '',
+          [MIN_MINUTES_BEFORE_KEY]: nextValue,
         });
       },
     },
@@ -938,15 +957,17 @@ export default {
         delete cleaned.metadata[LATE_IMPORT_OPT_IN_KEY];
       }
 
-      const parsedMinMinutes = normalizeMinMinutesBefore(
+      const parsedMinMinutes = parseMinMinutesBefore(
         cleaned[MIN_MINUTES_BEFORE_KEY]
       );
       if (
         this.entityKey === 'appointment' &&
-        allowsMinMinutesBefore(this.eventName, cleaned) &&
-        parsedMinMinutes
+        allowsMinMinutesBefore(this.eventName) &&
+        !parsedMinMinutes.empty
       ) {
-        cleaned[MIN_MINUTES_BEFORE_KEY] = parsedMinMinutes;
+        cleaned[MIN_MINUTES_BEFORE_KEY] = parsedMinMinutes.valid
+          ? parsedMinMinutes.value
+          : parsedMinMinutes.raw;
       } else {
         delete cleaned[MIN_MINUTES_BEFORE_KEY];
       }
@@ -1444,13 +1465,22 @@ export default {
             max="43200"
             step="1"
             data-testid="touch-min-minutes-before-input"
+            :aria-invalid="Boolean(minMinutesBeforeError)"
             :placeholder="
               $t('SCHEDULING.NOTIFICATIONS.MIN_MINUTES_BEFORE_PLACEHOLDER')
             "
-            class="w-full max-w-xs rounded-lg border border-n-weak bg-n-surface-1 px-3 py-2 text-sm font-normal text-n-slate-12"
+            class="w-full max-w-xs rounded-lg border bg-n-surface-1 px-3 py-2 text-sm font-normal text-n-slate-12"
+            :class="minMinutesBeforeError ? 'border-n-ruby-9' : 'border-n-weak'"
             @input="minMinutesBeforeAppointment = $event.target.value"
           />
         </label>
+        <p
+          v-if="minMinutesBeforeError"
+          data-testid="touch-min-minutes-before-error"
+          class="mb-0 text-xs leading-5 text-n-ruby-11"
+        >
+          {{ minMinutesBeforeError }}
+        </p>
         <p class="mb-0 text-xs leading-5 text-n-slate-10">
           {{ $t('AUTOMATION.ACTION.TOUCH_EDITOR.MIN_MINUTES_BEFORE_NOTE') }}
         </p>
