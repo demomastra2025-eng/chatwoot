@@ -1174,12 +1174,14 @@ onMounted(async () => {
             })
           }}
         </p>
-        <TabBar
-          active-text-class="text-n-slate-12 scale-100"
-          :tabs="tabs"
-          :initial-active-tab="activeScheduleTabIndex"
-          @tab-changed="scheduleTab = $event.value"
-        />
+        <div class="min-w-0 overflow-x-auto">
+          <TabBar
+            active-text-class="text-n-slate-12 scale-100"
+            :tabs="tabs"
+            :initial-active-tab="activeScheduleTabIndex"
+            @tab-changed="scheduleTab = $event.value"
+          />
+        </div>
 
         <div
           v-if="scheduleTab === 'work'"
