@@ -21,9 +21,12 @@ class AccountAPI extends ApiClient {
     return axios.post(`${this.apiVersion}/accounts`, data);
   }
 
-  update(_id, { logo, ...accountAttributes }) {
+  update(id, { logo, ...accountAttributes }) {
+    const url = id
+      ? `${this.apiVersion}/accounts/${id}`
+      : this.currentAccountUrl;
     if (!logo) {
-      return axios.patch(this.currentAccountUrl, accountAttributes);
+      return axios.patch(url, accountAttributes);
     }
 
     const formData = new FormData();
@@ -43,7 +46,7 @@ class AccountAPI extends ApiClient {
 
     formData.append('logo', logo);
 
-    return axios.patch(this.currentAccountUrl, formData);
+    return axios.patch(url, formData);
   }
 
   deleteLogo() {

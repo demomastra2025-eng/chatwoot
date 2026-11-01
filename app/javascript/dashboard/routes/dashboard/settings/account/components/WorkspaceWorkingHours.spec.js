@@ -119,6 +119,51 @@ describe('WorkspaceWorkingHours', () => {
     );
   });
 
+  it('keeps the timezone when selecting the same required option again', () => {
+    const wrapper = mountComponent();
+    wrapper.vm.onTimezoneChange('');
+    expect(wrapper.vm.timezone).toBe('Asia/Almaty');
+  });
+
+  it('does not discard unsaved hours after another company setting is saved', async () => {
+    const wrapper = mountComponent();
+    wrapper.vm.timezone = 'UTC';
+    await wrapper.setProps({
+      account: {
+        ...account,
+        settings: {
+          ...account.settings,
+          workspace_out_of_office: { enabled: true, message: 'Other section' },
+        },
+      },
+    });
+    expect(wrapper.vm.timezone).toBe('UTC');
+  });
+
+  it('blocks duplicate save events until the request completes', async () => {
+    let resolve;
+    dispatch.mockImplementationOnce(
+      () =>
+        new Promise(success => {
+          resolve = success;
+        })
+    );
+    const wrapper = mountComponent();
+    const first = wrapper.vm.save();
+    const second = wrapper.vm.save();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    resolve({
+      ...account,
+      settings: {
+        ...account.settings,
+        workspace_working_hours:
+          dispatch.mock.calls[0][1].workspace_working_hours,
+      },
+    });
+    await Promise.all([first, second]);
+    expect(wrapper.vm.saving).toBe(false);
+  });
+
   it('reports an error when an old API silently omits the requested settings', async () => {
     dispatch.mockResolvedValue({
       ...account,
