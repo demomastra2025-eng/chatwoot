@@ -16,6 +16,7 @@ class Llm::OpenRouterDecisionClient
     perplexity/pplx-decider-v1.2 perplexity/pplx-decider-flash-v1.2 typesafe/jev-1.14 liquid/d1-ultra respan/span-02
     nace-ai/drex-max
   ].freeze
+  NON_ZDR_MODELS = %w[openai/gpt-6-luna-decisions respan/span-02].freeze
   DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'
   REQUEST_TIMEOUT_SECONDS = 110
   MAX_RESPONSE_BYTES = 1_048_576
@@ -37,6 +38,10 @@ class Llm::OpenRouterDecisionClient
   class << self
     def supported_model?(model)
       SUPPORTED_MODELS.include?(model)
+    end
+
+    def zdr_supported_model?(model)
+      supported_model?(model) && NON_ZDR_MODELS.exclude?(model.to_s)
     end
 
     # One question: criteria: + instructions:. Several questions: questions: { name => { criteria:, instructions: } }.

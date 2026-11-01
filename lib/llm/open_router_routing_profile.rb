@@ -333,10 +333,25 @@ class Llm::OpenRouterRoutingProfile
   def enforce_workspace_privacy!(provider_preferences)
     workspace_preferences = workspace_policy.provider_preferences
     provider_preferences[:data_collection] = workspace_preferences[:data_collection] if workspace_preferences[:data_collection].present?
-    provider_preferences[:zdr] = true if workspace_preferences[:zdr] == true
+    apply_workspace_zdr_preference!(provider_preferences, workspace_preferences)
     return unless workspace_policy.zdr_required?
 
+    provider_preferences[:zdr] = true
     provider_preferences[:allow_fallbacks] = false
+  end
+
+  def apply_workspace_zdr_preference!(provider_preferences, workspace_preferences)
+    if workspace_preferences[:zdr] == true && zdr_compatible_target?
+      provider_preferences[:zdr] = true
+    elsif !workspace_policy.zdr_required? && !zdr_compatible_target?
+      provider_preferences.delete(:zdr)
+    end
+  end
+
+  def zdr_compatible_target?
+    return true unless Llm::FeatureProfile.decision_feature?(feature_key)
+
+    Llm::OpenRouterDecisionClient.zdr_supported_model?(model)
   end
 
   def apply_routing_strategy(provider_preferences)

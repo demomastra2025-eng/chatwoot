@@ -243,7 +243,6 @@ module Llm::Models
         )
       end
 
-      return false if feature_key == 'image_routing'
       return false unless openrouter_only_feature?(feature_key)
       return false unless openrouter_catalog_enabled?(account: account)
       return false unless provider_for(canonical_name, account: account) == OPENROUTER_PROVIDER

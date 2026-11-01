@@ -70,9 +70,8 @@ RSpec.describe Llm::InstallationModelConfig do
     end
 
     it 'allows the language decision model only in its installation slot' do
-      model = 'inception/mercury-decide'
+      model = 'openai/gpt-6-luna-decisions'
       expect(described_class.normalize('CAPTAIN_LANGUAGE_DETECTION_MODEL', model)).to have_attributes(value: model, error: nil)
-      expect(described_class.normalize('CAPTAIN_LANGUAGE_DETECTION_MODEL', 'openai/gpt-6-luna-decisions')).not_to be_valid
       expect(described_class.normalize('CAPTAIN_LANGUAGE_DETECTION_MODEL', 'openai/gpt-6-luna')).not_to be_valid
       expect(described_class.normalize('CAPTAIN_DEFAULT_MODEL', model)).not_to be_valid
     end
@@ -107,12 +106,11 @@ RSpec.describe Llm::InstallationModelConfig do
       model
     end
 
-    it 'accepts absent and blank values and keeps ZDR default and decision choices valid' do
+    it 'accepts absent and blank values and keeps both Luna model choices valid' do
       expect(described_class.normalize(config_name, nil)).to have_attributes(value: '', error: nil)
       expect(described_class.normalize(config_name, '  ')).to have_attributes(value: '', error: nil)
       expect(described_class.normalize(config_name, Llm::Config::DEFAULT_MODEL)).to be_valid
-      expect(described_class.normalize(config_name, 'perplexity/pplx-decider-v1.2')).to be_valid
-      expect(described_class.normalize(config_name, 'inception/mercury-decide')).to be_valid
+      expect(described_class.normalize(config_name, 'openai/gpt-6-luna-decisions')).to be_valid
     end
 
     it 'accepts a supported catalog chat model and removes surrounding whitespace' do

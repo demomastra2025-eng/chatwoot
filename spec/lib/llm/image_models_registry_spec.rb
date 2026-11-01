@@ -76,14 +76,13 @@ RSpec.describe 'The registry of the image models' do # rubocop:disable RSpec/Des
   describe 'the router' do
     before { allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({}) }
 
-    it 'is a decision feature that takes the trusted ZDR decision models only' do
+    it 'is a decision feature that takes the trusted decision models only' do
       expect(Llm::FeatureProfile.decision_feature?(:image_routing)).to be(true)
-      %w[perplexity/pplx-decider-v1.2 perplexity/pplx-decider-flash-v1.2].each do |model|
+      %w[perplexity/pplx-decider-v1.2 perplexity/pplx-decider-flash-v1.2 openai/gpt-6-luna-decisions].each do |model|
         expect(Llm::Models.model_allowed_for_feature?('image_routing', model)).to be(true)
         expect(Llm::OpenRouterDecisionClient.supported_model?(model)).to be(true)
         expect(Llm::OpenRouterRoutingProfile.trusted_image_providers(model)).to be_present
       end
-      expect(Llm::Models.model_allowed_for_feature?('image_routing', 'openai/gpt-6-luna-decisions')).to be(false)
       expect(Llm::Models.model_allowed_for_feature?('image_routing', 'openai/gpt-6.1-terra')).to be(false)
     end
 

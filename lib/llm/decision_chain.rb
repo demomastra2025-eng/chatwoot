@@ -11,7 +11,7 @@
 # turn decision feature uses the shared chain CAPTAIN_DECISION_MODEL_CHAIN.
 class Llm::DecisionChain
   CONFIG_NAME = 'CAPTAIN_DECISION_MODEL_CHAIN'
-  DEFAULT_MODELS = %w[inception/mercury-decide microsoft/microsoft-decision-1 perplexity/pplx-decider-v1.2].freeze
+  DEFAULT_MODELS = %w[inception/mercury-decide microsoft/microsoft-decision-1 openai/gpt-6-luna-decisions].freeze
   FEATURE_CHAINS = {
     'agent_routing' => { config: 'CAPTAIN_AGENT_ROUTING_MODELS',
                          default: %w[perplexity/pplx-decider-v1.2 inception/mercury-decide microsoft/microsoft-decision-1].freeze },

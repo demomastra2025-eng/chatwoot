@@ -281,10 +281,10 @@ RSpec.describe Llm::Config do
       upsert_installation_config('CAPTAIN_LANGUAGE_DETECTION_MODEL', '')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
 
-      expect(described_class.model_for(feature: 'language_detection')).to eq('inception/mercury-decide')
+      expect(described_class.model_for(feature: 'language_detection')).to eq('openai/gpt-6-luna-decisions')
 
-      upsert_installation_config('CAPTAIN_LANGUAGE_DETECTION_MODEL', 'microsoft/microsoft-decision-1')
-      expect(described_class.model_for(feature: 'language_detection')).to eq('microsoft/microsoft-decision-1')
+      upsert_installation_config('CAPTAIN_LANGUAGE_DETECTION_MODEL', 'openai/gpt-6-luna-decisions')
+      expect(described_class.model_for(feature: 'language_detection')).to eq('openai/gpt-6-luna-decisions')
     end
 
     it 'uses a decision model for the decisions of a patient turn, not the general default model' do

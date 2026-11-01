@@ -17,21 +17,30 @@ RSpec.describe Llm::OpenRouterWorkspacePolicy do
     expect(described_class.resolve(privacy_profile: 'zdr_required').provider_preferences[:allow_fallbacks]).to be(false)
   end
 
-  it 'compiles provider.zdr = true into standard OpenRouterRoutingProfile requests' do
-    routing = Llm::OpenRouterRoutingProfile.for(
-      feature: 'captain_agent',
-      model: 'openai/gpt-6-luna'
-    )
-    expect(routing.provider_preferences[:zdr]).to be(true)
-    expect(routing.provider_preferences[:data_collection]).to eq('deny')
+  it 'compiles provider.zdr = true into chat and ZDR-capable decision routing profiles' do
+    chat_routing = Llm::OpenRouterRoutingProfile.for(feature: 'captain_agent', model: 'openai/gpt-6-luna')
+    zdr_decision_routing = Llm::OpenRouterRoutingProfile.for(feature: 'agent_routing', model: 'perplexity/pplx-decider-v1.2')
+
+    expect(chat_routing.provider_preferences).to include(zdr: true, data_collection: 'deny')
+    expect(zdr_decision_routing.provider_preferences).to include(zdr: true, data_collection: 'deny')
   end
 
-  it 'uses ZDR-compatible Mercury Decide and Microsoft/Perplexity fallbacks for decision features' do
-    expect(Llm::Models.configured_default_model_for('language_detection')).to eq('inception/mercury-decide')
-    expect(Llm::FeatureProfile.for(:language_detection).decision_fallback_models).to eq(%w[microsoft/microsoft-decision-1])
-    expect(Llm::FeatureProfile.for(:custom_guardrail).decision_fallback_models).to eq(%w[inception/mercury-decide])
+  it 'preserves original high-accuracy decision model defaults and fallback chains' do
+    expect(Llm::Models.configured_default_model_for('language_detection')).to eq('openai/gpt-6-luna-decisions')
+    expect(Llm::FeatureProfile.for(:language_detection).decision_fallback_models).to eq(%w[respan/span-02])
+    expect(Llm::FeatureProfile.for(:custom_guardrail).decision_fallback_models).to eq(%w[openai/gpt-6-luna-decisions])
     expect(Llm::DecisionChain::DEFAULT_MODELS).to eq(
-      %w[inception/mercury-decide microsoft/microsoft-decision-1 perplexity/pplx-decider-v1.2]
+      %w[inception/mercury-decide microsoft/microsoft-decision-1 openai/gpt-6-luna-decisions]
     )
+  end
+
+  it 'omits zdr: true on non-ZDR decision endpoints under standard profile so OpenRouter never returns HTTP 404' do
+    luna_dec = Llm::OpenRouterRoutingProfile.for(feature: 'language_detection', model: 'openai/gpt-6-luna-decisions')
+    span_dec = Llm::OpenRouterRoutingProfile.for(feature: 'language_detection', model: 'respan/span-02')
+
+    expect(luna_dec.provider_preferences[:data_collection]).to eq('deny')
+    expect(luna_dec.provider_preferences).not_to have_key(:zdr)
+    expect(span_dec.provider_preferences[:data_collection]).to eq('deny')
+    expect(span_dec.provider_preferences).not_to have_key(:zdr)
   end
 end

@@ -344,13 +344,13 @@
   locked: false
 - name: CAPTAIN_LANGUAGE_DETECTION_MODEL
   display_title: 'Модель определения языка клиента'
-  description: 'Определяет основной язык последних 20 сообщений клиента перед ответом агента. Пусто — inception/mercury-decide; если модель решений не ответила, спрашивается microsoft/microsoft-decision-1.'
-  value: 'inception/mercury-decide'
+  description: 'Определяет основной язык последних 20 сообщений клиента перед ответом агента. Пусто — openai/gpt-6-luna-decisions; если модель решений не ответила, спрашивается respan/span-02.'
+  value: 'openai/gpt-6-luna-decisions'
   locked: false
 - name: CAPTAIN_DECISION_MODEL_CHAIN
   display_title: 'Цепочка моделей решений внутри хода'
-  description: 'JSON-список моделей решений по порядку (не больше 3) для проверки фактов и разбора входящих (у выбора агента своя цепочка). Сначала спрашивается первая модель; при ошибке или таймауте (около 2 секунд на модель) — следующая. Если не ответила ни одна, ход завершается технической ошибкой и диалог передаётся сотрудникам. Пусто — inception/mercury-decide, затем microsoft/microsoft-decision-1, затем perplexity/pplx-decider-v1.2.'
-  value: '["inception/mercury-decide", "microsoft/microsoft-decision-1", "perplexity/pplx-decider-v1.2"]'
+  description: 'JSON-список моделей решений по порядку (не больше 3) для проверки фактов и разбора входящих (у выбора агента своя цепочка). Сначала спрашивается первая модель; при ошибке или таймауте (около 2 секунд на модель) — следующая. Если не ответила ни одна, ход завершается технической ошибкой и диалог передаётся сотрудникам. Пусто — inception/mercury-decide, затем microsoft/microsoft-decision-1, затем openai/gpt-6-luna-decisions.'
+  value: '["inception/mercury-decide", "microsoft/microsoft-decision-1", "openai/gpt-6-luna-decisions"]'
   locked: false
   type: code
 - name: CAPTAIN_AGENT_ROUTING_MODELS

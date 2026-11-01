@@ -84,8 +84,8 @@ RSpec.describe Llm::FeatureProfile do
   end
 
   it 'gives the background decision features one fallback decision model each, and the turn decisions none (their chain falls back)' do
-    expect(described_class.for(:custom_guardrail).decision_fallback_models).to eq(%w[inception/mercury-decide])
-    expect(described_class.for(:language_detection).decision_fallback_models).to eq(%w[microsoft/microsoft-decision-1])
+    expect(described_class.for(:custom_guardrail).decision_fallback_models).to eq(%w[openai/gpt-6-luna-decisions])
+    expect(described_class.for(:language_detection).decision_fallback_models).to eq(%w[respan/span-02])
     expect(described_class.for(:outcome_classification).decision_fallback_models).to eq(%w[microsoft/microsoft-decision-1])
     %i[agent_routing fact_check_gate inbound_triage assistant].each do |feature|
       expect(described_class.for(feature).decision_fallback_models).to eq([])
