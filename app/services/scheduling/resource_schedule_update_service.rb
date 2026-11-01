@@ -7,10 +7,7 @@ class Scheduling::ResourceScheduleUpdateService
   # an explicit empty array clears it, as in the existing standalone rules APIs.
   def update!(attributes: {}, work_rules: nil, break_rules: nil)
     @resource.with_lock do
-      if @resource.deleted_from_scheduling? && (!work_rules.nil? || !break_rules.nil?)
-        raise ActiveRecord::RecordNotFound, 'Specialist not found'
-      end
-
+      ensure_available_resource!(work_rules, break_rules)
       was_inheriting = @resource.inherit_working_hours_from_account?
       @resource.assign_attributes(attributes)
       validate_rules!(work_rules, break_rules)
@@ -24,6 +21,12 @@ class Scheduling::ResourceScheduleUpdateService
   end
 
   private
+
+  def ensure_available_resource!(work_rules, break_rules)
+    return if work_rules.nil? && break_rules.nil?
+
+    raise ActiveRecord::RecordNotFound, 'Specialist not found' if @resource.deleted_from_scheduling?
+  end
 
   def validate_rules!(work_rules, break_rules)
     if @resource.inherit_working_hours_from_account?
