@@ -55,6 +55,7 @@ module Redis::RedisKeys
   WHATSAPP_WEB_EVENT_MUTEX = 'WHATSAPP_WEB_EVENT_LOCK::%<channel_id>s::%<remote_jid>s'.freeze
   WHATSAPP_WEB_EVENT_IN_FLIGHT = 'WHATSAPP_WEB_EVENT_IN_FLIGHT::%<channel_id>s::%<fingerprint>s'.freeze
   WHATSAPP_WEB_PENDING_MESSAGE_STATUS = 'WHATSAPP_WEB_PENDING_MESSAGE_STATUS::%<inbox_id>s::%<source_id>s'.freeze
+  WHATSAPP_WEB_RECENT_OUTBOUND_EDIT = 'WHATSAPP_WEB_RECENT_OUTBOUND_EDIT::%<inbox_id>s::%<source_id>s'.freeze
   # WhatsApp Cloud Embedded Signup attempt (state + single-use completion claim), keyed by nonce digest
   WHATSAPP_EMBEDDED_SIGNUP_ATTEMPT = 'WHATSAPP_EMBEDDED_SIGNUP_ATTEMPT::%<account_id>d::%<user_id>d::%<digest>s'.freeze
   WHATSAPP_EMBEDDED_SIGNUP_ATTEMPT_CLAIM = 'WHATSAPP_EMBEDDED_SIGNUP_ATTEMPT_CLAIM::%<account_id>d::%<user_id>d::%<digest>s'.freeze

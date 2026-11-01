@@ -5,10 +5,24 @@
     <title>OneLink</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, user-scalable=0"/>
     <% if @global_config['DISPLAY_MANIFEST'] %>
+      <% installation_title = @global_config['INSTALLATION_NAME'].presence || 'OneLink' %>
+      <% meta_description = "#{installation_title} это решение для поддержки клиентов, которое помогает компаниям взаимодействовать с клиентами через Messenger, Twitter, Telegram и WhatsApp. Просто подключите свои каналы и общайтесь с клиентами из одного места. Легко добавляйте новых операторов в систему и поручайте им вести и решать вопросы клиентов. #{installation_title} кроме того, система предоставляет отчеты в режиме реального времени для оценки эффективности работы вашей команды, готовые шаблоны ответов для быстрого реагирования на часто задаваемые вопросы, а также личные заметки, позволяющие операторам обмениваться информацией между собой." %>
+      <% raw_frontend_url = ENV.fetch('FRONTEND_URL', '').to_s.strip.chomp('/') %>
+      <% og_base_url = raw_frontend_url.match?(%r{\Ahttps?://[^\s/]+\z}i) ? raw_frontend_url : nil %>
       <meta name="msapplication-TileColor" content="#1A1A1A">
       <meta name="msapplication-TileImage" content="/ms-icon-144x144.png">
       <meta name="theme-color" content="#1A1A1A">
-      <meta name="description" content="<%= @global_config['INSTALLATION_NAME'] %> это решение для поддержки клиентов, которое помогает компаниям взаимодействовать с клиентами через Messenger, Twitter, Telegram и WhatsApp. Просто подключите свои каналы и общайтесь с клиентами из одного места. Легко добавляйте новых операторов в систему и поручайте им вести и решать вопросы клиентов. <%= @global_config['INSTALLATION_NAME'] %> кроме того, система предоставляет отчеты в режиме реального времени для оценки эффективности работы вашей команды, готовые шаблоны ответов для быстрого реагирования на часто задаваемые вопросы, а также личные заметки, позволяющие операторам обмениваться информацией между собой.">
+      <meta name="description" content="<%= meta_description %>">
+      <meta property="og:type" content="website">
+      <meta property="og:title" content="<%= installation_title %>">
+      <meta property="og:description" content="<%= meta_description %>">
+      <% if og_base_url.present? %>
+        <meta property="og:url" content="<%= "#{og_base_url}/" %>">
+        <meta property="og:image" content="<%= "#{og_base_url}/favicon-512x512.png" %>">
+        <meta property="og:image:type" content="image/png">
+        <meta property="og:image:width" content="512">
+        <meta property="og:image:height" content="512">
+      <% end %>
       <% if ENV['IOS_APP_IDENTIFIER'].present? %>
         <meta name="apple-itunes-app" content='app-id=<%= ENV['IOS_APP_IDENTIFIER'] %>'>
       <% end %>

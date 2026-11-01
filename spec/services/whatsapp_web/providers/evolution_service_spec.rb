@@ -866,6 +866,72 @@ describe WhatsappWeb::Providers::EvolutionService do
 
       service.update_message(message: message, content: 'Edited text')
     end
+
+    it 'renders WhatsApp markdown and strips hard-break backslashes when editing' do
+      service = described_class.new(channel: channel)
+      conversation = create(:conversation, account: channel.account, inbox: channel.inbox)
+      message = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        content: 'Original text',
+        source_id: 'wa-edit-md-1'
+      )
+
+      expect(service).to receive(:request).with(
+        :post,
+        "/chat/updateMessage/#{channel.instance_name}",
+        body: {
+          number: "#{conversation.contact_inbox.source_id}@s.whatsapp.net",
+          text: "Здравствуйте! https://app.one-link.kz/ \n*Через логин + пароль*",
+          key: {
+            id: 'wa-edit-md-1',
+            fromMe: true,
+            remoteJid: "#{conversation.contact_inbox.source_id}@s.whatsapp.net"
+          }
+        }
+      ).and_return({})
+
+      service.update_message(
+        message: message,
+        content: "Здравствуйте! https://app.one-link.kz/ \\\n**Через логин + пароль**"
+      )
+    end
+
+    it 'preserves agent signature after markdown rendering on signed channels and rejects blank post-render edits' do
+      signed_channel = create(:channel_whatsapp_web, sign_messages: true, sign_delimiter: '\\n')
+      service = described_class.new(channel: signed_channel)
+      agent = create(:user, account: signed_channel.account, name: 'Alice Agent')
+      conversation = create(:conversation, account: signed_channel.account, inbox: signed_channel.inbox)
+      message = create(
+        :message,
+        account: signed_channel.account,
+        inbox: signed_channel.inbox,
+        conversation: conversation,
+        sender: agent,
+        message_type: :outgoing,
+        content: 'Original text',
+        source_id: 'wa-edit-signed-1'
+      )
+
+      expect(service).to receive(:request).with(
+        :post,
+        "/chat/updateMessage/#{signed_channel.instance_name}",
+        body: hash_including(
+          text: "*Alice Agent:*\n*Обновлённый* текст"
+        )
+      ).and_return({})
+
+      service.update_message(message: message, content: '**Обновлённый** текст')
+
+      unsigned_service = described_class.new(channel: channel)
+      unsigned_conv = create(:conversation, account: channel.account, inbox: channel.inbox)
+      unsigned_msg = create(:message, account: channel.account, inbox: channel.inbox, conversation: unsigned_conv, message_type: :outgoing,
+                                      source_id: 'wa-edit-blank-1')
+      expect { unsigned_service.update_message(message: unsigned_msg, content: '---') }.to raise_error(ArgumentError, /cannot be blank/)
+    end
   end
 
   describe '#delete_message' do
@@ -998,6 +1064,38 @@ describe WhatsappWeb::Providers::EvolutionService do
         .and_return({ 'key' => { 'id' => 'provider-message-id' } })
 
       expect(service.send_message(message)).to eq('provider-message-id')
+    end
+
+    it 'renders WhatsApp markdown without trailing hard-break backslashes on outbound sendText' do
+      service = described_class.new(channel: channel)
+      contact = create(:contact, account: channel.account)
+      contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: '77015485508')
+      conversation = create(
+        :conversation,
+        account: channel.account,
+        inbox: channel.inbox,
+        contact: contact,
+        contact_inbox: contact_inbox
+      )
+      message = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        content: "Здравствуйте! по Адресу https://app.one-link.kz/ \\\n**Через логин + пароль**"
+      )
+
+      expect(service).to receive(:request).with(
+        :post,
+        "/message/sendText/#{channel.instance_name}",
+        body: {
+          number: '77015485508',
+          text: "Здравствуйте! по Адресу https://app.one-link.kz/ \n*Через логин + пароль*"
+        }
+      ).and_return({ 'key' => { 'id' => 'provider-msg-clean-1' } })
+
+      expect(service.send_message(message)).to eq('provider-msg-clean-1')
     end
 
     it 'records provider activity once Evolution accepts the message' do

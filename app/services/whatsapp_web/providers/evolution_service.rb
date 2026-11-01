@@ -1,4 +1,5 @@
 class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseService
+  OUTBOUND_EDIT_ECHO_TTL = 2.minutes.to_i
   EVOLUTION_INTEGRATION = 'WHATSAPP-BAILEYS'.freeze
   REQUEST_TIMEOUT_SECONDS = 20
   MEDIA_UNAVAILABLE_STATUSES = [403, 404, 410].freeze
@@ -304,21 +305,37 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     raise LidRecipientRequestError.new(e.message, status: e.status, body: e.body)
   end
 
+  def formatted_outgoing_text(message, raw_content = nil)
+    rendered = if raw_content.nil?
+                 message.outgoing_content.to_s
+               else
+                 Messages::MarkdownRendererService.new(raw_content.to_s, 'Channel::WhatsappWeb', channel).render.to_s
+               end
+    apply_message_signature(message, rendered)
+  end
+
   def update_message(message:, content:)
     source_id = message.source_id.to_s.presence
     remote_jid = outbound_remote_jid_for(message)
     raise ArgumentError, 'Message source_id is required for WhatsApp Web edits' if source_id.blank?
     raise ArgumentError, 'Conversation remote JID is required for WhatsApp Web edits' if remote_jid.blank?
 
+    formatted_text = formatted_outgoing_text(message, content)
+    raise ArgumentError, 'Message content cannot be blank for WhatsApp Web edits' if formatted_text.blank?
+
+    record_outbound_edit!(source_id, formatted_text)
     request(:post, "/chat/updateMessage/#{channel.instance_name}", body: {
               number: remote_jid,
-              text: content.to_s,
+              text: formatted_text,
               key: {
                 id: source_id,
                 fromMe: true,
                 remoteJid: remote_jid
               }
             })
+  rescue StandardError
+    clear_outbound_edit!(source_id) if source_id.present?
+    raise
   end
 
   def delete_message(message:)
@@ -851,7 +868,10 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def formatted_message_content(message)
-    content = message.outgoing_content.to_s
+    formatted_outgoing_text(message)
+  end
+
+  def apply_message_signature(message, content)
     return content if content.blank?
     return content unless channel.sign_messages?
 
@@ -859,6 +879,18 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     return content if sender_name.blank?
 
     ["*#{sender_name}:*", content].join(channel.formatted_sign_delimiter)
+  end
+
+  def outbound_edit_redis_key(source_id)
+    format(::Redis::Alfred::WHATSAPP_WEB_RECENT_OUTBOUND_EDIT, inbox_id: channel.inbox.id, source_id: source_id)
+  end
+
+  def record_outbound_edit!(source_id, formatted_text)
+    ::Redis::Alfred.set(outbound_edit_redis_key(source_id), formatted_text, ex: OUTBOUND_EDIT_ECHO_TTL)
+  end
+
+  def clear_outbound_edit!(source_id)
+    ::Redis::Alfred.delete(outbound_edit_redis_key(source_id))
   end
 
   def recipient_for(message)

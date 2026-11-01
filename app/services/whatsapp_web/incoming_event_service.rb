@@ -343,10 +343,44 @@ class WhatsappWeb::IncomingEventService
     message = Message.find_by(source_id: source_id, inbox_id: channel.inbox.id)
     return if message.blank?
 
-    message.update!(
-      content: extract_text_from_payload(event_data[:editedMessage] || event_data[:message]),
-      content_attributes: (message.content_attributes || {}).merge(edited: true)
+    updated_content = extract_edited_text_from_event
+    return if updated_content.blank?
+
+    return mark_message_edited!(message) if self_authored_edit_echo?(key, message, source_id, updated_content)
+
+    message.update!(content: updated_content, content_attributes: edited_content_attributes(message))
+  end
+
+  def edited_content_attributes(message)
+    message.content_attributes.to_h.merge(edited: true)
+  end
+
+  def mark_message_edited!(message)
+    return if message.content_attributes.to_h['edited'] == true
+
+    message.update!(content_attributes: edited_content_attributes(message))
+  end
+
+  def extract_edited_text_from_event
+    extract_text_from_payload(event_data[:editedMessage]) ||
+      extract_text_from_payload(event_data.dig(:editedMessage, :message)) ||
+      extract_text_from_payload(event_data[:message])
+  end
+
+  def self_authored_edit_echo?(key, message, source_id, updated_content)
+    from_me = key.key?(:fromMe) ? ActiveModel::Type::Boolean.new.cast(key[:fromMe]) : message.outgoing?
+    return false unless from_me && message.outgoing?
+
+    recent_wire_text = ::Redis::Alfred.get(
+      format(::Redis::Alfred::WHATSAPP_WEB_RECENT_OUTBOUND_EDIT, inbox_id: channel.inbox.id, source_id: source_id)
     )
+    expected_candidates = [
+      recent_wire_text,
+      message.content.to_s,
+      channel.provider_service.formatted_outgoing_text(message)
+    ].compact_blank
+
+    expected_candidates.include?(updated_content)
   end
 
   def process_message_update

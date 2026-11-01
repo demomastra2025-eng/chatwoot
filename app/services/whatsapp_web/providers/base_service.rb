@@ -69,6 +69,10 @@ class WhatsappWeb::Providers::BaseService
     raise 'Overwrite this method in child class'
   end
 
+  def formatted_outgoing_text(message, raw_content = nil)
+    raw_content.nil? ? message.outgoing_content.to_s : raw_content.to_s
+  end
+
   def delete_message(*)
     raise 'Overwrite this method in child class'
   end
