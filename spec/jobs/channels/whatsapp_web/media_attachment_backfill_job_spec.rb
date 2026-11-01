@@ -156,4 +156,51 @@ RSpec.describe Channels::WhatsappWeb::MediaAttachmentBackfillJob do
     expect(message.reload.attachments.count).to eq(1)
     expect(message.attachments.first.file_type).to eq('file')
   end
+
+  it 'decrypts encrypted WhatsApp CDN media natively during backfill when provider media fetch fails' do
+    plaintext = "OggS\x00\x02backfill-decrypted-voice".b
+    raw_key = Random.bytes(32)
+    expanded = OpenSSL::KDF.hkdf(raw_key, salt: "\x00".b * 32, info: 'WhatsApp Audio Keys', length: 112, hash: 'SHA256')
+    cipher = OpenSSL::Cipher.new('AES-256-CBC').tap do |c|
+      c.encrypt
+      c.key = expanded.byteslice(16, 32)
+      c.iv = expanded.byteslice(0, 16)
+    end
+    ciphertext = cipher.update(plaintext) + cipher.final
+    mac = OpenSSL::HMAC.digest('SHA256', expanded.byteslice(48, 32), expanded.byteslice(0, 16) + ciphertext).byteslice(0, 10)
+    enc_tf = Tempfile.new(['wa-backfill', '.enc']).tap do |tf|
+      tf.binmode
+      tf.write(ciphertext + mac)
+      tf.rewind
+    end
+    cdn_url = 'https://mmg.whatsapp.net/v/t62.7117-24/voice.enc'
+
+    provider_service = instance_double(WhatsappWeb::Providers::EvolutionService)
+    allow(provider_service).to receive(:fetch_message_media).and_return(unavailable: true)
+    allow(WhatsappWeb::Providers::EvolutionService).to receive(:new).and_return(provider_service)
+    expect(Down).to receive(:download).with(cdn_url).and_return(enc_tf)
+
+    described_class.perform_now(
+      channel.id,
+      'LIVE_MEDIA_BACKFILL_1',
+      {
+        'key' => { 'id' => 'LIVE_MEDIA_BACKFILL_1', 'remoteJid' => '15551234567@s.whatsapp.net', 'fromMe' => false },
+        'message' => {
+          'audioMessage' => {
+            'url' => cdn_url,
+            'mediaKey' => Base64.strict_encode64(raw_key),
+            'mimetype' => 'audio/ogg; codecs=opus'
+          }
+        }
+      },
+      1
+    )
+
+    att = message.reload.attachments.first
+    expect(att).to be_present
+    expect(att.file_type).to eq('audio')
+    expect(att.extension).to eq('ogg')
+    expect(att.file.content_type).to eq('audio/ogg')
+    expect(att.file.blob.open { |tf| File.binread(tf.path) }).to eq(plaintext)
+  end
 end

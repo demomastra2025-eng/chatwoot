@@ -205,16 +205,34 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
   end
 
   def attachment_payload_for(message_type)
-    message_key = attachment_message_key(message_type)
-    payload = attachment_message_payload(message_key)
+    payload = attachment_message_payload(attachment_message_key(message_type))
+    stripped_name = WhatsappWeb::MediaMimeNormalizer.strip_enc_filename(payload[:fileName] || payload[:name])
+    normalized_mime = WhatsappWeb::MediaMimeNormalizer.normalize_mime_type(
+      payload[:mimetype],
+      filename: stripped_name,
+      media_kind: message_type
+    )
 
     {
+      media_kind: message_type,
       caption: payload[:caption],
-      mimetype: payload[:mimetype],
-      fileName: payload[:fileName],
-      base64: params.dig(:message, :base64),
-      mediaUrl: payload[:mediaUrl] || payload[:url]
-    }.compact
+      mimetype: normalized_mime,
+      mime_type: normalized_mime,
+      fileName: stripped_name,
+      filename: stripped_name,
+      base64: params.dig(:message, :base64) || payload[:base64]
+    }.merge(encryption_fields_for(payload)).compact
+  end
+
+  def encryption_fields_for(payload)
+    {
+      url: payload[:url],
+      mediaUrl: payload[:mediaUrl] || payload[:url],
+      mediaKey: payload[:mediaKey],
+      fileSha256: payload[:fileSha256],
+      fileEncSha256: payload[:fileEncSha256],
+      fileLength: payload[:fileLength]
+    }
   end
 
   def attachment_message_key(message_type)
@@ -229,9 +247,11 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
 
   def attachment_message_payload(message_key)
     message = params[:message].to_h.deep_symbolize_keys
+    direct = message[message_key].to_h.deep_symbolize_keys
+    return direct if direct.present?
+    return message[:ptvMessage].to_h.deep_symbolize_keys if message_key == :videoMessage && message[:ptvMessage].present?
 
-    message[message_key].to_h.deep_symbolize_keys.presence ||
-      message.dig(:documentWithCaptionMessage, :message, message_key).to_h.deep_symbolize_keys
+    message.dig(:documentWithCaptionMessage, :message, message_key).to_h.deep_symbolize_keys
   end
 
   def location_payload
@@ -315,6 +335,25 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
 
     @pending_media_attachment_backfill = result.pending_backfill
     result.file
+  end
+
+  def attachment_content_type(attachment_payload, attachment_file)
+    file_mime = attachment_file.respond_to?(:content_type) ? attachment_file.content_type : nil
+    payload_mime = attachment_payload_value(attachment_payload, :mime_type)
+    chosen = WhatsappWeb::MediaMimeNormalizer.concrete_mime?(file_mime) ? file_mime : payload_mime
+    WhatsappWeb::MediaMimeNormalizer.normalize_mime_type(
+      chosen,
+      filename: attachment_payload_value(attachment_payload, :filename),
+      media_kind: attachment_payload_value(attachment_payload, :media_kind) || message_type
+    )
+  end
+
+  def attachment_filename(attachment_payload, attachment_file)
+    resolved_mime = attachment_content_type(attachment_payload, attachment_file)
+    media_kind = attachment_payload_value(attachment_payload, :media_kind) || message_type
+    file_name = attachment_file.original_filename if attachment_file.respond_to?(:original_filename)
+    raw_name = attachment_payload_value(attachment_payload, :filename).presence || file_name
+    WhatsappWeb::MediaMimeNormalizer.sanitize_filename(raw_name, mime_type: resolved_mime, media_kind: media_kind)
   end
 
   def enqueue_media_attachment_backfill(message)

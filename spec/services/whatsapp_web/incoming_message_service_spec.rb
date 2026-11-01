@@ -146,7 +146,7 @@ RSpec.describe WhatsappWeb::IncomingMessageService do
       conversation = pending_channel.inbox.conversations.order(:id).last
       expect(conversation.reload.status).to eq('pending')
       source_ids = conversation.messages.where('source_id LIKE ?', 'PENDING_CONTACT_BATCH:contact:%').pluck(:source_id)
-      expect(source_ids).to match_array(['PENDING_CONTACT_BATCH:contact:0', 'PENDING_CONTACT_BATCH:contact:1'])
+      expect(source_ids).to contain_exactly('PENDING_CONTACT_BATCH:contact:0', 'PENDING_CONTACT_BATCH:contact:1')
     end
 
     it 'does not reopen an initial pending conversation when an incoming source id is replayed' do
@@ -448,6 +448,57 @@ RSpec.describe WhatsappWeb::IncomingMessageService do
       expect(incoming_message).to be_present
       expect(incoming_message.content).to eq('Video that needs async media retry')
       expect(incoming_message.attachments).to be_empty
+    end
+
+    it 'decrypts encrypted WhatsApp CDN media natively with proper filename, MIME type, and non-.enc extension' do
+      plaintext = "PK\x03\x04decrypted-xlsx-payload".b
+      raw_key = Random.bytes(32)
+      expanded = OpenSSL::KDF.hkdf(raw_key, salt: "\x00".b * 32, info: 'WhatsApp Document Keys', length: 112, hash: 'SHA256')
+      cipher = OpenSSL::Cipher.new('AES-256-CBC').tap do |c|
+        c.encrypt
+        c.key = expanded.byteslice(16, 32)
+        c.iv = expanded.byteslice(0, 16)
+      end
+      ciphertext = cipher.update(plaintext) + cipher.final
+      mac = OpenSSL::HMAC.digest('SHA256', expanded.byteslice(48, 32), expanded.byteslice(0, 16) + ciphertext).byteslice(0, 10)
+      enc_tf = Tempfile.new(['wa-cdn', '.enc']).tap do |tf|
+        tf.binmode
+        tf.write(ciphertext + mac)
+        tf.rewind
+      end
+      xlsx_mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      cdn_url = 'https://mmg.whatsapp.net/v/t62.7119-24/445566.enc?ccb=11-4'
+
+      provider_service = instance_double(WhatsappWeb::Providers::EvolutionService)
+      allow(provider_service).to receive(:fetch_message_media).and_raise(StandardError, 'Evolution media error')
+      allow(provider_service).to receive(:fetch_message_by_source_id).and_return(nil)
+      allow(inbox.channel).to receive(:provider_service).and_return(provider_service)
+      expect(Down).to receive(:download).with(cdn_url).and_return(enc_tf)
+
+      described_class.new(
+        inbox: inbox,
+        params: {
+          key: { id: 'INCOMING_ENC_XLSX_1', remoteJid: '15551234567@s.whatsapp.net' },
+          pushName: 'Alice',
+          message: {
+            documentMessage: {
+              caption: 'Monthly spreadsheet',
+              mimetype: xlsx_mime,
+              fileName: 'monthly.xlsx.enc',
+              url: cdn_url,
+              mediaKey: Base64.strict_encode64(raw_key),
+              fileSha256: Base64.strict_encode64(OpenSSL::Digest::SHA256.digest(plaintext))
+            }
+          }
+        }.with_indifferent_access
+      ).perform
+
+      att = conversation.messages.find_by!(source_id: 'INCOMING_ENC_XLSX_1').attachments.first
+      expect(att.extension).to eq('xlsx')
+      expect(att.file_type).to eq('file')
+      expect(att.file.filename.to_s).to eq('monthly.xlsx')
+      expect(att.file.content_type).to eq(xlsx_mime)
+      expect(att.file.blob.open { |tf| File.binread(tf.path) }).to eq(plaintext)
     end
 
     it 'creates outgoing echo media messages for mobile sends' do

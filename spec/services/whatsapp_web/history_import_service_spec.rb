@@ -746,4 +746,56 @@ RSpec.describe WhatsappWeb::HistoryImportService do
     expect(conversation.reload.last_activity_at.to_i).to eq(latest_activity_at.to_i)
     expect(conversation.contact.reload.last_activity_at.to_i).to eq(latest_contact_activity_at.to_i)
   end
+
+  it 'decrypts encrypted WhatsApp CDN media natively during history import instead of saving .enc' do
+    plaintext = '%PDF-1.7-history-decrypted'.b
+    raw_key = Random.bytes(32)
+    expanded = OpenSSL::KDF.hkdf(raw_key, salt: "\x00".b * 32, info: 'WhatsApp Document Keys', length: 112, hash: 'SHA256')
+    cipher = OpenSSL::Cipher.new('AES-256-CBC').tap do |c|
+      c.encrypt
+      c.key = expanded.byteslice(16, 32)
+      c.iv = expanded.byteslice(0, 16)
+    end
+    ciphertext = cipher.update(plaintext) + cipher.final
+    mac = OpenSSL::HMAC.digest('SHA256', expanded.byteslice(48, 32), expanded.byteslice(0, 16) + ciphertext).byteslice(0, 10)
+    enc_tf = Tempfile.new(['wa-hist', '.enc']).tap do |tf|
+      tf.binmode
+      tf.write(ciphertext + mac)
+      tf.rewind
+    end
+    cdn_url = 'https://mmg.whatsapp.net/v/t62.7119-24/hist_doc.enc'
+
+    provider_service = instance_double(
+      WhatsappWeb::Providers::EvolutionService,
+      prefer_provider_media_for_history?: true
+    )
+    allow(provider_service).to receive(:fetch_message_media).and_return(unavailable: true)
+    allow(channel).to receive(:provider_service).and_return(provider_service)
+    expect(Down).to receive(:download).with(cdn_url).and_return(enc_tf)
+
+    described_class.new(
+      channel: channel,
+      records: [
+        {
+          key: { id: 'history-msg-enc-pdf-1', remoteJid: '15551234567@s.whatsapp.net', fromMe: false },
+          pushName: 'Alice',
+          messageTimestamp: 1.hour.ago.to_i,
+          message: {
+            documentMessage: {
+              url: cdn_url,
+              mediaKey: Base64.strict_encode64(raw_key),
+              mimetype: 'application/pdf',
+              fileName: 'patient_referral.pdf.enc'
+            }
+          }
+        }
+      ]
+    ).perform
+
+    att = channel.inbox.messages.find_by!(source_id: 'history-msg-enc-pdf-1').attachments.first
+    expect(att.extension).to eq('pdf')
+    expect(att.file.filename.to_s).to eq('patient_referral.pdf')
+    expect(att.file.content_type).to eq('application/pdf')
+    expect(att.file.blob.open { |tf| File.binread(tf.path) }).to eq(plaintext)
+  end
 end

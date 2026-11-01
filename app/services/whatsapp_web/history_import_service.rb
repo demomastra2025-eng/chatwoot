@@ -212,40 +212,40 @@ class WhatsappWeb::HistoryImportService
 
   def extract_attachment_payload(record)
     message = raw_message(record)
+    return extract_location_attachment_payload(message[:locationMessage]) if message[:locationMessage].present?
 
-    if message[:locationMessage].present?
-      payload = message[:locationMessage].to_h.deep_symbolize_keys
-      return {
-        kind: :location,
-        latitude: payload[:degreesLatitude] || payload[:latitude],
-        longitude: payload[:degreesLongitude] || payload[:longitude],
-        title: [payload[:name], payload[:address]].compact.join(', ').presence,
-        url: payload[:url]
-      }
+    extract_media_attachment_payload(message)
+  end
+
+  def extract_location_attachment_payload(raw_location)
+    payload = raw_location.to_h.deep_symbolize_keys
+    {
+      kind: :location,
+      latitude: payload[:degreesLatitude] || payload[:latitude],
+      longitude: payload[:degreesLongitude] || payload[:longitude],
+      title: [payload[:name], payload[:address]].compact.join(', ').presence,
+      url: payload[:url]
+    }
+  end
+
+  def extract_media_attachment_payload(message)
+    { imageMessage: :image, videoMessage: :video, audioMessage: :audio, documentMessage: :file, stickerMessage: :image }.each do |key, file_type|
+      payload = media_message_payload(message, key)
+      return build_media_attachment_payload(key.to_s, file_type, payload, message) if payload.present?
     end
+    {}
+  end
+
+  def build_media_attachment_payload(media_kind, file_type, payload, message)
+    attachment = payload.to_h.deep_symbolize_keys
+    raw_name = attachment[:fileName] || attachment[:name]
+    normalized_mime = WhatsappWeb::MediaMimeNormalizer.normalize_mime_type(attachment[:mimetype], filename: raw_name, media_kind: media_kind)
 
     {
-      imageMessage: :image,
-      videoMessage: :video,
-      audioMessage: :audio,
-      documentMessage: :file,
-      stickerMessage: :image
-    }.each do |key, file_type|
-      payload = media_message_payload(message, key)
-      next if payload.blank?
-
-      attachment = payload.to_h.deep_symbolize_keys
-      return {
-        kind: :media,
-        file_type: file_type,
-        file_name: attachment[:fileName] || attachment[:name] || "whatsapp-web-#{SecureRandom.hex(8)}",
-        mimetype: attachment[:mimetype] || 'application/octet-stream',
-        media_url: attachment[:mediaUrl] || attachment[:url] || message[:mediaUrl],
-        base64: message[:base64]
-      }
-    end
-
-    {}
+      kind: :media, media_kind: media_kind, file_type: file_type,
+      file_name: WhatsappWeb::MediaMimeNormalizer.sanitize_filename(raw_name, mime_type: normalized_mime, media_kind: media_kind),
+      mimetype: normalized_mime, media_url: attachment[:mediaUrl] || attachment[:url] || message[:mediaUrl], base64: message[:base64]
+    }
   end
 
   def media_message_payload(message, key)
@@ -261,21 +261,49 @@ class WhatsappWeb::HistoryImportService
 
     attachment_file = file_from_base64_payload(attachment_payload)
     return attachment_file if attachment_file.present?
+    return prepare_provider_first_history_file(record, attachment_payload, source_id) if provider_first_history?(record, attachment_payload)
 
-    if prefer_provider_media_for_history?
-      provider_result = download_provider_attachment(record, attachment_payload, source_id: source_id)
-      return provider_result[:file] if provider_result[:file].present?
-      return if provider_result[:unavailable]
-
-      return download_remote_attachment(attachment_payload, source_id: source_id, fallback: true)
-    end
-
-    attachment_file = download_remote_attachment(attachment_payload, source_id: source_id)
-    return attachment_file if attachment_file.present?
-
-    download_provider_attachment(record, attachment_payload, source_id: source_id)[:file]
+    download_remote_attachment(attachment_payload, source_id: source_id) ||
+      download_provider_attachment(record, attachment_payload, source_id: source_id)[:file]
   rescue StandardError => e
     Rails.logger.warn("[WHATSAPP WEB] Failed to import history attachment #{source_id}: #{e.message}")
+    nil
+  end
+
+  def provider_first_history?(record, attachment_payload)
+    prefer_provider_media_for_history? || encrypted_history_attachment?(record, attachment_payload)
+  end
+
+  def prepare_provider_first_history_file(record, attachment_payload, source_id)
+    provider_result = download_provider_attachment(record, attachment_payload, source_id: source_id)
+    return provider_result[:file] if provider_result[:file].present?
+
+    decrypted = decrypt_encrypted_history_attachment(record, attachment_payload, source_id, provider_result[:refreshed_record])
+    return decrypted if decrypted.present?
+    return if provider_result[:unavailable]
+
+    download_remote_attachment(attachment_payload, source_id: source_id, fallback: true)
+  end
+
+  def encrypted_history_attachment?(record, attachment_payload)
+    meta = WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: record, attachment_payload: attachment_payload)
+    WhatsappWeb::MediaDecryptor.encrypted_media_payload?(
+      url: attachment_payload[:media_url] || meta[:url],
+      media_key: meta[:media_key],
+      filename: attachment_payload[:file_name]
+    )
+  end
+
+  def decrypt_encrypted_history_attachment(record, attachment_payload, source_id, refreshed_record = nil)
+    meta = WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: record, attachment_payload: attachment_payload)
+    if (meta[:url].blank? || meta[:media_key].blank?) && refreshed_record.present?
+      meta = WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: refreshed_record).compact_blank.merge(meta.compact_blank)
+    end
+    return if meta[:url].blank? || meta[:media_key].blank?
+
+    WhatsappWeb::MediaDecryptor.decrypt_remote_media(url: meta[:url], media_key: meta[:media_key], metadata: meta)
+  rescue WhatsappWeb::MediaDecryptor::DecryptionError, Down::Error => e
+    Rails.logger.info("[WHATSAPP WEB] History native media decryption failed for #{source_id}: #{e.class}: #{e.message}")
     nil
   end
 
@@ -290,9 +318,10 @@ class WhatsappWeb::HistoryImportService
   end
 
   def download_remote_attachment(attachment_payload, source_id:, fallback: false)
-    return if attachment_payload[:media_url].blank?
+    media_url = attachment_payload[:media_url]
+    return if media_url.blank? || WhatsappWeb::MediaDecryptor.encrypted_whatsapp_url?(media_url)
 
-    file = Down.download(attachment_payload[:media_url])
+    file = Down.download(media_url)
     annotate_attachment_file(file, attachment_payload)
   rescue StandardError => e
     log_message = if fallback
@@ -305,8 +334,12 @@ class WhatsappWeb::HistoryImportService
   end
 
   def annotate_attachment_file(file, attachment_payload)
-    file_name = attachment_payload[:file_name].to_s
-    content_type = detect_attachment_content_type(file, file_name) || attachment_payload[:mimetype].presence || 'application/octet-stream'
+    media_kind = attachment_payload[:media_kind]
+    raw_name = attachment_payload[:file_name].to_s
+    detected = detect_attachment_content_type(file, raw_name)
+    chosen_mime = WhatsappWeb::MediaMimeNormalizer.concrete_mime?(detected) ? detected : attachment_payload[:mimetype]
+    content_type = WhatsappWeb::MediaMimeNormalizer.normalize_mime_type(chosen_mime, filename: raw_name, media_kind: media_kind)
+    file_name = WhatsappWeb::MediaMimeNormalizer.sanitize_filename(raw_name, mime_type: content_type, media_kind: media_kind)
 
     file.define_singleton_method(:original_filename) { file_name }
     file.define_singleton_method(:content_type) { content_type }
@@ -330,8 +363,7 @@ class WhatsappWeb::HistoryImportService
   def download_provider_attachment(record, attachment_payload, source_id:)
     provider_payload = fetch_provider_attachment_payload(record, source_id: source_id)
     if provider_attachment_available?(provider_payload)
-      return { file: build_provider_attachment_file(provider_payload, attachment_payload),
-               unavailable: false }
+      return { file: build_provider_attachment_file(provider_payload, attachment_payload), unavailable: false }
     end
     return { file: nil, unavailable: true } if provider_attachment_unavailable?(provider_payload)
 
@@ -340,12 +372,10 @@ class WhatsappWeb::HistoryImportService
 
     provider_payload = fetch_provider_attachment_payload(refreshed_record, source_id: source_id, refreshed: true)
     if provider_attachment_available?(provider_payload)
-      return { file: build_provider_attachment_file(provider_payload, attachment_payload),
-               unavailable: false }
+      return { file: build_provider_attachment_file(provider_payload, attachment_payload), unavailable: false }
     end
-    return { file: nil, unavailable: true } if provider_attachment_unavailable?(provider_payload)
 
-    { file: nil, unavailable: false }
+    { file: nil, unavailable: provider_attachment_unavailable?(provider_payload), refreshed_record: refreshed_record }
   end
 
   def fetch_provider_attachment_payload(record, source_id:, refreshed: false)
