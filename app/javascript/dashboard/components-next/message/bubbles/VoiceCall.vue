@@ -120,6 +120,9 @@ const isFailed = computed(() =>
 
 // Call source and metadata — all camelCase due to deep transform
 const isWhatsappCall = computed(() => data.value?.callSource === 'whatsapp');
+const isTelegramPersonalCall = computed(
+  () => data.value?.callSource === 'telegram_personal'
+);
 const callId = computed(() => data.value?.callId);
 const acceptedBy = computed(
   () => data.value?.acceptedBy || data.value?.accepted_by || {}
@@ -547,7 +550,11 @@ const recordingAttachment = computed(() => {
 // Show join/accept button logic.
 // WhatsApp with media server: ringing + in_progress (server-relay supports rejoin).
 // WhatsApp without media server: only ringing (peer-to-peer WebRTC — cannot rejoin after accept).
+// Telegram Personal: inbound ringing only.
 const showJoinButton = computed(() => {
+  if (isTelegramPersonalCall.value) {
+    return !isOutbound.value && status.value === VOICE_CALL_STATUS.RINGING;
+  }
   if (!isWhatsappCall.value) return false;
 
   // Server-relay mode enables rejoining in-progress calls.
@@ -561,7 +568,10 @@ const showJoinButton = computed(() => {
 });
 
 const joinButtonLabel = computed(() => {
-  if (isWhatsappCall.value && status.value === VOICE_CALL_STATUS.RINGING) {
+  if (
+    (isWhatsappCall.value || isTelegramPersonalCall.value) &&
+    status.value === VOICE_CALL_STATUS.RINGING
+  ) {
     return 'CONVERSATION.VOICE_CALL.ACCEPT_CALL';
   }
   return 'CONVERSATION.VOICE_CALL.JOIN_CALL';
@@ -738,8 +748,10 @@ const handleJoinCall = async () => {
   isJoining.value = true;
 
   try {
-    if (isWhatsappCall.value) {
-      const result = await acceptWhatsappCallById(callId.value);
+    if (isWhatsappCall.value || isTelegramPersonalCall.value) {
+      const result = isTelegramPersonalCall.value
+        ? await acceptWhatsappCallById(callId.value, 'telegram_personal')
+        : await acceptWhatsappCallById(callId.value);
       if (result?.success && result.call) {
         router.push({
           name: 'inbox_conversation',

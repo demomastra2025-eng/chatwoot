@@ -31,7 +31,12 @@
     "DELETE_DIGIT": "Цифрды өшіру",
     "ADD_PLUS": "Плюс қосу",
     "INVALID_NUMBER": "Дұрыс телефон нөмірін енгізіңіз (халықаралық нөмір үшін + қолданыңыз)",
-    "CONTACT_LOOKUP_INCOMPLETE": "Барлық контактіні тексеру мүмкін болмады. Қайталап көріңіз."
+    "CONTACT_LOOKUP_INCOMPLETE": "Барлық контактіні тексеру мүмкін болмады. Қайталап көріңіз.",
+    "TELEGRAM_CALLS_LABEL": "Telegram желісі",
+    "TELEGRAM_CONNECT": "Қосу",
+    "TELEGRAM_GO_ONLINE": "Желіге шығу",
+    "TELEGRAM_ONLINE": "Желіде",
+    "TELEGRAM_OFFLINE": "Желіде емес"
   },
   "PROFILE_SETTINGS": {
     "LINK": "Profile Settings",
@@ -329,6 +334,23 @@
         "LABEL": "Confirm new password",
         "ERROR": "Confirm password should match the password",
         "PLACEHOLDER": "Please re-enter your new password"
+      },
+      "TELEGRAM_SOFTPHONE": {
+        "TITLE": "Telegram қоңыраулары (оператор желісі)",
+        "NOTE": "OneLink кіріс қоңырауларын (телефония, WhatsApp Business, жеке Telegram) телефондағы Telegram арқылы фонда қабылдаңыз.",
+        "SUBTITLE": "Telegram-дағы бірыңғай OneLink софтфоны — бір батырмамен желіге шығу және шығу",
+        "CONNECTED_FALLBACK": "Telegram қосылды",
+        "STATUS_ONLINE": "Желіде",
+        "STATUS_OFFLINE": "Желіде емес",
+        "SIP_LINES_ACTIVE": "Telegram-дағы белсенді SIP желілері: {count}",
+        "CONNECT_BTN": "Telegram қосу",
+        "CHECK_STATUS_BTN": "Күйін тексеру",
+        "GO_ONLINE_BTN": "Желіге шығу",
+        "GO_OFFLINE_BTN": "Желіден шығу",
+        "DISCONNECT_BTN": "Ажырату",
+        "OPEN_BOT_HINT": "Ашылған Telegram ботында «Іске қосу» батырмасын басып, содан кейін «Күйін тексеру» түймесін басыңыз.",
+        "OPEN_LINK": "Ботты ашу",
+        "ERROR_GENERIC": "Telegram желісінің күйін жаңарту мүмкін болмады. Қайталап көріңіз."
       }
     }
   },

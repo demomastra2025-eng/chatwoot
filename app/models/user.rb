@@ -126,6 +126,7 @@ class User < ApplicationRecord
   has_many :notification_settings, dependent: :destroy_async
   has_many :notification_subscriptions, dependent: :destroy_async
   has_one :telegram_notification_binding, dependent: :destroy
+  has_many :telephony_telegram_operator_bindings, dependent: :destroy, class_name: 'Telephony::TelegramOperatorBinding', inverse_of: :user
   has_many :notifications, dependent: :destroy_async
   has_many :articles, foreign_key: 'author_id', dependent: :nullify, inverse_of: :author
   # rubocop:disable Rails/HasManyOrHasOneDependent

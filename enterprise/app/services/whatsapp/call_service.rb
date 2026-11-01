@@ -340,7 +340,22 @@ class Whatsapp::CallService
     conversation.update!(additional_attributes: attrs)
   end
 
+  def cancel_telegram_legs_on_accept
+    TelegramCalls::CallDispatcher.cancel_legs_for_source!(
+      source_type: 'whatsapp', account_id: call.account_id, source_call_ref: call.id.to_s,
+      status_text: "ℹ️ Принял(а): #{ERB::Util.html_escape(agent&.name.to_s)}"
+    )
+  end
+
+  def cancel_telegram_legs_on_end
+    TelegramCalls::CallDispatcher.cancel_legs_for_source!(
+      source_type: 'whatsapp', account_id: call.account_id, source_call_ref: call.id.to_s,
+      status_text: '✅ <b>Звонок завершён</b>', include_claimed: true
+    )
+  end
+
   def broadcast_accepted
+    cancel_telegram_legs_on_accept
     payload = {
       event: 'whatsapp_call.accepted',
       data: {
@@ -373,6 +388,7 @@ class Whatsapp::CallService
   end
 
   def broadcast_call_ended
+    cancel_telegram_legs_on_end
     payload = {
       event: 'whatsapp_call.ended',
       data: {

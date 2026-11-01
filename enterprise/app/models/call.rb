@@ -37,7 +37,7 @@ class Call < ApplicationRecord
   # Statuses where the call is finished and won't change again
   TERMINAL_STATUSES = %w[completed no_answer failed].freeze
 
-  enum :provider, { twilio: 0, whatsapp: 1 }
+  enum :provider, { twilio: 0, whatsapp: 1, telegram_personal: 2 }
   enum :direction, { incoming: 0, outgoing: 1 }
 
   belongs_to :account
@@ -63,12 +63,25 @@ class Call < ApplicationRecord
   scope :active_for_agent, ->(agent_id) { active.where(accepted_by_agent_id: agent_id) }
 
   def self.media_server_enabled?(inbox: nil)
-    return false unless ENV['MEDIA_SERVER_URL'].present? && ENV['MEDIA_SERVER_AUTH_TOKEN'].present?
+    return telegram_gateway_configured? if inbox&.channel_type == 'Channel::TelegramPersonal'
+    return false unless whatsapp_media_server_configured?
 
-    media_setting = inbox&.channel&.provider_config&.with_indifferent_access&.dig('media_server_enabled')
-    return true if media_setting.nil?
+    media_setting = inbox_media_server_setting(inbox)
+    media_setting.nil? || ActiveModel::Type::Boolean.new.cast(media_setting)
+  end
 
-    ActiveModel::Type::Boolean.new.cast(media_setting)
+  def self.inbox_media_server_setting(inbox)
+    config = inbox&.channel&.provider_config
+    config.with_indifferent_access['media_server_enabled'] if config.is_a?(Hash)
+  end
+  private_class_method :inbox_media_server_setting
+
+  def self.telegram_gateway_configured?
+    ENV['TELEGRAM_PERSONAL_GATEWAY_URL'].present? && ENV['TELEGRAM_PERSONAL_GATEWAY_TOKEN'].present?
+  end
+
+  def self.whatsapp_media_server_configured?
+    ENV['MEDIA_SERVER_URL'].present? && ENV['MEDIA_SERVER_AUTH_TOKEN'].present?
   end
 
   def media_server_enabled?

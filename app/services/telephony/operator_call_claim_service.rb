@@ -20,6 +20,7 @@ class Telephony::OperatorCallClaimService
     validate_call_session_tenant_links!
     broadcast_claimed_call!
     close_sibling_legs!
+    cancel_telegram_softphone_legs!
     claim_payload
   end
 
@@ -29,6 +30,13 @@ class Telephony::OperatorCallClaimService
 
   # The other operators' legs of the same physical call end now, not minutes
   # later. Never fails the claim.
+  def cancel_telegram_softphone_legs!
+    TelegramCalls::CallDispatcher.cancel_legs_for_source!(
+      source_type: 'telephony_sip', account_id: account.id, source_call_ref: call_session.external_call_ref,
+      status_text: "ℹ️ Принял(а): #{ERB::Util.html_escape(user.name.to_s)}"
+    )
+  end
+
   def close_sibling_legs!
     Telephony::SiblingLegCloser.new(call_session: call_session).perform
   rescue StandardError => e

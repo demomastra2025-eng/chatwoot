@@ -9,6 +9,8 @@ class TelegramPersonal::IncomingEventService
     'message.deleted' => 'TelegramPersonal::DeleteMessagesService'
   }.freeze
 
+  CALL_EVENTS = %w[call.incoming call.accepted call.ended].freeze
+
   pattr_initialize [:channel!, :payload!]
 
   def perform
@@ -26,8 +28,15 @@ class TelegramPersonal::IncomingEventService
 
   def process_event
     return process_runtime_update if event == 'runtime.updated'
+    return process_call_event if CALL_EVENTS.include?(event)
 
     EVENT_SERVICES[event]&.constantize&.new(inbox: channel.inbox, params: event_data)&.perform
+  end
+
+  def process_call_event
+    return unless defined?(TelegramPersonal::IncomingCallService)
+
+    TelegramPersonal::IncomingCallService.new(inbox: channel.inbox, event: event, params: event_data).perform
   end
 
   def event

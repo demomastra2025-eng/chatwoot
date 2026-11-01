@@ -8,6 +8,7 @@ class Agents::DestroyJob < ApplicationJob
       target_user_id = resolve_target_user_id(account, user, transfer_to_user_id)
 
       destroy_notification_setting(account, user)
+      disconnect_telegram_operator_binding(account, user)
       remove_user_from_teams(account, user)
       remove_user_from_inboxes(account, user)
       reassign_or_unassign_conversations(account, user, target_user_id)
@@ -42,6 +43,11 @@ class Agents::DestroyJob < ApplicationJob
   def destroy_notification_setting(account, user)
     setting = user.notification_settings.find_by(account_id: account.id)
     setting&.destroy!
+  end
+
+  def disconnect_telegram_operator_binding(account, user)
+    binding = Telephony::TelegramOperatorBinding.find_by(account_id: account.id, user_id: user.id)
+    binding&.disconnect!
   end
 
   def reassign_or_unassign_conversations(account, user, target_user_id)

@@ -172,6 +172,10 @@ if resource.telegram_personal?
   json.last_error resource.channel.try(:last_error)
   json.last_synced_at resource.channel.try(:last_synced_at)
   json.runtime_state Inbox::RuntimeStatePresenter.for(resource.channel, administrator: Current.account_user&.administrator? == true)
+  unless channel_missing
+    json.calling_enabled resource.channel.try(:calling_enabled?) || false
+    json.media_server_enabled defined?(Call) ? Call.media_server_enabled?(inbox: resource) : false
+  end
 end
 
 if resource.weixin?

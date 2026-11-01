@@ -7,7 +7,7 @@ class Whatsapp::CallTranscriptionJob < ApplicationJob
   end
 
   def perform(call_id)
-    call = Call.whatsapp.find_by(id: call_id)
+    call = Call.where(provider: [:whatsapp, :telegram_personal]).find_by(id: call_id)
     return if call.blank? || !call.recording.attached? || call.transcript.present?
 
     Whatsapp::CallTranscriptionService.new(call).perform

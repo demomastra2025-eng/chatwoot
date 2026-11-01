@@ -31,7 +31,12 @@
     "DELETE_DIGIT": "Delete digit",
     "ADD_PLUS": "Add plus",
     "INVALID_NUMBER": "Enter a valid phone number (use + for international numbers)",
-    "CONTACT_LOOKUP_INCOMPLETE": "Could not check all contacts. Please try again."
+    "CONTACT_LOOKUP_INCOMPLETE": "Could not check all contacts. Please try again.",
+    "TELEGRAM_CALLS_LABEL": "Telegram line",
+    "TELEGRAM_CONNECT": "Connect",
+    "TELEGRAM_GO_ONLINE": "Go online",
+    "TELEGRAM_ONLINE": "On line",
+    "TELEGRAM_OFFLINE": "Off line"
   },
   "PROFILE_SETTINGS": {
     "LINK": "Profile Settings",
@@ -341,6 +346,23 @@
         "LABEL": "Confirm new password",
         "ERROR": "Confirm password should match the password",
         "PLACEHOLDER": "Please re-enter your new password"
+      },
+      "TELEGRAM_SOFTPHONE": {
+        "TITLE": "Telegram Calls (Operator Softphone)",
+        "NOTE": "Receive consolidated OneLink calls (SIP telephony, WhatsApp Business, personal Telegram) directly via native Telegram calls in the background.",
+        "SUBTITLE": "Unified OneLink softphone in Telegram — go on or off line in one tap",
+        "CONNECTED_FALLBACK": "Telegram linked",
+        "STATUS_ONLINE": "On line",
+        "STATUS_OFFLINE": "Off line",
+        "SIP_LINES_ACTIVE": "Active SIP lines in Telegram: {count}",
+        "CONNECT_BTN": "Connect Telegram",
+        "CHECK_STATUS_BTN": "Check status",
+        "GO_ONLINE_BTN": "Go on line",
+        "GO_OFFLINE_BTN": "Go off line",
+        "DISCONNECT_BTN": "Disconnect",
+        "OPEN_BOT_HINT": "Press Start in the opened Telegram bot, then click Check status.",
+        "OPEN_LINK": "Open bot",
+        "ERROR_GENERIC": "Could not update Telegram softphone status. Please try again."
       }
     }
   },

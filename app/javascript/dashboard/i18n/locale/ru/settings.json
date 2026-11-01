@@ -31,7 +31,12 @@
     "DELETE_DIGIT": "Удалить цифру",
     "ADD_PLUS": "Добавить плюс",
     "INVALID_NUMBER": "Введите корректный номер; для других стран начните с +",
-    "CONTACT_LOOKUP_INCOMPLETE": "Не удалось проверить все контакты. Повторите попытку."
+    "CONTACT_LOOKUP_INCOMPLETE": "Не удалось проверить все контакты. Повторите попытку.",
+    "TELEGRAM_CALLS_LABEL": "Telegram-линия",
+    "TELEGRAM_CONNECT": "Подключить",
+    "TELEGRAM_GO_ONLINE": "На линию",
+    "TELEGRAM_ONLINE": "На линии",
+    "TELEGRAM_OFFLINE": "Не на линии"
   },
   "PROFILE_SETTINGS": {
     "LINK": "Настройки профиля",
@@ -341,6 +346,23 @@
         "LABEL": "Подтвердите новый пароль",
         "ERROR": "Подтверждение пароля должно соответствовать паролю",
         "PLACEHOLDER": "Пожалуйста, введите новый пароль еще раз"
+      },
+      "TELEGRAM_SOFTPHONE": {
+        "TITLE": "Звонки в Telegram (операторская линия)",
+        "NOTE": "Принимайте входящие звонки OneLink (телефония, WhatsApp Business, личный Telegram) прямо в Telegram на телефоне в фоне.",
+        "SUBTITLE": "Единый софтфон OneLink в Telegram — вход и выход с линии в один клик",
+        "CONNECTED_FALLBACK": "Telegram подключён",
+        "STATUS_ONLINE": "На линии",
+        "STATUS_OFFLINE": "Не на линии",
+        "SIP_LINES_ACTIVE": "Активных SIP-линий в Telegram: {count}",
+        "CONNECT_BTN": "Подключить Telegram",
+        "CHECK_STATUS_BTN": "Проверить статус",
+        "GO_ONLINE_BTN": "Выйти на линию",
+        "GO_OFFLINE_BTN": "Сойти с линии",
+        "DISCONNECT_BTN": "Отключить",
+        "OPEN_BOT_HINT": "Нажмите «Запустить» в открывшемся боте Telegram, затем «Проверить статус».",
+        "OPEN_LINK": "Открыть бота",
+        "ERROR_GENERIC": "Не удалось обновить статус Telegram-линии. Повторите попытку."
       }
     }
   },

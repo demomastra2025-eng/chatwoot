@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_30_133000) do
+ActiveRecord::Schema[7.2].define(version: 2026_11_01_123000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -3960,6 +3960,32 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_30_133000) do
     t.index ["user_id"], name: "index_telephony_sip_profiles_on_user_id"
   end
 
+  create_table "telephony_telegram_operator_bindings", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "user_id", null: false
+    t.string "telegram_user_id"
+    t.string "telegram_chat_id"
+    t.string "username"
+    t.string "first_name"
+    t.string "last_name"
+    t.string "phone_number"
+    t.string "link_token_digest"
+    t.datetime "link_token_expires_at"
+    t.datetime "verified_at"
+    t.boolean "on_line", default: false, null: false
+    t.datetime "on_line_since"
+    t.jsonb "sip_lease_meta", default: {}, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "telegram_user_id"], name: "idx_tel_tg_operator_bindings_account_tg_user", unique: true, where: "((telegram_user_id IS NOT NULL) AND ((telegram_user_id)::text <> ''::text))"
+    t.index ["account_id", "user_id"], name: "idx_tel_tg_operator_bindings_account_user", unique: true
+    t.index ["account_id"], name: "index_telephony_telegram_operator_bindings_on_account_id"
+    t.index ["link_token_digest"], name: "idx_tel_tg_operator_bindings_link_token", unique: true, where: "(link_token_digest IS NOT NULL)"
+    t.index ["telegram_user_id"], name: "idx_tel_tg_operator_bindings_tg_user", where: "(telegram_user_id IS NOT NULL)"
+    t.index ["user_id"], name: "index_telephony_telegram_operator_bindings_on_user_id"
+  end
+
   create_table "touch_occurrence_claims", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "touch_plan_enrollment_id", null: false
@@ -4581,6 +4607,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_30_133000) do
   add_foreign_key "telephony_sip_profiles", "inboxes"
   add_foreign_key "telephony_sip_profiles", "telephony_provider_connections", column: "provider_connection_id"
   add_foreign_key "telephony_sip_profiles", "users"
+  add_foreign_key "telephony_telegram_operator_bindings", "accounts"
+  add_foreign_key "telephony_telegram_operator_bindings", "users"
   add_foreign_key "touch_occurrence_claims", "accounts"
   add_foreign_key "touch_occurrence_claims", "reminders"
   add_foreign_key "touch_occurrence_claims", "touch_plan_enrollments"

@@ -104,6 +104,14 @@ module Redis::Alfred
       $alfred.with { |conn| conn.hset(key, field, value) }
     end
 
+    def hsetnx(key, field, value)
+      $alfred.with { |conn| conn.hsetnx(key, field, value) }
+    end
+
+    def hgetall(key)
+      $alfred.with { |conn| conn.hgetall(key) }
+    end
+
     # get value from redis hash
     def hget(key, field)
       $alfred.with { |conn| conn.hget(key, field) }

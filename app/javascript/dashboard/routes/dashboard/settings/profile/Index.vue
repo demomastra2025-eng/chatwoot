@@ -17,6 +17,7 @@ import UserLanguageSelect from './UserLanguageSelect.vue';
 import HotKeyCard from './HotKeyCard.vue';
 import ChangePassword from './ChangePassword.vue';
 import NotificationPreferences from './NotificationPreferences.vue';
+import TelegramSoftphoneCard from './TelegramSoftphoneCard.vue';
 import SectionLayout from '../account/components/SectionLayout.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import AccessToken from './AccessToken.vue';
@@ -38,6 +39,7 @@ export default {
     HotKeyCard,
     ChangePassword,
     NotificationPreferences,
+    TelegramSoftphoneCard,
     AccessToken,
     McpConfiguration,
     MfaSettingsCard,
@@ -346,6 +348,13 @@ export default {
         :description="$t('PROFILE_SETTINGS.FORM.SECURITY_SECTION.NOTE')"
       >
         <MfaSettingsCard />
+      </SectionLayout>
+      <SectionLayout
+        with-border
+        :title="$t('PROFILE_SETTINGS.FORM.TELEGRAM_SOFTPHONE.TITLE')"
+        :description="$t('PROFILE_SETTINGS.FORM.TELEGRAM_SOFTPHONE.NOTE')"
+      >
+        <TelegramSoftphoneCard />
       </SectionLayout>
       <Policy :permissions="notificationPermissions">
         <SectionLayout

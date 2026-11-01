@@ -1,6 +1,8 @@
 class TelegramPersonal::GatewayClient
-  class GatewayError < StandardError; end
-  RUNTIME_NOT_SYNCED_ERROR = /\bChannel\s+\d+\s+is not synced\b/i
+  include TelegramPersonal::GatewayCallMethods
+
+  GatewayError = TelegramPersonal::GatewayCallMethods::GatewayError
+  RUNTIME_NOT_SYNCED_ERROR = /Channel\s+\d+\s+is not synced/i
   ENRICH_MEDIA_TIMEOUT_SECONDS = 180
   NETWORK_ERRORS = [
     HTTParty::Error,
@@ -38,23 +40,13 @@ class TelegramPersonal::GatewayClient
   end
 
   def history_sync!(force: true, reset_cursor: false, include_contacts: false, full: nil)
-    body = {
-      force: force,
-      reset_cursor: reset_cursor,
-      include_contacts: include_contacts
-    }
+    body = { force: force, reset_cursor: reset_cursor, include_contacts: include_contacts }
     body[:full] = full unless full.nil?
-
     post("/internal/channels/#{channel.id}/history-sync", body: body)
   end
 
   def contacts_sync!(force: true)
-    post(
-      "/internal/channels/#{channel.id}/contacts-sync",
-      body: {
-        force: force
-      }
-    )
+    post("/internal/channels/#{channel.id}/contacts-sync", body: { force: force })
   end
 
   def disconnect!
@@ -81,58 +73,29 @@ class TelegramPersonal::GatewayClient
     reply_to_id = TelegramPersonal::MessageSourceId.provider_id(
       message.content_attributes.to_h['in_reply_to_external_id']
     ).presence
-
-    post_with_runtime_retry(
-      "/internal/channels/#{channel.id}/messages",
-      body: {
-        recipient_id: recipient_id,
-        chat_id: chat_id,
-        text: message.outgoing_content,
-        reply_to_message_id: reply_to_id,
-        attachments: serialize_attachments(message)
-      }
-    )
+    body = {
+      recipient_id: recipient_id, chat_id: chat_id, text: message.outgoing_content,
+      reply_to_message_id: reply_to_id, attachments: serialize_attachments(message)
+    }
+    post_with_runtime_retry("/internal/channels/#{channel.id}/messages", body: body)
   end
 
   def edit_message!(message:, content:)
     recipient_id, chat_id = outbound_target!(message)
-
-    post_with_runtime_retry(
-      "/internal/channels/#{channel.id}/messages/edit",
-      body: {
-        recipient_id: recipient_id,
-        chat_id: chat_id,
-        message_id: provider_message_id_for(message),
-        text: content
-      }
-    )
+    body = { recipient_id: recipient_id, chat_id: chat_id, message_id: provider_message_id_for(message), text: content }
+    post_with_runtime_retry("/internal/channels/#{channel.id}/messages/edit", body: body)
   end
 
   def delete_message!(message)
     recipient_id, chat_id = outbound_target!(message)
-
-    post_with_runtime_retry(
-      "/internal/channels/#{channel.id}/messages/delete",
-      body: {
-        recipient_id: recipient_id,
-        chat_id: chat_id,
-        message_ids: provider_message_ids_for(message)
-      }
-    )
+    body = { recipient_id: recipient_id, chat_id: chat_id, message_ids: provider_message_ids_for(message) }
+    post_with_runtime_retry("/internal/channels/#{channel.id}/messages/delete", body: body)
   end
 
   def react_message!(message:, emoji:)
     recipient_id, chat_id = outbound_target!(message)
-
-    post_with_runtime_retry(
-      "/internal/channels/#{channel.id}/messages/react",
-      body: {
-        recipient_id: recipient_id,
-        chat_id: chat_id,
-        message_id: provider_message_id_for(message),
-        emoji: emoji.to_s
-      }
-    )
+    body = { recipient_id: recipient_id, chat_id: chat_id, message_id: provider_message_id_for(message), emoji: emoji.to_s }
+    post_with_runtime_retry("/internal/channels/#{channel.id}/messages/react", body: body)
   end
 
   def enrich_message_media!(chat_id:, peer_user_id:, message_id:, telegram_message_ids: [])
@@ -140,27 +103,17 @@ class TelegramPersonal::GatewayClient
                         .map { |id| TelegramPersonal::MessageSourceId.provider_id(id) }
                         .reject(&:blank?)
                         .uniq
-    post_with_runtime_retry(
-      "/internal/channels/#{channel.id}/messages/enrich-media",
-      body: {
-        chat_id: chat_id,
-        peer_user_id: peer_user_id,
-        message_id: TelegramPersonal::MessageSourceId.provider_id(message_id),
-        telegram_message_ids: stripped_ids
-      },
-      timeout: ENRICH_MEDIA_TIMEOUT_SECONDS
-    )
+    body = {
+      chat_id: chat_id, peer_user_id: peer_user_id,
+      message_id: TelegramPersonal::MessageSourceId.provider_id(message_id),
+      telegram_message_ids: stripped_ids
+    }
+    post_with_runtime_retry("/internal/channels/#{channel.id}/messages/enrich-media", body: body, timeout: ENRICH_MEDIA_TIMEOUT_SECONDS)
   end
 
   def mark_read!(recipient_id:, chat_id:, max_id:)
-    post_with_runtime_retry(
-      "/internal/channels/#{channel.id}/mark-read",
-      body: {
-        recipient_id: recipient_id,
-        chat_id: chat_id,
-        max_id: max_id
-      }
-    )
+    body = { recipient_id: recipient_id, chat_id: chat_id, max_id: max_id }
+    post_with_runtime_retry("/internal/channels/#{channel.id}/mark-read", body: body)
   end
 
   private
@@ -244,40 +197,10 @@ class TelegramPersonal::GatewayClient
     parsed = response.parsed_response.is_a?(Hash) ? response.parsed_response.with_indifferent_access : {}
     return parsed if response.success?
 
-    raise GatewayError, parsed[:error].presence || response.body.presence || 'Telegram Personal gateway request failed'
-  end
-
-  def parse_file_response(response)
-    if response.success?
-      return {
-        body: response.body,
-        content_type: response.headers['content-type'].to_s.split(';').first.presence || 'image/jpeg'
-      }
-    end
-
-    parsed = response.parsed_response.is_a?(Hash) ? response.parsed_response.with_indifferent_access : {}
-    raise GatewayError, parsed[:error].presence || response.body.presence || 'Telegram Personal gateway file request failed'
-  end
-
-  def get_file_with_runtime_retry(path, query:)
-    get_file(path, query: query)
-  rescue GatewayError => e
-    raise unless runtime_not_synced_error?(e)
-
-    sync_channel!
-    get_file(path, query: query)
-  end
-
-  def get_file(path, query:)
-    response = with_network_errors_wrapped do
-      HTTParty.get(
-        "#{base_url}#{path}",
-        headers: headers.except('Content-Type'),
-        query: query,
-        timeout: 60
-      )
-    end
-    parse_file_response(response)
+    raise GatewayError.new(
+      parsed[:error].presence || response.body.presence || 'Telegram Personal gateway request failed',
+      http_status: response.code
+    )
   end
 
   def with_network_errors_wrapped
@@ -287,10 +210,7 @@ class TelegramPersonal::GatewayClient
   end
 
   def headers
-    {
-      'Authorization' => "Bearer #{gateway_token}",
-      'Content-Type' => 'application/json'
-    }
+    { 'Authorization' => "Bearer #{gateway_token}", 'Content-Type' => 'application/json' }
   end
 
   def base_url

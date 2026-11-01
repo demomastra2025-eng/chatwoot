@@ -45,30 +45,62 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService # rubocop:disable 
   end
 
   def diarized_transcript
+    customer_path, agent_path = per_side_temp_paths
+    write_per_side_recordings!(customer_path, agent_path)
+    probe_diarized_duration(customer_path, agent_path)
+    build_diarized_lines(customer_path, agent_path)
+  rescue Whatsapp::MediaServerClient::ConnectionError,
+         Whatsapp::MediaServerClient::SessionError,
+         TelegramPersonal::GatewayClient::GatewayError => e
+    Rails.logger.warn "[WHATSAPP CALL] Per-side recording unavailable, falling back to combined transcription: #{e.message}"
+    nil
+  ensure
+    cleanup_temp_files(customer_path, agent_path)
+  end
+
+  def per_side_temp_paths
     temp_dir = Rails.root.join('tmp/uploads/call-transcriptions')
     FileUtils.mkdir_p(temp_dir)
-    customer_path = File.join(temp_dir, "#{call.media_session_id}_customer.ogg")
-    agent_path    = File.join(temp_dir, "#{call.media_session_id}_agent.ogg")
+    safe_session_id = File.basename(call.media_session_id.to_s)
+    [
+      File.join(temp_dir, "#{safe_session_id}_customer.ogg"),
+      File.join(temp_dir, "#{safe_session_id}_agent.ogg")
+    ]
+  end
 
-    client = Whatsapp::MediaServerClient.new
-    File.binwrite(customer_path, client.download_recording(call.media_session_id, side: 'customer'))
-    File.binwrite(agent_path,    client.download_recording(call.media_session_id, side: 'agent'))
-    probe_diarized_duration(customer_path, agent_path)
-
-    segments = transcribe_segments(customer_path, 'Customer') +
-               transcribe_segments(agent_path, 'Agent')
+  def build_diarized_lines(customer_path, agent_path)
+    segments = transcribe_segments(customer_path, 'Customer') + transcribe_segments(agent_path, 'Agent')
     return nil if segments.empty?
 
     segments.sort_by { |s| s[:start] }
             .map { |s| "[#{format_ts(s[:start])}] #{s[:speaker]}: #{s[:text].strip}" }
             .reject { |line| line.end_with?(': ') }
             .join("\n")
-  rescue Whatsapp::MediaServerClient::ConnectionError, Whatsapp::MediaServerClient::SessionError => e
-    Rails.logger.warn "[WHATSAPP CALL] Per-side recording unavailable, falling back to combined transcription: #{e.message}"
-    nil
-  ensure
-    FileUtils.rm_f(customer_path) if defined?(customer_path) && customer_path
-    FileUtils.rm_f(agent_path)    if defined?(agent_path) && agent_path
+  end
+
+  def cleanup_temp_files(*paths)
+    paths.compact.each { |path| FileUtils.rm_f(path) }
+  end
+
+  def write_per_side_recordings!(customer_path, agent_path)
+    if call.respond_to?(:telegram_personal?) && call.telegram_personal?
+      write_telegram_side_recordings!(customer_path, agent_path)
+    else
+      write_whatsapp_side_recordings!(customer_path, agent_path)
+    end
+  end
+
+  def write_telegram_side_recordings!(customer_path, agent_path)
+    client = TelegramPersonal::GatewayClient.new(channel: call.inbox.channel)
+    call_ref = call.media_session_id.presence || call.provider_call_id
+    File.binwrite(customer_path, client.download_call_recording!(call_ref: call_ref, side: 'customer'))
+    File.binwrite(agent_path, client.download_call_recording!(call_ref: call_ref, side: 'agent'))
+  end
+
+  def write_whatsapp_side_recordings!(customer_path, agent_path)
+    client = Whatsapp::MediaServerClient.new
+    File.binwrite(customer_path, client.download_recording(call.media_session_id, side: 'customer'))
+    File.binwrite(agent_path, client.download_recording(call.media_session_id, side: 'agent'))
   end
 
   def transcribe_segments(file_path, speaker)
@@ -105,34 +137,24 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService # rubocop:disable 
 
   def transcribe_file(file_path, temperature:, response_format: nil, timestamp_granularities: nil, observability: {})
     return transcribe_file_with_openrouter_chat(file_path, observability: observability) if openrouter_chat_transcription?
-
     if openrouter_transcription_endpoint?
-      return transcribe_file_with_openrouter_transcription_endpoint(
-        file_path,
-        temperature: temperature,
-        observability: observability
-      )
+      return transcribe_file_with_openrouter_transcription_endpoint(file_path, temperature: temperature, observability: observability)
     end
 
-    options = {
-      model: model,
-      temperature: temperature,
-      prompt: account.captain_audio_transcription_prompt,
-      observability: observability.merge(provider: 'openrouter')
-    }
-    options[:response_format] = response_format if response_format.present?
-    options[:timestamp_granularities] = timestamp_granularities if timestamp_granularities.present?
-
+    options = build_transcription_options(temperature, response_format, timestamp_granularities)
     instrument_audio_transcription(observability) do
       Llm::Runtime.transcribe(
-        feature: :audio_transcription,
-        account: account,
-        model: model,
-        input: file_path,
-        observability: options.delete(:observability),
-        options: options.except(:model)
+        feature: :audio_transcription, account: account, model: model, input: file_path,
+        observability: observability.merge(provider: 'openrouter'), options: options
       )
     end
+  end
+
+  def build_transcription_options(temperature, response_format, timestamp_granularities)
+    options = { temperature: temperature, prompt: account.captain_audio_transcription_prompt }
+    options[:response_format] = response_format if response_format.present?
+    options[:timestamp_granularities] = timestamp_granularities if timestamp_granularities.present?
+    options
   end
 
   def openrouter_chat_transcription?
@@ -152,24 +174,22 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService # rubocop:disable 
       logger_context: { account_id: account.id, call_id: call.id }
     )
     response = instrument_audio_transcription(observability) do
-      Llm::Runtime.chat(
-        feature: :audio_transcription,
-        account: account,
-        model: model,
-        messages: [
-          {
-            role: 'user',
-            content: RubyLLM::Content.new(openrouter_transcription_prompt, [provider_file_path])
-          }
-        ],
-        observability: observability.merge(provider: 'openrouter'),
-        options: openrouter_chat_options
-      )
+      run_openrouter_chat_transcription(provider_file_path, observability)
     end
-
     TranscriptionResult.new(text: response&.content.to_s, segments: [])
   ensure
     FileUtils.rm_f(provider_file_path) if provider_file_path.present? && provider_file_path != file_path
+  end
+
+  def run_openrouter_chat_transcription(provider_file_path, observability)
+    Llm::Runtime.chat(
+      feature: :audio_transcription,
+      account: account,
+      model: model,
+      messages: [{ role: 'user', content: RubyLLM::Content.new(openrouter_transcription_prompt, [provider_file_path]) }],
+      observability: observability.merge(provider: 'openrouter'),
+      options: openrouter_chat_options
+    )
   end
 
   def transcribe_file_with_openrouter_transcription_endpoint(file_path, temperature:, observability: {})
@@ -248,18 +268,24 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService # rubocop:disable 
 
   def update_call_and_message(transcribed_text)
     return if transcribed_text.blank?
+    return unless store_first_transcript!(transcribed_text)
 
+    account.increment_response_usage
+    record_call_analysis_usage!
+    sync_transcript_to_message(transcribed_text)
+  end
+
+  def store_first_transcript!(transcribed_text)
     first_transcription = false
     call.with_lock do
       call.reload
       first_transcription = call.transcript.blank?
       call.update!(transcript: transcribed_text)
     end
-    return unless first_transcription
+    first_transcription
+  end
 
-    account.increment_response_usage
-    record_call_analysis_usage!
-
+  def sync_transcript_to_message(transcribed_text)
     message = call.message
     return unless message
 
@@ -272,8 +298,9 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService # rubocop:disable 
 
   def probe_diarized_duration(customer_path, agent_path)
     return if call.respond_to?(:duration_seconds) && call.duration_seconds.present?
+    return if @probed_duration_seconds.present?
 
-    @probed_duration_seconds ||= [
+    @probed_duration_seconds = [
       Telephony::CallTranscript.probe(customer_path)['duration_seconds'],
       Telephony::CallTranscript.probe(agent_path)['duration_seconds']
     ].compact.max
