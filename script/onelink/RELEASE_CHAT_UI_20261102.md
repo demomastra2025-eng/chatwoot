@@ -14,6 +14,7 @@ passed its integration checks.
 - Removal of disconnected AI/CSAT code: `284c7ce7a57d38533ec7589cd4042e57401092a4`.
 - Conversation history scroll: `7acad4e23c005b8222292dcc19d8bc3da64d1785`.
 - Reactions and authoritative Telegram edit metadata: `9916e0f43e78b03921e6fb41e4f1e3d4f4642c01`.
+- Telegram calls through shared Janus: `afdf2fd27c9f25dc31b0f87ff513ea76e0b0877e`.
 
 Specialist schedule changes enter this list only after the corrected frozen SHA
 has passed independent review. Other unfinished `logic-*` branches are excluded.
@@ -28,6 +29,14 @@ always include:
 
 - `message_edited_at`: UTC ISO8601 string, or JSON `null`;
 - `message_edit_hidden`: JSON boolean, including explicit `false`.
+
+The coordinated version set for this candidate is gateway
+`802431a3eab5cc5da0ed62a4a2d59dfb6d1416d6` (metadata cherry-pick `91b361f`) and
+Janus source `43d6b64d141e6c0495cf4c915e9bdb69b496187f`. Gateway and Janus images
+were independently reviewed and built on DEV. Exact image IDs, archive SHA256s
+and the complete gateway Git bundle are recorded in
+`/root/work/release-prep-20261102-tgcalls/version-set.txt` and `SHA256SUMS`.
+Verify those identities before use; do not substitute mutable branch heads.
 
 The app uses one parser at webhook ingress and in the queued worker. Missing or
 malformed metadata in a full text/caption update returns HTTP 503 without
@@ -51,10 +60,14 @@ Order:
 with bounded HTTP retries. HTTP 503 does **not** imply durable outbox storage or
 automatic replay. No historical replay is authorized by this integration.
 
-The owner's separate requirement is to route Telegram calls through the shared
-Janus. The old aiortc bridge is not the final approved architecture. Coordinate
-the complete gateway/app/Janus version set with that work; do not deploy the old
-bridge as fulfilment of the Janus requirement.
+The accepted app uses the shared Janus AudioBridge for Telegram calls. Stage the
+matching gateway and Janus before the app, with no active calls. Follow canonical
+`03-runbooks/telegram-janus-release.md` for the DEV network/proxy, private ICE,
+scoped main-Janus configuration and rollback. On DEV, disable SIP in the new
+Janus so cloned profiles cannot register with real providers. Preserve session
+volumes and reload browser tabs after cutover. Verify synthetic bidirectional
+audio on desktop and phone before treating the public DEV stage as accepted.
+PROD requires separate approval for this exact version set and infrastructure.
 
 ## Database and rollback
 
