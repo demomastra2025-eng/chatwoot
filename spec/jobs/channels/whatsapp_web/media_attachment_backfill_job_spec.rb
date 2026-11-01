@@ -29,6 +29,31 @@ RSpec.describe Channels::WhatsappWeb::MediaAttachmentBackfillJob do
     )
   end
 
+  before do
+    allow(Resolv).to receive(:getaddresses).and_call_original
+    allow(Resolv).to receive(:getaddresses).with('mmg.whatsapp.net').and_return(['157.240.1.53'])
+  end
+
+  def build_encrypted_media(plaintext, hkdf_info:)
+    raw_key = Random.bytes(32)
+    expanded = OpenSSL::KDF.hkdf(raw_key, salt: "\x00".b * 32, info: hkdf_info, length: 112, hash: 'SHA256')
+    cipher = OpenSSL::Cipher.new('AES-256-CBC')
+    cipher.encrypt
+    cipher.key = expanded.byteslice(16, 32)
+    cipher.iv = expanded.byteslice(0, 16)
+    ciphertext = cipher.update(plaintext) + cipher.final
+    mac = OpenSSL::HMAC.digest('SHA256', expanded.byteslice(48, 32), expanded.byteslice(0, 16) + ciphertext).byteslice(0, 10)
+    { media_key: Base64.strict_encode64(raw_key), tempfile: encrypted_tempfile(ciphertext + mac) }
+  end
+
+  def encrypted_tempfile(bytes)
+    Tempfile.new(['wa-backfill', '.enc']).tap do |file|
+      file.binmode
+      file.write(bytes)
+      file.rewind
+    end
+  end
+
   it 'runs on the whatsappweb_history queue' do
     expect(described_class.queue_name).to eq('whatsappweb_history')
   end
@@ -73,7 +98,7 @@ RSpec.describe Channels::WhatsappWeb::MediaAttachmentBackfillJob do
         mimetype: 'image/png'
       }
     )
-    allow_any_instance_of(Channel::WhatsappWeb).to receive(:provider_service).and_return(provider_service)
+    allow(WhatsappWeb::Providers::EvolutionService).to receive(:new).and_return(provider_service)
 
     described_class.perform_now(
       channel.id,
@@ -138,7 +163,7 @@ RSpec.describe Channels::WhatsappWeb::MediaAttachmentBackfillJob do
         mimetype: 'application/pdf'
       }
     )
-    allow_any_instance_of(Channel::WhatsappWeb).to receive(:provider_service).and_return(provider_service)
+    allow(WhatsappWeb::Providers::EvolutionService).to receive(:new).and_return(provider_service)
 
     described_class.perform_now(
       channel.id,
@@ -159,26 +184,15 @@ RSpec.describe Channels::WhatsappWeb::MediaAttachmentBackfillJob do
 
   it 'decrypts encrypted WhatsApp CDN media natively during backfill when provider media fetch fails' do
     plaintext = "OggS\x00\x02backfill-decrypted-voice".b
-    raw_key = Random.bytes(32)
-    expanded = OpenSSL::KDF.hkdf(raw_key, salt: "\x00".b * 32, info: 'WhatsApp Audio Keys', length: 112, hash: 'SHA256')
-    cipher = OpenSSL::Cipher.new('AES-256-CBC').tap do |c|
-      c.encrypt
-      c.key = expanded.byteslice(16, 32)
-      c.iv = expanded.byteslice(0, 16)
-    end
-    ciphertext = cipher.update(plaintext) + cipher.final
-    mac = OpenSSL::HMAC.digest('SHA256', expanded.byteslice(48, 32), expanded.byteslice(0, 16) + ciphertext).byteslice(0, 10)
-    enc_tf = Tempfile.new(['wa-backfill', '.enc']).tap do |tf|
-      tf.binmode
-      tf.write(ciphertext + mac)
-      tf.rewind
-    end
+    fixture = build_encrypted_media(plaintext, hkdf_info: 'WhatsApp Audio Keys')
     cdn_url = 'https://mmg.whatsapp.net/v/t62.7117-24/voice.enc'
 
     provider_service = instance_double(WhatsappWeb::Providers::EvolutionService)
     allow(provider_service).to receive(:fetch_message_media).and_return(unavailable: true)
     allow(WhatsappWeb::Providers::EvolutionService).to receive(:new).and_return(provider_service)
-    expect(Down).to receive(:download).with(cdn_url).and_return(enc_tf)
+    expect(Down).to receive(:download)
+      .with(cdn_url, hash_including(max_redirects: 0, open_timeout: 10, read_timeout: 30))
+      .and_return(fixture[:tempfile])
 
     described_class.perform_now(
       channel.id,
@@ -188,7 +202,7 @@ RSpec.describe Channels::WhatsappWeb::MediaAttachmentBackfillJob do
         'message' => {
           'audioMessage' => {
             'url' => cdn_url,
-            'mediaKey' => Base64.strict_encode64(raw_key),
+            'mediaKey' => fixture[:media_key],
             'mimetype' => 'audio/ogg; codecs=opus'
           }
         }
@@ -201,6 +215,47 @@ RSpec.describe Channels::WhatsappWeb::MediaAttachmentBackfillJob do
     expect(att.file_type).to eq('audio')
     expect(att.extension).to eq('ogg')
     expect(att.file.content_type).to eq('audio/ogg')
+    expect(att.file.blob.open { |tf| File.binread(tf.path) }).to eq(plaintext)
+  end
+
+  it 'refetches @lid metadata after getBase64FromMediaMessage 404 and preserves real filename and MIME' do
+    plaintext = "PK\x03\x04quarterly-backfill-xlsx".b
+    fixture = build_encrypted_media(plaintext, hkdf_info: 'WhatsApp Document Keys')
+    xlsx_mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    cdn_url = 'https://mmg.whatsapp.net/v/t62.7119-24/backfill_lid_404.enc'
+
+    provider_service = instance_double(WhatsappWeb::Providers::EvolutionService)
+    allow(provider_service).to receive(:fetch_message_media).and_return(unavailable: true, status: 404)
+    expect(provider_service).to receive(:fetch_message_by_source_id).once.and_return(
+      'key' => { 'id' => 'LIVE_MEDIA_BACKFILL_1', 'remoteJid' => '2455667788@lid', 'fromMe' => false },
+      'message' => {
+        'documentMessage' => {
+          'url' => cdn_url,
+          'mediaKey' => fixture[:media_key],
+          'fileName' => 'Quarterly_Report.xlsx',
+          'mimetype' => xlsx_mime
+        }
+      }
+    )
+    allow(WhatsappWeb::Providers::EvolutionService).to receive(:new).and_return(provider_service)
+    expect(Down).to receive(:download)
+      .with(cdn_url, hash_including(max_redirects: 0, open_timeout: 10, read_timeout: 30))
+      .and_return(fixture[:tempfile])
+
+    described_class.perform_now(
+      channel.id,
+      'LIVE_MEDIA_BACKFILL_1',
+      {
+        'key' => { 'id' => 'LIVE_MEDIA_BACKFILL_1', 'remoteJid' => '15551234567@s.whatsapp.net', 'fromMe' => false },
+        'message' => { 'documentMessage' => { 'caption' => 'Quarterly doc' } }
+      },
+      1
+    )
+
+    att = message.reload.attachments.first
+    expect(att.extension).to eq('xlsx')
+    expect(att.file.filename.to_s).to eq('Quarterly_Report.xlsx')
+    expect(att.file.content_type).to eq(xlsx_mime)
     expect(att.file.blob.open { |tf| File.binread(tf.path) }).to eq(plaintext)
   end
 end

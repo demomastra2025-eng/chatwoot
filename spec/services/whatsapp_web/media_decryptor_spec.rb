@@ -33,6 +33,93 @@ RSpec.describe WhatsappWeb::MediaDecryptor do
     end
   end
 
+  describe '.validate_whatsapp_cdn_url! and .download_encrypted_media_bytes' do
+    it 'rejects http://, userinfo, placeholder web.whatsapp.net, and non-whatsapp.net hosts before Down.download' do
+      expect(Down).not_to receive(:download)
+
+      [
+        'http://mmg.whatsapp.net/v/t62.7118-24/file.enc',
+        'https://user:pass@mmg.whatsapp.net/v/t62.7118-24/file.enc',
+        'https://evil.example.com/v/t62.7118-24/file.enc',
+        'https://mmg.whatsapp.net.evil.com/file.enc',
+        'https://web.whatsapp.net/v/t62.7118-24/file.enc'
+      ].each do |unsafe_url|
+        expect { described_class.download_encrypted_media_bytes(unsafe_url) }
+          .to raise_error(described_class::DecryptionError)
+      end
+    end
+
+    it 'rejects private, loopback, metadata link-local, and IPv4-mapped loopback IPs before Down.download' do
+      expect(Down).not_to receive(:download)
+      cdn_url = 'https://mmg.whatsapp.net/v/t62.7118-24/ssrf.enc'
+
+      ['127.0.0.1', '169.254.169.254', '10.0.0.1', '192.168.1.10', '::1', '::ffff:127.0.0.1'].each do |blocked_ip|
+        allow(Resolv).to receive(:getaddresses).with('mmg.whatsapp.net').and_return([blocked_ip])
+
+        expect { described_class.download_encrypted_media_bytes(cdn_url) }
+          .to raise_error(described_class::DecryptionError, /Blocked non-public WhatsApp CDN IP/)
+      end
+    end
+
+    it 'enforces max_redirects: 0, max_size, and timeouts when downloading from a public WhatsApp CDN IP' do
+      cdn_url = 'https://mmg.whatsapp.net/v/t62.7118-24/valid.enc'
+      tf = Tempfile.new(['wa-cdn-dl', '.enc']).tap do |file|
+        file.binmode
+        file.write('encrypted-payload-bytes')
+        file.rewind
+      end
+
+      allow(Resolv).to receive(:getaddresses).with('mmg.whatsapp.net').and_return(['157.240.1.53'])
+      expect(Down).to receive(:download).with(
+        cdn_url,
+        hash_including(max_redirects: 0, open_timeout: 10, read_timeout: 30, max_size: a_value >= 100.megabytes)
+      ).and_return(tf)
+
+      expect(described_class.download_encrypted_media_bytes(cdn_url)).to eq('encrypted-payload-bytes')
+    end
+  end
+
+  describe '.extract_encryption_metadata and dotted document titles' do
+    it 'synthesizes https://mmg.whatsapp.net<directPath> when url is blank or web.whatsapp.net' do
+      direct_path = '/v/t62.7119-24/35112233_998877.enc?ccb=11-4&oh=abc'
+      blank_url_record = { message: { documentMessage: { directPath: direct_path, mediaKey: 'key1' } } }
+      placeholder_record = {
+        message: {
+          documentMessage: {
+            url: 'https://web.whatsapp.net',
+            directPath: direct_path,
+            mediaKey: 'key2'
+          }
+        }
+      }
+
+      expect(described_class.extract_encryption_metadata(record: blank_url_record)[:url])
+        .to eq("https://mmg.whatsapp.net#{direct_path}")
+      expect(described_class.extract_encryption_metadata(record: placeholder_record)[:url])
+        .to eq("https://mmg.whatsapp.net#{direct_path}")
+    end
+
+    it 'appends real .pdf extension to dotted document titles without treating trailing year digits as extension' do
+      plaintext = '%PDF-1.7-dated-report'.b
+      fixture = build_encrypted_fixture(plaintext, hkdf_info: 'WhatsApp Document Keys')
+
+      result = described_class.decrypt_bytes(
+        encrypted_bytes: fixture[:enc_bytes],
+        media_key: fixture[:media_key],
+        metadata: {
+          media_kind: 'documentMessage',
+          mime_type: 'application/pdf',
+          filename: 'Отчет 28.10.2026',
+          file_sha256: fixture[:file_sha256]
+        }
+      )
+
+      expect(result.filename).to eq('Отчет 28.10.2026.pdf')
+      expect(result.extension).to eq('pdf')
+      expect(result.content_type).to eq('application/pdf')
+    end
+  end
+
   describe '.decrypt_bytes' do
     it 'decrypts an xlsx document and strips .enc from filename and extension' do
       plaintext = "PK\x03\x04fake-xlsx-workbook-bytes".b

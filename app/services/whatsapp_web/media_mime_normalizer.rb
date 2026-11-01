@@ -13,6 +13,7 @@ module WhatsappWeb::MediaMimeNormalizer
                            'audio' => 'audio/ogg', 'document' => 'application/octet-stream' }.freeze
   DEFAULT_EXT_BY_KIND = { 'image' => 'jpg', 'sticker' => 'webp', 'video' => 'mp4', 'audio' => 'ogg', 'document' => 'bin' }.freeze
   GENERIC_MIMES = %w[application/octet-stream binary/octet-stream application/encrypted].freeze
+  SYNTHESIZED_FILENAME_REGEX = /\Awhatsapp-web-[0-9a-f]{6,32}(?:\.[a-z0-9]+)?\z/i
   MIME_TO_EXTENSION = {
     'image/jpeg' => 'jpg', 'image/jpg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif', 'image/heic' => 'heic',
     'image/heif' => 'heif', 'image/bmp' => 'bmp', 'image/svg+xml' => 'svg', 'video/mp4' => 'mp4', 'video/3gpp' => '3gp', 'video/quicktime' => 'mov',
@@ -34,6 +35,7 @@ module WhatsappWeb::MediaMimeNormalizer
   def canonical_media_kind(kind) = CANONICAL_KIND_MAP[kind.to_s.strip.downcase]
   def base_mime(mime_type) = mime_type.to_s.split(';').first.to_s.strip.downcase
   def concrete_mime?(mime) = mime.present? && GENERIC_MIMES.exclude?(mime)
+  def synthesized_filename?(filename) = filename.blank? || filename.to_s.strip.match?(SYNTHESIZED_FILENAME_REGEX)
 
   def file_type_for(media_kind: nil, mime_type: nil)
     canonical = canonical_media_kind(media_kind)
@@ -53,7 +55,7 @@ module WhatsappWeb::MediaMimeNormalizer
     return if stripped.blank?
 
     ext = File.extname(stripped).delete_prefix('.').downcase
-    ext.present? && ext != 'enc' ? ext : nil
+    ext.match?(/\A[a-z0-9]{1,10}\z/) && ext != 'enc' && !ext.match?(/\A\d+\z/) ? ext : nil
   end
 
   def normalize_mime_type(mime_type, filename: nil, media_kind: nil)
@@ -83,12 +85,12 @@ module WhatsappWeb::MediaMimeNormalizer
     unwrapped = unwrap_message_container(top_message)
     MEDIA_NODE_KINDS.each do |message_key, media_kind|
       node = unwrapped[message_key]
-      next unless node.is_a?(Hash) && node.present?
-
-      return { media_kind: media_kind, message_key: message_key, node: node.deep_symbolize_keys, top_message: top_message }
+      return { media_kind: media_kind, message_key: message_key, node: node.deep_symbolize_keys, top_message: top_message } if valid_node?(node)
     end
     {}
   end
+
+  def valid_node?(node) = node.is_a?(Hash) && node.present?
 
   def unwrap_message_container(message)
     current = message.to_h.deep_symbolize_keys

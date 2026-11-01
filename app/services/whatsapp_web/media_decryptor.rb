@@ -1,10 +1,7 @@
 class WhatsappWeb::MediaDecryptor
   class DecryptionError < StandardError; end
 
-  Result = Struct.new(
-    :plaintext, :content_type, :filename, :extension, :file_type,
-    :hkdf_info, :byte_size, :sha256_hex, keyword_init: true
-  )
+  Result = Struct.new(:plaintext, :content_type, :filename, :extension, :file_type, :hkdf_info, :byte_size, :sha256_hex, keyword_init: true)
 
   HKDF_INFO_BY_KIND = {
     'image' => 'WhatsApp Image Keys', 'sticker' => 'WhatsApp Image Keys',
@@ -18,22 +15,17 @@ class WhatsappWeb::MediaDecryptor
   HKDF_EXPANDED_LENGTH = 112
 
   class << self
-    def encrypted_whatsapp_url?(url)
-      raw = url.to_s.strip
-      return false if raw.blank?
+    def encrypted_whatsapp_url?(url) = WhatsappWeb::MediaEncryptionMetadata.encrypted_whatsapp_url?(url)
+    def encrypted_media_payload?(options = {}) = WhatsappWeb::MediaEncryptionMetadata.encrypted_media_payload?(options)
+    def resolve_media_url(raw_url, direct_path = nil) = WhatsappWeb::MediaEncryptionMetadata.resolve_media_url(raw_url, direct_path)
+    def merge_encryption_metadata(primary, secondary) = WhatsappWeb::MediaEncryptionMetadata.merge_encryption_metadata(primary, secondary)
+    def decode_binary_field(value, field_name: 'binary_field') = WhatsappWeb::MediaBinaryCodec.decode_binary_field(value, field_name: field_name)
+    def parse_file_length(value) = WhatsappWeb::MediaBinaryCodec.parse_file_length(value)
+    def validate_whatsapp_cdn_url!(url) = WhatsappWeb::EncryptedCdnDownloader.validate_whatsapp_cdn_url!(url)
+    def download_encrypted_media_bytes(url) = WhatsappWeb::EncryptedCdnDownloader.download_encrypted_media_bytes(url)
 
-      uri = URI.parse(raw)
-      whatsapp_encrypted_host_or_path?(uri.host.to_s.downcase, uri.path.to_s, raw)
-    rescue URI::InvalidURIError
-      raw.match?(%r{mmg\.whatsapp\.net|\.enc(?:\z|[?&#/])}i)
-    end
-
-    def encrypted_media_payload?(options = {})
-      opts = options.to_h.deep_symbolize_keys
-      return true if first_present([opts], %i[media_key mediaKey]).present?
-      return true if encrypted_whatsapp_url?(first_present([opts], %i[url media_url mediaUrl]))
-
-      %i[filename file_name fileName].any? { |key| opts[key].to_s.strip.match?(/\.enc\z/i) }
+    def extract_encryption_metadata(record: {}, attachment_payload: {})
+      WhatsappWeb::MediaEncryptionMetadata.extract_encryption_metadata(record: record, attachment_payload: attachment_payload)
     end
 
     def resolve_hkdf_info(media_kind: nil, mime_type: nil)
@@ -41,38 +33,13 @@ class WhatsappWeb::MediaDecryptor
       canonical_kind.present? ? HKDF_INFO_BY_KIND.fetch(canonical_kind) : resolve_hkdf_info_from_mime(mime_type)
     end
 
-    def decode_binary_field(value, field_name: 'binary_field')
-      WhatsappWeb::MediaBinaryCodec.decode_binary_field(value, field_name: field_name)
-    end
-
-    def parse_file_length(value)
-      WhatsappWeb::MediaBinaryCodec.parse_file_length(value)
-    end
-
-    def extract_encryption_metadata(record: {}, attachment_payload: {})
-      rec = record.to_h.deep_symbolize_keys
-      node_info = WhatsappWeb::MediaMimeNormalizer.extract_media_node(rec)
-      sources = [attachment_payload.to_h.deep_symbolize_keys, node_info[:node] || {}, node_info[:top_message] || {}]
-
-      {
-        url: first_present(sources, %i[mediaUrl media_url url]),
-        media_key: first_present(sources, %i[mediaKey media_key]),
-        file_sha256: first_present(sources, %i[fileSha256 file_sha256]),
-        file_enc_sha256: first_present(sources, %i[fileEncSha256 file_enc_sha256]),
-        file_length: first_present(sources, %i[fileLength file_length]),
-        media_kind: first_present([sources.first, node_info, rec], %i[media_kind messageType]),
-        mime_type: first_present(sources, %i[mimetype mime_type]),
-        filename: first_present(sources, %i[fileName file_name filename name])
-      }
-    end
-
     def decrypt_bytes(encrypted_bytes:, media_key:, metadata: {})
       enc = validate_encrypted_bytes!(encrypted_bytes)
       raw_key = validate_media_key!(media_key)
       meta = metadata.to_h.deep_symbolize_keys
-      verify_sha256!(enc, first_present([meta], %i[file_enc_sha256 fileEncSha256]), 'fileEncSha256')
+      verify_sha256!(enc, meta_value(meta, %i[file_enc_sha256 fileEncSha256]), 'fileEncSha256')
 
-      hkdf_info = resolve_hkdf_info(media_kind: meta[:media_kind], mime_type: first_present([meta], %i[mime_type mimetype]))
+      hkdf_info = resolve_hkdf_info(media_kind: meta[:media_kind], mime_type: meta_value(meta, %i[mime_type mimetype]))
       plaintext = perform_authenticated_decrypt(enc, raw_key, hkdf_info)
       verify_plaintext_integrity!(plaintext, meta)
       build_result(plaintext, meta, hkdf_info)
@@ -90,29 +57,12 @@ class WhatsappWeb::MediaDecryptor
     end
 
     def decrypt_remote_media(url:, media_key:, metadata: {})
-      downloaded = Down.download(url)
-      decrypt_to_tempfile(encrypted_bytes: File.binread(downloaded.path), media_key: media_key, metadata: metadata)
-    ensure
-      downloaded.close! if downloaded.respond_to?(:close!)
+      decrypt_to_tempfile(encrypted_bytes: download_encrypted_media_bytes(url), media_key: media_key, metadata: metadata)
     end
 
     private
 
-    def whatsapp_encrypted_host_or_path?(host, path, raw)
-      return true if host == 'mmg.whatsapp.net'
-      return true if (host == 'whatsapp.net' || host.end_with?('.whatsapp.net')) && raw.match?(%r{\.enc(?:\z|[?&#/])}i)
-
-      path.match?(/\.enc\z/i)
-    end
-
-    def first_present(sources, keys)
-      sources.each do |source|
-        next unless source.is_a?(Hash)
-
-        keys.each { |key| return source[key] if source[key].present? }
-      end
-      nil
-    end
+    def meta_value(meta, keys) = WhatsappWeb::MediaEncryptionMetadata.first_present([meta], keys)
 
     def resolve_hkdf_info_from_mime(mime_type)
       base = WhatsappWeb::MediaMimeNormalizer.base_mime(mime_type)
@@ -149,7 +99,10 @@ class WhatsappWeb::MediaDecryptor
     end
 
     def verify_mac!(mac_key, init_vec, ciphertext, expected_mac)
-      computed_mac = OpenSSL::HMAC.digest('SHA256', mac_key, init_vec + ciphertext).byteslice(0, MAC_LENGTH)
+      hmac = OpenSSL::HMAC.new(mac_key, 'SHA256')
+      hmac.update(init_vec)
+      hmac.update(ciphertext)
+      computed_mac = hmac.digest.byteslice(0, MAC_LENGTH)
       return if OpenSSL.fixed_length_secure_compare(computed_mac, expected_mac)
 
       raise DecryptionError, 'WhatsApp media HMAC verification failed'
@@ -166,10 +119,10 @@ class WhatsappWeb::MediaDecryptor
     end
 
     def verify_plaintext_integrity!(plaintext, meta)
-      expected_sha_raw = first_present([meta], %i[file_sha256 fileSha256])
+      expected_sha_raw = meta_value(meta, %i[file_sha256 fileSha256])
       return verify_sha256!(plaintext, expected_sha_raw, 'fileSha256') if expected_sha_raw.present?
 
-      expected_len = parse_file_length(first_present([meta], %i[file_length fileLength]))
+      expected_len = parse_file_length(meta_value(meta, %i[file_length fileLength]))
       return if expected_len.nil? || expected_len <= 0 || plaintext.bytesize == expected_len
 
       raise DecryptionError, "Decrypted byte length #{plaintext.bytesize} does not match expected #{expected_len}"
@@ -186,8 +139,8 @@ class WhatsappWeb::MediaDecryptor
     end
 
     def build_result(plaintext, meta, hkdf_info)
-      raw_name = first_present([meta], %i[filename file_name fileName])
-      content_type = resolve_content_type(plaintext, first_present([meta], %i[mime_type mimetype]), raw_name, meta[:media_kind])
+      raw_name = meta_value(meta, %i[filename file_name fileName])
+      content_type = resolve_content_type(plaintext, meta_value(meta, %i[mime_type mimetype]), raw_name, meta[:media_kind])
       filename = WhatsappWeb::MediaMimeNormalizer.sanitize_filename(raw_name, mime_type: content_type, media_kind: meta[:media_kind])
       extension = WhatsappWeb::MediaMimeNormalizer.extension_for(mime_type: content_type, filename: filename, media_kind: meta[:media_kind])
 

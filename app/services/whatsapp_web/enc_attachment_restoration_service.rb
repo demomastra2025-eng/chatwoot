@@ -1,4 +1,6 @@
 class WhatsappWeb::EncAttachmentRestorationService
+  class RestorationError < StandardError; end
+
   Result = Struct.new(:mode, :backup_dir, :total_candidates, :restored_count, :would_restore_count, :skipped_count, :failed_count, :items,
                       keyword_init: true) do
     def as_json(*) = to_h.transform_keys(&:to_s)
@@ -75,7 +77,7 @@ class WhatsappWeb::EncAttachmentRestorationService
 
     sql_record = @db_lookup.lookup(source_id: source_id, instance_name: channel.instance_name)
     sql_meta = WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: sql_record)
-    [sql_record.presence || http_record, http_meta.compact_blank.merge(sql_meta.compact_blank)]
+    [sql_record.presence || http_record, WhatsappWeb::MediaDecryptor.merge_encryption_metadata(sql_meta, http_meta)]
   end
 
   def fetch_http_record(channel, message, source_id)
@@ -100,9 +102,7 @@ class WhatsappWeb::EncAttachmentRestorationService
     [nil, nil, format_resolution_error(errors)]
   end
 
-  def format_resolution_error(errors)
-    errors.any? ? errors.join('; ') : 'missing_media_key_and_provider_media'
-  end
+  def format_resolution_error(errors) = errors.any? ? errors.join('; ') : 'missing_media_key_and_provider_media'
 
   def try_decrypt_bytes(bytes, meta, errors, label)
     return if bytes.blank? || meta[:media_key].blank?
@@ -128,8 +128,9 @@ class WhatsappWeb::EncAttachmentRestorationService
   def build_provider_decrypted_result(payload, meta)
     plaintext = Base64.decode64(payload[:base64]).force_encoding(Encoding::BINARY)
     raw_name = payload[:fileName].presence || meta[:filename]
-    raw_mime = payload[:mimetype].presence || meta[:mime_type]
-    content_type = WhatsappWeb::MediaMimeNormalizer.normalize_mime_type(raw_mime, filename: raw_name, media_kind: meta[:media_kind])
+    content_type = WhatsappWeb::MediaMimeNormalizer.normalize_mime_type(
+      payload[:mimetype].presence || meta[:mime_type], filename: raw_name, media_kind: meta[:media_kind]
+    )
     filename = WhatsappWeb::MediaMimeNormalizer.sanitize_filename(raw_name, mime_type: content_type, media_kind: meta[:media_kind])
     extension = WhatsappWeb::MediaMimeNormalizer.extension_for(mime_type: content_type, filename: filename, media_kind: meta[:media_kind])
 
@@ -143,22 +144,22 @@ class WhatsappWeb::EncAttachmentRestorationService
   def try_live_cdn_decrypt(meta, errors)
     return if meta[:url].blank? || meta[:media_key].blank?
 
-    downloaded = Down.download(meta[:url])
-    try_decrypt_bytes(File.binread(downloaded.path), meta, errors, 'live_cdn_decrypt')
-  rescue Down::Error => e
+    try_decrypt_bytes(WhatsappWeb::MediaDecryptor.download_encrypted_media_bytes(meta[:url]), meta, errors, 'live_cdn_decrypt')
+  rescue WhatsappWeb::MediaDecryptor::DecryptionError, Down::Error => e
     errors << "live_cdn_decrypt: #{e.message}"
     nil
-  ensure
-    downloaded.close! if downloaded.respond_to?(:close!)
   end
 
   def apply_restoration!(attachment, stored_bytes, decrypted)
     backup_original_attachment!(attachment, stored_bytes)
     attachment.skip_storage_limit_validation!
-    attachment.file.attach(io: StringIO.new(decrypted.plaintext), filename: decrypted.filename, content_type: decrypted.content_type)
-    attachment.update!(extension: decrypted.extension, file_type: decrypted.file_type)
+    attachment.assign_attributes(
+      extension: decrypted.extension, file_type: decrypted.file_type,
+      file: { io: StringIO.new(decrypted.plaintext), filename: decrypted.filename, content_type: decrypted.content_type }
+    )
+    attachment.save!
     analyze_restored_blob(attachment)
-    attachment.message.send(:send_update_event)
+    dispatch_restored_message_update(attachment)
   end
 
   def analyze_restored_blob(attachment)
@@ -167,22 +168,27 @@ class WhatsappWeb::EncAttachmentRestorationService
     Rails.logger.warn("[WHATSAPP WEB] Blob analysis warning for restored attachment=#{attachment.id}: #{e.message}")
   end
 
+  def dispatch_restored_message_update(attachment)
+    attachment.message.reload.send(:send_update_event)
+  rescue StandardError => e
+    Rails.logger.warn("[WHATSAPP WEB] Message update event warning for restored attachment=#{attachment.id}: #{e.message}")
+  end
+
   def backup_original_attachment!(attachment, stored_bytes)
+    if attachment.file.attached? && attachment.file.blob.byte_size.positive? && stored_bytes.blank?
+      raise RestorationError, "Refusing to overwrite attachment #{attachment.id} without readable original .enc blob bytes"
+    end
+
     FileUtils.mkdir_p(@backup_dir)
-    metadata = build_backup_metadata(attachment, attachment.file.attached? ? attachment.file.blob : nil)
-    File.write(File.join(@backup_dir, "attachment_#{attachment.id}.json"), JSON.pretty_generate(metadata))
+    blob = attachment.file.attached? ? attachment.file.blob : nil
+    File.write(File.join(@backup_dir, "attachment_#{attachment.id}.json"), JSON.pretty_generate(build_backup_metadata(attachment, blob)))
     File.binwrite(File.join(@backup_dir, "attachment_#{attachment.id}.enc"), stored_bytes) if stored_bytes.present?
   end
 
   def build_backup_metadata(attachment, blob)
     {
       attachment_id: attachment.id, message_id: attachment.message_id, account_id: attachment.account_id,
-      source_id: attachment.message&.source_id, extension: attachment.extension, file_type: attachment.file_type
-    }.merge(blob_backup_metadata(blob))
-  end
-
-  def blob_backup_metadata(blob)
-    {
+      source_id: attachment.message&.source_id, extension: attachment.extension, file_type: attachment.file_type,
       blob_id: blob&.id, blob_key: blob&.key, blob_filename: blob&.filename&.to_s, blob_content_type: blob&.content_type,
       blob_byte_size: blob&.byte_size, blob_checksum: blob&.checksum, backed_up_at: Time.now.utc.iso8601
     }

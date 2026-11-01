@@ -16,6 +16,8 @@ RSpec.describe WhatsappWeb::MediaAttachmentResolver do
 
   before do
     allow(channel).to receive(:provider_service).and_return(provider_service)
+    allow(Resolv).to receive(:getaddresses).and_call_original
+    allow(Resolv).to receive(:getaddresses).with('mmg.whatsapp.net').and_return(['157.240.1.53'])
   end
 
   def encrypt_whatsapp_bytes(plaintext, hkdf_info:)
@@ -91,7 +93,9 @@ RSpec.describe WhatsappWeb::MediaAttachmentResolver do
         }
       }
     )
-    expect(Down).to receive(:download).with(cdn_url).and_return(tempfile_for_bytes(fixture[:enc_bytes]))
+    expect(Down).to receive(:download)
+      .with(cdn_url, hash_including(max_redirects: 0, open_timeout: 10, read_timeout: 30))
+      .and_return(tempfile_for_bytes(fixture[:enc_bytes]))
 
     initial_record = {
       key: { id: 'MSG-LID-ENC-1', remoteJid: '15551234567@s.whatsapp.net', fromMe: false },
@@ -111,13 +115,54 @@ RSpec.describe WhatsappWeb::MediaAttachmentResolver do
     result&.file&.close!
   end
 
+  it 'refetches @lid metadata and preserves real filename and MIME when getBase64FromMediaMessage returns 404 unavailable' do
+    plaintext = "PK\x03\x04quarterly-report-xlsx".b
+    fixture = encrypt_whatsapp_bytes(plaintext, hkdf_info: 'WhatsApp Document Keys')
+    xlsx_mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    cdn_url = 'https://mmg.whatsapp.net/v/t62.7119-24/quarterly_lid_404.enc'
+
+    allow(provider_service).to receive(:fetch_message_media).and_return(unavailable: true, status: 404)
+    expect(provider_service).to receive(:fetch_message_by_source_id).once.and_return(
+      'key' => { 'id' => 'MSG-LID-404-XLSX', 'remoteJid' => '2455667788@lid', 'fromMe' => false },
+      'message' => {
+        'documentMessage' => {
+          'url' => cdn_url,
+          'mediaKey' => fixture[:media_key],
+          'fileSha256' => fixture[:file_sha256],
+          'fileName' => 'Quarterly_Report.xlsx',
+          'mimetype' => xlsx_mime
+        }
+      }
+    )
+    expect(Down).to receive(:download)
+      .with(cdn_url, hash_including(max_redirects: 0, open_timeout: 10, read_timeout: 30))
+      .and_return(tempfile_for_bytes(fixture[:enc_bytes]))
+
+    stub_record = {
+      key: { id: 'MSG-LID-404-XLSX', remoteJid: '15551234567@s.whatsapp.net', fromMe: false },
+      message: { documentMessage: {} }
+    }
+    result = described_class.new(channel: channel, record: stub_record, source_id: 'MSG-LID-404-XLSX').resolve(
+      media_kind: 'document'
+    )
+
+    expect(result.pending_backfill).to be(false)
+    expect(result.file.original_filename).to eq('Quarterly_Report.xlsx')
+    expect(result.file.content_type).to eq(xlsx_mime)
+    expect(File.binread(result.file.path)).to eq(plaintext)
+  ensure
+    result&.file&.close!
+  end
+
   it 'never attaches raw .enc bytes and marks pending_backfill when HMAC verification fails' do
     fixture = encrypt_whatsapp_bytes('secret-image'.b, hkdf_info: 'WhatsApp Image Keys')
-    bad_enc = fixture[:enc_bytes].byteslice(0, fixture[:enc_bytes].bytesize - 1) + "\x00".b
+    bad_enc = fixture[:enc_bytes].byteslice(0, fixture[:enc_bytes].bytesize - 1) + (fixture[:enc_bytes].getbyte(-1) ^ 0xff).chr.b
     cdn_url = 'https://mmg.whatsapp.net/v/t62.7118-24/corrupt.enc'
 
     allow(provider_service).to receive(:fetch_message_media).and_return(unavailable: true)
-    expect(Down).to receive(:download).with(cdn_url).and_return(tempfile_for_bytes(bad_enc))
+    expect(Down).to receive(:download)
+      .with(cdn_url, hash_including(max_redirects: 0, open_timeout: 10, read_timeout: 30))
+      .and_return(tempfile_for_bytes(bad_enc))
 
     record = {
       key: { id: 'MSG-BAD-MAC', remoteJid: '15551234567@s.whatsapp.net', fromMe: false },

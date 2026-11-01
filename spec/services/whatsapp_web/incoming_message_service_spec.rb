@@ -339,7 +339,12 @@ RSpec.describe WhatsappWeb::IncomingMessageService do
       allow(Down).to receive(:download)
         .with('https://mmg.whatsapp.net/expired-media')
         .and_raise(Down::ClientError.new('403 Forbidden'))
-      allow_any_instance_of(WhatsappWeb::Providers::EvolutionService).to receive(:fetch_message_media).and_return({ unavailable: true })
+      provider_service = instance_double(
+        WhatsappWeb::Providers::EvolutionService,
+        fetch_message_media: { unavailable: true },
+        fetch_message_by_source_id: nil
+      )
+      allow(inbox.channel).to receive(:provider_service).and_return(provider_service)
 
       expect do
         described_class.new(
@@ -473,7 +478,10 @@ RSpec.describe WhatsappWeb::IncomingMessageService do
       allow(provider_service).to receive(:fetch_message_media).and_raise(StandardError, 'Evolution media error')
       allow(provider_service).to receive(:fetch_message_by_source_id).and_return(nil)
       allow(inbox.channel).to receive(:provider_service).and_return(provider_service)
-      expect(Down).to receive(:download).with(cdn_url).and_return(enc_tf)
+      allow(Resolv).to receive(:getaddresses).with('mmg.whatsapp.net').and_return(['157.240.1.53'])
+      expect(Down).to receive(:download)
+        .with(cdn_url, hash_including(max_redirects: 0, open_timeout: 10, read_timeout: 30))
+        .and_return(enc_tf)
 
       described_class.new(
         inbox: inbox,
@@ -499,6 +507,97 @@ RSpec.describe WhatsappWeb::IncomingMessageService do
       expect(att.file.filename.to_s).to eq('monthly.xlsx')
       expect(att.file.content_type).to eq(xlsx_mime)
       expect(att.file.blob.open { |tf| File.binread(tf.path) }).to eq(plaintext)
+    end
+
+    it 'refetches @lid record on 404 unavailable and preserves real filename and MIME for stubbed webhooks' do
+      plaintext = "PK\x03\x04lid-404-quarterly-xlsx".b
+      raw_key = Random.bytes(32)
+      expanded = OpenSSL::KDF.hkdf(raw_key, salt: "\x00".b * 32, info: 'WhatsApp Document Keys', length: 112, hash: 'SHA256')
+      cipher = OpenSSL::Cipher.new('AES-256-CBC').tap do |c|
+        c.encrypt
+        c.key = expanded.byteslice(16, 32)
+        c.iv = expanded.byteslice(0, 16)
+      end
+      ciphertext = cipher.update(plaintext) + cipher.final
+      mac = OpenSSL::HMAC.digest('SHA256', expanded.byteslice(48, 32), expanded.byteslice(0, 16) + ciphertext).byteslice(0, 10)
+      enc_tf = Tempfile.new(['wa-lid-404', '.enc']).tap do |tf|
+        tf.binmode
+        tf.write(ciphertext + mac)
+        tf.rewind
+      end
+      xlsx_mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      cdn_url = 'https://mmg.whatsapp.net/v/t62.7119-24/lid_quarterly.enc'
+
+      provider_service = instance_double(WhatsappWeb::Providers::EvolutionService)
+      allow(provider_service).to receive(:fetch_message_media).and_return(unavailable: true, status: 404)
+      expect(provider_service).to receive(:fetch_message_by_source_id).once.and_return(
+        'key' => { 'id' => 'INCOMING_LID_404_XLSX', 'remoteJid' => '2455667788@lid', 'fromMe' => false },
+        'message' => {
+          'documentMessage' => {
+            'url' => cdn_url,
+            'mediaKey' => Base64.strict_encode64(raw_key),
+            'fileName' => 'Quarterly_Report.xlsx',
+            'mimetype' => xlsx_mime
+          }
+        }
+      )
+      allow(inbox.channel).to receive(:provider_service).and_return(provider_service)
+      allow(Resolv).to receive(:getaddresses).with('mmg.whatsapp.net').and_return(['157.240.1.53'])
+      expect(Down).to receive(:download)
+        .with(cdn_url, hash_including(max_redirects: 0, open_timeout: 10, read_timeout: 30))
+        .and_return(enc_tf)
+
+      described_class.new(
+        inbox: inbox,
+        params: {
+          key: { id: 'INCOMING_LID_404_XLSX', remoteJid: '15551234567@s.whatsapp.net' },
+          pushName: 'Alice',
+          message: { documentMessage: { caption: 'Q3 report' } }
+        }.with_indifferent_access
+      ).perform
+
+      att = conversation.messages.find_by!(source_id: 'INCOMING_LID_404_XLSX').attachments.first
+      expect(att.extension).to eq('xlsx')
+      expect(att.file.filename.to_s).to eq('Quarterly_Report.xlsx')
+      expect(att.file.content_type).to eq(xlsx_mime)
+    end
+
+    it 'unwraps incoming ephemeralMessage media and supports incoming ptvMessage video notes' do
+      pdf_b64 = Base64.strict_encode64('%PDF-1.7-ephemeral-doc')
+      mp4_b64 = Base64.strict_encode64("\x00\x00\x00\x18ftypmp42ptv-note")
+
+      described_class.new(
+        inbox: inbox,
+        params: {
+          key: { id: 'INCOMING_EPHEMERAL_DOC_1', remoteJid: '15551234567@s.whatsapp.net' },
+          pushName: 'Alice',
+          message: {
+            ephemeralMessage: {
+              message: {
+                documentMessage: { caption: 'Ephemeral PDF', mimetype: 'application/pdf', fileName: 'ephemeral.pdf', base64: pdf_b64 }
+              }
+            }
+          }
+        }.with_indifferent_access
+      ).perform
+
+      described_class.new(
+        inbox: inbox,
+        params: {
+          key: { id: 'INCOMING_PTV_1', remoteJid: '15551234567@s.whatsapp.net' },
+          pushName: 'Alice',
+          message: {
+            ptvMessage: { caption: 'Circular video note', mimetype: 'video/mp4', base64: mp4_b64 }
+          }
+        }.with_indifferent_access
+      ).perform
+
+      ephemeral_att = conversation.messages.find_by!(source_id: 'INCOMING_EPHEMERAL_DOC_1').attachments.first
+      ptv_att = conversation.messages.find_by!(source_id: 'INCOMING_PTV_1').attachments.first
+      expect(ephemeral_att.extension).to eq('pdf')
+      expect(ephemeral_att.file_type).to eq('file')
+      expect(ptv_att.extension).to eq('mp4')
+      expect(ptv_att.file_type).to eq('video')
     end
 
     it 'creates outgoing echo media messages for mobile sends' do

@@ -953,7 +953,18 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
                          offset: offset,
                          where: { key: key_filter }
                        })
-    Array.wrap(response.dig('messages', 'records') || response.dig(:messages, :records))
+    extract_find_messages_records(response)
+  end
+
+  def extract_find_messages_records(response)
+    return response if response.is_a?(Array)
+    return [] unless response.is_a?(Hash)
+
+    payload = response.with_indifferent_access
+    messages = payload[:messages]
+    return messages if messages.is_a?(Array)
+
+    Array.wrap(messages.is_a?(Hash) ? messages[:records] : payload[:records])
   end
 
   def select_matching_message_record(records, source_id:, from_me:)

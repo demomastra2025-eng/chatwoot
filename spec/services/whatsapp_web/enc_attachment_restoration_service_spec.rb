@@ -127,6 +127,70 @@ RSpec.describe WhatsappWeb::EncAttachmentRestorationService do
     FileUtils.remove_entry(backup_dir) if backup_dir && Dir.exist?(backup_dir)
   end
 
+  it 'refuses to overwrite an attached .enc blob when its original bytes could not be read for backup' do
+    fixture = encrypt_fixture('%PDF-1.7-guard-test'.b, hkdf_info: 'WhatsApp Document Keys')
+    attachment = create_broken_enc_attachment(source_id: 'HIST-GUARD-1', enc_bytes: fixture[:enc_bytes])
+    backup_dir = Dir.mktmpdir('waweb-guard-backup-spec')
+
+    allow(provider_service).to receive(:fetch_message_by_source_id).and_return(
+      'key' => { 'id' => 'HIST-GUARD-1', 'fromMe' => false },
+      'message' => { 'documentMessage' => { 'fileName' => 'guarded.pdf', 'mimetype' => 'application/pdf' } }
+    )
+    allow(provider_service).to receive(:fetch_message_media).and_return(
+      base64: Base64.strict_encode64('%PDF-1.7-guard-test'),
+      fileName: 'guarded.pdf',
+      mimetype: 'application/pdf'
+    )
+
+    service = described_class.new(apply: true, attachment_ids: [attachment.id], backup_dir: backup_dir)
+    allow(service).to receive(:read_stored_blob_bytes).and_return(nil)
+
+    result = service.perform
+
+    expect(result.failed_count).to eq(1)
+    expect(result.restored_count).to eq(0)
+    expect(result.items.first[:reason]).to include('RestorationError')
+    expect(attachment.reload.extension).to eq('enc')
+    expect(attachment.file.filename.to_s).to eq('blob_123.enc')
+  ensure
+    FileUtils.remove_entry(backup_dir) if backup_dir && Dir.exist?(backup_dir)
+  end
+
+  it 'keeps extension and original .enc blob intact atomically if save! fails, and tolerates send_update_event errors' do
+    plaintext = '%PDF-1.7-atomic-and-event-safe'.b
+    fixture = encrypt_fixture(plaintext, hkdf_info: 'WhatsApp Document Keys')
+    attachment = create_broken_enc_attachment(source_id: 'HIST-ATOMIC-1', enc_bytes: fixture[:enc_bytes])
+    backup_dir = Dir.mktmpdir('waweb-atomic-backup-spec')
+
+    allow(provider_service).to receive(:fetch_message_by_source_id).and_return(
+      'key' => { 'id' => 'HIST-ATOMIC-1', 'fromMe' => false },
+      'message' => { 'documentMessage' => { 'mediaKey' => fixture[:media_key], 'fileName' => 'atomic.pdf', 'mimetype' => 'application/pdf' } }
+    )
+
+    service_fail = described_class.new(apply: true, attachment_ids: [attachment.id], backup_dir: backup_dir)
+    allow(service_fail).to receive(:candidate_attachments)
+      .and_return([attachment].tap { |arr| arr.define_singleton_method(:find_each) { |&blk| each(&blk) } })
+    allow(attachment).to receive(:save!).and_raise(ActiveRecord::RecordInvalid)
+
+    failed_res = service_fail.perform
+    expect(failed_res.failed_count).to eq(1)
+    expect(attachment.reload.extension).to eq('enc')
+    expect(attachment.file.filename.to_s).to eq('blob_123.enc')
+
+    fresh_attachment = Attachment.find(attachment.id)
+    allow(fresh_attachment.message).to receive(:reload).and_return(fresh_attachment.message)
+    allow(fresh_attachment.message).to receive(:send_update_event).and_raise(StandardError, 'event bus offline')
+    service_ok = described_class.new(apply: true, attachment_ids: [fresh_attachment.id], backup_dir: backup_dir)
+    allow(service_ok).to receive(:candidate_attachments)
+      .and_return([fresh_attachment].tap { |arr| arr.define_singleton_method(:find_each) { |&blk| each(&blk) } })
+
+    ok_res = service_ok.perform
+    expect(ok_res.restored_count).to eq(1)
+    expect(fresh_attachment.reload.extension).to eq('pdf')
+  ensure
+    FileUtils.remove_entry(backup_dir) if backup_dir && Dir.exist?(backup_dir)
+  end
+
   def pg_base_url_from_active_record
     ar_cfg = ActiveRecord::Base.connection_db_config.configuration_hash
     format(

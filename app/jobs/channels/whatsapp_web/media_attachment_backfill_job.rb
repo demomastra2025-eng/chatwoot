@@ -38,37 +38,72 @@ class Channels::WhatsappWeb::MediaAttachmentBackfillJob < ApplicationJob
   end
 
   def attach_or_retry(context)
-    provider_payload = fetch_provider_media(context[:channel], context[:record], context[:source_id])
+    provider_payload, active_record = resolve_provider_media(context)
     if provider_attachment_available?(provider_payload)
-      return attach_provider_media!(context[:message], context[:attachment_payload], provider_payload)
+      return attach_provider_media!(context[:message], extract_attachment_payload(active_record), provider_payload)
     end
 
-    decrypted_file, attempted_decryption = decrypt_backfill_media(context, provider_payload)
-    return save_backfill_attachment!(context[:message], context[:attachment_payload][:file_type], decrypted_file) if decrypted_file.present?
+    decrypted_file, file_type, attempted_decryption = decrypt_backfill_media(context)
+    return save_backfill_attachment!(context[:message], file_type, decrypted_file) if decrypted_file.present?
     return if provider_attachment_unavailable?(provider_payload) && !attempted_decryption
 
     retry_later(context[:channel], context[:source_id], context[:record_payload], context[:attempt_number])
   end
 
-  def decrypt_backfill_media(context, provider_payload)
-    meta = backfill_encryption_metadata(context, provider_payload)
-    return [nil, false] if meta[:url].blank? || meta[:media_key].blank?
+  def resolve_provider_media(context)
+    payload = fetch_provider_media(context[:channel], context[:record], context[:source_id])
+    return [payload, context[:record]] if provider_attachment_available?(payload)
+    return [payload, context[:record]] if provider_attachment_unavailable?(payload) && complete_record_encryption_metadata?(context[:record])
 
-    file = WhatsappWeb::MediaDecryptor.decrypt_remote_media(url: meta[:url], media_key: meta[:media_key], metadata: meta)
-    [file, true]
-  rescue WhatsappWeb::MediaDecryptor::DecryptionError, Down::Error => e
-    Rails.logger.warn("[WHATSAPP WEB] Backfill native media decryption failed for #{context[:source_id]}: #{e.class}: #{e.message}")
-    [nil, true]
+    refetched = memoized_refetched_record(context)
+    return [payload, context[:record]] if refetched.blank?
+    return [payload, context[:record]] if provider_attachment_unavailable?(payload) && !refetched_remote_jid_changed?(context[:record], refetched)
+
+    [fetch_provider_media(context[:channel], refetched, context[:source_id]), refetched]
   end
 
-  def backfill_encryption_metadata(context, provider_payload)
-    meta = WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: context[:record], attachment_payload: context[:attachment_payload])
-    return meta if (meta[:url].present? && meta[:media_key].present?) || provider_attachment_unavailable?(provider_payload)
+  def complete_record_encryption_metadata?(record)
+    meta = WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: record)
+    meta[:url].present? && meta[:media_key].present?
+  end
 
-    refetched = refetch_provider_message(context[:channel], context[:source_id].to_s, context[:record], outgoing: context[:message].outgoing?)
-    return meta if refetched.blank?
+  def refetched_remote_jid_changed?(initial_record, refetched)
+    initial_jid = initial_record.to_h.deep_symbolize_keys.dig(:key, :remoteJid).to_s
+    refetched_jid = refetched.to_h.deep_symbolize_keys.dig(:key, :remoteJid).to_s
+    refetched_jid.present? && refetched_jid != initial_jid
+  end
 
-    WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: refetched).compact_blank.merge(meta.compact_blank)
+  def decrypt_backfill_media(context)
+    meta = backfill_encryption_metadata(context)
+    return [nil, nil, false] if meta[:url].blank? || meta[:media_key].blank?
+
+    file_type = WhatsappWeb::MediaMimeNormalizer.file_type_for(media_kind: meta[:media_kind], mime_type: meta[:mime_type]).to_sym
+    file = WhatsappWeb::MediaDecryptor.decrypt_remote_media(url: meta[:url], media_key: meta[:media_key], metadata: meta)
+    [file, file_type, true]
+  rescue WhatsappWeb::MediaDecryptor::DecryptionError, Down::Error => e
+    Rails.logger.warn("[WHATSAPP WEB] Backfill native media decryption failed for #{context[:source_id]}: #{e.class}: #{e.message}")
+    [nil, nil, true]
+  end
+
+  def backfill_encryption_metadata(context)
+    raw_meta = WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: context[:record])
+    return raw_meta if raw_meta[:url].present? && raw_meta[:media_key].present?
+
+    refetched = memoized_refetched_record(context)
+    return raw_meta if refetched.blank?
+
+    WhatsappWeb::MediaDecryptor.merge_encryption_metadata(
+      raw_meta,
+      WhatsappWeb::MediaDecryptor.extract_encryption_metadata(record: refetched)
+    )
+  end
+
+  def memoized_refetched_record(context)
+    return context[:refetched_record] if context.key?(:refetched_record)
+
+    context[:refetched_record] = refetch_provider_message(
+      context[:channel], context[:source_id].to_s, context[:record], outgoing: context[:message].outgoing?
+    )
   end
 
   def provider_media_record(channel, source_id, record_payload, outgoing:)
@@ -100,8 +135,8 @@ class Channels::WhatsappWeb::MediaAttachmentBackfillJob < ApplicationJob
   def attach_provider_media!(message, attachment_payload, provider_payload)
     payload = provider_payload.to_h.deep_symbolize_keys
     media_kind = attachment_payload[:media_kind]
-    raw_name = payload[:fileName].presence || attachment_payload[:file_name]
-    raw_mime = payload[:mimetype].presence || attachment_payload[:mimetype]
+    raw_name = payload[:fileName].presence || attachment_payload[:raw_file_name] || attachment_payload[:file_name]
+    raw_mime = payload[:mimetype].presence || attachment_payload[:raw_mimetype] || attachment_payload[:mimetype]
     attachment_payload[:mimetype] = WhatsappWeb::MediaMimeNormalizer.normalize_mime_type(raw_mime, filename: raw_name, media_kind: media_kind)
     attachment_payload[:file_name] = WhatsappWeb::MediaMimeNormalizer.sanitize_filename(
       raw_name, mime_type: attachment_payload[:mimetype], media_kind: media_kind
@@ -152,7 +187,7 @@ class Channels::WhatsappWeb::MediaAttachmentBackfillJob < ApplicationJob
     normalized_mime = WhatsappWeb::MediaMimeNormalizer.normalize_mime_type(node[:mimetype], filename: raw_name, media_kind: media_kind)
 
     {
-      media_kind: media_kind,
+      media_kind: media_kind, raw_file_name: raw_name, raw_mimetype: node[:mimetype],
       file_type: WhatsappWeb::MediaMimeNormalizer.file_type_for(media_kind: media_kind, mime_type: normalized_mime).to_sym,
       file_name: WhatsappWeb::MediaMimeNormalizer.sanitize_filename(raw_name, mime_type: normalized_mime, media_kind: media_kind),
       mimetype: normalized_mime
