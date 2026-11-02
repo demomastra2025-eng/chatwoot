@@ -6,11 +6,13 @@ OpenRouterRequestPolicySpecModel = Struct.new(:id, :provider)
 
 class OpenRouterRequestPolicySpecChat
   attr_reader :model, :params, :headers, :with_params_calls, :with_headers_calls
+  attr_accessor :tools
 
   def initialize(model:, params: {}, headers: {})
     @model = model
     @params = params
     @headers = headers
+    @tools = {}
     @with_params_calls = []
     @with_headers_calls = []
   end
@@ -39,6 +41,82 @@ RSpec.describe Llm::OpenRouterRequestPolicy do
   end
 
   describe '.require_parameters!' do
+    describe 'parallel call hints across the real compile and binding sequence' do
+      let(:model_id) { 'moonshotai/kimi-k2.6' }
+      let(:account) { instance_double(Account, id: 42) }
+      let(:read_tool) { Struct.new(:name, :metadata).new('search_slots', { read_only: true }) }
+      let(:write_tool) { Struct.new(:name, :metadata).new('create_appointment', { risk_level: 'high' }) }
+
+      before do
+        allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for).and_return(
+          [{ 'supported_parameters' => %w[tools parallel_tool_calls] }]
+        )
+      end
+
+      def initial_chat(hint)
+        request = Llm::FeatureRequest.new(
+          feature: :captain_agent, account: account, model: model_id,
+          assistant: { id: 77, account_id: 42 }, session_id: 'original-conversation', parallel_tool_calls: hint
+        )
+        compiled = Llm::OpenRouterRequestCompiler.call(request: request, model: model_id, account: account)
+        chat = OpenRouterRequestPolicySpecChat.new(
+          model: OpenRouterRequestPolicySpecModel.new(model_id, 'openrouter'), params: compiled.params
+        )
+        # RubyLLM merges parameters, including any previous parallel flag.
+        existing_params = chat.params
+        chat.define_singleton_method(:with_params) do |**params|
+          existing_params.merge!(params)
+          self
+        end
+        described_class.tag!(chat, feature: :captain_agent, account: account, model: model_id, routing_metadata: compiled.metadata)
+        chat
+      end
+
+      def serialized_provider_payload(chat)
+        config = RubyLLM.config.dup
+        config.openrouter_api_key = 'synthetic-test-key'
+        provider = RubyLLM::Providers::OpenRouter.new(config)
+        allow(provider).to receive(:sync_response) { |_connection, payload, _headers| JSON.parse(payload.to_json) }
+        provider.complete(
+          [], tools: {}, temperature: nil, model: RubyLLM::Model::Info.default(model_id, 'openrouter'), params: chat.params
+        )
+      end
+
+      [true, false, nil].each do |hint|
+        it "keeps #{hint.inspect} through tool binding, schema binding and the final wire parameters" do
+          chat = initial_chat(hint)
+          described_class.require_parameters!(chat, tools: [read_tool, write_tool])
+          chat.tools = { read_tool.name => read_tool, write_tool.name => write_tool }
+          described_class.require_structured_output!(chat)
+
+          wire = serialized_provider_payload(chat)
+          expect(wire['parallel_tool_calls']).to equal(hint != false)
+          expect(wire['session_id']).to eq('llm:captain_agent:42:assistant_77')
+        end
+      end
+
+      it 'removes an old enabled flag if capability is no longer advertised' do
+        chat = initial_chat(true)
+        described_class.require_parameters!(chat, tools: [read_tool, write_tool])
+        expect(chat.params[:parallel_tool_calls]).to be(true)
+        allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for).and_return([{ 'supported_parameters' => %w[tools] }])
+        described_class.require_parameters!(chat, tools: [read_tool, write_tool])
+
+        expect(chat.params).not_to have_key(:parallel_tool_calls)
+      end
+
+      it 'keeps explicit off even when the initial compile omitted it for an unsupported endpoint' do
+        allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for).and_return([{ 'supported_parameters' => %w[tools] }])
+        chat = initial_chat(false)
+        expect(chat.params).not_to have_key(:parallel_tool_calls)
+        allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for).and_return(
+          [{ 'supported_parameters' => %w[tools parallel_tool_calls] }]
+        )
+        described_class.require_parameters!(chat, tools: [read_tool, write_tool])
+        expect(JSON.parse(chat.params.to_json)['parallel_tool_calls']).to be(false)
+      end
+    end
+
     it 'adds provider require_parameters for OpenRouter chats and preserves existing params' do
       chat = OpenRouterRequestPolicySpecChat.new(
         model: OpenRouterRequestPolicySpecModel.new('deepseek/deepseek-v4-pro', 'openrouter'),

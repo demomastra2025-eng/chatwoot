@@ -104,6 +104,61 @@ RSpec.describe Captain::Runtime::ChatFactory do
       )
     end
 
+    it 'plumbs the prepared actor and original conversation/session into the actual feature request' do
+      account = instance_double(Account, id: 42)
+      allow(Llm::Models).to receive(:model_config).with(agent.model, account: account).and_return('supported_parameters' => [])
+      context_wrapper.context.merge!(session_id: 'playground-isolated', state: { account_id: 42, assistant_id: 77 })
+      agent.context_preparer = lambda do |wrapper|
+        wrapper.context[:state].merge!(assistant_id: 85, conversation: { id: 7, display_id: 1001 })
+      end
+      expect(Llm::Runtime).to receive(:build_chat) do |**attributes|
+        request = Llm::FeatureRequest.new(**attributes)
+        expect(request.session_cache_key).to eq('llm:captain_agent:42:assistant_85')
+        expect(request.session_id).to eq('playground-isolated')
+        expect(request.conversation).to eq(id: 7, display_id: 1001)
+        expect(request.options[:context]).to eq(:original_llm_context)
+        chat
+      end
+
+      described_class.build(agent: agent, context_wrapper: context_wrapper, llm_context: :original_llm_context,
+                            runtime_headers: {}, runtime_params: {}, account: account)
+    end
+
+    it 'preserves explicit off before model parameter filtering so the endpoint compiler can enforce it' do
+      account = instance_double(Account, id: 42)
+      allow(Llm::Models).to receive(:model_config).with(agent.model, account: account).and_return('supported_parameters' => [])
+      expect(Llm::Runtime).to receive(:build_chat) do |**attributes|
+        expect(Llm::FeatureRequest.new(**attributes).parallel_tool_calls).to be(false)
+        expect(attributes.dig(:options, :params)).not_to have_key(:parallel_tool_calls)
+        chat
+      end
+
+      described_class.build(agent: agent, context_wrapper: context_wrapper, llm_context: :original_llm_context,
+                            runtime_headers: {}, runtime_params: { parallel_tool_calls: false }, account: account)
+    end
+
+    it 'uses the council part owner rather than the main actor and refuses a mismatched account binding' do
+      account = instance_double(Account, id: 42)
+      allow(Llm::Models).to receive(:model_config).with(agent.model, account: account).and_return('supported_parameters' => [])
+      agent.assistant_id = 85
+      context_wrapper.context.merge!(part_run: true, session_id: 'original', state: { account_id: 42, assistant_id: 77 })
+      requests = []
+      allow(Llm::Runtime).to receive(:build_chat) do |**attributes|
+        requests << Llm::FeatureRequest.new(**attributes)
+        chat
+      end
+      allow(chat).to receive(:with_instructions).and_return(chat)
+
+      [42, 43].each do |state_account_id|
+        context_wrapper.context[:state][:account_id] = state_account_id
+        described_class.build(agent: agent, context_wrapper: context_wrapper, llm_context: :original_llm_context,
+                              runtime_headers: {}, runtime_params: {}, account: account)
+      end
+
+      expect(requests.map(&:session_cache_key)).to eq(%w[llm:captain_agent:42:assistant_85 llm:captain_agent:42:original])
+      expect(requests.map(&:session_id)).to eq(%w[original original])
+    end
+
     it 'uses each actor preferences on a shared wrapper without stale settings or nested mutation leakage' do
       first_preferences = {
         'openrouter_provider_only' => ['anthropic'], 'openrouter_cache_policy' => 'read_only',

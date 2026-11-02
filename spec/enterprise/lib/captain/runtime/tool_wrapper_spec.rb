@@ -1244,6 +1244,28 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     )
   end
 
+  it 'allows reads around one write, blocks a different write in that batch and permits it in the next batch' do
+    read_tool = ToolWrapperSpecReadOnlyTool.new
+    first_write = ToolWrapperSpecMutatingTool.new
+    second_write = ToolWrapperSpecMutatingTool.new
+    allow(second_write).to receive(:name).and_return('different_action_spec')
+    read_wrapper = described_class.new(read_tool, context_wrapper)
+    first_wrapper = described_class.new(first_write, context_wrapper)
+    second_wrapper = described_class.new(second_write, context_wrapper)
+    context_wrapper.context[:captain_v2_current_tool_batch_id] = 'mixed-batch'
+    context_wrapper.context[:captain_v2_mutating_tool_calls_by_batch] = { 'mixed-batch' => [] }
+
+    expect(read_wrapper.call(result: 'before')).to eq('before')
+    expect(JSON.parse(first_wrapper.call(title: 'First'))).to include('message' => 'created First')
+    expect(read_wrapper.call(result: 'after')).to eq('after')
+    expect_tool_error(second_wrapper.call(title: 'Second'), described_class::PARALLEL_MUTATING_TOOL_ERROR, retryable: false)
+    expect(second_write.calls).to eq(0)
+
+    context_wrapper.context[:captain_v2_current_tool_batch_id] = 'next-batch'
+    expect(JSON.parse(second_wrapper.call(title: 'Next'))).to include('message' => 'created Next')
+    expect([read_tool.calls, first_write.calls, second_write.calls]).to eq([2, 1, 1])
+  end
+
   it 'atomically reserves one mutating tool call when a batch starts concurrent calls' do
     mutating_tool = ToolWrapperSpecMutatingTool.new
     mutating_wrapper = described_class.new(mutating_tool, context_wrapper)

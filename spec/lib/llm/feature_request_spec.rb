@@ -105,7 +105,7 @@ RSpec.describe Llm::FeatureRequest do
     expect(request.openrouter_feature_policy.allowed_server_tools).to eq(['openrouter:datetime'])
   end
 
-  it 'ignores parallel tool call routing hints for read-only tool flows' do
+  it 'preserves explicit parallel tool call routing hints for read-only tool flows' do
     read_only_tool = runtime_tool(id: 'lookup_contact', risk_level: 'low')
     request = described_class.new(
       feature: :captain_agent,
@@ -116,10 +116,10 @@ RSpec.describe Llm::FeatureRequest do
 
     expect(request.read_only_tool_flow?).to be(true)
     expect(request.mutating_tool_flow?).to be(false)
-    expect(request.parallel_tool_calls).to be_nil
+    expect(request.parallel_tool_calls).to be(true)
   end
 
-  it 'ignores parallel tool call routing hints for mutating or unknown-idempotency tools' do
+  it 'leaves tool risk enforcement to the compiler without losing explicit hints' do
     mutating_tool = runtime_tool(id: 'create_deal', risk_level: 'high', idempotent: false)
     unknown_tool = instance_double(RubyLLM::Tool, name: 'unknown_runtime_tool')
 
@@ -143,10 +143,51 @@ RSpec.describe Llm::FeatureRequest do
 
     expect(mutating_request.mutating_tool_flow?).to be(true)
     expect(mutating_request.read_only_tool_flow?).to be(false)
-    expect(mutating_request.parallel_tool_calls).to be_nil
+    expect(mutating_request.parallel_tool_calls).to be(true)
     expect(mutating_default_request.parallel_tool_calls).to be_nil
     expect(unknown_request.mutating_tool_flow?).to be(true)
-    expect(unknown_request.parallel_tool_calls).to be_nil
+    expect(unknown_request.parallel_tool_calls).to be(true)
+  end
+
+  [true, false, nil].each do |value|
+    it "preserves the optional parallel tool call value #{value.inspect}" do
+      request = described_class.new(feature: :captain_agent, account: account, parallel_tool_calls: value)
+      expect(request.parallel_tool_calls).to equal(value)
+    end
+  end
+
+  it 'gives conversations of the same account and effective assistant one affinity key without changing their trace session' do
+    requests = %w[conversation-1 playground-isolated-2].map do |session|
+      described_class.new(feature: :captain_agent, account: account, assistant: { id: 77, account_id: 42 }, session_id: session)
+    end
+
+    expect(requests.map(&:session_cache_key)).to eq(['llm:captain_agent:42:assistant_77'] * 2)
+    expect(requests.map(&:session_id)).to eq(%w[conversation-1 playground-isolated-2])
+  end
+
+  it 'separates affinity by both account and assistant and supports a run without a conversation' do
+    keys = [[42, 77], [43, 77], [42, 78]].map do |account_id, assistant_id|
+      described_class.new(
+        feature: :captain_agent, account: instance_double(Account, id: account_id),
+        assistant: { id: assistant_id, account_id: account_id }
+      ).session_cache_key
+    end
+
+    expect(keys).to eq(%w[llm:captain_agent:42:assistant_77 llm:captain_agent:43:assistant_77 llm:captain_agent:42:assistant_78])
+  end
+
+  it 'keeps session affinity when assistant ownership is missing, invalid or belongs to another account' do
+    [nil, { id: 77 }, { id: 77, account_id: 43 }, { id: 0, account_id: 42 }, { id: 'draft', account_id: 42 }].each do |assistant|
+      request = described_class.new(feature: :captain_agent, account: account, assistant: assistant, session_id: 'original')
+      expect(request.session_cache_key).to eq('llm:captain_agent:42:original')
+    end
+  end
+
+  it 'keeps other features scoped to the original session even with assistant metadata' do
+    request = described_class.new(
+      feature: :copilot, account: account, assistant: { id: 77, account_id: 42 }, session_id: 'original'
+    )
+    expect(request.session_cache_key).to eq('llm:copilot:42:original')
   end
 
   it 'detects native endpoint preference without forcing chat-audio requests onto native endpoints' do

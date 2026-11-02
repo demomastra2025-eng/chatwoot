@@ -6,7 +6,9 @@ class Llm::OpenRouterRequestPolicy
   ROUTING_METADATA_IVAR = :@onelink_openrouter_routing_metadata
   # models: the models the first compile of the chat chose (a caller's own list, else the profile's). A recompile changes the
   # parameters of the request, never the list of models that may answer it.
-  RecompileRequest = Struct.new(:feature_key, :runtime_preferences, :privacy_profile, :options, :temperature, :models, keyword_init: true)
+  RecompileRequest = Struct.new(
+    :feature_key, :runtime_preferences, :privacy_profile, :options, :temperature, :models, :parallel_tool_calls, keyword_init: true
+  )
   CACHE_HEADER_KEYS = %w[X-OpenRouter-Cache X-OpenRouter-Cache-TTL X-OpenRouter-Cache-Clear].freeze
 
   class << self
@@ -21,6 +23,7 @@ class Llm::OpenRouterRequestPolicy
         model: model.presence || current_metadata[:model],
         stream: stream.nil? ? current_metadata[:stream] : stream
       ).compact
+      metadata.merge!(requested_parallel_metadata(routing_metadata))
       normalize_cache_metadata!(metadata, openrouter_metadata)
       metadata[:requested_model] ||= metadata[:model] if openrouter_metadata.present?
       chat.instance_variable_set(ROUTING_METADATA_IVAR, metadata)
@@ -123,6 +126,15 @@ class Llm::OpenRouterRequestPolicy
 
     private
 
+    def requested_parallel_metadata(metadata)
+      return {} unless metadata.respond_to?(:to_h)
+
+      raw = metadata.to_h.symbolize_keys
+      return {} unless raw.key?(:openrouter_requested_parallel_tool_calls)
+
+      { parallel_tool_calls: raw[:openrouter_requested_parallel_tool_calls] }
+    end
+
     def compile_chat_params(chat, account:, feature:, model:, tools:, schema:, reasoning:, stream:)
       metadata = routing_metadata(chat)
       Llm::OpenRouterRequestCompiler.call(
@@ -131,7 +143,7 @@ class Llm::OpenRouterRequestPolicy
         model: model.presence || metadata[:model].presence || model_id_for(chat),
         account: account.presence || metadata[:account],
         base_params: normalized_chat_params(chat),
-        tools: tools,
+        tools: tools_for_recompile(chat, tools),
         schema: schema,
         reasoning: reasoning,
         stream: stream.nil? ? metadata[:stream] : stream,
@@ -141,6 +153,7 @@ class Llm::OpenRouterRequestPolicy
 
     def tagged_chat_with_params(chat, compiled, account:, feature:, model:, stream:)
       metadata = routing_metadata(chat)
+      clear_parallel_tool_call_param(chat)
       updated_chat = chat.with_params(**compiled.params)
       updated_chat = apply_compiled_headers(updated_chat, compiled.headers)
       tag!(
@@ -151,6 +164,23 @@ class Llm::OpenRouterRequestPolicy
         stream: stream.nil? ? metadata[:stream] : stream,
         routing_metadata: compiled.metadata
       )
+    end
+
+    # Schema binding happens after tool binding. Keep the actual bound tools so
+    # the second compile evaluates the same batch risk as the first one.
+    def tools_for_recompile(chat, tools)
+      return tools unless tools == false && chat.respond_to?(:tools) && chat.tools.respond_to?(:values) && chat.tools.present?
+
+      chat.tools.values
+    end
+
+    # RubyLLM merges with_params into its existing hash; omission must remove a
+    # stale hint when a later compile no longer proves endpoint/tool support.
+    def clear_parallel_tool_call_param(chat)
+      return unless chat.respond_to?(:params) && chat.params.respond_to?(:delete)
+
+      chat.params.delete(:parallel_tool_calls)
+      chat.params.delete('parallel_tool_calls')
     end
 
     def apply_compiled_headers(chat, headers)
@@ -170,7 +200,8 @@ class Llm::OpenRouterRequestPolicy
         runtime_preferences: recompile_runtime_preferences(metadata, privacy_profile),
         options: recompile_cache_options(metadata),
         temperature: chat_temperature(chat),
-        models: Array(metadata[:models]).presence
+        models: Array(metadata[:models]).presence,
+        parallel_tool_calls: metadata[:parallel_tool_calls]
       )
     end
 

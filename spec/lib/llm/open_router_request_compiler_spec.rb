@@ -425,6 +425,9 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
   end
 
   it 'keeps explicit sequential fallback when caller disables parallel tool calls' do
+    allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for).and_return(
+      [{ 'supported_parameters' => %w[parallel_tool_calls] }]
+    )
     compiled = compile(
       feature: :captain_agent,
       tools: [tool_with(name: 'lookup_inventory', metadata: { read_only: true })],
@@ -432,8 +435,8 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       base_params: { parallel_tool_calls: false }
     )
 
-    expect(compiled.params).not_to include(:parallel_tool_calls)
-    expect(compiled.metadata).not_to include(:openrouter_parallel_tool_calls)
+    expect(compiled.params).to include(parallel_tool_calls: false)
+    expect(compiled.metadata).to include(openrouter_parallel_tool_calls: false)
     expect(compiled.metadata).not_to include(:openrouter_omitted_params)
   end
 
@@ -498,6 +501,50 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
 
     expect(compiled.params).not_to include(:parallel_tool_calls)
     expect(compiled.metadata).to include(openrouter_omitted_params: ['parallel_tool_calls'])
+  end
+
+  describe 'mixed Captain tool batches' do
+    let(:read_tool) { tool_with(name: 'search_slots', metadata: { read_only: true }) }
+    let(:write_tool) { tool_with(name: 'create_appointment', metadata: { risk_level: 'high', idempotent: false }) }
+
+    before do
+      allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for).and_return(
+        [{ 'supported_parameters' => %w[tools parallel_tool_calls] }]
+      )
+    end
+
+    [true, false, nil].each do |hint|
+      it "compiles mixed reads and writes with #{hint.inspect} without losing explicit off" do
+        compiled = compile(feature: :captain_agent, tools: [read_tool, write_tool], parallel_tool_calls: hint)
+        expect(compiled.params).to include(parallel_tool_calls: hint != false)
+      end
+    end
+
+    it 'preserves conservative handling for an unknown risk alongside reads' do
+      unknown = tool_with(name: 'unknown', metadata: { description: 'No risk classification' })
+      compiled = compile(feature: :captain_agent, tools: [read_tool, unknown], parallel_tool_calls: true)
+      expect(compiled.params).not_to have_key(:parallel_tool_calls)
+    end
+
+    it 'does not extend mixed batches to features outside the guarded Captain runtime' do
+      compiled = compile(feature: :copilot, tools: [read_tool, write_tool], parallel_tool_calls: true)
+      expect(compiled.params).not_to have_key(:parallel_tool_calls)
+    end
+
+    it 'requires every eligible endpoint to advertise parallel calls' do
+      allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for).and_return(
+        [{ 'supported_parameters' => %w[tools parallel_tool_calls] }, { 'supported_parameters' => %w[tools] }]
+      )
+      compiled = compile(feature: :captain_agent, tools: [read_tool, write_tool], parallel_tool_calls: true)
+      expect(compiled.params).not_to have_key(:parallel_tool_calls)
+    end
+
+    it 'omits explicit off too when the endpoint does not accept the parameter' do
+      allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoints_for).and_return([{ 'supported_parameters' => %w[tools] }])
+      compiled = compile(feature: :captain_agent, tools: [read_tool, write_tool], parallel_tool_calls: false)
+      expect(compiled.params).not_to have_key(:parallel_tool_calls)
+      expect(compiled.metadata).to include(openrouter_requested_parallel_tool_calls: false)
+    end
   end
 
   it 'omits temperature for strict routes when the primary OpenRouter endpoint does not support it' do

@@ -63,14 +63,17 @@ class Captain::Runtime::ChatFactory
     private
 
     def chat_build_kwargs(agent:, context_wrapper:, llm_context:, runtime_headers:, runtime_params:, account: nil, model: agent.model)
+      request_params = merged_params(agent, runtime_params)
       parameters = Llm::ModelParameters.for(model, account: account).compile(
         temperature: agent.temperature,
-        params: merged_params(agent, runtime_params),
+        params: request_params,
         thinking: thinking_options(agent, context_wrapper, account: account, model: model)
       )
       {
         feature: :captain_agent,
         account: account,
+        **request_identity(agent, context_wrapper, account),
+        parallel_tool_calls: request_params[:parallel_tool_calls],
         model: model,
         runtime_preferences: (context_wrapper.context.dig(:state, :captain_runtime) || {}).deep_dup,
         options: {
@@ -78,6 +81,23 @@ class Captain::Runtime::ChatFactory
           headers: merged_headers(agent, runtime_headers)
         }.merge(parameters)
       }.merge(streaming_answer?(context_wrapper) ? { stream: true } : {})
+    end
+
+    def request_identity(agent, context_wrapper, account)
+      {
+        assistant: request_assistant(agent, context_wrapper, account),
+        conversation: context_wrapper.context.dig(:state, :conversation),
+        session_id: context_wrapper.context[:session_id]
+      }
+    end
+
+    def request_assistant(agent, context_wrapper, account)
+      state = context_wrapper.context[:state].to_h
+      return unless account&.id.present? && state[:account_id].to_s == account.id.to_s
+
+      # A council part's agent owns the request, even when the outer LLM context
+      # still names the main conversation actor. Standalone agents use prepared state.
+      { id: agent.assistant_id.presence || state[:assistant_id], account_id: account.id }
     end
 
     # The answer of a reply suggestion streams (see Captain::Runtime::AnswerStream): the request is compiled for it, so it carries

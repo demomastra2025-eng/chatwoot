@@ -175,29 +175,23 @@ class Llm::OpenRouterRequestCompiler
     requested = desired_parallel_tool_calls
     return if requested.nil?
 
-    if requested != true
-      params.delete(:parallel_tool_calls)
-      params.delete('parallel_tool_calls')
-      return
-    end
-
     supports_parallel_tools = route_explicitly_supports_endpoint_param?(
       models,
       :parallel_tool_calls,
       provider_params: provider_params
     )
-    unless read_only_tool_flow? && supports_parallel_tools
+    unless supports_parallel_tools && (requested == false || read_only_tool_flow? || guarded_mixed_tool_flow?)
       omit_request_param!(params, :parallel_tool_calls)
       return
     end
 
-    params[:parallel_tool_calls] = true
+    params[:parallel_tool_calls] = requested
   end
 
   def desired_parallel_tool_calls
     explicit = explicit_parallel_tool_calls_value
     return explicit unless explicit.nil?
-    return true if read_only_tool_flow?
+    return true if read_only_tool_flow? || guarded_mixed_tool_flow?
   end
 
   def explicit_parallel_tool_calls_value
@@ -215,6 +209,19 @@ class Llm::OpenRouterRequestCompiler
     tool_objects.present? && tool_objects.all? { |tool| Llm::ToolRiskPolicy.read_only?(tool) }
   end
 
+  # Captain executes a model's batch sequentially and reserves at most one action
+  # under its runtime mutex. Known actions may share a batch with reads; tools
+  # without a classified risk retain the conservative single-call behaviour.
+  def guarded_mixed_tool_flow?
+    return false unless feature_key == 'captain_agent'
+    return false unless tool_objects.any? { |tool| Llm::ToolRiskPolicy.read_only?(tool) }
+
+    tool_objects.all? do |tool|
+      Llm::ToolRiskPolicy.read_only?(tool) ||
+        Llm::ToolRiskPolicy::MUTATING_RISK_LEVELS.include?(Llm::ToolRiskPolicy.metadata_for(tool)[:risk_level].to_s)
+    end
+  end
+
   def tool_objects
     return Array(@tools) unless @tools.nil? || @tools == true || @tools == false
 
@@ -223,6 +230,9 @@ class Llm::OpenRouterRequestCompiler
 
   def route_explicitly_supports_endpoint_param?(models, key, provider_params:)
     endpoint_param = ENDPOINT_SCOPED_REQUEST_PARAMS.fetch(key.to_sym)
+    endpoints = constrained_primary_route_endpoints(@model.presence || Array(models).first, provider_params: provider_params)
+    return endpoints.all? { |endpoint| Array(endpoint.to_h['supported_parameters']).include?(endpoint_param) } if endpoints.present?
+
     supported_parameters = primary_route_supported_parameters(models, provider_params: provider_params)
     return false if supported_parameters.blank?
 
@@ -387,6 +397,7 @@ class Llm::OpenRouterRequestCompiler
       openrouter_transform_policy: feature_policy.transform_policy,
       openrouter_budget_policy: feature_policy.budget_policy,
       openrouter_parallel_tool_calls: parallel_tool_calls_metadata(params),
+      openrouter_requested_parallel_tool_calls: explicit_parallel_tool_calls_value,
       openrouter_omitted_params: @omitted_params.uniq.presence
     }.merge(extensions[:transform_plan]&.to_metadata || {}).merge(header_metadata || {}).compact
   end

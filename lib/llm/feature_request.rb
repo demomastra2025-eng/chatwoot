@@ -148,6 +148,8 @@ class Llm::FeatureRequest
   end
 
   def session_cache_key
+    assistant_key = captain_assistant_cache_key
+    return assistant_key if assistant_key
     return if session_id.blank?
 
     ['llm', feature_key, account_id, session_id].compact.join(':')
@@ -286,8 +288,21 @@ class Llm::FeatureRequest
     value
   end
 
-  def normalize_parallel_tool_calls(_value)
-    nil
+  def normalize_parallel_tool_calls(value)
+    normalize_optional_boolean(value)
+  end
+
+  # Affinity belongs to the effective actor, while session_id remains the trace's
+  # conversation identity. Missing or mismatched ownership keeps session affinity.
+  def captain_assistant_cache_key
+    return unless feature_key == 'captain_agent'
+
+    assistant_id = object_attribute(assistant, :id)
+    assistant_account_id = object_attribute(assistant, :account_id)
+    return unless [account_id, assistant_id].all? { |id| id.to_s.match?(/\A[1-9]\d*\z/) }
+    return unless assistant_account_id.to_s == account_id.to_s
+
+    "llm:#{feature_key}:#{account_id}:assistant_#{assistant_id}"
   end
 
   def normalize_optional_boolean(value)
