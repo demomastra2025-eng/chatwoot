@@ -301,7 +301,17 @@
       "UNAVAILABLE": "Қолжетімсіз",
       "UNAVAILABLE_TIME_RANGE": "{label} · {start}–{end}"
     },
+    "VIEWS": {
+      "CALENDAR": "Күнтізбе",
+      "DAY": "Күн",
+      "WEEK": "Апта",
+      "MONTH": "Ай",
+      "LIST": "Тізім",
+      "KANBAN": "Тақта"
+    },
     "TOOLBAR": {
+      "RESOURCES_SELECTED": "Таңдалғаны: {count}",
+      "FILTERS": "Сүзгілер",
       "PREVIOUS": "Алдыңғы кезең",
       "NEXT": "Келесі кезең",
       "SHOW_INACTIVE_APPOINTMENTS": "Аяқталған, тоқтатылған және пациент келмеген қабылдауларды көрсету",

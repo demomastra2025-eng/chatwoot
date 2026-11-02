@@ -591,6 +591,41 @@ describe('SchedulingCalendarPage pending local booking', () => {
     expect(mocks.calendar.setAnchorDate).not.toHaveBeenCalled();
   });
 
+  it('loads an explicit date changed during an appointment when returning to the calendar', async () => {
+    await mountPage();
+    mocks.calendar.currentRange = {
+      from: new Date('2026-11-09T19:00:00Z'),
+      to: new Date('2026-11-10T18:59:59Z'),
+    };
+    SchedulingAppointmentsAPI.show.mockResolvedValueOnce({
+      data: {
+        payload: {
+          id: 505,
+          resource_id: 3,
+          starts_at: '2026-11-10T06:00:00Z',
+          ends_at: '2026-11-10T06:30:00Z',
+          status: 'confirmed',
+        },
+      },
+    });
+    mocks.route.params.appointmentId = '505';
+    await flushPromises();
+    mocks.calendar.fetchCalendar.mockClear();
+    mocks.route.query.date = '2026-11-12';
+    await flushPromises();
+    expect(mocks.calendar.fetchCalendar).not.toHaveBeenCalled();
+    mocks.calendar.setAnchorDate.mockImplementation(date => {
+      mocks.calendar.anchorDate = date;
+    });
+    delete mocks.route.params.appointmentId;
+    await flushPromises();
+    expect(mocks.calendar.setAnchorDate).toHaveBeenLastCalledWith(
+      '2026-11-12T07:00:00.000Z'
+    );
+    expect(mocks.calendar.fetchCalendar).toHaveBeenCalledTimes(1);
+    expect(mocks.calendar.anchorDate).toBe('2026-11-12T07:00:00.000Z');
+  });
+
   it('uses the workspace day for an appointment instant crossing the browser day boundary', async () => {
     mocks.route.params.appointmentId = '505';
     SchedulingAppointmentsAPI.show.mockResolvedValueOnce({

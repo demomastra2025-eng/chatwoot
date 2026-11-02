@@ -119,9 +119,9 @@
     },
     "HEADER": {
       "BACK": "Артқа",
-      "RESOLVE_ACTION": "Resolve",
-      "REOPEN_ACTION": "Reopen",
-      "OPEN_ACTION": "Open",
+      "RESOLVE_ACTION": "Жабу",
+      "REOPEN_ACTION": "Ашу",
+      "OPEN_ACTION": "Ашу",
       "MORE_ACTIONS": "More actions",
       "OPEN": "More",
       "CLOSE": "Close",

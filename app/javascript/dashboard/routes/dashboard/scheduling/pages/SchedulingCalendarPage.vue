@@ -2810,6 +2810,7 @@ watch(
       if (date && queryValue('date') !== appliedDateQuery) {
         calendarStore.setAnchorDate(date);
         appliedDateQuery = queryValue('date');
+        isCalendarLoaded.value = false;
       }
       if (!isCalendarLoaded.value || calendarStore.ui.error)
         await fetchCalendar();
