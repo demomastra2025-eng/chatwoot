@@ -784,7 +784,7 @@ onMounted(async () => {
         >
           <label
             for="notifications-channel"
-            class="min-w-0 flex-1 text-sm text-n-slate-12"
+            class="min-w-0 flex-1 basis-full text-sm text-n-slate-12 sm:basis-auto"
           >
             {{ L('CHANNEL') }}
             <Select
