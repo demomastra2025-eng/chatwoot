@@ -228,6 +228,7 @@ class Message < ApplicationRecord
   def push_event_data(include_communication_thread: true, conversation_unread_count: CONVERSATION_UNREAD_COUNT_UNSET)
     data = {
       **attributes.symbolize_keys,
+      content_attributes: public_content_attributes,
       content: content_for_display,
       created_at: created_at.to_i,
       message_type: message_type_before_type_cast,
@@ -258,11 +259,21 @@ class Message < ApplicationRecord
   end
 
   def external_content_attributes
-    external_attributes(content_attributes)
+    external_attributes(public_content_attributes)
+  end
+
+  def public_content_attributes
+    Messages::HistoryMediaProjection.call(content_attributes)
+  end
+
+  def public_previous_changes(changes)
+    changes.to_h.each_with_object({}) do |(key, values), filtered|
+      filtered[key] = key.to_s == 'content_attributes' ? Array(values).map { |value| Messages::HistoryMediaProjection.call(value) } : values
+    end
   end
 
   def external_previous_changes(changes)
-    changes.to_h.each_with_object({}) do |(key, values), filtered|
+    public_previous_changes(changes).each_with_object({}) do |(key, values), filtered|
       filtered[key] = if %w[additional_attributes content_attributes].include?(key.to_s)
                         Array(values).map { |value| external_attributes(value) }
                       else

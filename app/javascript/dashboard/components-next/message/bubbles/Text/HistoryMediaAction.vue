@@ -27,9 +27,8 @@ const visible = computed(() => {
   const history = attrs.historyAttachment || attrs.history_attachment;
   return (
     !attrs.deleted &&
-    !attachments.value?.length &&
     Boolean(
-      history?.unavailable ||
+      (!attachments.value?.length && history?.unavailable) ||
         attrs.telegramHistoryMediaIncomplete ||
         attrs.telegram_history_media_incomplete
     )
@@ -47,7 +46,12 @@ const loadMedia = async () => {
       id.value
     );
     await store.dispatch('updateMessage', data);
-    unavailable.value = !data.attachments?.length;
+    const attrs = data.content_attributes || data.contentAttributes || {};
+    unavailable.value = Boolean(
+      attrs.telegram_history_media_incomplete ||
+        attrs.telegramHistoryMediaIncomplete ||
+        !data.attachments?.length
+    );
   } catch {
     failed.value = true;
   } finally {

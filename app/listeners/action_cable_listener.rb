@@ -64,7 +64,8 @@ class ActionCableListener < BaseListener # rubocop:disable Metrics/ClassLength
     dashboard_tokens = user_tokens(account, conversation.inbox.members)
     customer_tokens = contact_tokens(conversation.contact_inbox, message)
 
-    broadcast(account, dashboard_tokens, MESSAGE_UPDATED, message.push_event_data.merge(previous_changes: event.data[:previous_changes]))
+    broadcast(account, dashboard_tokens, MESSAGE_UPDATED,
+              message.push_event_data.merge(previous_changes: message.public_previous_changes(event.data[:previous_changes])))
     broadcast(
       account,
       customer_tokens,

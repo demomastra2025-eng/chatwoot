@@ -425,6 +425,13 @@ const componentToRender = computed(() => {
     return InstagramStoryBubble;
   }
 
+  if (
+    props.contentAttributes.telegramHistoryMediaIncomplete ||
+    props.contentAttributes.telegram_history_media_incomplete
+  ) {
+    return TextBubble;
+  }
+
   if (Array.isArray(props.attachments) && props.attachments.length === 1) {
     const fileType = props.attachments[0].fileType;
 

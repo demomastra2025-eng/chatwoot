@@ -3,13 +3,29 @@ class TelegramPersonal::IncomingMessageService
 
   ATTACHMENT_PLACEHOLDER = '[Attachment]'.freeze
 
-  pattr_initialize [:inbox!, :params!]
+  pattr_initialize [:inbox!, :params!, { history_media_context: nil }]
+
+  def self.history_media_context_for(message)
+    attributes = message.content_attributes.to_h
+    stored = Array.wrap(attributes['telegram_message_ids'])
+    skipped = Array.wrap(attributes['telegram_history_media_skipped_message_ids'])
+    references = {
+      provider_ids: stored + skipped + [message.source_id],
+      requested_ids: skipped.presence || stored.presence || [message.source_id]
+    }
+    references.transform_values! { |ids| ids.map { |id| TelegramPersonal::MessageSourceId.provider_id(id) }.reject(&:blank?).uniq.sort }
+    {
+      message_id: message.id, account_id: message.account_id, inbox_id: message.inbox_id,
+      conversation_id: message.conversation_id, source_id: message.source_id
+    }.merge(references)
+  end
 
   def perform
     return unless supported_chat?
 
     existing_message = find_existing_message
     return reconcile_incomplete_history_media!(existing_message) if existing_message.present?
+    return if history_media_context.present?
     return unless lock_message_source_id!
 
     set_contact
@@ -41,6 +57,8 @@ class TelegramPersonal::IncomingMessageService
   end
 
   def find_existing_message
+    return inbox.messages.find_by(id: history_media_context[:message_id]) if history_media_context.present?
+
     return find_existing_group_message if group_chat? && params[:chat_id].present?
 
     find_existing_private_message
@@ -163,7 +181,18 @@ class TelegramPersonal::IncomingMessageService
   end
 
   def attach_single_file(attachment)
-    attachment_file = Down.download(attachment[:url])
+    attach_prepared_file(attachment, prepare_attachment_file(attachment))
+  rescue StandardError => e
+    track_unavailable_attachment(attachment, e)
+    Rails.logger.info("[TELEGRAM PERSONAL] Attachment download failed for #{storage_source_id}: #{e.class}: #{e.message}")
+    nil
+  end
+
+  def prepare_attachment_file(attachment)
+    Down.download(attachment[:url])
+  end
+
+  def attach_prepared_file(attachment, attachment_file)
     @message.attachments.new(
       account_id: @message.account_id,
       file_type: normalized_file_type(attachment[:kind], attachment_file.content_type),
@@ -174,10 +203,6 @@ class TelegramPersonal::IncomingMessageService
         content_type: attachment[:content_type].presence || attachment_file.content_type
       }
     ).skip_storage_limit_validation!
-  rescue StandardError => e
-    track_unavailable_attachment(attachment, e)
-    Rails.logger.info("[TELEGRAM PERSONAL] Attachment download failed for #{storage_source_id}: #{e.class}: #{e.message}")
-    nil
   end
 
   def track_unavailable_attachment(attachment, error)
@@ -209,37 +234,85 @@ class TelegramPersonal::IncomingMessageService
     return if history_media_incomplete?
 
     @message = message
+    @history_context = history_media_context || self.class.history_media_context_for(message)
+    return unless history_media_context_current?
+
+    prepared = []
+    prepare_missing_history_media(prepared)
+    persist_prepared_history_media(prepared)
+  ensure
+    prepared&.each { |_, file, _| file.close! if file.respond_to?(:close!) }
+  end
+
+  def persist_prepared_history_media(prepared)
     @message.with_lock do
-      @message.reload
-      next unless @message.content_attributes.to_h['telegram_history_media_incomplete']
+      next unless history_media_context_current?
 
       @message.skip_runtime_events = true
       @unavailable_attachments = []
-      attach_missing_history_media
-      complete_history_media_enrichment! if history_media_enrichment_complete?
+      prepared.each { |attachment, file, error| reconcile_prepared_attachment(attachment, file, error) }
+      update_history_media_completion
       @message.save!
     end
   end
 
-  def attach_missing_history_media
-    Array.wrap(params[:attachments]).each do |attachment|
-      next if attachment[:url].blank?
-      next if attachment_already_present?(attachment)
-
-      attach_single_file(attachment)
+  def update_history_media_completion
+    if history_media_enrichment_complete?
+      complete_history_media_enrichment!
+    else
+      @message.content_attributes = @message.content_attributes.merge('telegram_history_media_skipped_message_ids' => missing_history_media_ids)
     end
   end
 
-  def history_media_enrichment_complete?
-    expected_ids = Array.wrap(params[:attachments]).filter_map do |attachment|
-      attachment[:telegram_message_id].to_s.presence
-    end.uniq
-    return false if expected_ids.blank? || @unavailable_attachments.present?
+  def history_media_context_current?
+    return false if @message.content_attributes.to_h['deleted'].present? || inbox.reload.deleting? || !@message.account.reload.active?
+    return false unless @message.content_attributes.to_h['telegram_history_media_incomplete']
+    return false unless history_media_owner_current?
 
+    self.class.history_media_context_for(@message) == @history_context
+  end
+
+  def history_media_owner_current?
+    conversation = @message.conversation.reload
+    @message.inbox_id == inbox.id && @message.account_id == inbox.account_id &&
+      conversation.inbox_id == inbox.id && conversation.account_id == inbox.account_id
+  end
+
+  def prepare_missing_history_media(prepared)
+    Array.wrap(params[:attachments]).each do |attachment|
+      next if attachment_already_present?(attachment)
+
+      prepared << prepare_history_attachment(attachment)
+    end
+  end
+
+  def prepare_history_attachment(attachment)
+    id = attachment[:telegram_message_id].to_s
+    if attachment[:url].blank? || @history_context[:requested_ids].exclude?(id)
+      return [attachment, nil, ArgumentError.new('Unrequested history media')]
+    end
+
+    [attachment, prepare_attachment_file(attachment), nil]
+  rescue StandardError => e
+    [attachment, nil, e]
+  end
+
+  def reconcile_prepared_attachment(attachment, file, error)
+    return if attachment_already_present?(attachment)
+    return track_unavailable_attachment(attachment, error) if error
+
+    attach_prepared_file(attachment, file)
+  end
+
+  def history_media_enrichment_complete?
+    @history_context[:provider_ids].present? && @unavailable_attachments.blank? && missing_history_media_ids.empty?
+  end
+
+  def missing_history_media_ids
     attached_ids = @message.attachments.filter_map do |attachment|
       attachment.meta.to_h['telegram_message_id'].to_s.presence
     end
-    (expected_ids - attached_ids).empty?
+    @history_context[:provider_ids] - attached_ids
   end
 
   def complete_history_media_enrichment!

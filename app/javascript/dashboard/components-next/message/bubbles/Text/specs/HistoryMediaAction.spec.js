@@ -82,6 +82,25 @@ describe('History media action', () => {
     expect(mountAction().find('button').exists()).toBe(true);
   });
 
+  it('keeps retry available for a partially downloaded Telegram album', async () => {
+    context.contentAttributes.value = { telegramHistoryMediaIncomplete: true };
+    context.attachments.value = [{ id: 1 }];
+    ConversationAPI.enrichHistoryMedia.mockResolvedValueOnce({
+      data: {
+        id: 12,
+        attachments: [{ id: 1 }],
+        content_attributes: { telegram_history_media_incomplete: true },
+      },
+    });
+    const wrapper = mountAction();
+    await wrapper.get('button').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('[role="status"]').text()).toBe(
+      'HISTORY_MEDIA.UNAVAILABLE'
+    );
+    expect(wrapper.get('button').text()).toBe('HISTORY_MEDIA.RETRY');
+  });
+
   it('keeps the unavailable state visible after reopening a message', () => {
     context.contentAttributes.value = {
       historyAttachment: { unavailable: true, fetchState: 'unavailable' },

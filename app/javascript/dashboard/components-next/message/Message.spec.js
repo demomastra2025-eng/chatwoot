@@ -50,6 +50,7 @@ vi.mock('vue-i18n', () => ({
 vi.mock('vue-router', () => ({
   useRoute: () => ({
     query: {},
+    params: { accountId: 1 },
   }),
 }));
 
@@ -160,6 +161,56 @@ describe('Message', () => {
       isATelegramChannel: ref(false),
       isATelegramPersonalChannel: ref(false),
     });
+  });
+
+  it.each(['', 'Original album caption'])(
+    'keeps an incomplete single-photo album in the text bubble for loading more media: %s',
+    content => {
+      const wrapper = createWrapper(
+        {
+          content,
+          attachments: [
+            {
+              id: 1,
+              fileType: 'image',
+              dataUrl: 'https://assets.test/one.png',
+            },
+          ],
+          contentAttributes: { telegramHistoryMediaIncomplete: true },
+        },
+        {
+          TextBubble: { template: '<div data-testid="history-text-bubble" />' },
+          ImageBubble: {
+            template: '<div data-testid="ordinary-image-preview" />',
+          },
+        }
+      );
+      expect(wrapper.find('[data-testid="history-text-bubble"]').exists()).toBe(
+        true
+      );
+      expect(
+        wrapper.find('[data-testid="ordinary-image-preview"]').exists()
+      ).toBe(false);
+    }
+  );
+
+  it('preserves the ordinary single-image preview when history media is complete', () => {
+    const wrapper = createWrapper(
+      {
+        content: '',
+        attachments: [
+          { id: 1, fileType: 'image', dataUrl: 'https://assets.test/one.png' },
+        ],
+      },
+      {
+        ImageBubble: {
+          template: '<div data-testid="ordinary-image-preview" />',
+        },
+      }
+    );
+    expect(
+      wrapper.find('[data-testid="ordinary-image-preview"]').exists()
+    ).toBe(true);
   });
 
   it('hides edit and delete for non-private messages on channels that do not support provider deletion (e.g. Official WhatsApp)', () => {
