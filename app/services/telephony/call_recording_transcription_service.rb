@@ -289,15 +289,19 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
 
   def persist_call_transcript!(result, source, transcript_ref)
     billable_source = source.to_s == 'audio_transcription'
-    call_session.with_lock do
-      metadata = (call_session.reload.metadata || {}).deep_dup
-      recording = metadata['recording'] ||= {}
-      existing_billed_at = recording.dig('transcription', 'billed_at')
-      recording['audio_probe'] = @audio_probe if @audio_probe.present?
-      billed_at = transcription_billed_at(existing_billed_at, billable_source)
-      recording['transcription'] = transcription_metadata(result, source, recording, billed_at: billed_at)
-      call_session.update!(metadata: metadata, transcript_ref: transcript_ref)
-      record_call_metering!(build_call_metering_payload(recording, metadata, result)) if billable_source && existing_billed_at.blank?
+    # Match contact merge's Account -> Call order. The fresh record also allows
+    # retrying this service after a SQL counter refreshed its in-memory account.
+    Account.find(account.id).with_lock('FOR NO KEY UPDATE') do
+      call_session.with_lock do
+        metadata = (call_session.reload.metadata || {}).deep_dup
+        recording = metadata['recording'] ||= {}
+        existing_billed_at = recording.dig('transcription', 'billed_at')
+        recording['audio_probe'] = @audio_probe if @audio_probe.present?
+        billed_at = transcription_billed_at(existing_billed_at, billable_source)
+        recording['transcription'] = transcription_metadata(result, source, recording, billed_at: billed_at)
+        call_session.update!(metadata: metadata, transcript_ref: transcript_ref)
+        record_call_metering!(build_call_metering_payload(recording, metadata, result)) if billable_source && existing_billed_at.blank?
+      end
     end
   end
 

@@ -283,13 +283,17 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService # rubocop:disable 
 
   def store_first_transcript!(transcribed_text)
     first_transcription = false
-    call.with_lock do
-      call.reload
-      first_transcription = call.transcript.blank?
-      if first_transcription
-        call.update!(transcript: transcribed_text)
-        account.increment_response_usage
-        record_call_analysis_usage!
+    # Contact merge locks Account before reassigning calls. Use a fresh lock
+    # record because the SQL counters can leave this service's account dirty.
+    Account.find(account.id).with_lock('FOR NO KEY UPDATE') do
+      call.with_lock do
+        call.reload
+        first_transcription = call.transcript.blank?
+        if first_transcription
+          call.update!(transcript: transcribed_text)
+          account.increment_response_usage
+          record_call_analysis_usage!
+        end
       end
     end
     first_transcription
