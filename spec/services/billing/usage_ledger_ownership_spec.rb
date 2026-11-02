@@ -96,11 +96,9 @@ RSpec.describe Billing::UsageLedger do
     transfer_to_target(source)
     inputs = ledger_inputs(account: account, contact: contact, entries: [[source[:event], package], [second, package]],
                            version: target[:version], merge_from: { source[:projection].id => source[:projection].version })
-    expect(described_class.reconcile!(**inputs)).to include(status: :applied,
-                                                          deltas: { package[:period].id => { 'dialogs' => -1, 'seconds' => 0 } })
+    expect(described_class.reconcile!(**inputs)).to include(status: :applied, deltas: { package[:period].id => { 'dialogs' => -1, 'seconds' => 0 } })
     retired = source[:projection].reload.attributes
-    expect(retired['retired_into_id']).to eq(target[:projection_id])
-    expect(package[:period].reload.dialogs_count).to eq(1)
+    expect([retired['retired_into_id'], package[:period].reload.dialogs_count]).to eq([target[:projection_id], 1])
     without_financial_writes(inputs, status: :no_op, code: nil)
     without_financial_writes(inputs.merge(merge_from: {}, expected_version: 2), status: :no_op, code: nil)
     third = ledger_event(account: account, contact: contact, at: at + 2.minutes)

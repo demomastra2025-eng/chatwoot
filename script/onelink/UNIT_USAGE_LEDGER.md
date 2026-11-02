@@ -74,6 +74,15 @@ creating a zero-valued financial revision. Stale different input returns conflic
 Explicit merge retires the old financial projections into the target and writes
 the net correction. Their original sources and allocations remain available for
 audit. Source disappearance and clinical deletion are not merge instructions.
+Every incoming canonical event is checked against all active financial owners
+in the account, across projection kinds. Every owner outside the target must be
+included in `merge_from` with its expected version. Omitted or partially listed
+owners return `needs_review` / `merge_owner_missing` before financial writes,
+even with a complete clinical event set or `baseline: :empty`. The service does
+not discover and transfer owners automatically. Only fully retired projections
+are excluded from this check; their retained history permits exact merge replay
+and later target updates. An old owner's deleted Contact does not erase that
+owner or prevent an otherwise proved explicit financial merge.
 
 ## Lock and integration boundary
 
@@ -84,6 +93,11 @@ source rows → financial projections by ID → periods by
 ID. All branch writers for one payer serialize before updating period revisions.
 No provider IO runs under these transactions. Preview calculates without writes;
 reconcile reloads under locks and verifies the expected projection version.
+Financial-owner completeness is read under the existing Account lock before
+later lock classes; a missing owner is refused so the caller can retry with the
+complete explicit set and acquire its earlier Contact locks in the normal order.
+No newly discovered Contact is locked after Account. Preview uses the same
+ownership check without locks and remains advisory.
 
 An outer transaction may include canonical source/state/cache writes and ledger
 postings, provided the caller acquires the complete earlier lock set first. The

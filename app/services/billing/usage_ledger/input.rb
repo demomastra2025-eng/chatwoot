@@ -98,6 +98,7 @@ class Billing::UsageLedger::Input
     @target = Billing::UsageProjection.find_by(account_id: account_id, kind: kind, subject_id: subject_id)
     @merge_projections = Billing::UsageProjection.where(account_id: account_id, id: merge_from.keys).order(:id).to_a
     validate_merge!
+    validate_financial_owners!
     require_baseline!
     ([@target] + @merge_projections).compact.each do |projection|
       raise Billing::UsageLedger::Refused, :projection_corrupt unless projection.valid?
@@ -109,6 +110,16 @@ class Billing::UsageLedger::Input
 
     valid = merge_projections.all? { |source| [kind, source.kind] == %w[contact contact] && source.subject_id != contact_id }
     raise Billing::UsageLedger::Refused, :invalid_merge unless valid
+  end
+
+  def validate_financial_owners!
+    # Clinical event transfer does not retire financial ownership. Only a complete,
+    # versioned explicit merge may move it; never acquire a newly discovered Contact here.
+    owners = Billing::UsageProjection.where(account_id: account_id)
+                                     .where('retired_at IS NULL OR retired_into_id IS NULL')
+                                     .where('jsonb_exists_any(sources, ARRAY[?]::text[])', event_ids.map(&:to_s))
+    omitted = owners.where.not(id: [target&.id, *merge_from.keys].compact)
+    raise Billing::UsageLedger::Refused, :merge_owner_missing if omitted.exists?
   end
 
   def require_baseline!
