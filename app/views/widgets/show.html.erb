@@ -26,7 +26,7 @@
         csatSurveyEnabled: <%= @web_widget.inbox.csat_survey_enabled %>,
         workingHours: <%= @web_widget.account.workspace_working_hours_schedule.to_json.html_safe %>,
         workspaceAvailability: <%= Account::WorkspaceAvailabilitySnapshot.new(account: @web_widget.account).as_json.to_json.html_safe %>,
-        outOfOfficeMessage: <%= @web_widget.inbox.out_of_office_message.to_json.html_safe %>,
+        outOfOfficeMessage: <%= @web_widget.inbox.workspace_out_of_office_message.to_json.html_safe %>,
         utcOffset: '<%= @web_widget.account.workspace_working_hours_timezone %>',
         timezone: '<%= @web_widget.account.workspace_working_hours_timezone %>',
         allowMessagesAfterResolved: <%= @web_widget.inbox.allow_messages_after_resolved %>,

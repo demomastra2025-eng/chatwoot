@@ -3,4 +3,4 @@ json.timezone resource.account.workspace_working_hours_timezone
 json.working_hours resource.account.workspace_working_hours_configured? ? resource.account.workspace_working_hours_schedule : []
 json.working_hours_enabled resource.account.workspace_working_hours_configured?
 json.csat_survey_enabled resource.csat_survey_enabled
-json.greeting_enabled resource.greeting_enabled
+json.greeting_enabled resource.workspace_greeting_enabled?

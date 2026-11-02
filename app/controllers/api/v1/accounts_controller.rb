@@ -159,6 +159,8 @@ class Api::V1::AccountsController < Api::BaseController
       :bilingual_templates_enabled,
       { client_languages: [] },
       :workspace_timezone,
+      { workspace_greeting: [:enabled, :message, { excluded_inbox_ids: [] }] },
+      { workspace_out_of_office: %i[enabled message] },
       { workspace_working_hours: %i[day_of_week closed_all_day open_all_day open_hour open_minutes close_hour close_minutes] },
       { workspace_breaks: [:title, :start_time, :end_time, { days: [] }] },
       { workspace_days_off: %i[date title recurring_yearly] },

@@ -8,14 +8,13 @@ class Captain::Tools::Account::UpdateInboxSettingsService < Captain::Tools::Acco
   description 'Update account inbox details and the workspace auto-assignment switch'
   param :inbox_id, type: :number, desc: 'Account inbox ID', required: true
   param :name, type: :string, desc: 'Optional inbox display name', required: false
-  param :timezone, type: :string, desc: 'Optional TZInfo timezone identifier, for example Asia/Almaty', required: false
   param :enable_auto_assignment, type: :boolean, desc: 'Optional auto-assignment toggle', required: false
-  param :working_hours_enabled, type: :boolean, desc: 'Optional working-hours toggle', required: false
-  param :out_of_office_message, type: :string, desc: 'Optional out-of-office message', required: false
   param :allow_messages_after_resolved, type: :boolean, desc: 'Optional setting for messages after resolved conversations', required: false
 
   def execute(inbox_id:, **kwargs)
     ensure_account_administrator!
+
+    reject_retired_settings!(kwargs)
 
     inbox = account.inboxes.active.find(inbox_id)
     attributes = inbox_update_attributes(kwargs)
@@ -39,6 +38,11 @@ class Captain::Tools::Account::UpdateInboxSettingsService < Captain::Tools::Acco
 
   private
 
+  def reject_retired_settings!(kwargs)
+    retired = %i[timezone working_hours_enabled out_of_office_message].select { |key| kwargs.key?(key) }
+    raise ArgumentError, "Company-managed settings: #{retired.join(', ')}" if retired.any?
+  end
+
   def update_settings!(inbox, attributes, kwargs)
     ActiveRecord::Base.transaction do
       inbox.update!(attributes) if attributes.present?
@@ -49,17 +53,15 @@ class Captain::Tools::Account::UpdateInboxSettingsService < Captain::Tools::Acco
   def inbox_update_attributes(kwargs)
     attributes = {}
     assign_string(attributes, kwargs, :name)
-    assign_string(attributes, kwargs, :timezone)
-    assign_string(attributes, kwargs, :out_of_office_message, allow_blank: true)
     assign_boolean(attributes, kwargs, :allow_messages_after_resolved)
     attributes
   end
 
-  def assign_string(attributes, kwargs, key, allow_blank: false)
+  def assign_string(attributes, kwargs, key)
     return unless kwargs.key?(key)
 
     value = kwargs[key].to_s
-    return if value.blank? && !allow_blank
+    return if value.blank?
 
     attributes[key] = value
   end
@@ -78,7 +80,7 @@ class Captain::Tools::Account::UpdateInboxSettingsService < Captain::Tools::Acco
       timezone: inbox.timezone,
       enable_auto_assignment: account.conversation_auto_assignment_enabled?,
       working_hours_enabled: account.workspace_working_hours_configured?,
-      out_of_office_message: inbox.out_of_office_message,
+      out_of_office_message: inbox.workspace_out_of_office_message,
       allow_messages_after_resolved: inbox.allow_messages_after_resolved
     }.compact
   end

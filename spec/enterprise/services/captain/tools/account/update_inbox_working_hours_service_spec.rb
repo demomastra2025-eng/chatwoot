@@ -20,8 +20,7 @@ RSpec.describe Captain::Tools::Account::UpdateInboxWorkingHoursService do
 
     payload = JSON.parse(service.execute(
                            inbox_id: inbox.id,
-                           working_hours_json: schedule.to_json,
-                           working_hours_enabled: true
+                           working_hours_json: schedule.to_json
                          ))
 
     expect(payload['action']).to eq('update_inbox_working_hours')
@@ -44,7 +43,7 @@ RSpec.describe Captain::Tools::Account::UpdateInboxWorkingHoursService do
     other_inbox = create(:inbox, account: create(:account), working_hours_enabled: false)
     schedule = [{ day_of_week: 1, open_hour: 10, open_minutes: 0, close_hour: 18, close_minutes: 0 }]
 
-    result = service.execute(inbox_id: other_inbox.id, working_hours_json: schedule.to_json, working_hours_enabled: true)
+    result = service.execute(inbox_id: other_inbox.id, working_hours_json: schedule.to_json)
 
     expect(result).to start_with('ERROR: ActiveRecord::RecordNotFound')
     expect(other_inbox.reload.working_hours_enabled).to be(false)
@@ -56,7 +55,7 @@ RSpec.describe Captain::Tools::Account::UpdateInboxWorkingHoursService do
     inbox = create(:inbox, account: account, working_hours_enabled: false)
     schedule = [{ day_of_week: 1, open_hour: 10, open_minutes: 0, close_hour: 18, close_minutes: 0 }]
 
-    result = service.execute(inbox_id: inbox.id, working_hours_json: schedule.to_json, working_hours_enabled: true)
+    result = service.execute(inbox_id: inbox.id, working_hours_json: schedule.to_json)
 
     expect(result).to include('Account administrator permission is required')
     expect(inbox.reload.working_hours_enabled).to be(false)
@@ -67,9 +66,16 @@ RSpec.describe Captain::Tools::Account::UpdateInboxWorkingHoursService do
     inbox = create(:inbox, account: account, working_hours_enabled: false)
     schedule = [{ day_of_week: 1, open_hour: 10, open_minutes: 0, close_hour: 18, close_minutes: 0 }]
 
-    payload = JSON.parse(service.execute(inbox_id: inbox.id, working_hours_json: schedule.to_json, working_hours_enabled: true))
+    payload = JSON.parse(service.execute(inbox_id: inbox.id, working_hours_json: schedule.to_json))
 
     expect(payload['message']).to include('Operator confirmation is required')
     expect(inbox.reload.working_hours_enabled).to be(false)
+  end
+
+  it 'explicitly rejects the removed working-hours switch' do
+    inbox = create(:inbox, account: account)
+    result = service.execute(inbox_id: inbox.id, working_hours_json: [].to_json, working_hours_enabled: false)
+    expect(result).to include('Unsupported settings: working_hours_enabled')
+    expect(account.reload.workspace_working_hours).to be_nil
   end
 end

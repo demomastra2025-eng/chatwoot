@@ -55,6 +55,7 @@ class Account < ApplicationRecord
 
   include AccountSettingsSchema
   include AccountWorkspaceWorkingHours
+  include AccountWorkspaceReplies
   # The "# Clinic" block of every external AI agent of the account (internal_attributes, edited only by the platform team)
   include AccountCaptainClinicContext
 

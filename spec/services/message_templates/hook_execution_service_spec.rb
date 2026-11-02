@@ -47,7 +47,7 @@ describe MessageTemplates::HookExecutionService do
       twitter_channel = create(:channel_twitter_profile)
       twitter_inbox = create(:inbox, channel: twitter_channel)
       # ensure greeting hook is enabled and greeting_message is present
-      twitter_inbox.update(greeting_enabled: true, greeting_message: 'Hi, this is a greeting message')
+      twitter_inbox.account.update!(workspace_greeting: { enabled: true, message: 'Hi, this is a greeting message', excluded_inbox_ids: [] })
 
       conversation = create(:conversation, inbox: twitter_inbox, additional_attributes: { type: 'tweet' })
       greeting_service = double
@@ -65,7 +65,8 @@ describe MessageTemplates::HookExecutionService do
       conversation = create(:conversation, contact: contact)
 
       # ensure greeting hook is enabled and greeting_message is present
-      conversation.inbox.update(greeting_enabled: true, enable_email_collect: true, greeting_message: 'Hi, this is a greeting message')
+      conversation.inbox.update!(enable_email_collect: true)
+      conversation.inbox.account.update!(workspace_greeting: { enabled: true, message: 'Hi, this is a greeting message', excluded_inbox_ids: [] })
 
       email_collect_service = double
       greeting_service = double
@@ -117,7 +118,8 @@ describe MessageTemplates::HookExecutionService do
     it 'does not call ::MessageTemplates::Template::Greeting on campaign conversations' do
       contact = create(:contact, email: nil)
       conversation = create(:conversation, contact: contact, campaign: campaign)
-      conversation.inbox.update(greeting_enabled: true, greeting_message: 'Hi, this is a greeting message', enable_email_collect: false)
+      conversation.inbox.update!(enable_email_collect: false)
+      conversation.inbox.account.update!(workspace_greeting: { enabled: true, message: 'Hi, this is a greeting message', excluded_inbox_ids: [] })
 
       greeting_service = double
       allow(MessageTemplates::Template::Greeting).to receive(:new).and_return(greeting_service)
@@ -132,7 +134,7 @@ describe MessageTemplates::HookExecutionService do
       contact = create(:contact)
       conversation = create(:conversation, contact: contact, campaign: campaign)
 
-      conversation.inbox.update(working_hours_enabled: true, out_of_office_message: 'We are out of office')
+      conversation.inbox.account.update!(workspace_out_of_office: { enabled: true, message: 'We are out of office' })
       conversation.inbox.working_hours.today.update!(closed_all_day: true)
       conversation.account.update!(workspace_timezone: conversation.inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
         d.merge('closed_all_day' => true, 'open_all_day' => false)
@@ -152,7 +154,8 @@ describe MessageTemplates::HookExecutionService do
     it 'does not call any template hooks' do
       contact = create(:contact)
       conversation = create(:conversation, contact: contact)
-      conversation.inbox.update(greeting_enabled: true, enable_email_collect: true, greeting_message: 'Hi, this is a greeting message')
+      conversation.inbox.update!(enable_email_collect: true)
+      conversation.inbox.account.update!(workspace_greeting: { enabled: true, message: 'Hi, this is a greeting message', excluded_inbox_ids: [] })
 
       message = create(:message, conversation: conversation, account: conversation.account, content_type: :incoming_email)
       message.content_attributes = { email: { auto_reply: true } }
@@ -182,7 +185,7 @@ describe MessageTemplates::HookExecutionService do
       contact = create(:contact)
       conversation = create(:conversation, contact: contact)
 
-      conversation.inbox.update(working_hours_enabled: true, out_of_office_message: 'We are out of office')
+      conversation.inbox.account.update!(workspace_out_of_office: { enabled: true, message: 'We are out of office' })
       conversation.inbox.working_hours.today.update!(closed_all_day: true)
       conversation.account.update!(workspace_timezone: conversation.inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
         d.merge('closed_all_day' => true, 'open_all_day' => false)
@@ -205,7 +208,7 @@ describe MessageTemplates::HookExecutionService do
         contact = create(:contact)
         conversation = create(:conversation, contact: contact)
 
-        conversation.inbox.update(working_hours_enabled: true, out_of_office_message: 'We are out of office')
+        conversation.inbox.account.update!(workspace_out_of_office: { enabled: true, message: 'We are out of office' })
         conversation.inbox.working_hours.today.update!(closed_all_day: true)
         conversation.account.update!(workspace_timezone: conversation.inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
           d.merge('closed_all_day' => true, 'open_all_day' => false)
@@ -230,7 +233,7 @@ describe MessageTemplates::HookExecutionService do
         contact = create(:contact)
         conversation = create(:conversation, contact: contact)
 
-        conversation.inbox.update(working_hours_enabled: true, out_of_office_message: 'We are out of office')
+        conversation.inbox.account.update!(workspace_out_of_office: { enabled: true, message: 'We are out of office' })
         conversation.inbox.working_hours.today.update!(closed_all_day: true)
         conversation.account.update!(workspace_timezone: conversation.inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
           d.merge('closed_all_day' => true, 'open_all_day' => false)
@@ -256,7 +259,7 @@ describe MessageTemplates::HookExecutionService do
       contact = create(:contact)
       conversation = create(:conversation, contact: contact)
 
-      conversation.inbox.update(working_hours_enabled: true, out_of_office_message: 'We are out of office')
+      conversation.inbox.account.update!(workspace_out_of_office: { enabled: true, message: 'We are out of office' })
       conversation.inbox.working_hours.today.update!(closed_all_day: true)
       conversation.account.update!(workspace_timezone: conversation.inbox.timezone, workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.map do |d|
         d.merge('closed_all_day' => true, 'open_all_day' => false)

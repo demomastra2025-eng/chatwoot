@@ -1,6 +1,20 @@
 # Workspace settings consolidation
 
-The workspace account now owns the clinic schedule, automatic conversation assignment, assignment policy, and customer facing AI reply timing. Inbox rows keep their historical columns for compatibility, but runtime decisions use the account settings. The inbox out of office message remains a channel specific message.
+The workspace account owns the clinic schedule, greeting, out of office reply, automatic conversation assignment, assignment policy, and customer facing AI reply timing. Inbox rows keep their historical columns for rollback, but runtime decisions use the account settings.
+
+## Common replies
+
+`workspace_greeting` stores `enabled`, `message`, and `excluded_inbox_ids`. New text channels inherit the greeting unless excluded; email and voice do not send text greetings. `workspace_out_of_office` stores `enabled` and `message` and uses the company schedule, breaks, days off, and timezone. Its editor is beside the company hours. A company without a saved schedule is always open, so its closure reply does not run. New companies start with both replies disabled.
+
+Existing companies require an explicit cutover. Deploying the new runtime before preparing their settings would suppress legacy messages. The migration service never sends messages or overwrites retired inbox columns.
+
+1. Prepare the new reviewed release directory and its dependencies without switching the running application. Run all preparation commands below **from that directory**, using the target environment; the old application and API keep running until step 4. Inspect `bundle exec rake workspace_replies:preflight` in read-only mode. It prints only account IDs, digests, and conflicting setting names, then fails while any account is unprepared. Keep message texts out of logs and shared artifacts.
+2. Freeze old settings writers during the maintenance window. For an unambiguous account, run `ACCOUNT_ID=<id> EXPECTED_DIGEST=<digest> bundle exec rake workspace_replies:migrate` from the prepared release directory. Account and inbox locks plus the inspected digest reject concurrent changes. This is a database write and requires the environment's release authorization.
+3. Divergent legacy texts require an explicit choice of the company's message and greeting channel exclusions. Create a private operator-only JSON file with exactly the pending keys (`workspace_greeting` and/or `workspace_out_of_office`), using the shapes described above. Run `ACCOUNT_ID=<id> EXPECTED_DIGEST=<digest> CONFIG_PATH=<private-file> bundle exec rake workspace_replies:migrate` from the same prepared release directory. The same migration service checks the digest, keys, schema, and account-scoped exclusions atomically. Do not use the old Account API: it does not support the new fields. Do not pick the first inbox or silently enable all old channels. Remove the private file after use and repeat preflight. Paused greeting drafts are preserved when they agree; different paused drafts also require a choice.
+4. Preflight must succeed with an empty pending list before switching all application writers and readers to the new runtime and UI together. Keep old writers frozen until the switch completes. Verify business hours, greeting exclusions, disabled replies, and new channel inheritance using synthetic contacts on DEV before owner review.
+5. For rollback, return application and UI to the previous reviewed release together. Legacy inbox values remain intact; common settings remain available for another cutover. Changes made only to common settings after cutover are not copied back to legacy inboxes automatically: inspect and obtain an explicit choice before reverting customer facing behavior.
+
+Inbox API writes to retired greeting, closure reply, hours, or timezone fields return `422 company_managed_settings` before updating other fields. Existing inbox response keys project the common settings. Support tools read the same policy; the working hours tool updates the company schedule.
 
 ## Clinic schedule
 

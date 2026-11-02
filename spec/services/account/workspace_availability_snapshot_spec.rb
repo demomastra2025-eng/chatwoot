@@ -47,12 +47,23 @@ RSpec.describe Account::WorkspaceAvailabilitySnapshot do
   end
 
   it 'invalidates the projection when the company schedule changes' do
+    allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new)
+    original_policy = account.method(:workspace_open_at?)
+    checks = 0
+    allow(account).to receive(:workspace_open_at?) do |time|
+      checks += 1
+      original_policy.call(time)
+    end
     snapshot = described_class.new(account: account, at: at).as_json
     expect(projected_open?(snapshot, at)).to be(true)
+    first_checks = checks
+    expect(described_class.new(account: account, at: at).as_json).to eq(snapshot)
+    expect(checks).to eq(first_checks)
 
     account.update!(workspace_days_off: [{ date: '2026-09-07' }])
     changed = described_class.new(account: account, at: at).as_json
     expect(projected_open?(changed, at)).to be(false)
+    expect(checks).to be > first_checks
   end
 
   it 'excludes recurring days off without publishing their private titles' do

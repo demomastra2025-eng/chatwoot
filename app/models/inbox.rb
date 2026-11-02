@@ -387,6 +387,17 @@ class Inbox < ApplicationRecord
     !account.workspace_open_at?
   end
 
+  def workspace_greeting_enabled?
+    account.workspace_greeting_enabled_for?(self)
+  end
+
+  delegate :workspace_greeting_message, :workspace_out_of_office_message, to: :account
+
+  # The retired timezone column is retained for rollback; company policy owns the clock.
+  def timezone
+    account.workspace_working_hours_timezone
+  end
+
   def working_now?
     account.workspace_open_at?
   end

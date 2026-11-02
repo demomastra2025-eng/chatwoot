@@ -11,10 +11,10 @@ class Captain::Tools::Account::UpdateInboxWorkingHoursService < Captain::Tools::
         type: :string,
         desc: 'JSON array with day_of_week, closed_all_day/open_all_day, open_hour/open_minutes, close_hour/close_minutes',
         required: true
-  param :working_hours_enabled, type: :boolean, desc: 'Legacy parameter; the workspace schedule is always enabled when configured', required: false
 
-  def execute(inbox_id:, working_hours_json:, **_legacy_options)
+  def execute(inbox_id:, working_hours_json:, **unsupported)
     ensure_account_administrator!
+    raise ArgumentError, "Unsupported settings: #{unsupported.keys.join(', ')}" if unsupported.any?
 
     inbox = account.inboxes.active.find(inbox_id)
     entries = parse_working_hours!(working_hours_json)
