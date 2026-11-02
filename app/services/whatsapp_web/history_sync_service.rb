@@ -1,4 +1,6 @@
 class WhatsappWeb::HistorySyncService
+  class InvalidResponse < ArgumentError; end
+
   BATCH_SIZE = 100
 
   pattr_initialize [:channel!, :mode, { sync_context: {} }]
@@ -37,7 +39,7 @@ class WhatsappWeb::HistorySyncService
     page = 1
 
     loop do
-      records = Array.wrap(channel.provider_service.fetch_contacts(page: page, offset: BATCH_SIZE))
+      records = history_list!(channel.provider_service.fetch_contacts(page: page, offset: BATCH_SIZE), kind: 'contacts', page: page)
       break if records.blank?
 
       records.each do |record|
@@ -55,14 +57,18 @@ class WhatsappWeb::HistorySyncService
 
   def sync_messages
     response = channel.provider_service.fetch_messages(page: 1, offset: BATCH_SIZE, from: window_start)
-    total_pages = [response.dig('messages', 'pages').to_i, 1].max
+    first_records = history_records!(response, page: 1)
+    total_pages = history_page_count!(response, first_records, page: 1)
     imported_messages = 0
     touched_contacts = 0
 
     total_pages.downto(1) do |page|
       page_response = page == 1 ? response : channel.provider_service.fetch_messages(page: page, offset: BATCH_SIZE, from: window_start)
-      records = page_response.dig('messages', 'records')
-      next if records.blank?
+      records = history_records!(page_response, page: page)
+      unless history_page_count!(page_response, records, page: page) == total_pages
+        raise InvalidResponse, "WhatsApp history page count changed on page #{page}"
+      end
+      next if records.empty?
 
       result = WhatsappWeb::HistoryImportService.new(channel: channel, records: records).perform
       imported_messages += result[:messages_imported]
@@ -72,12 +78,31 @@ class WhatsappWeb::HistorySyncService
     [imported_messages, touched_contacts]
   end
 
+  def history_records!(response, page:)
+    records = response.dig('messages', 'records') if response.is_a?(Hash) && response['messages'].is_a?(Hash)
+    history_list!(records, kind: 'records', page: page)
+  end
+
+  def history_list!(records, kind:, page:)
+    return records if records.is_a?(Array) && records.all?(Hash)
+
+    raise InvalidResponse, "Invalid WhatsApp history #{kind} on page #{page}"
+  end
+
+  def history_page_count!(response, records, page:)
+    count = response.dig('messages', 'pages')
+    return 1 if count.nil? && records.empty?
+    return [count, 1].max if count.is_a?(Integer) && count >= (records.empty? ? 0 : 1)
+
+    raise InvalidResponse, "Invalid WhatsApp history page count on page #{page}"
+  end
+
   def sync_chats
     touched_contact_ids = {}
     page = 1
 
     loop do
-      records = Array.wrap(channel.provider_service.fetch_chats(page: page, offset: BATCH_SIZE))
+      records = history_list!(channel.provider_service.fetch_chats(page: page, offset: BATCH_SIZE), kind: 'chats', page: page)
       break if records.blank?
 
       records.each do |record|

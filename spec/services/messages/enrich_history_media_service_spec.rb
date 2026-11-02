@@ -56,7 +56,7 @@ RSpec.describe Messages::EnrichHistoryMediaService do
       message.update!(content: 'Deleted', content_attributes: { deleted: true })
       media
     end
-    described_class.new(message: message).perform
+    expect { described_class.new(message: message).perform }.to raise_error(described_class::Error)
     expect(message.reload.attachments).to be_empty
     expect(message.content_attributes).to eq('deleted' => true)
   end
@@ -66,7 +66,7 @@ RSpec.describe Messages::EnrichHistoryMediaService do
       channel.inbox.mark_pending_deletion!
       media
     end
-    described_class.new(message: message).perform
+    expect { described_class.new(message: message).perform }.to raise_error(described_class::Error)
     expect(message.reload.attachments).to be_empty
   end
 

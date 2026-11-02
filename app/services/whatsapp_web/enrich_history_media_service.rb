@@ -2,22 +2,23 @@ class WhatsappWeb::EnrichHistoryMediaService
   pattr_initialize [:message!]
 
   def perform
+    identity = Messages::HistoryMediaIdentity.new(message)
     return message if message.attachments.exists?
 
     job = Channels::WhatsappWeb::MediaAttachmentBackfillJob
     # Synchronous invocation keeps ActiveJob's automatic DB retries out of a
     # user-requested read. MAX_ATTEMPTS prevents the pipeline's media retry queue.
     job.new.perform(message.inbox.channel_id, message.source_id, {}, job::MAX_ATTEMPTS)
-    message.reload
-    update_availability!
+    identity.verify!(message)
+    update_availability!(identity)
     message
   end
 
   private
 
-  def update_availability!
+  def update_availability!(identity)
     message.with_lock do
-      return if message.inbox.reload.deleting? || message.content_attributes.to_h['deleted'].present?
+      identity.verify!(message)
 
       message.skip_runtime_events = true
       message.update!(content_attributes: availability_attributes)

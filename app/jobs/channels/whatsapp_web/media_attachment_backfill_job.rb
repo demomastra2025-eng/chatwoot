@@ -26,12 +26,15 @@ class Channels::WhatsappWeb::MediaAttachmentBackfillJob < MutexApplicationJob
     return retry_later(channel, source_id, record_payload, attempt_number) if message.blank?
     return if message.attachments.any? || message.content_attributes.to_h['deleted'].present?
 
+    identity = Messages::HistoryMediaIdentity.new(message)
+    return unless identity.current?(message)
+
     record = provider_media_record(channel, source_id.to_s, record_payload, outgoing: message.outgoing?)
     attachment_payload = extract_attachment_payload(record)
     return retry_later(channel, source_id, record_payload, attempt_number) if attachment_payload.blank?
 
     attach_or_retry(
-      channel: channel, message: message, attachment_payload: attachment_payload,
+      channel: channel, message: message, identity: identity, attachment_payload: attachment_payload,
       record: record, source_id: source_id, record_payload: record_payload, attempt_number: attempt_number
     )
   end
@@ -47,11 +50,11 @@ class Channels::WhatsappWeb::MediaAttachmentBackfillJob < MutexApplicationJob
   def attach_or_retry(context)
     provider_payload, active_record = resolve_provider_media(context)
     if provider_attachment_available?(provider_payload)
-      return attach_provider_media!(context[:message], extract_attachment_payload(active_record), provider_payload)
+      return attach_provider_media!(context, extract_attachment_payload(active_record), provider_payload)
     end
 
     decrypted_file, file_type, attempted_decryption = decrypt_backfill_media(context)
-    return save_backfill_attachment!(context[:message], file_type, decrypted_file) if decrypted_file.present?
+    return save_backfill_attachment!(context, file_type, decrypted_file) if decrypted_file.present?
     return if provider_attachment_unavailable?(provider_payload) && !attempted_decryption
 
     retry_later(context[:channel], context[:source_id], context[:record_payload], context[:attempt_number])
@@ -139,7 +142,7 @@ class Channels::WhatsappWeb::MediaAttachmentBackfillJob < MutexApplicationJob
     nil
   end
 
-  def attach_provider_media!(message, attachment_payload, provider_payload)
+  def attach_provider_media!(context, attachment_payload, provider_payload)
     payload = provider_payload.to_h.deep_symbolize_keys
     media_kind = attachment_payload[:media_kind]
     raw_name = payload[:fileName].presence || attachment_payload[:raw_file_name] || attachment_payload[:file_name]
@@ -148,12 +151,14 @@ class Channels::WhatsappWeb::MediaAttachmentBackfillJob < MutexApplicationJob
     attachment_payload[:file_name] = WhatsappWeb::MediaMimeNormalizer.sanitize_filename(
       raw_name, mime_type: attachment_payload[:mimetype], media_kind: media_kind
     )
-    save_backfill_attachment!(message, attachment_payload[:file_type], file_from_provider_payload(payload, attachment_payload))
+    save_backfill_attachment!(context, attachment_payload[:file_type], file_from_provider_payload(payload, attachment_payload))
   end
 
-  def save_backfill_attachment!(message, file_type, file)
+  def save_backfill_attachment!(context, file_type, file)
+    message = context[:message]
     message.with_lock do
-      return if message.attachments.reload.any? || message.inbox.reload.deleting? || message.content_attributes.to_h['deleted'].present?
+      return unless context[:identity].current?(message)
+      return if message.attachments.reload.any?
 
       attachment = message.attachments.new(
         account_id: message.account_id,
