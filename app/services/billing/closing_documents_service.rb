@@ -56,6 +56,7 @@ class Billing::ClosingDocumentsService
 
   def record_signature!(signed_at)
     @invoice.with_lock do
+      next unless @state.valid!('esf')
       next unless @invoice.paid? && @invoice.edo_document_id.present?
 
       first_signed_at = @invoice.signed_by_counterparty_at || signed_at

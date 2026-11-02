@@ -39,11 +39,8 @@ class Billing::NotificationService
   def deliver!(event:, text:, attach_pdf:)
     return false unless Billing::Config.autobilling_enabled?
 
-    owner = event == 'payment_confirmed' ? @payment_event : @invoice
-    return false unless owner
-
-    state = Billing::CompletionState.new(owner)
-    return state.hold!(event, 'legacy_without_checkpoint') unless state.managed?
+    state = delivery_state(event)
+    return false unless state
 
     target = frozen_target(state, event)
     return false unless target
@@ -52,6 +49,25 @@ class Billing::NotificationService
   rescue StandardError => e
     Rails.logger.warn("[Billing::NotificationService] Failed conversation delivery for #{@invoice.invoice_number}: #{e.class}")
     false
+  end
+
+  def delivery_state(event)
+    # A caller may reuse this service after a rolled-back materialization.
+    @invoice.reload
+    @payment_event&.reload
+    owner = event == 'payment_confirmed' ? @payment_event : @invoice
+    return false unless owner
+
+    state = Billing::CompletionState.new(owner)
+    return state.hold!(event, 'legacy_without_checkpoint') unless state.managed?
+    return false unless state.valid!(event)
+    return false unless allowed_initial_notification?(state, event)
+
+    state
+  end
+
+  def allowed_initial_notification?(state, event)
+    event != 'invoice_issued' || state.context['notify'] != false
   end
 
   def frozen_target(state, event)
@@ -68,12 +84,14 @@ class Billing::NotificationService
 
   def materialize_delivery!(state, target, event, text, attach_pdf)
     with_delivery_locks(target) do
-      state.local!(event, guard: -> { permitted_event?(event) }) do
+      state.local!(event, guard: -> { permitted_event?(event) },
+                          receipt_guard: ->(receipt) { valid_message_receipt?(receipt, target, state, event) }) do
         conversation = find_scoped_conversation(target)
         next state.block!(event, 'changed_or_inaccessible_billing_conversation') unless conversation
         next state.block!(event, 'pending_pdf') if attach_pdf && !@invoice.pdf_file.attached?
 
-        materialize_message!(conversation, text, attach_pdf)
+        materialize_message!(conversation, text, attach_pdf, state, event).merge('invoice_id' => @invoice.id,
+                                                                                 'payment_event_id' => @payment_event&.id)
       end
     end
   end
@@ -89,15 +107,35 @@ class Billing::NotificationService
     end
   end
 
-  def materialize_message!(conversation, text, attach_pdf)
+  def materialize_message!(conversation, text, attach_pdf, state, event)
     msg = conversation.messages.new(account: conversation.account, inbox: conversation.inbox, message_type: :outgoing, content: text)
+    msg.content_attributes = { 'billing_completion_v1' => message_binding(state, event) }
     attach_invoice_pdf_to_message(msg) if attach_pdf
     msg.save!
     { 'message_id' => msg.id, 'meaning' => 'materialized' }
   end
 
+  def message_binding(state, event)
+    {
+      'invoice_id' => @invoice.id, 'payment_event_id' => @payment_event&.id,
+      'operation_key' => state.step(event)['operation_key'], 'input_digest' => state.metadata['input_digest']
+    }
+  end
+
+  def valid_message_receipt?(receipt, target, state, event)
+    return false unless receipt['message_id'].is_a?(Integer) && receipt['meaning'] == 'materialized' &&
+                        receipt['invoice_id'] == @invoice.id && receipt['payment_event_id'] == @payment_event&.id
+
+    message = Message.find_by(id: receipt['message_id'], conversation_id: target['id'], account_id: target['account_id'],
+                              inbox_id: target['inbox_id'], message_type: :outgoing)
+    message && message.content_attributes['billing_completion_v1'] == message_binding(state, event)
+  end
+
   def permitted_event?(event)
-    expected_account_id = Billing::CompletionState.new(@invoice).context['account_id']
+    invoice_state = Billing::CompletionState.new(@invoice)
+    return false unless invoice_state.valid!('pdf')
+
+    expected_account_id = invoice_state.context['account_id']
     return false unless expected_account_id == @invoice.account_id
     return false if @invoice.cancelled?
     return @invoice.paid? && matched_payment_event? if event == 'payment_confirmed'
@@ -106,7 +144,11 @@ class Billing::NotificationService
   end
 
   def matched_payment_event?
-    @payment_event.status == 'matched' && @payment_event.billing_invoice_id == @invoice.id && @payment_event.account_id == @invoice.account_id
+    event_context = Billing::CompletionState.new(@payment_event).context
+    invoice_state = Billing::CompletionState.new(@invoice)
+    event_context['invoice_id'] == @invoice.id && event_context['account_id'] == @invoice.account_id &&
+      event_context['invoice_digest'] == invoice_state.metadata['input_digest'] &&
+      @payment_event.status == 'matched' && @payment_event.billing_invoice_id == @invoice.id && @payment_event.account_id == @invoice.account_id
   end
 
   def find_scoped_conversation(target)

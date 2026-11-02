@@ -4,6 +4,7 @@ class Billing::GenerateUpcomingInvoicesJob < ApplicationJob
   queue_as :scheduled_jobs
 
   def perform
+    Billing::BccRecurringChargeJob.new.resume_approved!
     return unless Billing::Config.autobilling_enabled?
 
     resume_managed_rows!

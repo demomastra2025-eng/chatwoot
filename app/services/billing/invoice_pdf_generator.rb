@@ -16,7 +16,16 @@ class Billing::InvoicePdfGenerator # rubocop:disable Metrics/ClassLength
     @invoice = invoice
     @profile = invoice.account&.billing_account_profile
     state = Billing::CompletionState.new(invoice)
-    @document = state.context['document'].to_h if state.managed?
+    if state.managed?
+      raise ArgumentError, 'Invalid invoice completion snapshot' unless state.valid!('pdf')
+
+      @document = state.context['document']
+      # Only the input adapter changes; rendering/layout/font/serialization stay unchanged.
+      @invoice = invoice.dup
+      @invoice.assign_attributes(state.context['invoice_core'])
+      @invoice.due_on = Date.iso8601(state.context.fetch('document_due_on'))
+      @invoice.created_at = invoice.created_at
+    end
     @font = font
     @used_glyphs = {}
   end

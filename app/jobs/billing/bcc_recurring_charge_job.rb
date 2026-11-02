@@ -3,10 +3,12 @@
 class Billing::BccRecurringChargeJob < ApplicationJob
   MAX_ATTEMPTS = 3
   RETRY_INTERVAL = 24.hours
+  DECLINED_STATUSES = %w[declined rejected failed insufficient_funds].freeze
 
   queue_as :scheduled_jobs
 
   def perform
+    resume_approved!
     return unless Billing::Config.autobilling_enabled? && Billing::Config.bcc_ecom_configured?
 
     ensure_due_autopay_invoices!
@@ -14,6 +16,20 @@ class Billing::BccRecurringChargeJob < ApplicationJob
       attempt_charge_for!(invoice)
     rescue StandardError => e
       Rails.logger.error("[Billing::BccRecurringChargeJob] invoice=#{invoice.invoice_number} error: #{e.class}: #{e.message}")
+    end
+  end
+
+  # Recovery of a debit already performed is local settlement, not permission
+  # for another debit. Neither provider availability nor current consent gates it.
+  def resume_approved!
+    invoices = Billing::Invoice.where(status: Billing::Invoice::OPEN_STATUSES)
+                               .where("metadata -> 'completion_v1' ->> 'managed' = 'true'")
+                               .where('recurring_attempts_count > 0')
+    ceiling = invoices.maximum(:id)
+    invoices.where('id <= ?', ceiling).find_each do |invoice|
+      attempt_charge_for!(invoice, recovery_only: true)
+    rescue StandardError => e
+      Rails.logger.warn("[Billing::BccRecurringChargeJob] recovery invoice=#{invoice.id} error_class=#{e.class}")
     end
   end
 
@@ -47,8 +63,8 @@ class Billing::BccRecurringChargeJob < ApplicationJob
                     .includes(account: :billing_account_profile)
   end
 
-  def attempt_charge_for!(invoice)
-    attempt_num, card_token, token, recorded = claim_recurring_attempt(invoice)
+  def attempt_charge_for!(invoice, recovery_only: false)
+    attempt_num, card_token, token, recorded = claim_recurring_attempt(invoice, recovery_only: recovery_only)
     return unless attempt_num
 
     res = recorded || execute_ecom_charge(invoice, card_token)
@@ -68,34 +84,41 @@ class Billing::BccRecurringChargeJob < ApplicationJob
                                                   receipt: Billing.sanitize_sensitive_payload(res).deep_stringify_keys)
   end
 
-  def claim_recurring_attempt(invoice)
+  def claim_recurring_attempt(invoice, recovery_only: false)
     Account.find(invoice.account_id).with_lock('FOR NO KEY UPDATE') do
       invoice.lock!
       state = Billing::CompletionState.new(invoice)
-      profile = Billing::AccountProfile.find_by(account_id: invoice.account_id)
-      return nil unless claimable_invoice?(invoice, state, profile)
+      return nil unless recoverable_invoice?(invoice, state)
 
       previous_num = invoice.recurring_attempts_count
       recorded = existing_charge_result(invoice, state)
       return nil if recorded == :blocked
-      return [previous_num, nil, nil, recorded] if recorded
-      return nil unless next_attempt_due?(invoice)
+      return [previous_num, nil, nil, recorded] if recorded && (!recovery_only || recorded[:approved])
+      return nil if recovery_only
 
-      next_attempt = previous_num + 1
-      token = state.claim!("recurring_charge_#{next_attempt}", configured: Billing::Config.bcc_ecom_configured?)
-      return nil unless token
-
-      invoice.update!(recurring_attempts_count: next_attempt, last_recurring_attempt_at: Time.current)
-      [next_attempt, profile.bcc_card_token, token, nil]
+      claim_new_attempt(invoice, state)
     end
+  end
+
+  def recoverable_invoice?(invoice, state)
+    invoice.open? && state.managed? && state.valid!('pdf')
+  end
+
+  def claim_new_attempt(invoice, state)
+    profile = Billing::AccountProfile.find_by(account_id: invoice.account_id)
+    configured = Billing::Config.autobilling_enabled? && Billing::Config.bcc_ecom_configured?
+    return nil unless configured && chargeable_profile?(profile) && next_attempt_due?(invoice)
+
+    next_attempt = invoice.recurring_attempts_count + 1
+    token = state.claim!("recurring_charge_#{next_attempt}", configured: configured)
+    return nil unless token
+
+    invoice.update!(recurring_attempts_count: next_attempt, last_recurring_attempt_at: Time.current)
+    [next_attempt, profile.bcc_card_token, token, nil]
   end
 
   def chargeable_profile?(profile)
     profile.present? && profile.billing_enabled? && profile.autopay_enabled? && profile.bcc_card_token.present?
-  end
-
-  def claimable_invoice?(invoice, state, profile)
-    invoice.open? && state.managed? && chargeable_profile?(profile)
   end
 
   def next_attempt_due?(invoice)
@@ -104,23 +127,35 @@ class Billing::BccRecurringChargeJob < ApplicationJob
 
   def existing_charge_result(invoice, state)
     number = invoice.recurring_attempts_count
-    previous = state.step("recurring_charge_#{number}")
-    if number.positive? && previous.empty?
-      state.hold!("recurring_charge_#{number}", 'missing_recurring_receipt')
+    return nil if number.zero?
+
+    name = "recurring_charge_#{number}"
+    return :blocked unless state.valid!(name)
+
+    previous = state.step(name)
+    return :blocked if blocked_charge?(state, name, previous)
+
+    recorded = verified_charge_receipt(previous)
+    unless recorded
+      state.hold!(name, 'missing_or_invalid_recurring_receipt')
       return :blocked
     end
-    if previous['state'].in?(%w[running needs_review])
-      state.claim!("recurring_charge_#{number}", configured: true) if previous['state'] == 'running'
-      return :blocked
-    end
-    completed_charge_result(previous, number)
+    recorded if recorded[:approved] || number >= MAX_ATTEMPTS
   end
 
-  def completed_charge_result(previous, number)
-    return unless previous['state'] == 'completed' && previous['receipt'].is_a?(Hash)
+  def blocked_charge?(state, name, previous)
+    state.claim!(name, configured: true) if previous['state'] == 'running'
+    previous['state'].in?(%w[running needs_review])
+  end
+
+  def verified_charge_receipt(previous)
+    return nil unless previous['state'] == 'completed' && previous['receipt'].is_a?(Hash)
 
     recorded = previous['receipt'].deep_symbolize_keys
-    recorded if recorded[:approved] || number >= MAX_ATTEMPTS
+    validate_charge_response!(recorded)
+    recorded
+  rescue Billing::BccEcomClient::ApiError
+    nil
   end
 
   def recently_attempted?(invoice)
@@ -134,9 +169,23 @@ class Billing::BccRecurringChargeJob < ApplicationJob
   end
 
   def validate_charge_response!(res)
-    known_decline = res[:status].to_s.in?(%w[declined rejected failed insufficient_funds]) && res[:raw_payload].present?
-    valid = res[:approved] == true ? res[:bank_reference_id].present? : known_decline
+    raw = res.is_a?(Hash) && res[:raw_payload]
+    raise Billing::BccEcomClient::ApiError, 'Ambiguous recurring response' unless raw.is_a?(Hash) && raw.present?
+
+    raw = raw.stringify_keys
+    status = (raw['status'] || raw['response_code']).to_s.strip.downcase
+    valid = approved_charge?(res, raw, status) || declined_charge?(res, raw, status)
     raise Billing::BccEcomClient::ApiError, 'Ambiguous recurring response' unless valid
+  end
+
+  def approved_charge?(res, raw, status)
+    res[:approved] == true && res[:bank_reference_id].is_a?(String) && res[:bank_reference_id].present? &&
+      raw['approved'] != false && DECLINED_STATUSES.exclude?(status) &&
+      (raw['approved'] == true || Billing::BccEcomClient::APPROVED_STATUSES.include?(status))
+  end
+
+  def declined_charge?(res, raw, status)
+    res[:approved] == false && raw['approved'] != true && DECLINED_STATUSES.include?(status)
   end
 
   def settle_approved_charge!(invoice, res)

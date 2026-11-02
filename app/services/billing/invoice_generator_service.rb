@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class Billing::InvoiceGeneratorService
+class Billing::InvoiceGeneratorService # rubocop:disable Metrics/ClassLength
   MAX_NUMBER_RETRIES = 5
 
   def initialize(account:, period_start: nil, due_on: nil, usage_period_month: nil, notify: true)
@@ -59,6 +59,8 @@ class Billing::InvoiceGeneratorService
     return false unless @profile
 
     @period_start = @requested_period_start || @profile.paid_until || Billing.today_almaty
+    return false if @automatic_through && !@period_start.in?(Billing.today_almaty..@automatic_through)
+
     @period_end = @profile.next_period_end_from(@period_start)
     @due_on = @requested_due_on || @period_start
     true
@@ -107,7 +109,7 @@ class Billing::InvoiceGeneratorService
   end
 
   def invoice_attributes(inv_number, calc)
-    {
+    attributes = {
       account: @account, invoice_number: inv_number, status: 'issued',
       period_start: @period_start, period_end: @period_end, due_on: @due_on,
       usage_period_month: calc.usage_period_month, currency: Billing::DEFAULT_CURRENCY,
@@ -120,17 +122,26 @@ class Billing::InvoiceGeneratorService
       amount_minor: calc.amount_minor, partner_commission_base_minor: calc.partner_commission_base_minor,
       payer_tax_id: @profile.effective_tax_id, payer_legal_name: @profile.effective_legal_name,
       knp_code: @profile.knp_code, line_items: calc.line_items,
-      payment_purpose: "Оплата за доступ к платформе OneLink по счёту № #{inv_number} (без НДС)",
-      metadata: Billing::CompletionState.invoice_metadata(account: @account, profile: @profile, invoice_number: inv_number, notify: @notify)
+      payment_purpose: "Оплата за доступ к платформе OneLink по счёту № #{inv_number} (без НДС)"
     }
+    attributes[:metadata] = Billing::CompletionState.invoice_metadata(
+      account: @account, profile: @profile, notify: @notify, core: attributes.merge(account_id: @account.id)
+    )
+    attributes
   end
 
-  def attach_pdf!(invoice)
+  def attach_pdf!(invoice) # rubocop:disable Metrics/CyclomaticComplexity
     state = Billing::CompletionState.new(invoice)
     return state.hold!('pdf', 'legacy_without_checkpoint') unless state.managed?
     return if invoice.cancelled?
+    return false unless state.valid!('pdf')
     return state.hold!('pdf', 'missing_document_snapshot') unless pdf_snapshot_present?(state, invoice)
-    return state.local!('pdf') { { 'blob_id' => invoice.pdf_file.blob.id } } if invoice.pdf_file.attached?
+
+    if state.step('pdf')['state'] == 'completed' || invoice.pdf_file.attached?
+      return state.local!('pdf', receipt_guard: ->(receipt) { invoice.pdf_file.attached? && receipt['blob_id'] == invoice.pdf_file.blob.id }) do
+        { 'blob_id' => invoice.pdf_file.blob.id }
+      end
+    end
 
     prepare_pdf!(invoice, state)
   end

@@ -37,6 +37,8 @@ class Billing::BccOpenApiClient
   end
 
   def register_invoice(invoice)
+    raise ArgumentError, 'Invalid invoice completion snapshot' unless Billing::CompletionState.new(invoice).valid!('bcc_invoice')
+
     token = fetch_access_token
     uri = build_https_uri('/invoices')
     req = Net::HTTP::Post.new(
@@ -80,7 +82,10 @@ class Billing::BccOpenApiClient
   end
 
   def register_invoice_payload(invoice)
-    document = Billing::CompletionState.new(invoice).context['document'].to_h
+    state = Billing::CompletionState.new(invoice)
+    raise ArgumentError, 'Invalid invoice completion snapshot' unless state.valid!('bcc_invoice')
+
+    document = state.context['document'].to_h
     {
       invoice_number: invoice.invoice_number,
       supplier_iban: document['supplier_iban'],
@@ -91,7 +96,7 @@ class Billing::BccOpenApiClient
       currency: invoice.currency,
       knp: invoice.knp_code,
       payment_purpose: invoice.payment_purpose,
-      due_on: invoice.due_on.iso8601
+      due_on: state.context.fetch('document_due_on')
     }
   end
 

@@ -119,7 +119,7 @@ RSpec.describe Billing::CompletionState do
     service = Billing::NotificationService.new(invoice: invoice)
     expect(service.deliver_dunning_reminder!(stage: 't_zero')).to be(false)
     expect(conversation.messages.count).to eq(0)
-    expect(step(invoice, 'dunning_t_zero')).to be_nil
+    expect(step(invoice, 'dunning_t_zero')['state']).to eq('pending')
     allow_any_instance_of(described_class).to receive(:write!).and_call_original
     expect(service.deliver_dunning_reminder!(stage: 't_zero')).to be(true)
     message_id = step(invoice, 'dunning_t_zero').dig('receipt', 'message_id')
@@ -255,15 +255,20 @@ RSpec.describe Billing::CompletionState do
     expect(step(invoice, 'bcc_invoice')['state']).to eq('needs_review')
     expect(state.finish!('bcc_invoice', token, receipt: { 'provider_id' => 'late' }, attributes: { bcc_external_invoice_id: 'late' })).to be(false)
     expect(invoice.reload.bcc_external_invoice_id).to be_nil
-    first = state.claim!('prepared_pdf_probe', configured: true, irreversible: false)
+    fresh = Billing::InvoiceGeneratorService.new(account: account, period_start: day + 1.month, notify: false)
+    allow(Billing::InvoicePdfGenerator).to receive(:new).and_raise('stop before render')
+    expect { fresh.perform }.to raise_error('stop before render')
+    state = described_class.new(Billing::Invoice.last)
+    state_record = Billing::Invoice.last
+    first = state.claim!('pdf', configured: true, irreversible: false)
     second = nil
     travel 6.minutes do
-      second = state.claim!('prepared_pdf_probe', configured: true, irreversible: false)
+      second = state.claim!('pdf', configured: true, irreversible: false)
     end
-    expect(state.finish!('prepared_pdf_probe', first, receipt: { 'blob_id' => 1 })).to be(false)
-    expect(state.finish!('prepared_pdf_probe', second, receipt: { 'blob_id' => 2 })).to be(true)
-    expect(state.finish!('prepared_pdf_probe', first, receipt: { 'blob_id' => 1 })).to be(false)
-    expect(step(invoice, 'prepared_pdf_probe').dig('receipt', 'blob_id')).to eq(2)
+    expect(state.finish!('pdf', first, receipt: { 'blob_id' => 1 })).to be(false)
+    expect(state.finish!('pdf', second, receipt: { 'blob_id' => 2 })).to be(true)
+    expect(state.finish!('pdf', first, receipt: { 'blob_id' => 1 })).to be(false)
+    expect(step(state_record, 'pdf').dig('receipt', 'blob_id')).to eq(2)
   end
 
   it 'holds unknown BCC POST outcomes and invalid responses without a second POST; configuration is retryable' do
@@ -501,6 +506,7 @@ RSpec.describe Billing::CompletionState do
     profile.update!(autopay_enabled: true, bcc_card_token: 'synthetic-card')
     invoice = generate
     state = described_class.new(invoice)
+    invoice.update!(recurring_attempts_count: 1)
     token = state.claim!('recurring_charge_2', configured: true)
     state.finish!('recurring_charge_2', token, receipt: { 'approved' => false, 'status' => 'declined', 'raw_payload' => { 'status' => 'declined' } })
     invoice.update!(due_on: Billing.today_almaty, recurring_attempts_count: 2, last_recurring_attempt_at: 2.days.ago)

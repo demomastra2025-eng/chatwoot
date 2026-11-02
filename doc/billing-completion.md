@@ -41,7 +41,10 @@ Message и его marker сохраняются одной транзакцие�
 доставки не разрешает создавать новый Message. Отсутствующий, чужой или изменённый billing
 conversation блокирует уведомление; автоматически выбрать другой диалог нельзя.
 
-Порядок блокировок: identity → Contact по ID → все Account по ID (`FOR NO KEY UPDATE`) →
+Для review task сначала owner User `FOR SHARE`, затем все Account по ID и Event.
+Это совместимо с Task FK `KEY SHARE` и блокирует lifecycle User `FOR UPDATE` до Account.
+Текущие owner config и единственное членство workspace проверяются повторно; после Account
+более сильный User lock не берётся. Для сообщений порядок: identity → Contact по ID → все Account по ID (`FOR NO KEY UPDATE`) →
 Invoice → Event → Profile. Все обычные Profile `save!`/`update!` берут Account перед
 неявным Profile UPDATE. Старое зеркало срока в Account сохраняется. SQL helper не берёт
 новых Contact/Account из-под Invoice/Event. Внешний IO внутри открытой SQL-транзакции запрещён.
@@ -61,3 +64,41 @@ Profile и повторная проверка под Account lock закрыв�
 Проверки используют только собственную пустую тестовую PostgreSQL БД и Redis namespace,
 синтетические реквизиты и WebMock с запретом внешних соединений. Независимое ревью и
 отдельный runtime/data/release допуск обязательны до включения на стендах.
+
+## Проверка разрешения и сохранённых результатов
+
+`completion_v1.format=sha256-canonical-json-v1` задаёт детерминированный SHA256: ключи
+объектов сортируются рекурсивно, порядок массивов сохраняется. JSONB-перестановка ключей
+не меняет digest. Формат, scope, digest контекста, operation key, тип намерения и состояние
+каждого шага проверяются до IO и повторно при CAS. Старый hash без доказуемого формата —
+`needs_review`; автоматического grandfather нет (первый patch не активировался).
+
+Исходный финансовый/document core Invoice и identity/core Event связаны с реальными
+строками. Event дополнительно хранит invoice ID, account ID и digest контекста Invoice.
+Подмена ссылки или core блокирует материализацию. Номер, период, сумма, валюта, стороны,
+позиции и target берутся из прежнего сохранённого snapshot, без текущего Profile/Config.
+Исходный due_on документа сохраняется отдельно от изменяемого срока планирования Invoice.
+PDF меняет только адаптер входа: layout, renderer, шрифты и serializer не меняются.
+
+Все известные уведомления (в том числе dunning/fallback) получают typed checkpoint при
+создании Invoice. Отсутствующий built-in не синтезируется. Новое recurring намерение
+создаётся только для следующего номера попытки, под Account/Invoice lock; предыдущая
+необратимая попытка должна иметь проверяемый outcome. Receipt без Hash, явного bool,
+provider proof, банковского reference для approval или с неизвестным state блокирует debit.
+Синтетический normalizer status не доказывает отказ: разрешение следующей попытки даёт
+только явный decline в исходных полях ответа, по уже используемому контракту клиента.
+
+Completed Message receipt проверяет конкретную outgoing строку, её conversation/account/
+inbox и сохранённую billing identity операции в Message.content_attributes. Task receipt
+проверяет строку, owner workspace/creator/assignee и точный idempotency key. Удаление,
+чужая строка и повреждённый receipt дают false/hold; новый Message/Task не создаётся.
+
+Сохранённый approved charge завершает локальный settlement независимо от последующего
+отключения billing/autopay/card/global/provider configuration. Оба существующих scheduled
+caller сначала восстанавливают эти ограниченные по ID записи; ни нового POST, ни новой
+цены/финансовой записи/второго продления это не разрешает. Для нового debit сохраняются
+все consent/global/provider gates. Automatic режим под Account проверяет и Profile, и
+фактический запрошенный period_start в своём окне; ручная генерация сохраняет прежний смысл.
+
+Повреждённый steps не передаётся в jsonb_each: CASE выбирает объект, а malformed managed
+строка обрабатывается отдельно и не срывает восстановление следующего Invoice.

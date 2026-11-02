@@ -138,14 +138,43 @@ class Billing::PaymentMatcher # rubocop:disable Metrics/ClassLength
   end
 
   def complete_review_task!(event, state, invoice)
-    owner_account_id = OwnerFinance::AccessPolicy.workspace_account_id
+    owner_context = { 'user_id' => OwnerFinance::AccessPolicy.owner_user_id, 'account_id' => OwnerFinance::AccessPolicy.workspace_account_id }
     ActiveRecord::Base.transaction do
-      Account.where(id: [event.account_id, owner_account_id].compact.uniq.sort).order(:id).lock('FOR NO KEY UPDATE').load
-      state.local!('review_task') do
-        task = create_owner_review_task!(event.review_reason, invoice)
-        task ? { 'task_id' => task.id } : state.block!('review_task', 'pending_configuration')
+      # Lifecycle writers take User FOR UPDATE before Account. SHARE is also
+      # compatible with the Task FK's KEY SHARE, with no later User upgrade.
+      owner = User.where(id: owner_context['user_id']).lock('FOR SHARE').first
+      Account.where(id: [event.account_id, owner_context['account_id']].compact.uniq.sort).order(:id).lock('FOR NO KEY UPDATE').load
+      unless owner && exclusive_review_workspace?(owner_context)
+        next state.hold!('review_task', 'changed_review_owner') if state.step('review_task')['state'] == 'completed'
+
+        next state.block!('review_task', 'pending_configuration')
       end
+      materialize_review_task!(event, state, invoice, owner_context)
     end
+  end
+
+  def exclusive_review_workspace?(owner)
+    AccountUser.where(account_id: owner['account_id']).pluck(:user_id) == [owner['user_id']]
+  end
+
+  def current_review_owner?(state, owner)
+    owner['user_id'] == OwnerFinance::AccessPolicy.owner_user_id && owner['account_id'] == OwnerFinance::AccessPolicy.workspace_account_id &&
+      state.context['review_owner'] == owner && exclusive_review_workspace?(owner)
+  end
+
+  def materialize_review_task!(event, state, invoice, owner)
+    state.local!('review_task', guard: -> { current_review_owner?(state, owner) },
+                                receipt_guard: ->(receipt) { valid_review_receipt?(event, receipt, owner['account_id'], owner['user_id']) }) do
+      task = create_owner_review_task!(event.review_reason, invoice)
+      task ? { 'task_id' => task.id } : state.block!('review_task', 'pending_configuration')
+    end
+  end
+
+  def valid_review_receipt?(event, receipt, account_id, user_id)
+    receipt['task_id'].is_a?(Integer) && Crm::Task.exists?(
+      id: receipt['task_id'], account_id: account_id, assignee_id: user_id, creator_id: user_id,
+      idempotency_key: "billing:payment_review:#{event.source}:#{event.bank_reference_id}"
+    )
   end
 
   def record_needs_review!(reason:, invoice: nil, account_id: nil)
@@ -159,20 +188,28 @@ class Billing::PaymentMatcher # rubocop:disable Metrics/ClassLength
     Billing::PaymentEvent.create!(
       event_attributes.merge(
         status: 'needs_review', review_reason: reason, billing_invoice: invoice,
-        account_id: account_id, metadata: build_event_metadata(invoice: invoice, overpaid: false)
+        account_id: account_id, metadata: build_event_metadata(invoice: invoice, overpaid: false, account_id: account_id)
       )
     )
   end
 
-  def build_event_metadata(invoice:, overpaid:, matched: false, paid_until: nil)
+  def build_event_metadata(invoice:, overpaid:, matched: false, paid_until: nil, account_id: invoice&.account_id)
     meta = overpaid && invoice ? { 'overpayment_minor' => @amount_minor - invoice.amount_minor, 'invoice_amount_minor' => invoice.amount_minor } : {}
     meta['unsupported_currency'] = @currency unless OwnerFinance::SUPPORTED_CURRENCIES.include?(@currency)
-    meta.merge(event_completion_metadata(invoice, overpaid, matched, paid_until))
+    meta.merge(event_completion_metadata(invoice, overpaid, matched, paid_until, account_id))
   end
 
-  def event_completion_metadata(invoice, overpaid, matched, paid_until)
+  def event_completion_metadata(invoice, overpaid, matched, paid_until, account_id)
     state = Billing::CompletionState.new(invoice) if invoice
-    context = invoice ? { 'invoice_id' => invoice.id } : {}
+    context = {
+      'invoice_id' => invoice&.id, 'account_id' => account_id,
+      'event_core' => { 'source' => @source, 'bank_reference_id' => @bank_reference_id,
+                        'amount_minor' => @amount_minor, 'currency' => @currency,
+                        'account_id' => account_id, 'billing_invoice_id' => invoice&.id },
+      'review_owner' => { 'user_id' => OwnerFinance::AccessPolicy.owner_user_id,
+                          'account_id' => OwnerFinance::AccessPolicy.workspace_account_id }
+    }
+    context['invoice_digest'] = state.metadata['input_digest'] if state
     context['paid_until'] = paid_until.iso8601 if paid_until
     checkpoint = Billing::CompletionState.metadata(scope: "event:#{@source}:#{@bank_reference_id}", context: context,
                                                    steps: %w[payment_confirmed review_task])
