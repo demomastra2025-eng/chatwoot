@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_11_02_093000) do
+ActiveRecord::Schema[7.2].define(version: 2026_11_02_103000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -637,6 +637,64 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_02_093000) do
     t.check_constraint "foundation_state::text = 'legacy_pending'::text OR billing_plan_id IS NULL AND billing_plan_price_id IS NULL AND jsonb_typeof(plan_snapshot) = 'object'::text AND jsonb_typeof(price_snapshot) = 'object'::text AND plan_snapshot @> '{\"source\": \"account_plans\", \"schema_version\": 1}'::jsonb AND price_snapshot @> '{\"source\": \"account_plans\", \"currency\": \"KZT\", \"schema_version\": 1}'::jsonb AND plan_snapshot ?& ARRAY['catalog_version'::text, 'tariff'::text, 'modules'::text, 'features'::text, 'limits'::text, 'limit_sources'::text] AND price_snapshot ?& ARRAY['catalog_version'::text, 'tariff'::text, 'pricing'::text] AND (plan_snapshot -> 'catalog_version'::text) = (price_snapshot -> 'catalog_version'::text) AND (plan_snapshot -> 'tariff'::text) = (price_snapshot -> 'tariff'::text) AND jsonb_typeof(plan_snapshot -> 'limits'::text) = 'object'::text AND jsonb_typeof(plan_snapshot -> 'limit_sources'::text) = 'object'::text AND jsonb_typeof(price_snapshot -> 'pricing'::text) = 'object'::text", name: "chk_billing_subscriptions_snapshot_contract"
     t.check_constraint "foundation_state::text = ANY (ARRAY['ready'::character varying, 'legacy_pending'::character varying]::text[])", name: "chk_billing_subscriptions_foundation_state"
     t.check_constraint "status::text = ANY (ARRAY['incomplete'::character varying::text, 'trialing'::character varying::text, 'active'::character varying::text, 'past_due'::character varying::text, 'grace_period'::character varying::text, 'suspended'::character varying::text, 'canceled'::character varying::text])", name: "chk_billing_subscriptions_status"
+  end
+
+  create_table "billing_usage_periods", force: :cascade do |t|
+    t.bigint "billing_account_id", null: false
+    t.bigint "billing_subscription_id", null: false
+    t.date "month", null: false
+    t.jsonb "plan_snapshot", default: {}, null: false
+    t.jsonb "price_snapshot", default: {}, null: false
+    t.datetime "anchor_starts_at", null: false
+    t.datetime "anchor_ends_at", null: false
+    t.bigint "dialogs_count", default: 0, null: false
+    t.bigint "call_seconds", default: 0, null: false
+    t.bigint "revision", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["billing_account_id", "month"], name: "idx_billing_usage_period_owner_month", unique: true
+    t.index ["billing_account_id"], name: "index_billing_usage_periods_on_billing_account_id"
+    t.index ["billing_subscription_id"], name: "index_billing_usage_periods_on_billing_subscription_id"
+    t.check_constraint "EXTRACT(day FROM month) = 1::numeric", name: "chk_billing_usage_period_month"
+    t.check_constraint "anchor_ends_at > anchor_starts_at", name: "chk_billing_usage_period_anchor"
+    t.check_constraint "dialogs_count >= 0 AND call_seconds >= 0 AND revision >= 0", name: "chk_billing_usage_period_units"
+    t.check_constraint "jsonb_typeof(plan_snapshot) = 'object'::text AND jsonb_typeof(price_snapshot) = 'object'::text", name: "chk_billing_usage_period_terms"
+  end
+
+  create_table "billing_usage_projections", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "kind", null: false
+    t.bigint "subject_id", null: false
+    t.bigint "version", null: false
+    t.string "fingerprint", limit: 64, null: false
+    t.jsonb "sources", default: {}, null: false
+    t.jsonb "allocations", default: {}, null: false
+    t.jsonb "window_sources", default: [], null: false
+    t.bigint "retired_into_id"
+    t.datetime "retired_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "kind", "subject_id"], name: "idx_billing_usage_projection_subject", unique: true
+    t.index ["account_id"], name: "index_billing_usage_projections_on_account_id"
+    t.check_constraint "(kind::text = ANY (ARRAY['contact'::character varying, 'call'::character varying]::text[])) AND subject_id > 0 AND version > 0", name: "chk_billing_usage_projection_identity"
+    t.check_constraint "(retired_at IS NULL) = (retired_into_id IS NULL)", name: "chk_billing_usage_projection_retirement"
+    t.check_constraint "jsonb_typeof(sources) = 'object'::text AND jsonb_typeof(allocations) = 'object'::text AND jsonb_typeof(window_sources) = 'array'::text", name: "chk_billing_usage_projection_payload"
+  end
+
+  create_table "billing_usage_revisions", force: :cascade do |t|
+    t.bigint "billing_usage_period_id", null: false
+    t.bigint "billing_usage_projection_id", null: false
+    t.bigint "revision", null: false
+    t.bigint "projection_version", null: false
+    t.bigint "dialogs_delta", null: false
+    t.bigint "seconds_delta", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["billing_usage_period_id", "revision"], name: "idx_billing_usage_revision_order", unique: true
+    t.index ["billing_usage_period_id"], name: "index_billing_usage_revisions_on_billing_usage_period_id"
+    t.index ["billing_usage_projection_id", "projection_version", "billing_usage_period_id"], name: "idx_billing_usage_revision_operation", unique: true
+    t.index ["billing_usage_projection_id"], name: "index_billing_usage_revisions_on_billing_usage_projection_id"
+    t.check_constraint "revision > 0 AND projection_version > 0 AND (dialogs_delta <> 0 OR seconds_delta <> 0)", name: "chk_billing_usage_revision_nonzero"
   end
 
   create_table "bulk_action_runs", force: :cascade do |t|
@@ -4542,6 +4600,12 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_02_093000) do
   add_foreign_key "billing_subscriptions", "billing_accounts"
   add_foreign_key "billing_subscriptions", "billing_plan_prices"
   add_foreign_key "billing_subscriptions", "billing_plans"
+  add_foreign_key "billing_usage_periods", "billing_accounts"
+  add_foreign_key "billing_usage_periods", "billing_subscriptions"
+  add_foreign_key "billing_usage_projections", "accounts"
+  add_foreign_key "billing_usage_projections", "billing_usage_projections", column: "retired_into_id"
+  add_foreign_key "billing_usage_revisions", "billing_usage_periods"
+  add_foreign_key "billing_usage_revisions", "billing_usage_projections"
   add_foreign_key "bulk_action_runs", "accounts"
   add_foreign_key "bulk_action_runs", "users"
   add_foreign_key "campaign_audience_imports", "accounts", on_delete: :cascade
