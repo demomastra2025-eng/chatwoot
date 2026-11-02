@@ -8,6 +8,10 @@ class Captain::CapabilitySurfaces
   McpContext = Struct.new(:assistant, :account, :scope_name, keyword_init: true)
 
   def self.compare(assistant, scopes)
+    capture(assistant, scopes).fetch(:differences)
+  end
+
+  def self.capture(assistant, scopes)
     original = assistant.config
     before = new(assistant).snapshot
     canonical = {
@@ -17,11 +21,12 @@ class Captain::CapabilitySurfaces
     begin
       assistant.config = original.to_h.merge(Captain::Capabilities::KEY => canonical)
       after = new(assistant).snapshot
-      before.each_with_object({}) do |(surface, ids), differences|
+      differences = before.each_with_object({}) do |(surface, ids), differences|
         added = after.fetch(surface) - ids
         removed = ids - after.fetch(surface)
         differences[surface] = { added: added, removed: removed } if added.any? || removed.any?
       end
+      { before: before, after: after, differences: differences }
     ensure
       assistant.config = original
     end

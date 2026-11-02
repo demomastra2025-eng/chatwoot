@@ -16,13 +16,21 @@ class Captain::ToolAccessMigrationPlan
   end
 
   def plan
-    scopes = Captain::ToolAccess::SCOPE_ORDER.index_with { |scope| scope_plan(scope) }
+    inventory = self.inventory
+    scopes = inventory[:scopes]
     differences = Captain::CapabilitySurfaces.compare(@assistant, scopes)
-    blockers = blockers_for(scopes)
+    blockers = inventory[:blockers]
     blockers << 'canonical_surface_difference' if differences.any?
     result = { assistant_id: @assistant.id, status: status(blockers), blockers: blockers, scopes: scopes, unknown_scopes: unknown_scopes,
                surface_differences: differences }
     result.merge(source_digest: Captain::Capabilities.digest([@assistant.config, @assistant.description, result]))
+  end
+
+  # Shared inventory for explicit policy preparation; ordinary plan still checks
+  # equivalence against its strict candidate before advertising readiness.
+  def inventory
+    scopes = Captain::ToolAccess::SCOPE_ORDER.index_with { |scope| scope_plan(scope) }
+    { scopes: scopes, blockers: blockers_for(scopes) }
   end
 
   private
