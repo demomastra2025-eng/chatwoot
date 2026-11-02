@@ -41,20 +41,31 @@ class Billing::DunningJob < ApplicationJob
 
   def send_gentle_reminder_if_due!(invoice, today)
     if today == invoice.due_on && %w[t_zero t_plus_3].exclude?(invoice.last_reminder_stage)
-      Billing::NotificationService.new(invoice: invoice).deliver_dunning_reminder!(stage: 't_zero')
-      invoice.update!(last_reminder_stage: 't_zero')
+      update_materialized_stage!(invoice, 't_zero')
     elsif today == invoice.due_on - 2.days && invoice.last_reminder_stage.blank?
-      Billing::NotificationService.new(invoice: invoice).deliver_dunning_reminder!(stage: 't_minus_2')
-      invoice.update!(last_reminder_stage: 't_minus_2')
+      update_materialized_stage!(invoice, 't_minus_2')
     end
   end
 
   def escalate_overdue!(invoice, profile)
-    invoice.update!(status: 'overdue', last_reminder_stage: 't_plus_3') unless invoice.overdue? && invoice.last_reminder_stage == 't_plus_3'
-    if !profile.payment_overdue_banner? || profile.overdue_invoice_number != invoice.invoice_number
-      profile.update!(payment_overdue_banner: true, overdue_invoice_number: invoice.invoice_number)
+    Account.find(invoice.account_id).with_lock('FOR NO KEY UPDATE') do
+      invoice.with_lock do
+        return unless invoice.open?
+
+        invoice.update!(status: 'overdue', last_reminder_stage: 't_plus_3') unless invoice.overdue? && invoice.last_reminder_stage == 't_plus_3'
+        profile.reload
+        if !profile.payment_overdue_banner? || profile.overdue_invoice_number != invoice.invoice_number
+          profile.update!(payment_overdue_banner: true, overdue_invoice_number: invoice.invoice_number)
+        end
+      end
     end
     create_overdue_owner_task!(invoice, profile)
+  end
+
+  def update_materialized_stage!(invoice, stage)
+    return unless Billing::NotificationService.new(invoice: invoice).deliver_dunning_reminder!(stage: stage)
+
+    invoice.with_lock { invoice.update!(last_reminder_stage: stage) if invoice.open? }
   end
 
   def create_overdue_owner_task!(invoice, profile)

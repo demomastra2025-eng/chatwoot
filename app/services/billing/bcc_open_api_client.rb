@@ -37,6 +37,8 @@ class Billing::BccOpenApiClient
   end
 
   def register_invoice(invoice)
+    raise ArgumentError, 'Invalid invoice completion snapshot' unless Billing::CompletionState.new(invoice).valid!('bcc_invoice')
+
     token = fetch_access_token
     uri = build_https_uri('/invoices')
     req = Net::HTTP::Post.new(
@@ -47,8 +49,9 @@ class Billing::BccOpenApiClient
     )
     req.body = JSON.generate(register_invoice_payload(invoice))
     parsed = perform_json_request(uri, req)
+    external_id = (parsed['invoice_id'] || parsed['id']).to_s.presence || raise(ApiError, 'BCC Open API invoice ID missing')
     {
-      external_invoice_id: (parsed['invoice_id'] || parsed['id']).to_s.presence,
+      external_invoice_id: external_id,
       payment_url: parsed['payment_url'].to_s.presence
     }
   end
@@ -79,17 +82,21 @@ class Billing::BccOpenApiClient
   end
 
   def register_invoice_payload(invoice)
+    state = Billing::CompletionState.new(invoice)
+    raise ArgumentError, 'Invalid invoice completion snapshot' unless state.valid!('bcc_invoice')
+
+    document = state.context['document'].to_h
     {
       invoice_number: invoice.invoice_number,
-      supplier_iban: Billing::Config.bcc_business_iban,
-      supplier_bin: Billing::Config.bcc_supplier_bin,
+      supplier_iban: document['supplier_iban'],
+      supplier_bin: document['supplier_bin'],
       payer_bin: invoice.payer_tax_id,
       payer_name: invoice.payer_legal_name,
       amount: invoice.amount_kzt.to_s('F'),
       currency: invoice.currency,
       knp: invoice.knp_code,
       payment_purpose: invoice.payment_purpose,
-      due_on: invoice.due_on.iso8601
+      due_on: state.context.fetch('document_due_on')
     }
   end
 

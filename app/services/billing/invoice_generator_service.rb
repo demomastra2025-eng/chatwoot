@@ -1,29 +1,32 @@
 # frozen_string_literal: true
 
-class Billing::InvoiceGeneratorService
+class Billing::InvoiceGeneratorService # rubocop:disable Metrics/ClassLength
   MAX_NUMBER_RETRIES = 5
 
   def initialize(account:, period_start: nil, due_on: nil, usage_period_month: nil, notify: true)
     @account = account
-    @profile = account.billing_account_profile || account.create_billing_account_profile!
-    @period_start = period_start || @profile.paid_until || Billing.today_almaty
-    @period_end = @profile.next_period_end_from(@period_start)
-    @due_on = due_on || @period_start
+    @requested_period_start = period_start
+    @requested_due_on = due_on
     @usage_period_month = usage_period_month
     @notify = notify
   end
 
-  def perform
-    existing = find_active_period_invoice
-    return existing if existing
-
+  def perform(automatic_through: nil)
+    @automatic_through = automatic_through
     invoice = create_locked_invoice!
-    attach_pdf!(invoice)
-    register_external_channels!(invoice)
-    Billing::NotificationService.new(invoice: invoice).deliver_invoice_issued! if @notify
-    invoice
+    return unless invoice
+
+    self.class.resume!(invoice)
   rescue ActiveRecord::RecordNotUnique
-    find_active_period_invoice || raise
+    invoice = find_active_period_invoice
+    raise unless invoice
+
+    self.class.resume!(invoice)
+  end
+
+  def self.resume!(invoice)
+    service = new(account: invoice.account, period_start: invoice.period_start)
+    service.send(:complete_invoice!, invoice)
   end
 
   private
@@ -35,9 +38,13 @@ class Billing::InvoiceGeneratorService
   end
 
   def create_locked_invoice!
-    @account.with_lock do
+    @account = Account.find(@account.id)
+    @account.with_lock('FOR NO KEY UPDATE') do
+      return unless load_current_period
+
       existing = find_active_period_invoice
       return existing if existing
+      return if @automatic_through && cancelled_period?
 
       calc = Billing::InvoiceAmountCalculator.new(
         account: @account, profile: @profile, period_start: @period_start,
@@ -45,6 +52,30 @@ class Billing::InvoiceGeneratorService
       ).perform
       persist_with_unique_number!(calc)
     end
+  end
+
+  def load_current_period
+    @profile = fresh_profile
+    return false unless @profile
+
+    @period_start = @requested_period_start || @profile.paid_until || Billing.today_almaty
+    return false if @automatic_through && !@period_start.in?(Billing.today_almaty..@automatic_through)
+
+    @period_end = @profile.next_period_end_from(@period_start)
+    @due_on = @requested_due_on || @period_start
+    true
+  end
+
+  def fresh_profile
+    if @automatic_through
+      Billing::AccountProfile.automatic_periods_through(@automatic_through).find_by(account_id: @account.id)
+    else
+      Billing::AccountProfile.find_by(account_id: @account.id) || @account.create_billing_account_profile!
+    end
+  end
+
+  def cancelled_period?
+    Billing::Invoice.exists?(account_id: @account.id, period_start: @period_start, status: 'cancelled')
   end
 
   def persist_with_unique_number!(calc)
@@ -78,7 +109,7 @@ class Billing::InvoiceGeneratorService
   end
 
   def invoice_attributes(inv_number, calc)
-    {
+    attributes = {
       account: @account, invoice_number: inv_number, status: 'issued',
       period_start: @period_start, period_end: @period_end, due_on: @due_on,
       usage_period_month: calc.usage_period_month, currency: Billing::DEFAULT_CURRENCY,
@@ -93,35 +124,94 @@ class Billing::InvoiceGeneratorService
       knp_code: @profile.knp_code, line_items: calc.line_items,
       payment_purpose: "Оплата за доступ к платформе OneLink по счёту № #{inv_number} (без НДС)"
     }
+    attributes[:metadata] = Billing::CompletionState.invoice_metadata(
+      account: @account, profile: @profile, notify: @notify, core: attributes.merge(account_id: @account.id)
+    )
+    attributes
   end
 
-  def attach_pdf!(invoice)
-    return if invoice.pdf_file.attached?
+  def attach_pdf!(invoice) # rubocop:disable Metrics/CyclomaticComplexity
+    state = Billing::CompletionState.new(invoice)
+    return state.hold!('pdf', 'legacy_without_checkpoint') unless state.managed?
+    return if invoice.cancelled?
+    return false unless state.valid!('pdf')
+    return state.hold!('pdf', 'missing_document_snapshot') unless pdf_snapshot_present?(state, invoice)
+
+    if state.step('pdf')['state'] == 'completed' || invoice.pdf_file.attached?
+      return state.local!('pdf', receipt_guard: ->(receipt) { invoice.pdf_file.attached? && receipt['blob_id'] == invoice.pdf_file.blob.id }) do
+        { 'blob_id' => invoice.pdf_file.blob.id }
+      end
+    end
+
+    prepare_pdf!(invoice, state)
+  end
+
+  def pdf_snapshot_present?(state, invoice)
+    state.context['document'].is_a?(Hash) && state.context['document']['contract_number'].present? && invoice.payer_legal_name.present?
+  end
+
+  def prepare_pdf!(invoice, state)
+    raise 'Billing PDF IO requires a committed transaction' if ActiveRecord::Base.connection.open_transactions.positive?
+
+    token = state.claim!('pdf', configured: true, irreversible: false) { !invoice.cancelled? }
+    return unless token
 
     pdf_bytes = Billing::InvoicePdfGenerator.new(invoice: invoice).render
-    invoice.pdf_file.attach(
-      io: StringIO.new(pdf_bytes),
-      filename: "#{invoice.invoice_number}.pdf",
-      content_type: 'application/pdf'
+    blob = ActiveStorage::Blob.create_and_upload!(
+      io: StringIO.new(pdf_bytes), filename: "#{invoice.invoice_number}.pdf", content_type: 'application/pdf'
     )
+    attach_prepared_blob!(invoice, state, token, blob)
+  rescue StandardError => e
+    state.fail!('pdf', token, error: e, irreversible: false) if token
+    raise
+  ensure
+    blob.purge if blob && !ActiveStorage::Attachment.exists?(blob_id: blob.id)
+  end
+
+  def attach_prepared_blob!(invoice, state, token, blob)
+    receipt = {}
+    state.finish!('pdf', token, receipt: receipt) do
+      raise 'Invoice cancelled during PDF preparation' if invoice.cancelled?
+
+      invoice.pdf_file.attach(blob) unless invoice.pdf_file.attached?
+      receipt['blob_id'] = invoice.pdf_file.blob.id
+    end
+  end
+
+  def complete_invoice!(invoice)
+    return invoice if invoice.cancelled?
+
+    attach_pdf!(invoice)
+    register_external_channels!(invoice)
+    Billing::NotificationService.new(invoice: invoice).deliver_invoice_issued!
+    invoice.reload
   end
 
   def register_external_channels!(invoice)
     return unless Billing::Config.autobilling_enabled?
 
-    register_bcc_open_api!(invoice) if Billing::Config.bcc_open_api_configured? && invoice.bcc_external_invoice_id.blank?
-    return unless Billing::Config.bcc_ecom_configured? && invoice.payment_url.blank?
+    register_bcc_open_api!(invoice)
+    state = Billing::CompletionState.new(invoice)
+    return state.block!('payment_url', 'pending_configuration') unless Billing::Config.bcc_ecom_configured?
 
-    invoice.update!(payment_url: Billing::BccEcomClient.new.build_payment_url(invoice))
+    state.local!('payment_url') do
+      next false unless invoice.open?
+
+      invoice.payment_url ||= Billing::BccEcomClient.new.build_payment_url(invoice)
+      { 'payment_url' => invoice.payment_url }
+    end
   end
 
   def register_bcc_open_api!(invoice)
-    res = Billing::BccOpenApiClient.new.register_invoice(invoice)
-    invoice.update!(
-      bcc_external_invoice_id: res[:external_invoice_id],
-      payment_url: res[:payment_url].presence || invoice.payment_url
-    )
-  rescue Billing::BccOpenApiClient::ApiError => e
-    invoice.update!(metadata: invoice.metadata.merge('bcc_register_error' => e.message))
+    state = Billing::CompletionState.new(invoice)
+    state.external!('bcc_invoice', configured: Billing::Config.bcc_open_api_configured?, receipt_attribute: :bcc_external_invoice_id,
+                                   guard: -> { invoice.open? }) do
+      document = state.context['document'].to_h
+      required = [invoice.payer_tax_id, document['supplier_bin'], document['supplier_iban']]
+      raise ArgumentError, 'Missing document snapshot' unless required.all?(&:present?)
+
+      res = Billing::BccOpenApiClient.new.register_invoice(invoice)
+      { receipt: res[:external_invoice_id], attributes: { payment_url: res[:payment_url].presence || invoice.payment_url } }
+    end
   end
 end

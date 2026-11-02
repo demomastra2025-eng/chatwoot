@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
-class Billing::InvoicePdfGenerator
+# The snapshot source adapter stays beside the unchanged renderer and layout.
+class Billing::InvoicePdfGenerator # rubocop:disable Metrics/ClassLength
   PAGE_WIDTH_PT = 595
   PAGE_HEIGHT_PT = 842
   MARGIN_X_PT = 40
@@ -14,6 +15,17 @@ class Billing::InvoicePdfGenerator
   def initialize(invoice:, font: Billing::TtfFontParser.default_font)
     @invoice = invoice
     @profile = invoice.account&.billing_account_profile
+    state = Billing::CompletionState.new(invoice)
+    if state.managed?
+      raise ArgumentError, 'Invalid invoice completion snapshot' unless state.valid!('pdf')
+
+      @document = state.context['document']
+      # Only the input adapter changes; rendering/layout/font/serialization stay unchanged.
+      @invoice = invoice.dup
+      @invoice.assign_attributes(state.context['invoice_core'])
+      @invoice.due_on = Date.iso8601(state.context.fetch('document_due_on'))
+      @invoice.created_at = invoice.created_at
+    end
     @font = font
     @used_glyphs = {}
   end
@@ -92,19 +104,27 @@ class Billing::InvoicePdfGenerator
   end
 
   def supplier_party_lines
-    supplier_bin = Billing::Config.bcc_supplier_bin || 'НЕ УКАЗАН'
-    iban = Billing::Config.bcc_business_iban || 'НЕ УКАЗАН'
-    [["Поставщик: #{Billing::Config.bcc_supplier_name}, БИН/ИИН: #{supplier_bin}, КБе: #{Billing::Config.bcc_supplier_kbe}", 10],
-     ["Банк поставщика: АО «Банк ЦентрКредит», БИК: #{Billing::Config.bcc_supplier_bik}, ИИК: #{iban}", 10]]
+    supplier_bin = document_value('supplier_bin') || 'НЕ УКАЗАН'
+    iban = document_value('supplier_iban') || 'НЕ УКАЗАН'
+    [["Поставщик: #{document_value('supplier_name')}, БИН/ИИН: #{supplier_bin}, КБе: #{document_value('supplier_kbe')}", 10],
+     ["Банк поставщика: АО «Банк ЦентрКредит», БИК: #{document_value('supplier_bik')}, ИИК: #{iban}", 10]]
   end
 
   def buyer_party_lines
     buyer_name = @invoice.payer_legal_name || @invoice.account&.name
-    contract_str = @profile&.effective_contract_number || 'Оферта OneLink'
+    contract_str = @document ? @document['contract_number'] : (@profile&.effective_contract_number || 'Оферта OneLink')
     [["Покупатель: #{buyer_name}, БИН/ИИН: #{@invoice.payer_tax_id || 'НЕ УКАЗАН'}", 10],
      ["Договор: #{contract_str}   КНП: #{@invoice.knp_code}", 10],
      ["Назначение платежа: #{@invoice.payment_purpose}", 10],
      ['--------------------------------------------------------------------------------', 9]]
+  end
+
+  def document_value(key)
+    return @document[key] if @document
+
+    field = { 'supplier_name' => :bcc_supplier_name, 'supplier_bin' => :bcc_supplier_bin,
+              'supplier_iban' => :bcc_business_iban, 'supplier_bik' => :bcc_supplier_bik, 'supplier_kbe' => :bcc_supplier_kbe }.fetch(key)
+    Billing::Config.public_send(field)
   end
 
   def item_lines

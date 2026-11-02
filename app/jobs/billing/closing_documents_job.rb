@@ -7,6 +7,8 @@ class Billing::ClosingDocumentsJob < ApplicationJob
     invoice = Billing::Invoice.find_by(id: invoice_id)
     return unless invoice&.paid?
 
-    Billing::ClosingDocumentsService.new(invoice: invoice).send_eavr!
+    service = Billing::ClosingDocumentsService.new(invoice: invoice)
+    service.send_eavr!
+    service.process_counterparty_signature!(signed_at: invoice.signed_by_counterparty_at) if invoice.signed_by_counterparty_at
   end
 end
