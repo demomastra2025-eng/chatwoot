@@ -3,10 +3,12 @@ import { mapGetters } from 'vuex';
 import { useAdmin } from 'dashboard/composables/useAdmin';
 import { useAccount } from 'dashboard/composables/useAccount';
 import WorkspaceWorkingHours from './components/WorkspaceWorkingHours.vue';
+import WorkspaceOutOfOfficeSettings from './components/WorkspaceOutOfOfficeSettings.vue';
 
 export default {
   components: {
     WorkspaceWorkingHours,
+    WorkspaceOutOfOfficeSettings,
   },
   setup() {
     const { isAdmin } = useAdmin();
@@ -39,6 +41,11 @@ export default {
       v-if="accountRecord?.id"
       :account="accountRecord"
       :read-only="isWorkspaceReadOnly"
+    />
+    <WorkspaceOutOfOfficeSettings
+      v-if="accountRecord?.id"
+      :account="accountRecord"
+      :disabled="isWorkspaceReadOnly"
     />
     <woot-loading-state v-if="uiFlags.isFetchingItem" />
   </div>

@@ -4,18 +4,14 @@ import { useAlert } from 'dashboard/composables';
 import router from '../../../../index';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import PageHeader from '../../SettingsSubPageHeader.vue';
-import GreetingsEditor from 'shared/components/GreetingsEditor.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
-import InboxSelect from 'dashboard/components-next/select/Select.vue';
 import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 
 export default {
   components: {
     PageHeader,
-    GreetingsEditor,
     NextButton,
     Editor,
-    InboxSelect,
   },
   data() {
     return {
@@ -24,23 +20,12 @@ export default {
       channelWidgetColor: '#009CE0',
       channelWelcomeTitle: '',
       channelWelcomeTagline: '',
-      greetingEnabled: false,
-      greetingMessage: '',
     };
   },
   computed: {
     ...mapGetters({
       uiFlags: 'inboxes/getUIFlags',
     }),
-    textAreaChannels() {
-      if (
-        this.isATwilioChannel ||
-        this.isATwitterInbox ||
-        this.isAFacebookInbox
-      )
-        return true;
-      return false;
-    },
   },
   methods: {
     async createChannel() {
@@ -49,8 +34,6 @@ export default {
           'inboxes/createWebsiteChannel',
           {
             name: this.inboxName?.trim(),
-            greeting_enabled: this.greetingEnabled,
-            greeting_message: this.greetingMessage,
             channel: {
               type: 'web_widget',
               website_url: this.channelWebsiteUrl,
@@ -152,46 +135,6 @@ export default {
         class="mb-4"
       />
 
-      <label class="w-full">
-        {{ $t('INBOX_MGMT.ADD.WEBSITE_CHANNEL.CHANNEL_GREETING_TOGGLE.LABEL') }}
-        <InboxSelect v-model="greetingEnabled">
-          <option :value="true">
-            {{
-              $t(
-                'INBOX_MGMT.ADD.WEBSITE_CHANNEL.CHANNEL_GREETING_TOGGLE.ENABLED'
-              )
-            }}
-          </option>
-          <option :value="false">
-            {{
-              $t(
-                'INBOX_MGMT.ADD.WEBSITE_CHANNEL.CHANNEL_GREETING_TOGGLE.DISABLED'
-              )
-            }}
-          </option>
-        </InboxSelect>
-        <p class="help-text">
-          {{
-            $t(
-              'INBOX_MGMT.ADD.WEBSITE_CHANNEL.CHANNEL_GREETING_TOGGLE.HELP_TEXT'
-            )
-          }}
-        </p>
-      </label>
-      <GreetingsEditor
-        v-if="greetingEnabled"
-        v-model="greetingMessage"
-        class="w-full"
-        :label="
-          $t('INBOX_MGMT.ADD.WEBSITE_CHANNEL.CHANNEL_GREETING_MESSAGE.LABEL')
-        "
-        :placeholder="
-          $t(
-            'INBOX_MGMT.ADD.WEBSITE_CHANNEL.CHANNEL_GREETING_MESSAGE.PLACEHOLDER'
-          )
-        "
-        :richtext="!textAreaChannels"
-      />
       <div class="flex flex-row justify-end w-full gap-2 px-0 py-2 mt-4">
         <div class="w-full">
           <NextButton

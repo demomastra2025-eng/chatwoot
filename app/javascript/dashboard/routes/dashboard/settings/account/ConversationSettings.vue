@@ -41,7 +41,10 @@ onMounted(() => {
       <!-- Flat sections: each one owns its pt-8/pb-8 and divider. -->
       <div class="flex flex-col">
         <WorkspaceAssignmentPolicySettings class="!pt-0" />
-        <WorkspaceGreetingSettings :disabled="isWorkspaceReadOnly" />
+        <WorkspaceGreetingSettings
+          :account="currentAccount || {}"
+          :disabled="isWorkspaceReadOnly"
+        />
         <CaptainAiEditorSettings :disabled="isWorkspaceReadOnly" />
         <MediaTranscription :disabled="isWorkspaceReadOnly" />
       </div>

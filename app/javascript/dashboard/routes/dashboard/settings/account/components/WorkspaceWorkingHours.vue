@@ -1,6 +1,9 @@
 <script>
-import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
+import {
+  accountSettingsMatch,
+  accountSettingsFingerprint,
+} from 'dashboard/helper/accountSettings';
 import BaseSettingsHeader from '../../components/BaseSettingsHeader.vue';
 import SectionLayout from './SectionLayout.vue';
 import SettingsFieldSection from 'dashboard/components-next/Settings/SettingsFieldSection.vue';
@@ -17,18 +20,6 @@ import {
 
 const WORKSPACE_DEFAULT_TIMEZONE = 'Asia/Almaty';
 const WORKING_HOURS_MESSAGES = ruGeneralSettings.GENERAL_SETTINGS.WORKING_HOURS;
-const canonical = value => {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map(key => [key, canonical(value[key])])
-    );
-  }
-  return value;
-};
-
 const defaultWorkspaceSchedule = () =>
   Array.from({ length: 7 }, (_, day) => ({
     day,
@@ -64,10 +55,18 @@ export default {
       timeSlots: defaultWorkspaceSchedule(),
       breaks: [],
       daysOff: [],
+      saving: false,
     };
   },
   computed: {
-    ...mapGetters({ uiFlags: 'accounts/getUIFlags' }),
+    scheduleFingerprint() {
+      return accountSettingsFingerprint(this.account, [
+        'workspace_timezone',
+        'workspace_working_hours',
+        'workspace_breaks',
+        'workspace_days_off',
+      ]);
+    },
     timeZones() {
       return timeZoneOptions();
     },
@@ -100,9 +99,8 @@ export default {
     },
   },
   watch: {
-    account: {
+    scheduleFingerprint: {
       immediate: true,
-      deep: true,
       handler() {
         this.hydrate();
       },
@@ -128,6 +126,9 @@ export default {
       this.daysOff = Array.isArray(settings.workspace_days_off)
         ? settings.workspace_days_off.map(item => ({ ...item }))
         : [];
+    },
+    onTimezoneChange(value) {
+      if (value) this.timezone = value;
     },
     onSlotUpdate(day, value) {
       this.timeSlots = this.timeSlots.map(slot =>
@@ -157,6 +158,9 @@ export default {
       this.daysOff.splice(index, 1);
     },
     async save() {
+      if (this.readOnly || this.saving || this.hasError) return;
+      this.saving = true;
+      const accountId = this.account.id;
       try {
         const settings = {
           workspace_timezone: this.timezone,
@@ -181,22 +185,19 @@ export default {
           })),
         };
         const updatedAccount = await this.$store.dispatch('accounts/update', {
-          id: this.account.id,
+          id: accountId,
           ...settings,
         });
-        const saved = updatedAccount?.settings || {};
-        if (
-          !Object.keys(settings).every(
-            key =>
-              JSON.stringify(canonical(saved[key])) ===
-              JSON.stringify(canonical(settings[key]))
-          )
-        ) {
+        if (!accountSettingsMatch(updatedAccount, settings)) {
           throw new Error(this.workingHoursMessages.UPDATE_ERROR);
         }
-        useAlert(this.workingHoursMessages.UPDATE_SUCCESS);
-      } catch (error) {
-        useAlert(error.message || this.workingHoursMessages.UPDATE_ERROR);
+        if (this.account.id === accountId)
+          useAlert(this.workingHoursMessages.UPDATE_SUCCESS);
+      } catch {
+        if (this.account.id === accountId)
+          useAlert(this.workingHoursMessages.UPDATE_ERROR);
+      } finally {
+        this.saving = false;
       }
     },
   },
@@ -223,25 +224,34 @@ export default {
         <div class="space-y-4">
           <SettingsFieldSection :label="workingHoursMessages.TIMEZONE">
             <ComboBox
-              v-model="timezone"
+              :model-value="timezone"
               :options="timeZones"
               :disabled="readOnly"
               class="[&>div>button]:!bg-n-alpha-black2"
+              @update:model-value="onTimezoneChange"
             />
           </SettingsFieldSection>
 
-          <div class="overflow-x-auto rounded-xl border border-n-weak bg-n-solid-2 px-4 py-2">
+          <div
+            class="overflow-x-auto rounded-xl border border-n-weak bg-n-solid-2 px-4 py-2"
+          >
             <table class="w-full divide-y divide-n-weak">
               <thead>
                 <tr>
                   <th />
-                  <th class="py-3 pr-3 text-start text-heading-3 text-n-slate-12">
+                  <th
+                    class="py-3 pr-3 text-start text-heading-3 text-n-slate-12"
+                  >
                     {{ $t('INBOX_MGMT.BUSINESS_HOURS.DAY.DAY') }}
                   </th>
-                  <th class="py-3 pr-3 text-start text-heading-3 text-n-slate-12">
+                  <th
+                    class="py-3 pr-3 text-start text-heading-3 text-n-slate-12"
+                  >
                     {{ $t('INBOX_MGMT.BUSINESS_HOURS.DAY.AVAILABILITY') }}
                   </th>
-                  <th class="py-3 pr-3 text-start text-heading-3 text-n-slate-12">
+                  <th
+                    class="py-3 pr-3 text-start text-heading-3 text-n-slate-12"
+                  >
                     {{ $t('INBOX_MGMT.BUSINESS_HOURS.DAY.HOURS') }}
                   </th>
                 </tr>
@@ -289,7 +299,9 @@ export default {
             :key="`break-${index}`"
             class="space-y-3 rounded-xl border border-n-weak bg-n-solid-2 p-4"
           >
-            <div class="grid items-end gap-3 md:grid-cols-[1fr_140px_140px_auto]">
+            <div
+              class="grid items-end gap-3 md:grid-cols-[1fr_140px_140px_auto]"
+            >
               <label class="space-y-1 text-xs text-n-slate-11">
                 <span>{{ workingHoursMessages.BREAKS.NAME }}</span>
                 <input
@@ -414,8 +426,8 @@ export default {
       <div class="flex justify-end border-t border-n-weak pt-6">
         <NextButton
           :label="workingHoursMessages.SAVE"
-          :disabled="readOnly || hasError"
-          :is-loading="uiFlags.isUpdating"
+          :disabled="readOnly || hasError || saving"
+          :is-loading="saving"
           @click="save"
         />
       </div>

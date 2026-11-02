@@ -232,7 +232,9 @@
       "ASSIGN_ON_FIRST_REPLY_ENABLED": "Assign unassigned conversation to the first replying agent",
       "ASSIGN_ON_FIRST_REPLY_DESCRIPTION": "When a conversation has no assignee, it will automatically be assigned to the first agent who sends a public reply.",
       "ASSIGN_ON_NOTE_OR_RESOLVE_ENABLED": "Assign on private note or resolve",
-      "ASSIGN_ON_NOTE_OR_RESOLVE_DESCRIPTION": "Assign an unassigned conversation to the agent who adds a private note or resolves it."
+      "ASSIGN_ON_NOTE_OR_RESOLVE_DESCRIPTION": "Assign an unassigned conversation to the agent who adds a private note or resolves it.",
+      "GREETING_INHERIT_HINT": "New text channels inherit this greeting automatically.",
+      "GREETING_MESSAGE_REQUIRED": "Add a greeting message."
     },
     "SIDEBAR_VISIBILITY": {
       "TITLE": "Sidebar settings",
@@ -273,6 +275,18 @@
         "YEARLY": "Repeat yearly"
       },
       "EMPTY_HINT": "Until a schedule is saved, the workspace is always open."
+    },
+    "OUT_OF_OFFICE": {
+      "TITLE": "Out-of-office reply",
+      "DESCRIPTION": "Sent automatically according to the company schedule, including breaks and days off.",
+      "ENABLED_LABEL": "Send a reply outside working hours",
+      "MESSAGE_LABEL": "Reply message",
+      "PLACEHOLDER": "We are closed now. We will reply during working hours.",
+      "SAVE": "Save reply",
+      "SUCCESS": "Reply saved.",
+      "ERROR": "Could not save the reply. Try again.",
+      "REQUIRED": "Add a reply message.",
+      "SCHEDULE_HINT": "Save the company working hours first."
     }
   },
   "FORMS": {
