@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   records: [],
   inboxes: [],
   isAdmin: true,
+  currentUser: { type: 'SuperAdmin', captain_platform_access: true },
   paywall: false,
   push: vi.fn(),
   dispatch: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('vue-router', () => ({
 vi.mock('dashboard/composables/store', () => ({
   useStore: () => ({ dispatch: mocks.dispatch }),
   useMapGetter: key => {
+    if (key === 'getCurrentUser') return computed(() => mocks.currentUser);
     if (key === 'captainAssistants/getRecords') {
       // The real getter of the assistant store decides who is listed.
       return computed(() =>
@@ -175,6 +177,7 @@ describe('Captain agents gallery', () => {
     mocks.records = [];
     mocks.inboxes = [];
     mocks.isAdmin = true;
+    mocks.currentUser = { type: 'SuperAdmin', captain_platform_access: true };
     mocks.paywall = false;
     mocks.push.mockReset();
     mocks.dispatch.mockReset();
@@ -257,6 +260,22 @@ describe('Captain agents gallery', () => {
     expect(wrapper.find('[data-testid="agents-empty"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="agent-new-tile"]').exists()).toBe(false);
   });
+
+  it.each(['administrator', 'agent'])(
+    'has no creation actions for an ordinary %s, including empty lists',
+    async role => {
+      mocks.isAdmin = role === 'administrator';
+      mocks.currentUser = { type: 'User', captain_platform_access: false };
+      const wrapper = await mountPage();
+      expect(wrapper.find('[data-testid="agents-empty"]').exists()).toBe(true);
+      expect(wrapper.find('[data-testid="agent-new-tile"]').exists()).toBe(
+        false
+      );
+      expect(wrapper.find('[data-testid="create-agent-dialog"]').exists()).toBe(
+        false
+      );
+    }
+  );
 
   it('opens the create dialog from the new agent tile', async () => {
     const wrapper = await mountPage();

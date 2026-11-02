@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { usePolicy } from 'dashboard/composables/usePolicy';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import { usePromptInspectorAccess } from 'dashboard/composables/captain/usePromptInspectorAccess';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
@@ -16,6 +17,7 @@ const route = useRoute();
 const store = useStore();
 const { shouldShowPaywall } = usePolicy();
 const configStore = useCaptainConfigStore();
+const { canInspectPrompts } = usePromptInspectorAccess();
 
 const hasLoaded = ref(false);
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
@@ -48,7 +50,7 @@ onMounted(() => {
   }
 
   loadAgents();
-  configStore.fetch({ clientMetadataOnly: true });
+  if (canInspectPrompts.value) configStore.fetch({ clientMetadataOnly: true });
 });
 </script>
 

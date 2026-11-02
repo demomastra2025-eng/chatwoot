@@ -11,233 +11,172 @@ import {
 } from './agentDraft';
 
 const assistant = {
-  id: 12,
-  name: 'Администратор',
-  routing_description: 'Записывает пациентов',
-  description: 'Отвечай вежливо.',
+  name: 'Agent',
+  routing_description: 'Helps customers',
+  description: 'Be helpful.',
   config: {
-    model: 'smart-model',
-    thinking_effort: 'low',
-    temperature: '0.4',
-    follow_up_settings: { enabled: true },
+    model: 'legacy',
+    temperature: 0.9,
+    thinking_effort: 'high',
+    feature_memory: true,
+  },
+};
+const platform = { canEditPrompts: true };
+const capabilities = {
+  version: 1,
+  scopes: {
+    agent: { enabled: true, tool_ids: [] },
+    assistant: { enabled: false, tool_ids: [] },
   },
 };
 
-const smartModel = {
-  id: 'smart-model',
-  supports_temperature: true,
-  reasoning_efforts: ['none', 'low', 'high'],
-};
-const plainModel = {
-  id: 'plain-model',
-  supports_temperature: false,
-  reasoning_efforts: [],
-};
-
-describe('buildAgentDraft', () => {
-  it('maps the assistant record to the editable draft', () => {
+describe('platform managed agent drafts', () => {
+  it('does not copy retired model or workspace settings into an editable draft', () => {
     expect(buildAgentDraft(assistant)).toEqual({
-      name: 'Администратор',
-      routingDescription: 'Записывает пациентов',
-      instruction: 'Отвечай вежливо.',
-      model: 'smart-model',
-      thinkingEffort: 'low',
-      temperature: 0.4,
+      name: 'Agent',
+      routingDescription: 'Helps customers',
+      instruction: 'Be helpful.',
     });
   });
 
-  it('uses empty values for a record without config', () => {
-    expect(buildAgentDraft({ id: 1 })).toEqual({
-      name: '',
-      routingDescription: '',
-      instruction: '',
-      model: '',
-      thinkingEffort: '',
-      temperature: null,
+  it('keeps a redacted instruction absent instead of synthesizing an empty instruction', () => {
+    const { description, ...redacted } = assistant;
+    const base = buildAgentDraft(redacted);
+    expect(base).not.toHaveProperty('instruction');
+    const renamed = { ...base, name: 'Renamed' };
+    expect(validateAgentDraft(renamed, base).valid).toBe(true);
+    expect(validateAgentDraft(renamed, base, platform).valid).toBe(true);
+    expect(buildAgentUpdatePayload(base, renamed)).toEqual({ name: 'Renamed' });
+    expect(buildAgentUpdatePayload(base, renamed, platform)).toEqual({
+      name: 'Renamed',
     });
   });
-});
 
-describe('isAgentDraftDirty', () => {
-  it('is clean for an untouched draft and ignores surrounding spaces', () => {
+  it('serializes ordinary business edits only, even when a stale draft contains technical fields', () => {
     const base = buildAgentDraft(assistant);
-    expect(isAgentDraftDirty(base, { ...base })).toBe(false);
-    expect(isAgentDraftDirty(base, { ...base, name: ' Администратор  ' })).toBe(
+    const stale = {
+      ...base,
+      name: 'Renamed',
+      routingDescription: ' New routing ',
+      instruction: '',
+      model: null,
+      temperature: null,
+      thinkingEffort: null,
+      capabilities,
+    };
+    expect(buildAgentUpdatePayload(base, stale)).toEqual({
+      name: 'Renamed',
+      routing_description: 'New routing',
+    });
+    expect(validateAgentDraft(stale, base).valid).toBe(true);
+  });
+
+  it('platform edits instructions but never per-agent model settings', () => {
+    const base = buildAgentDraft(assistant);
+    expect(
+      buildAgentUpdatePayload(
+        base,
+        {
+          ...base,
+          instruction: 'New',
+          model: null,
+          thinkingEffort: null,
+          temperature: null,
+        },
+        platform
+      )
+    ).toEqual({ description: 'New' });
+    expect(
+      buildAgentUpdatePayload(
+        base,
+        { ...base, model: 'other', temperature: 1 },
+        platform
+      )
+    ).toEqual({});
+  });
+
+  it('validates instruction only for platform editing and preserves legacy limits', () => {
+    const base = buildAgentDraft(assistant);
+    expect(
+      validateAgentDraft({ ...base, instruction: '' }, base, platform).errors
+        .instruction
+    ).toBe('required');
+    expect(
+      validateAgentDraft(
+        { ...base, instruction: 'a'.repeat(20001) },
+        base,
+        platform
+      ).errors.instruction
+    ).toBe('max');
+    expect(agentInstructionMaxLength({ instruction: 'a'.repeat(24000) })).toBe(
+      24000
+    );
+    expect(
+      validateAgentDraft({
+        ...base,
+        routingDescription: 'a'.repeat(AGENT_DESCRIPTION_MAX_LENGTH + 1),
+      }).errors.routingDescription
+    ).toBe('max');
+    expect(validateAgentDraft({ ...base, name: ' ' }).errors.name).toBe(
+      'required'
+    );
+  });
+
+  it('counts only changes that can be serialized for the current access', () => {
+    const base = buildAgentDraft(assistant);
+    expect(isAgentDraftDirty(base, { ...base, name: ' Agent ' })).toBe(false);
+    expect(isAgentDraftDirty(base, { ...base, instruction: 'Changed' })).toBe(
+      false
+    );
+    expect(
+      isAgentDraftDirty(base, { ...base, instruction: 'Changed' }, platform)
+    ).toBe(true);
+    expect(isAgentDraftDirty(base, { ...base, temperature: 1 }, platform)).toBe(
       false
     );
   });
 
-  it('detects changes of every editable field', () => {
-    const base = buildAgentDraft(assistant);
-    expect(isAgentDraftDirty(base, { ...base, name: 'Врач' })).toBe(true);
+  it('PATCHes canonical scopes only after an explicit platform edit, preserving the other scope', () => {
+    const base = buildAgentDraft({ ...assistant, config: { capabilities } });
+    const changed = {
+      ...base.capabilities,
+      scopes: {
+        ...base.capabilities.scopes,
+        agent: { enabled: true, tool_ids: ['send_notification'] },
+      },
+    };
+    const draft = { ...base, capabilities: changed };
+    expect(buildAgentUpdatePayload(base, draft)).toEqual({});
+    expect(buildAgentUpdatePayload(base, draft, platform)).toEqual({
+      config: { capabilities: changed },
+    });
+    expect(capabilities.scopes.agent.tool_ids).toEqual([]);
     expect(
-      isAgentDraftDirty(base, { ...base, routingDescription: 'Другое' })
-    ).toBe(true);
-    expect(isAgentDraftDirty(base, { ...base, instruction: 'Новая' })).toBe(
-      true
-    );
-    expect(isAgentDraftDirty(base, { ...base, model: '' })).toBe(true);
-    expect(isAgentDraftDirty(base, { ...base, temperature: 0.9 })).toBe(true);
+      buildAgentUpdatePayload(buildAgentDraft(assistant), draft, platform)
+    ).not.toHaveProperty('config');
   });
 
-  it('does not count parameters the model does not support as changes', () => {
-    const base = buildAgentDraft({
-      ...assistant,
-      config: { model: 'plain-model', temperature: 0.7, thinking_effort: 'x' },
-    });
-    const cleared = { ...base, temperature: null, thinkingEffort: '' };
-    expect(isAgentDraftDirty(base, cleared, plainModel)).toBe(false);
-    // Unknown metadata keeps the raw comparison.
-    expect(isAgentDraftDirty(base, cleared, {})).toBe(true);
+  it('rebases new business values without losing in-flight instruction or capability edits', () => {
+    const base = buildAgentDraft({ ...assistant, config: { capabilities } });
+    const next = { ...base, name: 'Saved', instruction: 'Server' };
+    expect(
+      rebaseAgentDraft(base, next, { ...base, instruction: 'Draft' })
+    ).toEqual({ ...next, instruction: 'Draft' });
   });
 });
 
-describe('validateAgentDraft', () => {
-  const valid = buildAgentDraft(assistant);
-
-  it('accepts a complete draft', () => {
-    expect(validateAgentDraft(valid, valid)).toEqual({
-      valid: true,
-      errors: {},
-    });
-  });
-
-  it('requires name, description and instruction', () => {
-    const result = validateAgentDraft(
-      { ...valid, name: '  ', routingDescription: '', instruction: ' ' },
-      valid
+describe('model metadata for diagnostic views', () => {
+  it('uses the catalog and falls back to saved diagnostics', () => {
+    const model = { id: 'known' };
+    expect(findAgentModelMetadata({ models: [model], modelId: 'known' })).toBe(
+      model
     );
-    expect(result.valid).toBe(false);
-    expect(result.errors).toEqual({
-      name: 'required',
-      routingDescription: 'required',
-      instruction: 'required',
-    });
-  });
-
-  it('limits the description to 400 characters', () => {
-    const result = validateAgentDraft(
-      {
-        ...valid,
-        routingDescription: 'a'.repeat(AGENT_DESCRIPTION_MAX_LENGTH + 1),
-      },
-      valid
-    );
-    expect(result.errors.routingDescription).toBe('max');
-    expect(
-      validateAgentDraft(
-        {
-          ...valid,
-          routingDescription: 'a'.repeat(AGENT_DESCRIPTION_MAX_LENGTH),
-        },
-        valid
-      ).valid
-    ).toBe(true);
-  });
-
-  it('limits the instruction to 20000 characters or the saved length', () => {
-    expect(
-      validateAgentDraft({ ...valid, instruction: 'a'.repeat(20001) }, valid)
-        .errors.instruction
-    ).toBe('max');
-
-    const longBase = { ...valid, instruction: 'b'.repeat(24000) };
-    expect(agentInstructionMaxLength(longBase)).toBe(24000);
-    expect(
-      validateAgentDraft(
-        { ...longBase, instruction: 'c'.repeat(24000) },
-        longBase
-      ).valid
-    ).toBe(true);
-  });
-});
-
-describe('buildAgentUpdatePayload', () => {
-  const base = buildAgentDraft(assistant);
-
-  it('sends only the changed text fields', () => {
-    expect(
-      buildAgentUpdatePayload(
-        base,
-        { ...base, name: ' Врач ', instruction: 'Новая инструкция' },
-        smartModel
-      )
-    ).toEqual({ name: 'Врач', description: 'Новая инструкция' });
-    expect(
-      buildAgentUpdatePayload(
-        base,
-        { ...base, routingDescription: 'Отвечает про цены' },
-        smartModel
-      )
-    ).toEqual({ routing_description: 'Отвечает про цены' });
-  });
-
-  it('returns an empty payload when nothing changed', () => {
-    expect(buildAgentUpdatePayload(base, { ...base }, smartModel)).toEqual({});
-  });
-
-  it('sends the model group with only supported parameters', () => {
-    expect(
-      buildAgentUpdatePayload(
-        base,
-        { ...base, model: 'plain-model', temperature: 0.4 },
-        plainModel
-      )
-    ).toEqual({
-      config: {
-        model: 'plain-model',
-        thinking_effort: null,
-        temperature: null,
-      },
-    });
-    expect(
-      buildAgentUpdatePayload(
-        base,
-        { ...base, thinkingEffort: 'high', temperature: 0.8 },
-        smartModel
-      )
-    ).toEqual({
-      config: {
-        model: 'smart-model',
-        thinking_effort: 'high',
-        temperature: 0.8,
-      },
-    });
-  });
-
-  it('stores the platform default model as null', () => {
-    expect(
-      buildAgentUpdatePayload(base, { ...base, model: '' }, smartModel).config
-        .model
-    ).toBeNull();
-  });
-});
-
-describe('findAgentModelMetadata', () => {
-  it('prefers the catalog entry and falls back to the playground model', () => {
-    expect(
-      findAgentModelMetadata({ models: [smartModel], modelId: 'smart-model' })
-    ).toBe(smartModel);
-    const playgroundModel = { id: 'legacy', supports_temperature: false };
+    const legacy = { id: 'old' };
     expect(
       findAgentModelMetadata({
-        models: [smartModel],
-        modelId: 'legacy',
-        assistant: { playground_model: playgroundModel },
+        modelId: 'old',
+        assistant: { playground_model: legacy },
       })
-    ).toBe(playgroundModel);
-    expect(findAgentModelMetadata({ models: [], modelId: '' })).toEqual({});
-  });
-});
-
-describe('rebaseAgentDraft', () => {
-  it('takes new saved values for untouched fields and keeps edits', () => {
-    const previous = buildAgentDraft(assistant);
-    const next = { ...previous, name: 'Переименован', model: 'plain-model' };
-    const draft = { ...previous, instruction: 'Черновик' };
-    expect(rebaseAgentDraft(previous, next, draft)).toEqual({
-      ...next,
-      instruction: 'Черновик',
-    });
+    ).toBe(legacy);
   });
 });

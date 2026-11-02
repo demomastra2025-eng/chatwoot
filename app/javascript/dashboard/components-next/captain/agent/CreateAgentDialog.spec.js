@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   useAlert: vi.fn(),
   updateAvatar: vi.fn(),
   close: vi.fn(),
+  platform: true,
+  admin: true,
 }));
 
 vi.mock('vue-i18n', () => ({
@@ -18,6 +20,15 @@ vi.mock('vue-i18n', () => ({
 
 vi.mock('dashboard/composables/store', () => ({
   useStore: () => ({ dispatch: mocks.dispatch }),
+  useMapGetter: () => ({
+    get value() {
+      return { captain_platform_access: mocks.platform };
+    },
+  }),
+}));
+
+vi.mock('dashboard/composables/usePolicy', () => ({
+  usePolicy: () => ({ checkPermissions: () => mocks.admin }),
 }));
 
 vi.mock('dashboard/composables', () => ({
@@ -99,6 +110,9 @@ const descriptionField = wrapper => wrapper.findComponent({ name: 'TextArea' });
 const fillForm = async (wrapper, { name, description }) => {
   await nameField(wrapper).setValue(name);
   await descriptionField(wrapper).setValue(description);
+  await wrapper
+    .findAllComponents({ name: 'TextArea' })[1]
+    .setValue('Synthetic platform instruction');
 };
 
 const submit = async wrapper => {
@@ -111,17 +125,14 @@ const expectedPayload = {
     name: 'Администратор',
     routing_description: 'Записывает на приём и отвечает о ценах',
     usage_mode: 'external_agent',
-    description: 'CAPTAIN.ASSISTANTS.CREATE.DEFAULT_INSTRUCTION.EXTERNAL_AGENT',
-    config: {
-      tool_access: {
-        agent: { enabled: true, tool_ids: ['faq_lookup', 'handoff'] },
-      },
-    },
+    description: 'Synthetic platform instruction',
   },
 };
 
 describe('CreateAgentDialog', () => {
   beforeEach(() => {
+    mocks.platform = true;
+    mocks.admin = true;
     mocks.dispatch.mockReset();
     mocks.useAlert.mockReset();
     mocks.updateAvatar.mockReset();
@@ -209,13 +220,38 @@ describe('CreateAgentDialog', () => {
       expectedPayload
     );
     const [, payload] = mocks.dispatch.mock.calls[0];
-    expect(Object.keys(payload.assistant.config)).toEqual(['tool_access']);
+    expect(payload.assistant).not.toHaveProperty('config');
+    expect(payload.assistant.description).toBe(
+      'Synthetic platform instruction'
+    );
     expect(mocks.updateAvatar).not.toHaveBeenCalled();
     expect(mocks.useAlert).toHaveBeenCalledWith(
       'CAPTAIN.GALLERY.CREATE.SUCCESS'
     );
     expect(mocks.close).toHaveBeenCalledTimes(1);
     expect(wrapper.emitted('created')).toEqual([[created]]);
+  });
+
+  it('requires an explicit instruction instead of generating a client default', async () => {
+    const wrapper = mountDialog();
+    await fillForm(wrapper, { name: 'Agent', description: 'Helps customers' });
+    const instruction = wrapper.findAllComponents({ name: 'TextArea' })[1];
+    await instruction.setValue(' ');
+    await submit(wrapper);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(instruction.props('message')).toBe(
+      'CAPTAIN.AGENT_PAGE.INSTRUCTION_REQUIRED'
+    );
+  });
+
+  it.each([
+    { platform: false, admin: true },
+    { platform: true, admin: false },
+  ])('requires both platform flag and admin policy: %o', async access => {
+    Object.assign(mocks, access);
+    const wrapper = mountDialog();
+    expect(wrapper.findComponent({ name: 'DialogStub' }).exists()).toBe(false);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 
   it('uploads the chosen avatar once the agent exists', async () => {

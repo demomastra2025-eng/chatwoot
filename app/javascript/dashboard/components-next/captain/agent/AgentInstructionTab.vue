@@ -33,7 +33,9 @@ const instruction = computed({
   set: value => updateDraft({ instruction: value || '' }),
 });
 const toolAccess = computed(() =>
-  resolveAgentToolAccess(props.assistant?.config?.tool_access || {})
+  props.draft.capabilities?.version === 1
+    ? props.draft.capabilities.scopes
+    : resolveAgentToolAccess(props.assistant?.config?.tool_access || {})
 );
 
 const referenceActions = computed(() => [
@@ -125,7 +127,13 @@ const instructionError = computed(() => {
         :captain-tool-access="toolAccess"
         :captain-tool-scope="AGENT_TOOL_SCOPE"
       />
-      <AgentToolChips :assistant="assistant" :instruction="instruction" />
+      <AgentToolChips
+        :assistant="assistant"
+        :instruction="instruction"
+        :capabilities="draft.capabilities"
+        :can-edit="canEdit"
+        @update:capabilities="updateDraft({ capabilities: $event })"
+      />
     </div>
 
     <aside class="flex min-w-0 flex-col gap-6">
