@@ -62,12 +62,6 @@ RSpec.describe Llm::OpenRouterRequestPolicy do
         chat = OpenRouterRequestPolicySpecChat.new(
           model: OpenRouterRequestPolicySpecModel.new(model_id, 'openrouter'), params: compiled.params
         )
-        # RubyLLM merges parameters, including any previous parallel flag.
-        existing_params = chat.params
-        chat.define_singleton_method(:with_params) do |**params|
-          existing_params.merge!(params)
-          self
-        end
         described_class.tag!(chat, feature: :captain_agent, account: account, model: model_id, routing_metadata: compiled.metadata)
         chat
       end

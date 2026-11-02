@@ -153,7 +153,6 @@ class Llm::OpenRouterRequestPolicy
 
     def tagged_chat_with_params(chat, compiled, account:, feature:, model:, stream:)
       metadata = routing_metadata(chat)
-      clear_parallel_tool_call_param(chat)
       updated_chat = chat.with_params(**compiled.params)
       updated_chat = apply_compiled_headers(updated_chat, compiled.headers)
       tag!(
@@ -172,15 +171,6 @@ class Llm::OpenRouterRequestPolicy
       return tools unless tools == false && chat.respond_to?(:tools) && chat.tools.respond_to?(:values) && chat.tools.present?
 
       chat.tools.values
-    end
-
-    # RubyLLM merges with_params into its existing hash; omission must remove a
-    # stale hint when a later compile no longer proves endpoint/tool support.
-    def clear_parallel_tool_call_param(chat)
-      return unless chat.respond_to?(:params) && chat.params.respond_to?(:delete)
-
-      chat.params.delete(:parallel_tool_calls)
-      chat.params.delete('parallel_tool_calls')
     end
 
     def apply_compiled_headers(chat, headers)
