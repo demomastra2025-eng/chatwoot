@@ -47,8 +47,8 @@ class Billing::FoundationPreflight
 
   def invalid_contract_ids
     BillingSubscription.ready.order(:id).filter_map do |subscription|
-      subscription.id unless subscription.billing_account.ready? && Billing::PlanSnapshot.valid?(subscription.plan_snapshot,
-                                                                                                 subscription.price_snapshot)
+      valid = subscription.billing_account.ready? && Billing::PlanSnapshot.valid_historical?(subscription.plan_snapshot, subscription.price_snapshot)
+      subscription.id unless valid
     end
   end
 end

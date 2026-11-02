@@ -28,7 +28,13 @@ class BillingSubscription < ApplicationRecord
   def complete_contract
     errors.add(:billing_account, 'must be ready') unless billing_account&.ready?
     errors.add(:base, 'new contracts do not use the retired plan catalogue') if billing_plan_id || billing_plan_price_id
-    errors.add(:base, 'requires complete immutable plan and price snapshots') unless Billing::PlanSnapshot.valid?(plan_snapshot, price_snapshot)
+    errors.add(:base, 'requires complete immutable plan and price snapshots') unless valid_snapshot_contract?
+  end
+
+  def valid_snapshot_contract?
+    return Billing::PlanSnapshot.valid?(plan_snapshot, price_snapshot) if new_record?
+
+    Billing::PlanSnapshot.valid_historical?(plan_snapshot, price_snapshot)
   end
 
   def new_records_are_ready

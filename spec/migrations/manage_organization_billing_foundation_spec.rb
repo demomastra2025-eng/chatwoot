@@ -34,6 +34,65 @@ RSpec.describe ManageOrganizationBillingFoundation do
     SQL
   end
 
+  def legacy_rows
+    described_class::TABLES.index_with { |table| connection.select_all("SELECT * FROM #{table} ORDER BY id").to_a }
+  end
+
+  {
+    [:billing_accounts, :default_currency] => 'USD',
+    [:billing_accounts, :default_locale] => 'en',
+    [:billing_subscriptions, :cancel_at_period_end] => true,
+    [:billing_subscriptions, :plan_snapshot] => { 'tampered' => true },
+    [:billing_subscriptions, :price_snapshot] => { 'tampered' => true }
+  }.each do |(table, column), value|
+    it "rejects drifted #{table}.#{column} default before DDL and preserves every legacy row" do
+      load_legacy
+      before = legacy_rows
+      connection.change_column_default(table, column, value)
+
+      expect { migration.up }.to raise_error(ActiveRecord::MigrationError, /incompatible default #{table}.#{column}/)
+      expect(connection.column_exists?(:billing_accounts, :foundation_state)).to be(false)
+      expect(legacy_rows).to eq(before)
+    end
+  end
+
+  it 'rejects an unexpected expression even when its extracted literal default is nil' do
+    load_legacy
+    before = legacy_rows
+    connection.execute('ALTER TABLE billing_accounts ALTER COLUMN name SET DEFAULT CURRENT_USER')
+
+    expect { migration.up }.to raise_error(ActiveRecord::MigrationError, /incompatible default billing_accounts.name/)
+    expect(connection.column_exists?(:billing_accounts, :foundation_state)).to be(false)
+    expect(legacy_rows).to eq(before)
+  end
+
+  it 'rejects a missing real primary key before DDL and keeps occupied rows intact' do
+    load_legacy
+    before = legacy_rows
+    connection.execute('ALTER TABLE billing_account_workspaces DROP CONSTRAINT billing_account_workspaces_pkey')
+
+    expect { migration.up }.to raise_error(ActiveRecord::MigrationError, /incompatible primary key billing_account_workspaces/)
+    expect(connection.column_exists?(:billing_accounts, :foundation_state)).to be(false)
+    expect(legacy_rows).to eq(before)
+  end
+
+  it 'rejects an id with a valid primary key but without its generation default' do
+    load_legacy
+    connection.execute('ALTER TABLE billing_account_workspaces ALTER COLUMN id DROP DEFAULT')
+
+    expect { migration.up }.to raise_error(ActiveRecord::MigrationError, /incompatible id generation billing_account_workspaces.id/)
+    expect(connection.column_exists?(:billing_accounts, :foundation_state)).to be(false)
+  end
+
+  it 'rejects a real unique index marked invalid in PostgreSQL' do
+    load_legacy
+    index = "#{connection.quote_table_name(connection.current_schema)}.idx_billing_subscriptions_one_entitling"
+    connection.execute("UPDATE pg_index SET indisvalid = false WHERE indexrelid = #{connection.quote(index)}::regclass")
+
+    expect { migration.up }.to raise_error(ActiveRecord::MigrationError, /incompatible unique index/)
+    expect(connection.column_exists?(:billing_accounts, :foundation_state)).to be(false)
+  end
+
   it 'creates only the necessary foundation on a fresh schema, with interval GiST support' do
     migration.up
     local = connection.select_values('SELECT tablename FROM pg_tables WHERE schemaname = current_schema()')

@@ -110,17 +110,85 @@ class ManageOrganizationBillingFoundation < ActiveRecord::Migration[7.1]
     required = required_columns.fetch(table).merge('id' => ['bigint', false], 'created_at' => ['timestamp(6) without time zone', false],
                                                    'updated_at' => ['timestamp(6) without time zone', false])
     columns = connection.columns(table).index_by(&:name)
+    raise ActiveRecord::MigrationError, "unexpected columns in #{table}" if (columns.keys - required.keys).any?
+
     required.each do |name, (type, nullable)|
       column = columns[name]
       next if column && column.sql_type == type && column.null == nullable
 
       raise ActiveRecord::MigrationError, "incompatible #{table}.#{name}: expected #{type}, nullable=#{nullable}"
     end
-    defaults = { 'status' => { billing_accounts: 'active', billing_account_workspaces: 'active', billing_subscriptions: 'incomplete' }.fetch(table),
-                 'metadata' => '{}' }
-    defaults.each do |name, value|
-      raise ActiveRecord::MigrationError, "incompatible default #{table}.#{name}" unless columns.fetch(name).default == value
+    validate_defaults!(table, columns)
+    validate_primary_key!(table)
+  end
+
+  def validate_defaults!(table, columns)
+    common = { 'metadata' => '{}' }
+    expected = {
+      billing_accounts: common.merge('status' => 'active', 'default_currency' => 'KZT', 'default_locale' => 'ru'),
+      billing_account_workspaces: common.merge('status' => 'active'),
+      billing_subscriptions: common.merge('status' => 'incomplete', 'cancel_at_period_end' => 'false',
+                                          'plan_snapshot' => '{}', 'price_snapshot' => '{}')
+    }.fetch(table)
+    expressions = default_expressions(table)
+    columns.except('id').each do |name, column|
+      next if expressions[name] == literal_default_expression(column, expected[name])
+
+      raise ActiveRecord::MigrationError, "incompatible default #{table}.#{name}"
     end
+  end
+
+  # Rails' Column parser reports both default/default_function=nil for keywords such as CURRENT_USER.
+  # Compare PostgreSQL's actual expression, including the required absence of a default.
+  def default_expressions(table)
+    connection.select_rows(<<~SQL.squish).to_h
+      SELECT attr.attname, pg_get_expr(def.adbin, def.adrelid)
+      FROM pg_attribute attr LEFT JOIN pg_attrdef def ON def.adrelid = attr.attrelid AND def.adnum = attr.attnum
+      WHERE attr.attrelid = to_regclass(#{relation_literal(table)}) AND attr.attnum > 0 AND NOT attr.attisdropped
+    SQL
+  end
+
+  def literal_default_expression(column, value)
+    return if value.nil?
+    return value if column.type == :boolean
+
+    type = column.type == :jsonb ? 'jsonb' : 'character varying'
+    "#{connection.quote(value)}::#{type}"
+  end
+
+  def relation_literal(table)
+    connection.quote("#{connection.quote_table_name(connection.current_schema)}.#{connection.quote_table_name(table)}")
+  end
+
+  def validate_primary_key!(table)
+    valid = connection.select_value(<<~SQL.squish)
+      SELECT idx.indisvalid AND idx.indisready AND idx.indislive AND idx.indisunique AND idx.indimmediate
+        AND idx.indnkeyatts = 1 AND idx.indnatts = 1 AND attr.attname = 'id'
+        AND con.convalidated AND NOT con.condeferrable
+      FROM pg_index idx
+      JOIN pg_constraint con ON con.conindid = idx.indexrelid AND con.contype = 'p'
+      JOIN pg_attribute attr ON attr.attrelid = idx.indrelid AND attr.attnum = idx.indkey[0]
+      WHERE idx.indrelid = to_regclass(#{relation_literal(table)}) AND idx.indisprimary
+    SQL
+    raise ActiveRecord::MigrationError, "incompatible primary key #{table}: expected valid id PK" unless valid
+
+    validate_id_generator!(table)
+  end
+
+  def validate_id_generator!(table)
+    generator = connection.select_one(<<~SQL.squish)
+      SELECT attr.attidentity AS identity_kind, pg_get_expr(def.adbin, def.adrelid) AS expression,
+        seq.seqincrement > 0 AND NOT seq.seqcycle AS sequence_ok,
+        EXISTS (SELECT 1 FROM pg_depend dep WHERE dep.classid = 'pg_attrdef'::regclass
+          AND dep.objid = def.oid AND dep.refclassid = 'pg_class'::regclass AND dep.refobjid = seq.seqrelid) AS default_uses_owned_sequence
+      FROM pg_attribute attr
+      LEFT JOIN pg_attrdef def ON def.adrelid = attr.attrelid AND def.adnum = attr.attnum
+      LEFT JOIN pg_sequence seq ON seq.seqrelid = pg_get_serial_sequence(#{relation_literal(table)}, 'id')::regclass
+      WHERE attr.attrelid = to_regclass(#{relation_literal(table)}) AND attr.attname = 'id'
+    SQL
+    direct_serial = generator['expression'].to_s.match?(/\Anextval\('(?:[^']|'')+'::regclass\)\z/) && generator['default_uses_owned_sequence']
+    valid = generator['sequence_ok'] && (%w[a d].include?(generator['identity_kind']) || direct_serial)
+    raise ActiveRecord::MigrationError, "incompatible id generation #{table}.id" unless valid
   end
 
   def required_columns
@@ -155,9 +223,17 @@ class ManageOrganizationBillingFoundation < ActiveRecord::Migration[7.1]
 
   def validate_index!(table, name, columns, predicate)
     index = connection.indexes(table).find { |value| value.name == name }
-    return if index&.unique && index.columns == columns && normalized_sql(index.where) == normalized_sql(predicate)
+    return if index&.unique && index.columns == columns && normalized_sql(index.where) == normalized_sql(predicate) && valid_unique_index?(table,
+                                                                                                                                           name)
 
     raise ActiveRecord::MigrationError, "incompatible unique index #{table}.#{name}"
+  end
+
+  def valid_unique_index?(table, name)
+    connection.select_value(<<~SQL.squish)
+      SELECT indisvalid AND indisready AND indislive AND indisunique AND indimmediate
+      FROM pg_index WHERE indrelid = to_regclass(#{relation_literal(table)}) AND indexrelid = to_regclass(#{relation_literal(name)})
+    SQL
   end
 
   def validate_indexes_and_keys!

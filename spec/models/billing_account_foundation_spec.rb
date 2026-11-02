@@ -63,6 +63,47 @@ RSpec.describe BillingAccount do
     end.to raise_error(ActiveRecord::RecordNotUnique)
   end
 
+  it 'rejects actual ready subscription creates with unknown tariff, modules or features' do
+    changes = [
+      ->(terms) { terms[:plan_snapshot]['tariff'] = terms[:price_snapshot]['tariff'] = 'invented_tariff' },
+      ->(terms) { terms[:plan_snapshot]['modules'] = ['invented_module'] },
+      ->(terms) { terms[:plan_snapshot]['features'] = ['invented_feature'] }
+    ]
+    changes.each do |change|
+      terms = snapshots.deep_dup
+      change.call(terms)
+      expect { BillingSubscription.create!(billing_account: payer, **terms) }.to raise_error(ActiveRecord::RecordInvalid, /complete immutable/)
+    end
+    expect(BillingSubscription.count).to eq(0)
+  end
+
+  it 'rejects actual creates with contradictory sources or an invented unlimited sentinel' do
+    changes = [
+      ['custom', nil], ['plan', nil], ['unlimited', Accounts::Plans.unlimited_value('agents') + 1]
+    ]
+    changes.each do |source, value|
+      terms = snapshots.deep_dup
+      terms[:plan_snapshot]['limits']['agents'] = value
+      terms[:plan_snapshot]['limit_sources']['agents'] = source
+      expect { BillingSubscription.create!(billing_account: payer, **terms) }.to raise_error(ActiveRecord::RecordInvalid, /complete immutable/)
+    end
+    expect(BillingSubscription.count).to eq(0)
+  end
+
+  it 'rejects new creates with forged current money, catalogue version or malformed lists' do
+    changes = [
+      ->(terms) { terms[:price_snapshot]['pricing']['monthly_kzt'] += 1 },
+      ->(terms) { terms[:plan_snapshot]['catalog_version'] = terms[:price_snapshot]['catalog_version'] = Accounts::Plans.version + 1 },
+      ->(terms) { terms[:plan_snapshot]['modules'] = {} }
+    ]
+    changes.each do |change|
+      terms = snapshots.deep_dup
+      change.call(terms)
+      expect { BillingSubscription.create!(billing_account: payer, **terms) }.to raise_error(ActiveRecord::RecordInvalid, /complete immutable/)
+    end
+    expect(BillingSubscription.count).to eq(0)
+  end
+
   it 'records adjoining history but SQL refuses unknown, reversed or overlapping ready intervals' do
     start = Time.utc(2026, 11, 1)
     boundary = start + 1.day

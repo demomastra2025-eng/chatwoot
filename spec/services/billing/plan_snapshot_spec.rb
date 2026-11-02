@@ -28,7 +28,7 @@ RSpec.describe Billing::PlanSnapshot do
     replacement = instance_double(Accounts::Plans, version: 999)
     allow(Accounts::Plans).to receive(:current).and_return(replacement)
 
-    expect(described_class.valid?(*result.values_at(:plan_snapshot, :price_snapshot))).to be(true)
+    expect(described_class.valid_historical?(*result.values_at(:plan_snapshot, :price_snapshot))).to be(true)
   end
 
   it 'rejects incomplete, mismatched, malformed and privately extended contracts' do

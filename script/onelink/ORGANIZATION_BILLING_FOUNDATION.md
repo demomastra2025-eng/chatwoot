@@ -9,8 +9,10 @@ No bootstrap or resolver is installed. The seat unit awaits owner decision 15.
 `20261102093000` manages only `billing_accounts`, `billing_subscriptions` and
 `billing_account_workspaces`. When all three are absent it creates them without
 restoring the retired plan/price/membership/allocation catalogue. When all exist
-it checks required columns, nullability, defaults, validated checks, unique
-indexes and foreign keys before changing anything. Partial or incompatible
+it checks the exact columns, nullability, all significant defaults and the absence
+of unexpected default expressions, real valid primary keys on id, owned ID
+sequences, validated checks, live/ready/valid unique indexes and foreign keys before
+changing anything. Partial or incompatible
 structures stop with an explicit error; the migration runs transactionally.
 
 Existing records become `foundation_state=legacy_pending`; their owner, dates,
@@ -42,8 +44,15 @@ Missing defaults and unresolved custom enterprise monetary terms fail explicitly
 The compiler does not choose how seats are counted or calculate a seat charge.
 
 Snapshots retain catalogue/schema versions, tariff/modules/features, all compiled
-limits with their sources, currency and tariff price fields. Validation of a
-historical snapshot never consults current YAML values. New subscriptions do not
+limits with their sources, currency and tariff price fields. New subscriptions
+must exactly match a fresh compilation from the sole Accounts::Plans, including
+names, sources, limit values, prices and catalogue version. Unknown or contradictory
+new contracts return a validation error. Persisted subscriptions and preflight use
+stable historical structure/source-value validation: custom and plan values are
+integers, an archived unlimited value is positive, only a resolved default may be
+nil. This path never consults today's YAML names, monetary values or unlimited
+sentinel; changed/removed catalogue entries do not rewrite saved terms. No new
+catalogue or runtime setting chooses this distinction. New subscriptions do not
 use legacy plan/price IDs. Existing catalogue foreign keys remain provenance and
 become nullable; no fake legacy plan is inserted for a new snapshot contract.
 

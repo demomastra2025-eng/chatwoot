@@ -33,4 +33,23 @@ RSpec.describe Billing::FoundationPreflight do
     expect { described_class.report }.to raise_error(ActiveRecord::StatementInvalid, /read-only transaction/)
     expect(BillingAccount.count).to eq(0)
   end
+
+  it 'keeps saved terms valid for ordinary updates and preflight after their catalogue names and prices change' do
+    payer = BillingAccount.create!(name: 'Synthetic payer', standalone_account: create(:account))
+    terms = Billing::PlanSnapshot.compile(tariff: 'text_call', defaults: Accounts::Plans::LIMIT_KEYS.index_with(nil))
+    subscription = BillingSubscription.create!(billing_account: payer, **terms)
+    config = YAML.safe_load(File.read(Accounts::Plans::CONFIG_PATH))
+    config['version'] += 1
+    config['tariffs'].delete('text_call')
+    config['base']['features'].delete('crm')
+    config['tariffs']['voice_ai']['pricing']['monthly_kzt'] += 1
+    replacement = Accounts::Plans.new(config, feature_names: Featurable::FEATURE_NAMES - ['crm'])
+    allow(Accounts::Plans).to receive(:current).and_return(replacement)
+
+    expect(Billing::PlanSnapshot.valid?(*terms.values_at(:plan_snapshot, :price_snapshot))).to be(false)
+    expect { subscription.update!(status: 'canceled') }.not_to raise_error
+    expect(described_class.report).to include(ready: true, scope: 'foundation_only')
+    expect(subscription.reload.plan_snapshot).to eq(terms[:plan_snapshot])
+    expect(subscription.price_snapshot).to eq(terms[:price_snapshot])
+  end
 end

@@ -7,13 +7,22 @@ class Billing::PlanSnapshot
   SOURCE = 'account_plans'
   PLAN_KEYS = %w[schema_version source catalog_version tariff modules features limits limit_sources].freeze
   PRICE_KEYS = %w[schema_version source catalog_version tariff currency pricing].freeze
-  LIMIT_SOURCES = %w[plan default custom unlimited].freeze
 
   def self.compile(tariff:, overrides: {}, defaults: {})
     new(tariff: tariff, overrides: overrides, defaults: defaults).compile
   end
 
   def self.valid?(plan, price)
+    return false unless valid_historical?(plan, price)
+
+    expected = compile(tariff: plan['tariff'], **compilation_inputs(plan))
+    expected == { plan_snapshot: plan, price_snapshot: price }
+  rescue ArgumentError
+    false
+  end
+
+  # Persisted immutable terms must survive renamed/removed catalogue entries and changed monetary values.
+  def self.valid_historical?(plan, price)
     return false unless exact_keys?(plan, PLAN_KEYS) && exact_keys?(price, PRICE_KEYS)
     return false unless valid_headers?(plan, price) && valid_limits?(plan)
     return false unless %w[modules features].all? { |key| string_list?(plan[key]) }
@@ -46,13 +55,33 @@ class Billing::PlanSnapshot
     limits = plan['limits']
     sources = plan['limit_sources']
     exact_keys?(limits, Accounts::Plans::LIMIT_KEYS) && exact_keys?(sources, Accounts::Plans::LIMIT_KEYS) &&
-      limits.values.all? { |value| nonnegative_or_nil?(value) } &&
-      sources.values.all? { |value| LIMIT_SOURCES.include?(value) }
+      limits.all? { |key, value| consistent_limit?(value, sources[key]) }
   end
   private_class_method :valid_limits?
 
+  def self.consistent_limit?(value, source)
+    case source
+    when 'default' then nonnegative_or_nil?(value)
+    when 'custom', 'plan' then value.is_a?(Integer) && value >= 0
+    when 'unlimited' then value.is_a?(Integer) && value.positive?
+    else false
+    end
+  end
+  private_class_method :consistent_limit?
+
+  def self.compilation_inputs(plan)
+    plan['limit_sources'].each_with_object({ overrides: {}, defaults: {} }) do |(key, source), inputs|
+      case source
+      when 'custom' then inputs[:overrides][key] = plan['limits'][key]
+      when 'unlimited' then inputs[:overrides][key] = Accounts::Plans::UNLIMITED
+      when 'default' then inputs[:defaults][key] = plan['limits'][key]
+      end
+    end
+  end
+  private_class_method :compilation_inputs
+
   def self.exact_keys?(value, keys)
-    value.is_a?(Hash) && value.keys.sort == keys.sort
+    value.is_a?(Hash) && value.keys.all?(String) && value.keys.sort == keys.sort
   end
   private_class_method :exact_keys?
 
@@ -82,7 +111,7 @@ class Billing::PlanSnapshot
                         'features' => @plans.features_for(@plans.tariff_modules(@tariff)).dup, 'limits' => limits, 'limit_sources' => sources)
     price = header.merge('currency' => 'KZT', 'pricing' => Accounts::Plans::PRICING_KEYS.index_with { |key| @plans.tariff_pricing(@tariff)[key] })
     price['pricing']['custom'] = false
-    raise ArgumentError, 'invalid compiled contract' unless self.class.valid?(plan, price)
+    raise ArgumentError, 'invalid compiled contract' unless self.class.valid_historical?(plan, price)
 
     { plan_snapshot: plan, price_snapshot: price }
   end
