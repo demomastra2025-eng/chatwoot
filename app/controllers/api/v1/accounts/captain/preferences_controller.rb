@@ -38,7 +38,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
 
   before_action :current_account
   before_action :authorize_account_update, only: [:show, :update]
-  before_action :reject_installation_managed_models, :reject_unselectable_models, :reject_disallowed_provider_keys, only: :update
+  before_action :reject_installation_managed_models, only: :update
   before_action :reject_client_transcription_prompt, :reject_account_thinking_effort, only: :update
 
   def show
@@ -46,8 +46,11 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   end
 
   def update
-    params_to_update = captain_params
-    Account.transaction do
+    @current_account.with_lock('FOR NO KEY UPDATE') do
+      validate_account_preferences
+      return if performed?
+
+      params_to_update = captain_params
       remove_stale_installation_managed_model_overrides
       @current_account.captain_models = params_to_update[:captain_models] if params_to_update[:captain_models]
       @current_account.captain_features = params_to_update[:captain_features] if params_to_update[:captain_features]
@@ -61,6 +64,11 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   end
 
   private
+
+  def validate_account_preferences
+    reject_unselectable_models
+    reject_disallowed_provider_keys unless performed?
+  end
 
   def preferences_payload
     Llm::Config.with_runtime_cache do

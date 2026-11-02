@@ -160,13 +160,15 @@ class Captain::Tools::Account::WorkspaceProfileTool < Captain::Tools::Account::B
   end
 
   def apply_workspace_profile_updates!(updates)
-    account.assign_attributes(updates[:account]) if updates[:account].present?
+    account.with_lock('FOR NO KEY UPDATE') do
+      account.assign_attributes(updates[:account]) if updates[:account].present?
 
-    account.custom_attributes = merged_custom_attributes(updates[:custom_attributes]) if updates[:custom_attributes].present?
+      account.custom_attributes = merged_custom_attributes(updates[:custom_attributes]) if updates[:custom_attributes].present?
 
-    account.settings = (account.settings || {}).merge(updates[:settings]) if updates[:settings].present?
+      account.settings = (account.settings || {}).merge(updates[:settings]) if updates[:settings].present?
 
-    account.save!
+      account.save!
+    end
   end
 
   def updated_workspace_fields(updates)

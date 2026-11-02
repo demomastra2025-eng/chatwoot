@@ -19,7 +19,7 @@ class Captain::Tools::Account::UpdateInboxWorkingHoursService < Captain::Tools::
     inbox = account.inboxes.active.find(inbox_id)
     entries = parse_working_hours!(working_hours_json)
 
-    account.update!(workspace_working_hours: entries)
+    account.with_lock('FOR NO KEY UPDATE') { account.update!(workspace_working_hours: entries) }
 
     formatted_payload(
       action: 'update_inbox_working_hours',

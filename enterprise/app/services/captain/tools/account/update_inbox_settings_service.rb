@@ -44,7 +44,7 @@ class Captain::Tools::Account::UpdateInboxSettingsService < Captain::Tools::Acco
   end
 
   def update_settings!(inbox, attributes, kwargs)
-    ActiveRecord::Base.transaction do
+    account.with_lock('FOR NO KEY UPDATE') do
       inbox.update!(attributes) if attributes.present?
       account.update!(conversation_auto_assignment_enabled: cast_boolean(kwargs[:enable_auto_assignment])) if kwargs.key?(:enable_auto_assignment)
     end

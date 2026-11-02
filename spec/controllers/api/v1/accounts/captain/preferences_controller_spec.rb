@@ -7,6 +7,33 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:agent) { create(:user, account: account, role: :agent) }
 
+  describe 'a Company save after the preferences account was loaded' do
+    it 'preserves the fresh settings when Captain preferences are saved' do
+      account.update!(workspace_greeting: { 'enabled' => false, 'message' => 'Before', 'excluded_inbox_ids' => [] })
+      expected = { 'enabled' => false, 'message' => 'Company saved', 'excluded_inbox_ids' => [] }
+      account_id = account.id
+      written = false
+      # Exercise the real request immediately after its account has been loaded.
+      allow_any_instance_of(Api::V1::Accounts::Captain::PreferencesController).to receive(:current_account).and_wrap_original do |method, *args| # rubocop:disable RSpec/AnyInstance
+        result = method.call(*args)
+        unless written
+          fresh = Account.find(account_id)
+          fresh.with_lock('FOR NO KEY UPDATE') { fresh.update!(workspace_greeting: expected) }
+          written = true
+        end
+        result
+      end
+
+      put "/api/v1/accounts/#{account.id}/captain/preferences", headers: admin.create_new_auth_token,
+                                                                params: { captain_runtime: { assistant_moderation: true } }, as: :json
+
+      expect(written).to be(true)
+      expect(response).to have_http_status(:ok)
+      expect(account.reload.captain_runtime['assistant_moderation']).to be(true)
+      expect(account.workspace_greeting).to eq(expected)
+    end
+  end
+
   def json_response
     JSON.parse(response.body, symbolize_names: true)
   end
