@@ -20,7 +20,8 @@ RAILS_ENV=production TRANSITION_POLICY=preserve_ai_expand_mcp_20261102 \
   bundle exec rake captain:capabilities:plan
 ```
 
-This reads under Account then Assistant locks and returns a manifest with IDs,
+This locks the current actor first, then Account and Assistant, consistent with
+staff reactivation. It reads and returns a manifest with IDs,
 canonical scope selections, dormant selections, quarantined IDs, complete before
 and after tool-ID sets, exact per-surface MCP additions/removals and source digest.
 It contains no prompts, raw config, names or secrets. Keep private source/audit
@@ -53,10 +54,15 @@ RAILS_ENV=production TRANSITION_POLICY=preserve_ai_expand_mcp_20261102 \
 ```
 
 Without `CONFIRM=yes` activation is a read-only preparation. Apply reloads the
-actor, locks Account before Assistant, reloads policy/context and replans. A stale
+actor, locks User then Account then Assistant, reloads policy/context and replans. A stale
 digest, wrong actor/account or blocker causes no write. It uses the existing
 activation service and private migration snapshot, adding decision provenance,
-manifest digest and quarantine/difference audit. Public serializers exclude that
+manifest digest and quarantine/difference audit. All existing model validators run
+on an isolated persisted copy of the canonical candidate. Only legacy source
+rewriting and the redundant voice account lock are suppressed for that internal
+copy; exact proven nonbinding prompt refs retain their old ignored status. Any
+other validator error or callback attribute mutation blocks activation. The
+original instance never receives this validation context. Public serializers exclude that
 snapshot. Exact repeat is a no-op only while the original transition and current
 canonical state still agree; later edits invalidate it.
 

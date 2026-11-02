@@ -91,7 +91,8 @@ RSpec.describe Captain::CapabilityPolicyTransitionPlan do
                                'agent' => { 'enabled' => true, 'tool_ids' => ['retired_unmapped_id'] },
                                'assistant' => { 'enabled' => false, 'tool_ids' => [dormant.slug, 'retired_unmapped_id'] }
                              } })
-    assistant.update_columns(config: assistant.config.merge('instructions' => 'Private archived source marker'))
+    assistant.update_columns(config: assistant.config.merge('instructions' => 'Private archived source marker'),
+                             description: "[Dormant](tool://#{dormant.slug})")
     source = assistant.reload.config.deep_dup
     manifest = plan
     expect(manifest[:quarantined_tool_ids]).to eq('agent' => ['retired_unmapped_id'], 'assistant' => ['retired_unmapped_id'])

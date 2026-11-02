@@ -50,14 +50,22 @@ class Captain::CapabilitiesMigrationService
   def persist_activation!(config, canonical, policy:)
     return @assistant.update!(config: config) unless policy
 
-    # Normal validation runs unrelated legacy-rule rewriting. Preserve the
-    # approved source and write only the validated canonical contract and audit.
+    # The ready plan ran all invariants on an isolated persisted validation copy.
+    # Preserve the approved source: ordinary save callbacks rewrite legacy fields.
     reject!('invalid_capabilities') unless Captain::Capabilities.valid?(canonical)
     @assistant.update_columns(config: config, updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
   end
 
-  def with_locked_source
-    authorize!
+  def with_locked_source(&)
+    # Reactivating a staff member already locks User before Account (including
+    # AccountUser's inbox callback). Keep that order, then Account before Assistant.
+    User.transaction do
+      authorize!
+      with_locked_assistant(&)
+    end
+  end
+
+  def with_locked_assistant
     account_id = @assistant.class.where(id: @assistant.id).pick(:account_id)
     reject!('capability_migration_account_mismatch') unless account_id == @assistant.account_id
     account = Account.find(account_id)
@@ -65,7 +73,6 @@ class Captain::CapabilitiesMigrationService
       @assistant.with_lock do
         reject!('capability_migration_account_mismatch') unless @assistant.account_id == account_id
         @assistant.account = account
-        authorize!(lock: true)
         yield
       end
     end
@@ -132,9 +139,8 @@ class Captain::CapabilitiesMigrationService
     Captain::Capabilities.digest(value)
   end
 
-  def authorize!(lock: false)
-    scope = lock ? User.lock : User
-    @actor = scope.find_by(id: @actor&.id)
+  def authorize!
+    @actor = User.lock.find_by(id: @actor&.id)
     reject!('platform_managed_capabilities') unless @actor && Captain::PromptInspectorAccess.allowed?(user: @actor)
   end
 

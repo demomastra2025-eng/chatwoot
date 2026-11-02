@@ -392,8 +392,8 @@ class Captain::Assistant < ApplicationRecord
   before_validation :initialize_context_access_config, on: :create
   before_validation :initialize_capabilities_config, on: :create
   before_validation :ensure_usage_mode
-  before_validation :normalize_instruction_description
-  before_validation :merge_legacy_rules_into_prompt
+  before_validation :normalize_instruction_description, unless: :capability_transition_validation?
+  before_validation :merge_legacy_rules_into_prompt, unless: :capability_transition_validation?
   before_destroy :destroy_personal_knowledge, prepend: true
   before_destroy :lock_captain_assignment_before_destroy, prepend: true
   before_destroy :release_channel_assignments
@@ -780,6 +780,25 @@ class Captain::Assistant < ApplicationRecord
     super
   end
 
+  # Run the existing update validators against the canonical candidate without
+  # normalizing its private legacy source. This persisted copy is never saved.
+  def capability_transition_validation(config:, ignored_instruction_tool_ids:)
+    candidate = self.class.instantiate(attributes.deep_dup)
+    candidate.account = account
+    candidate.config = config.deep_dup
+    expected = candidate.attributes.deep_dup
+    candidate.instance_variable_set(:@capability_transition_ignored_instruction_tool_ids, ignored_instruction_tool_ids)
+    candidate.valid?(:update)
+    {
+      invalid_fields: candidate.errors.attribute_names.map(&:to_s).sort,
+      changed_fields: expected.keys.reject { |field| expected[field] == candidate.attributes[field] }.sort
+    }
+  ensure
+    if candidate&.instance_variable_defined?(:@capability_transition_ignored_instruction_tool_ids)
+      candidate.remove_instance_variable(:@capability_transition_ignored_instruction_tool_ids)
+    end
+  end
+
   def handoff_enabled?
     external_agent?
   end
@@ -1028,6 +1047,10 @@ class Captain::Assistant < ApplicationRecord
     MESSAGE_MODES.include?(mode) ? mode : MESSAGE_MODE_STATIC
   end
 
+  def capability_transition_validation?
+    validation_context == :update && instance_variable_defined?(:@capability_transition_ignored_instruction_tool_ids)
+  end
+
   def initialize_capabilities_config
     self.config = Captain::Capabilities.initialize_config(config)
   end
@@ -1053,7 +1076,9 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def validate_instruction_tools
-    add_invalid_tool_error(:description, invalid_tool_ids_for_texts([description]))
+    invalid = invalid_tool_ids_for_texts([description])
+    invalid -= @capability_transition_ignored_instruction_tool_ids if capability_transition_validation?
+    add_invalid_tool_error(:description, invalid)
   end
 
   def validate_instruction_fields
@@ -1129,12 +1154,16 @@ class Captain::Assistant < ApplicationRecord
     return if provider_model_id == FISH_DEFAULT_VOICE_ID
     return add_invalid_fish_voice_error unless account&.persisted?
 
-    account.lock!
+    lock_account_for_fish_voice_validation
     selectable_voice = Telephony::AiVoice::FishVoice.selectable.exists?(
       account_id: account_id,
       provider_model_id: provider_model_id
     )
     add_invalid_fish_voice_error unless selectable_voice
+  end
+
+  def lock_account_for_fish_voice_validation
+    account.lock! unless capability_transition_validation?
   end
 
   def add_invalid_fish_voice_error

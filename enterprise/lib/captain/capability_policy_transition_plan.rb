@@ -41,10 +41,31 @@ class Captain::CapabilityPolicyTransitionPlan
     scopes = Captain::ToolAccess::SCOPE_ORDER.index_with do |scope|
       transition_scope(scope, inventory[:scopes].fetch(scope), blockers, result[:quarantined_tool_ids])
     end
+    inspected_manifest(result, scopes, blockers)
+  end
+
+  def inspected_manifest(result, scopes, blockers)
     simulation = Captain::CapabilitySurfaces.capture(@assistant, scopes)
     blockers.concat(simulation_blockers(simulation))
+    validation = validate_candidate(scopes)
+    blockers << 'invalid_assistant_metadata' if validation[:invalid_fields].any?
+    blockers << 'assistant_validation_mutates_source' if validation[:changed_fields].any?
     result.merge(status: blockers.empty? ? 'ready' : 'blocked', blockers: blockers.uniq.sort,
-                 scopes: scopes, before: simulation[:before], after: simulation[:after], surface_differences: simulation[:differences])
+                 scopes: scopes, before: simulation[:before], after: simulation[:after], surface_differences: simulation[:differences], **validation)
+  end
+
+  def validate_candidate(scopes)
+    canonical = { 'version' => Captain::Capabilities::VERSION, 'scopes' => scopes.transform_values do |scope|
+      { 'enabled' => scope[:enabled], 'tool_ids' => scope[:proposed_tool_ids] }
+    end }
+    runtime_scope = @assistant.internal_assistant? ? 'assistant' : 'agent'
+    scope = scopes.fetch(runtime_scope)
+    # Exactly these source mentions were already nonbinding. Unknown, dormant or
+    # opposite-scope references never initialize a canonical grant.
+    ignored = scope[:instruction_tool_ids] - scope[:effective_tool_ids]
+    @assistant.capability_transition_validation(
+      config: @assistant.config.merge(Captain::Capabilities::KEY => canonical), ignored_instruction_tool_ids: ignored
+    )
   end
 
   def simulation_blockers(simulation)
