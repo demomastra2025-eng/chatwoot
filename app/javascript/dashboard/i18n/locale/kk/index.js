@@ -40,6 +40,18 @@ import setNewPassword from './setNewPassword.json';
 const scheduling = {
   SCHEDULING: {
     ...ruScheduling.SCHEDULING,
+    VIEWS: {
+      ...ruScheduling.SCHEDULING.VIEWS,
+      ...kkScheduling.SCHEDULING.VIEWS,
+    },
+    TOOLBAR: {
+      ...ruScheduling.SCHEDULING.TOOLBAR,
+      ...kkScheduling.SCHEDULING.TOOLBAR,
+    },
+    CALENDAR: {
+      ...ruScheduling.SCHEDULING.CALENDAR,
+      ...kkScheduling.SCHEDULING.CALENDAR,
+    },
     PATIENT_SEARCH: kkScheduling.SCHEDULING.PATIENT_SEARCH,
     CONTACT: {
       ...ruScheduling.SCHEDULING.CONTACT,
