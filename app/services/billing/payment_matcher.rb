@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
-class Billing::PaymentMatcher
+# Keep settlement and its continuation in the existing matcher rather than a second engine.
+class Billing::PaymentMatcher # rubocop:disable Metrics/ClassLength
   def initialize(source:, payload:)
     @source = source.to_s.strip
     raw_hash = payload.is_a?(Hash) ? payload.deep_stringify_keys : {}
@@ -12,11 +13,20 @@ class Billing::PaymentMatcher
     raise ArgumentError, 'bank_reference_id is required' if @bank_reference_id.blank?
 
     existing = find_existing_event
-    return existing if existing
+    return self.class.resume!(existing) if existing
 
-    match_and_process!
+    self.class.resume!(match_and_process!)
   rescue ActiveRecord::RecordNotUnique
-    find_existing_event || raise
+    event = find_existing_event
+    raise unless event
+
+    self.class.resume!(event)
+  end
+
+  def self.resume!(event)
+    service = new(source: event.source, payload: event.attributes)
+    service.send(:dispatch_completion!, event)
+    event.reload
   end
 
   private
@@ -83,30 +93,22 @@ class Billing::PaymentMatcher
   end
 
   def settle_matched_invoice!(invoice)
-    settled = false
-    review_fallback = false
-    event = ActiveRecord::Base.transaction do
+    ActiveRecord::Base.transaction do
+      Account.where(id: invoice.account_id).lock('FOR NO KEY UPDATE').load
       invoice.lock!
       existing = find_existing_event
       next existing if existing
 
-      unless invoice.open?
-        review_fallback = true
-        next persist_needs_review_in_tx!('ambiguous_purpose', invoice, invoice.account_id)
-      end
+      next persist_needs_review_in_tx!('ambiguous_purpose', invoice, invoice.account_id) unless invoice.open?
 
-      settled = true
       apply_atomic_settlement!(invoice)
     end
-    create_owner_review_task!('ambiguous_purpose', invoice) if review_fallback
-    dispatch_post_settlement!(invoice, event) if settled
-    event
   end
 
   def apply_atomic_settlement!(invoice)
     overpaid = @amount_minor > invoice.amount_minor
     invoice.update!(status: 'paid', paid_at: @occurred_at, bank_reference_id: @bank_reference_id)
-    profile = Billing::AccountProfile.lock.find_by(account_id: invoice.account_id) ||
+    profile = Billing::AccountProfile.find_by(account_id: invoice.account_id) ||
               Billing::AccountProfile.create!(account_id: invoice.account_id)
     profile.advance_paid_until!(paid_date: @occurred_at.in_time_zone(Billing::ALMATY_TIMEZONE).to_date, invoice: invoice)
     Billing::OwnerFinanceRecorder.new.record_matched_payment!(
@@ -116,21 +118,38 @@ class Billing::PaymentMatcher
       event_attributes.merge(
         status: 'matched', review_reason: overpaid ? 'overpayment' : nil,
         billing_invoice: invoice, account_id: invoice.account_id,
-        metadata: build_event_metadata(invoice: invoice, overpaid: overpaid)
+        metadata: build_event_metadata(invoice: invoice, overpaid: overpaid, matched: true, paid_until: profile.paid_until)
       )
     )
   end
 
-  def dispatch_post_settlement!(invoice, event)
-    create_owner_review_task!('overpayment', invoice) if event.review_reason == 'overpayment'
+  def dispatch_completion!(event)
+    state = Billing::CompletionState.new(event)
+    unless state.managed?
+      state.hold!('payment_confirmed', 'legacy_without_checkpoint')
+      return
+    end
+    invoice = event.billing_invoice
+    complete_review_task!(event, state, invoice) if event.review_reason.present?
+    return unless event.status == 'matched' && invoice&.paid?
+
     Billing::ClosingDocumentsJob.perform_later(invoice.id)
-    Billing::NotificationService.new(invoice: invoice).deliver_payment_confirmation!
+    Billing::NotificationService.new(invoice: invoice, payment_event: event).deliver_payment_confirmation!
+  end
+
+  def complete_review_task!(event, state, invoice)
+    owner_account_id = OwnerFinance::AccessPolicy.workspace_account_id
+    ActiveRecord::Base.transaction do
+      Account.where(id: [event.account_id, owner_account_id].compact.uniq.sort).order(:id).lock('FOR NO KEY UPDATE').load
+      state.local!('review_task') do
+        task = create_owner_review_task!(event.review_reason, invoice)
+        task ? { 'task_id' => task.id } : state.block!('review_task', 'pending_configuration')
+      end
+    end
   end
 
   def record_needs_review!(reason:, invoice: nil, account_id: nil)
-    event = ActiveRecord::Base.transaction { persist_needs_review_in_tx!(reason, invoice, account_id) }
-    create_owner_review_task!(reason, invoice)
-    event
+    ActiveRecord::Base.transaction { persist_needs_review_in_tx!(reason, invoice, account_id) }
   end
 
   def persist_needs_review_in_tx!(reason, invoice, account_id)
@@ -145,10 +164,28 @@ class Billing::PaymentMatcher
     )
   end
 
-  def build_event_metadata(invoice:, overpaid:)
+  def build_event_metadata(invoice:, overpaid:, matched: false, paid_until: nil)
     meta = overpaid && invoice ? { 'overpayment_minor' => @amount_minor - invoice.amount_minor, 'invoice_amount_minor' => invoice.amount_minor } : {}
     meta['unsupported_currency'] = @currency unless OwnerFinance::SUPPORTED_CURRENCIES.include?(@currency)
-    meta
+    meta.merge(event_completion_metadata(invoice, overpaid, matched, paid_until))
+  end
+
+  def event_completion_metadata(invoice, overpaid, matched, paid_until)
+    state = Billing::CompletionState.new(invoice) if invoice
+    context = invoice ? { 'invoice_id' => invoice.id } : {}
+    context['paid_until'] = paid_until.iso8601 if paid_until
+    checkpoint = Billing::CompletionState.metadata(scope: "event:#{@source}:#{@bank_reference_id}", context: context,
+                                                   steps: %w[payment_confirmed review_task])
+    apply_event_intent!(checkpoint, matched: matched, overpaid: overpaid, legacy: state && !state.managed?)
+    checkpoint
+  end
+
+  def apply_event_intent!(checkpoint, matched:, overpaid:, legacy:)
+    steps = checkpoint[Billing::CompletionState::KEY]['steps']
+    steps['payment_confirmed']['state'] = 'skipped' unless matched
+    steps['review_task']['state'] = 'skipped' unless overpaid || !matched
+    # A new settlement against an old invoice cannot manufacture an old delivery target.
+    steps['payment_confirmed'].merge!('state' => 'needs_review', 'reason' => 'legacy_invoice_without_target') if legacy
   end
 
   def create_owner_review_task!(reason, invoice)

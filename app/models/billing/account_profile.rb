@@ -29,9 +29,13 @@ class Billing::AccountProfile < ApplicationRecord
   validates :knp_code, presence: true
   validates :billing_email, format: { with: URI::MailTo::EMAIL_REGEXP }, allow_nil: true
 
+  around_save :save_with_account_lock
   after_save :sync_account_attributes!
 
   scope :enabled, -> { where(billing_enabled: true) }
+  # Automatic creation never reprices an unknown historical period. Managed
+  # invoice/event recovery uses its own immutable inputs instead of this window.
+  scope :automatic_periods_through, ->(date) { enabled.where(paid_until: Billing.today_almaty..date) }
 
   def serializable_hash(options = nil)
     super.except('bcc_card_token', :bcc_card_token)
@@ -68,6 +72,14 @@ class Billing::AccountProfile < ApplicationRecord
   end
 
   private
+
+  # All ordinary update!/save! writers must acquire Account before the implicit
+  # Profile UPDATE; the legacy mirror below is still required by existing readers.
+  def save_with_account_lock
+    ids = [account_id_in_database, account_id].compact.uniq.sort
+    Account.where(id: ids).order(:id).lock('FOR NO KEY UPDATE').load
+    yield
+  end
 
   def compute_advanced_paid_until(paid_date, invoice)
     if invoice

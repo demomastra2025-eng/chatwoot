@@ -47,8 +47,9 @@ class Billing::BccOpenApiClient
     )
     req.body = JSON.generate(register_invoice_payload(invoice))
     parsed = perform_json_request(uri, req)
+    external_id = (parsed['invoice_id'] || parsed['id']).to_s.presence || raise(ApiError, 'BCC Open API invoice ID missing')
     {
-      external_invoice_id: (parsed['invoice_id'] || parsed['id']).to_s.presence,
+      external_invoice_id: external_id,
       payment_url: parsed['payment_url'].to_s.presence
     }
   end
@@ -79,10 +80,11 @@ class Billing::BccOpenApiClient
   end
 
   def register_invoice_payload(invoice)
+    document = Billing::CompletionState.new(invoice).context['document'].to_h
     {
       invoice_number: invoice.invoice_number,
-      supplier_iban: Billing::Config.bcc_business_iban,
-      supplier_bin: Billing::Config.bcc_supplier_bin,
+      supplier_iban: document['supplier_iban'],
+      supplier_bin: document['supplier_bin'],
       payer_bin: invoice.payer_tax_id,
       payer_name: invoice.payer_legal_name,
       amount: invoice.amount_kzt.to_s('F'),
