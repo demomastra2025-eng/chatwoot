@@ -242,9 +242,9 @@ if resource.channel_type == 'Channel::Voice' && !channel_missing
   end
   if Current.account_user&.administrator? && resource.channel.provider.in?(Channel::Voice::PROVIDER_OWNED_SIP_PROVIDERS)
     raw_voice_config = resource.channel.try(:provider_config)&.to_h&.deep_stringify_keys || {}
-    # AI settings have dedicated actor-aware DTOs. Transport configuration is
-    # also a PATCH input in existing clients; it must never round-trip AI policy.
-    sanitized_voice_config = raw_voice_config.except('beeline_api_token', 'binotel_api_secret', 'ai_voice_settings')
+    # AI settings and call routing have dedicated typed DTOs. Transport config
+    # is also a PATCH input; it must never round-trip private routing archives.
+    sanitized_voice_config = raw_voice_config.except('beeline_api_token', 'binotel_api_secret', 'ai_voice_settings', 'call_routing')
     sanitized_voice_config['beeline_api_token_configured'] = true if raw_voice_config['beeline_api_token'].present?
     sanitized_voice_config['binotel_api_secret_configured'] = true if raw_voice_config['binotel_api_secret'].present?
     json.provider_config sanitized_voice_config

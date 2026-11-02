@@ -16,6 +16,18 @@ RSpec.describe 'Platform voice policy contract', type: :request do
       'archive' => { 'system_prompt' => 'PRIVATE_ARCHIVE' }, 'first_message' => 'Business greeting', 'language' => 'kk-KZ' }
   end
 
+  let(:public_call_routing) do
+    { 'show_extended_call_card' => false, 'inbound' => { 'ring_timeout_seconds' => 47, 'schedule_mode' => 'business_hours' } }
+  end
+  let(:private_call_routing) do
+    public_call_routing.deep_merge('inbound' => { 'archive' => { 'system_prompt' => 'PRIVATE_TRANSPORT_ROUTING_ARCHIVE' } })
+  end
+  let(:private_transport_config) do
+    voice_channel.provider_config.merge('call_routing' => private_call_routing, 'ai_voice_settings' => legacy,
+                                        'beeline_api_token' => 'PRIVATE_TRANSPORT_SECRET', 'binotel_api_secret' => 'PRIVATE_TRANSPORT_SECRET')
+  end
+  let(:inbox_path) { "/api/v1/accounts/#{account.id}/inboxes/#{voice_channel.inbox.id}" }
+
   def token_headers(user)
     { api_access_token: user.access_token.token }
   end
@@ -194,22 +206,46 @@ RSpec.describe 'Platform voice policy contract', type: :request do
     expect(assistant.reload.config['voice_settings']).to eq(legacy.merge('first_message' => 'Tool business greeting'))
   end
 
-  it 'round-trips the transport DTO without writing AI defaults or leaking transport secrets' do
-    voice_channel.update!(provider_config: voice_channel.provider_config.merge(
-      'ai_voice_settings' => legacy, 'beeline_api_token' => 'PRIVATE_TRANSPORT_SECRET', 'binotel_api_secret' => 'PRIVATE_TRANSPORT_SECRET'
-    ))
-    inbox_path = "/api/v1/accounts/#{account.id}/inboxes/#{voice_channel.inbox.id}"
+  it 'hides routing archives from the entire inbox response and exposes only the typed business projection' do
+    voice_channel.update!(provider_config: private_transport_config)
+    saved = voice_channel.reload.provider_config.deep_dup
+    [admin, platform].each do |user|
+      get inbox_path, headers: token_headers(user), as: :json
+      expect(response).to have_http_status(:ok)
+      expect(response.body).not_to include('PRIVATE_TRANSPORT_ROUTING_ARCHIVE', 'PRIVATE_TRANSPORT_SECRET')
+      expect(response.parsed_body.fetch('provider_config')).not_to include('ai_voice_settings', 'call_routing')
+      expect(response.parsed_body['call_routing']).to eq(public_call_routing)
+      expect(voice_channel.reload.provider_config).to eq(saved)
+    end
+  end
+
+  it 'round-trips the transport DTO without writing AI defaults or private routing archives' do
+    voice_channel.update!(provider_config: private_transport_config)
+    saved = voice_channel.reload.provider_config.deep_dup
     [admin, platform].each do |user|
       get inbox_path, headers: token_headers(user), as: :json
       transport = response.parsed_body.fetch('provider_config')
-      expect(transport).not_to have_key('ai_voice_settings')
-      expect(response.body).not_to include('PRIVATE_TRANSPORT_SECRET')
+      expect(transport).not_to include('ai_voice_settings', 'call_routing')
+      expect(response.body).not_to include('PRIVATE_TRANSPORT_ROUTING_ARCHIVE', 'PRIVATE_TRANSPORT_SECRET')
       patch inbox_path, params: { channel: { provider_config: transport.merge('sipuni_events_webhook_token' => 'synthetic-new-webhook') } },
                         headers: token_headers(user), as: :json
       expect(response).to have_http_status(:ok)
-      expect(voice_channel.reload.provider_config['ai_voice_settings']).to eq(legacy)
-      expect(voice_channel.provider_config['binotel_api_secret']).to eq('PRIVATE_TRANSPORT_SECRET')
+      expect(response.body).not_to include('PRIVATE_TRANSPORT_ROUTING_ARCHIVE', 'PRIVATE_TRANSPORT_SECRET')
+      expect(voice_channel.reload.provider_config).to eq(saved.merge('sipuni_events_webhook_token' => 'synthetic-new-webhook'))
     end
+  end
+
+  it 'permits a business call-routing edit while preserving stored archives, AI settings and secrets' do
+    voice_channel.update!(provider_config: private_transport_config)
+    changes = { 'show_extended_call_card' => true, 'inbound' => { 'ring_timeout_seconds' => 55 } }
+    patch inbox_path, params: { channel: { provider_config: { call_routing: changes } } }, headers: token_headers(admin), as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.body).not_to include('PRIVATE_TRANSPORT_ROUTING_ARCHIVE', 'PRIVATE_TRANSPORT_SECRET')
+    expect(response.parsed_body['call_routing']).to eq(public_call_routing.deep_merge(changes))
+    expect(voice_channel.reload.provider_config).to include(
+      'call_routing' => private_call_routing.deep_merge(changes), 'ai_voice_settings' => legacy,
+      'beeline_api_token' => 'PRIVATE_TRANSPORT_SECRET', 'binotel_api_secret' => 'PRIVATE_TRANSPORT_SECRET'
+    )
   end
 
   it 'projects legacy routing and inbox voice JSON through the verified actor policy' do
