@@ -64,7 +64,7 @@ class Captain::CapabilityPolicyTransitionPlan
 
   def audit_references(scope, legacy, available, blockers, quarantined)
     stored = legacy[:stored_tool_ids].uniq
-    unresolved = (stored | legacy[:instruction_tool_ids]).reject { |id| known_in_scope?(id, scope) || available.include?(id) }
+    unresolved = (stored | legacy[:instruction_tool_ids]).reject { |id| known_tool?(id) || available.include?(id) }
     blockers << 'wrong_scope_tool_ids' if stored.any? { |id| known_tool?(id) && !known_in_scope?(id, scope) }
     external = unresolved.grep(/^mcp__/)
     blockers << 'unresolved_external_tool_ids' if external.any?

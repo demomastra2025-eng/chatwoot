@@ -61,6 +61,16 @@ RSpec.describe Captain::CapabilityPolicyTransitionPlan do
     %i[allowed_agent prompt_agent voice allowed_assistant].each { |surface| expect(after[surface]).to eq(before[surface]) }
   end
 
+  it 'keeps known references from the other scope as ignored provenance, not unknown quarantine' do
+    assistant_only = Captain::ToolRegistry.definitions.find { |definition| !definition.supports_scope?('agent') }
+    assistant.update_columns(description: "[Tool](tool://#{assistant_only.id})")
+    manifest = plan
+    expect(manifest[:quarantined_tool_ids]).to eq('agent' => [], 'assistant' => [])
+    expect(manifest[:scopes]['agent'][:instruction_tool_ids]).to include(assistant_only.id)
+    expect(manifest[:scopes]['agent'][:proposed_tool_ids]).not_to include(assistant_only.id)
+    expect(manifest[:scopes]['assistant']).to include(enabled: false, proposed_tool_ids: [])
+  end
+
   it 'does not promote a withheld stored FAQ selection into Agent, prompt or voice' do
     assistant.update_columns(config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] },
                                                           'assistant' => { 'enabled' => false, 'tool_ids' => [] } } })
