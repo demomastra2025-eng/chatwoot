@@ -76,6 +76,7 @@ const loadMedia = async () => {
       }}
     </span>
     <Button
+      type="button"
       variant="link"
       size="sm"
       icon="i-lucide-download"
