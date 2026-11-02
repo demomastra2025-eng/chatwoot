@@ -2,7 +2,10 @@
 
 # Keep settlement and its continuation in the existing matcher rather than a second engine.
 class Billing::PaymentMatcher # rubocop:disable Metrics/ClassLength
-  def initialize(source:, payload:)
+  class CorrelationError < StandardError; end
+
+  def initialize(source:, payload:, expected_invoice: nil)
+    @expected_invoice = expected_invoice && { invoice_id: expected_invoice.id, account_id: expected_invoice.account_id }.freeze
     @source = source.to_s.strip
     raw_hash = payload.is_a?(Hash) ? payload.deep_stringify_keys : {}
     extract_input_fields(raw_hash)
@@ -13,14 +16,14 @@ class Billing::PaymentMatcher # rubocop:disable Metrics/ClassLength
     raise ArgumentError, 'bank_reference_id is required' if @bank_reference_id.blank?
 
     existing = find_existing_event
-    return self.class.resume!(existing) if existing
+    return resume_correlated!(existing) if existing
 
-    self.class.resume!(match_and_process!)
+    resume_correlated!(match_and_process!)
   rescue ActiveRecord::RecordNotUnique
     event = find_existing_event
     raise unless event
 
-    self.class.resume!(event)
+    resume_correlated!(event)
   end
 
   def self.resume!(event)
@@ -30,6 +33,26 @@ class Billing::PaymentMatcher # rubocop:disable Metrics/ClassLength
   end
 
   private
+
+  def resume_correlated!(event)
+    verify_event_correlation!(event)
+    self.class.resume!(event)
+  end
+
+  def verify_event_correlation!(event)
+    return unless @expected_invoice
+
+    matches = event.source == @source && event.bank_reference_id == @bank_reference_id &&
+              event.account_id == @expected_invoice[:account_id] && event.billing_invoice_id == @expected_invoice[:invoice_id]
+    raise CorrelationError, 'Provider payment reference belongs to another invoice' unless matches
+  end
+
+  def verify_invoice_correlation!(invoice)
+    return unless @expected_invoice
+    return if invoice && invoice.id == @expected_invoice[:invoice_id] && invoice.account_id == @expected_invoice[:account_id]
+
+    raise CorrelationError, 'Payment target differs from charged invoice'
+  end
 
   def extract_input_fields(raw_hash)
     @bank_reference_id = pick_field(raw_hash, 'bank_reference_id', 'reference_id', 'transaction_id', 'rrn').to_s.strip
@@ -57,6 +80,7 @@ class Billing::PaymentMatcher # rubocop:disable Metrics/ClassLength
   end
 
   def handle_code_matched_invoice!(invoice)
+    verify_invoice_correlation!(invoice)
     return record_needs_review!(reason: 'ambiguous_purpose', invoice: invoice, account_id: invoice.account_id) unless invoice.open?
     return record_needs_review!(reason: 'ambiguous_purpose', invoice: invoice, account_id: invoice.account_id) unless @currency == invoice.currency
     return record_needs_review!(reason: 'partial_amount', invoice: invoice, account_id: invoice.account_id) if @amount_minor < invoice.amount_minor
@@ -96,8 +120,12 @@ class Billing::PaymentMatcher # rubocop:disable Metrics/ClassLength
     ActiveRecord::Base.transaction do
       Account.where(id: invoice.account_id).lock('FOR NO KEY UPDATE').load
       invoice.lock!
+      verify_invoice_correlation!(invoice)
       existing = find_existing_event
-      next existing if existing
+      if existing
+        verify_event_correlation!(existing)
+        next existing
+      end
 
       next persist_needs_review_in_tx!('ambiguous_purpose', invoice, invoice.account_id) unless invoice.open?
 
@@ -182,6 +210,7 @@ class Billing::PaymentMatcher # rubocop:disable Metrics/ClassLength
   end
 
   def persist_needs_review_in_tx!(reason, invoice, account_id)
+    verify_invoice_correlation!(invoice)
     Billing::OwnerFinanceRecorder.new.record_needs_review_payment!(
       event_attrs: event_attributes, review_reason: reason, account_id: account_id, invoice: invoice
     )

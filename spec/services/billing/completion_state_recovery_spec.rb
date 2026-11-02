@@ -394,7 +394,7 @@ RSpec.describe Billing::CompletionState do
     ecom = instance_double(Billing::BccEcomClient, build_payment_url: 'https://checkout.billing.test')
     allow(Billing::BccEcomClient).to receive(:new).and_return(ecom)
     allow(ecom).to receive(:charge_recurring!).and_return(approved: true, bank_reference_id: 'synthetic-approved',
-                                                          raw_payload: { status: 'approved' })
+                                                          raw_payload: { status: 'approved', bank_reference_id: 'synthetic-approved' })
     allow(Billing::PaymentMatcher).to receive(:new).and_raise('synthetic crash after approval receipt')
     Billing::BccRecurringChargeJob.perform_now
     expect(step(invoice, 'recurring_charge_1')['state']).to eq('completed')

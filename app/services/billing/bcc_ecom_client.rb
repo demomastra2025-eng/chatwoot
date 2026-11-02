@@ -13,6 +13,19 @@ class Billing::BccEcomClient
   APPROVED_STATUSES = %w[approved paid captured success 00].freeze
 
   class << self
+    def normalize_charge_response(parsed)
+      status_str = (parsed['status'] || parsed['response_code']).to_s.strip.downcase
+      approved = parsed['approved'] == true || APPROVED_STATUSES.include?(status_str)
+      ref_id = (parsed['bank_reference_id'] || parsed['reference_id'] || parsed['rrn'] || parsed['transaction_id']).to_s.strip.presence
+      {
+        approved: approved,
+        bank_reference_id: ref_id,
+        status: status_str.presence || 'declined',
+        message: parsed['message'].to_s.slice(0, 160),
+        raw_payload: parsed.except('card_token')
+      }
+    end
+
     def compute_signature(raw_body, secret_key = Billing::Config.bcc_ecom_secret_key)
       OpenSSL::HMAC.hexdigest('SHA256', secret_key.to_s, raw_body.to_s)
     end
@@ -48,7 +61,7 @@ class Billing::BccEcomClient
     )
     req.body = body
     parsed = perform_json_request(uri, req, card_token)
-    normalize_charge_response(parsed)
+    self.class.normalize_charge_response(parsed)
   end
 
   private
@@ -103,19 +116,6 @@ class Billing::BccEcomClient
     raise e if e.is_a?(ApiError)
 
     raise ApiError, sanitize_error(e.message, card_token)
-  end
-
-  def normalize_charge_response(parsed)
-    status_str = (parsed['status'] || parsed['response_code']).to_s.strip.downcase
-    approved = parsed['approved'] == true || APPROVED_STATUSES.include?(status_str)
-    ref_id = (parsed['bank_reference_id'] || parsed['reference_id'] || parsed['rrn'] || parsed['transaction_id']).to_s.strip.presence
-    {
-      approved: approved,
-      bank_reference_id: ref_id,
-      status: status_str.presence || 'declined',
-      message: parsed['message'].to_s.slice(0, 160),
-      raw_payload: parsed.except('card_token')
-    }
   end
 
   def sanitize_error(message, card_token)

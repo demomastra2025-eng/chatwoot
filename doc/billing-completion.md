@@ -102,3 +102,18 @@ caller сначала восстанавливают эти ограниченн
 
 Повреждённый steps не передаётся в jsonb_each: CASE выбирает объект, а malformed managed
 строка обрабатывается отдельно и не срывает восстановление следующего Invoice.
+
+
+Для recurring receipt источник доказательства один: публичный чистый
+`BccEcomClient.normalize_charge_response`, извлечённый из прежнего метода без изменения
+его тела, aliases, строкового преобразования reference или default status. HTTP path
+и проверка сохранённого raw используют его одинаково. Material approved/reference receipt
+должны точно совпасть с canonical(raw); approval без реального исходного reference либо
+несовпадение дают hold до settlement. Прежний synthetic default declined не доказывает отказ.
+
+Recurring вызывает тот же PaymentMatcher с доверенным `expected_invoice` (ID/account).
+Source/reference/account/invoice проверяются до existing Event resume, внутри Account/Invoice
+transaction до финансовых изменений и после unique-reference race rollback. Чужой Event
+даёт типизированный CorrelationError: текущий charge становится needs_review с сохранённым
+approval receipt; новая попытка не разрешается. Вызовы webhook/statement без этой опции
+сохраняют прежний контракт. Same-invoice replay остаётся идемпотентным.

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class Billing::BccRecurringChargeJob < ApplicationJob
+class Billing::BccRecurringChargeJob < ApplicationJob # rubocop:disable Metrics/ClassLength
   MAX_ATTEMPTS = 3
   RETRY_INTERVAL = 24.hours
   DECLINED_STATUSES = %w[declined rejected failed insufficient_funds].freeze
@@ -71,6 +71,9 @@ class Billing::BccRecurringChargeJob < ApplicationJob
     return unless save_charge_receipt!(invoice, attempt_num, token, res)
 
     res[:approved] ? settle_approved_charge!(invoice, res) : handle_failed_attempt!(invoice, res[:message], attempt_num)
+  rescue Billing::PaymentMatcher::CorrelationError
+    Billing::CompletionState.new(invoice).hold!("recurring_charge_#{attempt_num}", 'payment_event_correlation_mismatch')
+    raise
   rescue StandardError => e
     Billing::CompletionState.new(invoice).fail!("recurring_charge_#{attempt_num}", token, error: e) if token
     raise
@@ -169,29 +172,39 @@ class Billing::BccRecurringChargeJob < ApplicationJob
   end
 
   def validate_charge_response!(res)
+    raw = charge_raw_payload(res)
+    canonical = Billing::BccEcomClient.normalize_charge_response(raw)
+    unless res.values_at(:approved, :bank_reference_id) == canonical.values_at(:approved, :bank_reference_id)
+      raise Billing::BccEcomClient::ApiError, 'Recurring receipt differs from provider proof'
+    end
+    return if approved_charge?(canonical, raw) || declined_charge?(canonical, raw)
+
+    raise Billing::BccEcomClient::ApiError, 'Ambiguous recurring response'
+  end
+
+  def charge_raw_payload(res)
     raw = res.is_a?(Hash) && res[:raw_payload]
     raise Billing::BccEcomClient::ApiError, 'Ambiguous recurring response' unless raw.is_a?(Hash) && raw.present?
 
-    raw = raw.stringify_keys
-    status = (raw['status'] || raw['response_code']).to_s.strip.downcase
-    valid = approved_charge?(res, raw, status) || declined_charge?(res, raw, status)
-    raise Billing::BccEcomClient::ApiError, 'Ambiguous recurring response' unless valid
+    raw.stringify_keys
   end
 
-  def approved_charge?(res, raw, status)
-    res[:approved] == true && res[:bank_reference_id].is_a?(String) && res[:bank_reference_id].present? &&
-      raw['approved'] != false && DECLINED_STATUSES.exclude?(status) &&
-      (raw['approved'] == true || Billing::BccEcomClient::APPROVED_STATUSES.include?(status))
+  def explicit_decline?(canonical, raw)
+    (raw['status'] || raw['response_code']).present? && DECLINED_STATUSES.include?(canonical[:status])
   end
 
-  def declined_charge?(res, raw, status)
-    res[:approved] == false && raw['approved'] != true && DECLINED_STATUSES.include?(status)
+  def approved_charge?(canonical, raw)
+    canonical[:approved] && canonical[:bank_reference_id].present? && raw['approved'] != false && !explicit_decline?(canonical, raw)
+  end
+
+  def declined_charge?(canonical, raw)
+    !canonical[:approved] && raw['approved'] != true && explicit_decline?(canonical, raw)
   end
 
   def settle_approved_charge!(invoice, res)
     ref_id = res.fetch(:bank_reference_id)
     Billing::PaymentMatcher.new(
-      source: 'bcc_ecom',
+      source: 'bcc_ecom', expected_invoice: invoice,
       payload: {
         bank_reference_id: ref_id, invoice_number: invoice.invoice_number,
         amount_minor: invoice.amount_minor, currency: invoice.currency,

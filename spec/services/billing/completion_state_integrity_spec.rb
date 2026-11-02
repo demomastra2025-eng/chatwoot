@@ -164,7 +164,7 @@ RSpec.describe Billing::CompletionState do
     state = described_class.new(invoice)
     token = state.claim!('recurring_charge_1', configured: true)
     state.finish!('recurring_charge_1', token, receipt: { 'approved' => true, 'bank_reference_id' => 'synthetic-approval',
-                                                          'raw_payload' => { 'status' => 'approved' } })
+                                                          'raw_payload' => { 'status' => 'approved', 'bank_reference_id' => 'synthetic-approval' } })
     invoice.update!(recurring_attempts_count: 1, last_recurring_attempt_at: Time.current)
     profile.update!(autopay_enabled: false, bcc_card_token: nil)
     Billing::BccRecurringChargeJob.perform_now
@@ -374,7 +374,8 @@ RSpec.describe Billing::CompletionState do
       state = described_class.new(invoice)
       token = state.claim!('recurring_charge_1', configured: true)
       state.finish!('recurring_charge_1', token,
-                    receipt: { 'approved' => true, 'bank_reference_id' => 'saved', 'raw_payload' => { 'approved' => true } })
+                    receipt: { 'approved' => true, 'bank_reference_id' => 'saved',
+                               'raw_payload' => { 'approved' => true, 'bank_reference_id' => 'saved' } })
       invoice.update!(recurring_attempts_count: 1, last_recurring_attempt_at: 25.hours.ago)
       change_checkpoint(invoice) { |value| value['steps']['recurring_charge_1']['receipt'] = receipt }
       2.times { Billing::BccRecurringChargeJob.perform_now }
@@ -408,7 +409,7 @@ RSpec.describe Billing::CompletionState do
     state = described_class.new(invoice)
     token = state.claim!('recurring_charge_1', configured: true)
     state.finish!('recurring_charge_1', token, receipt: { 'approved' => true, 'bank_reference_id' => 'saved-without-config',
-                                                          'raw_payload' => { 'approved' => true } })
+                                                          'raw_payload' => { 'approved' => true, 'bank_reference_id' => 'saved-without-config' } })
     invoice.update!(recurring_attempts_count: 1)
     profile.update!(billing_enabled: false, autopay_enabled: false, bcc_card_token: nil, custom_monthly_price_minor: 900_000)
     allow(Billing::Config).to receive_messages(autobilling_enabled?: false, bcc_ecom_configured?: false)
@@ -507,7 +508,8 @@ RSpec.describe Billing::CompletionState do
       state = described_class.new(invoice)
       token = state.claim!('recurring_charge_1', configured: true)
       state.finish!('recurring_charge_1', token,
-                    receipt: { 'approved' => true, 'bank_reference_id' => 'saved', 'raw_payload' => { 'approved' => true } })
+                    receipt: { 'approved' => true, 'bank_reference_id' => 'saved',
+                               'raw_payload' => { 'approved' => true, 'bank_reference_id' => 'saved' } })
       invoice.update!(recurring_attempts_count: 1, last_recurring_attempt_at: 25.hours.ago)
       change_checkpoint(invoice) { |value| value['steps']['recurring_charge_1']['state'] = status }
       Billing::BccRecurringChargeJob.perform_now
