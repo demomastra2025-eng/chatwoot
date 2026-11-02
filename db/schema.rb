@@ -10,12 +10,13 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_11_02_013200) do
+ActiveRecord::Schema[7.2].define(version: 2026_11_02_093000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
 
   # These extensions should be enabled to support this database
+  enable_extension "btree_gist"
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
   enable_extension "pgcrypto"
@@ -438,11 +439,16 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_02_013200) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "foundation_state", default: "ready", null: false
+    t.datetime "starts_at"
     t.index ["account_id"], name: "idx_billing_workspaces_one_active_account", unique: true, where: "((status)::text = 'active'::text)"
     t.index ["account_id"], name: "index_billing_account_workspaces_on_account_id"
     t.index ["billing_account_id"], name: "index_billing_account_workspaces_on_billing_account_id"
+    t.check_constraint "foundation_state::text = 'legacy_pending'::text OR starts_at IS NOT NULL AND (detached_at IS NULL OR detached_at > starts_at)", name: "chk_billing_workspaces_known_interval"
+    t.check_constraint "foundation_state::text = ANY (ARRAY['ready'::character varying, 'legacy_pending'::character varying]::text[])", name: "chk_billing_account_workspaces_foundation_state"
     t.check_constraint "status::text = 'active'::text AND detached_at IS NULL OR status::text = 'detached'::text AND detached_at IS NOT NULL", name: "chk_billing_workspaces_detached_at"
     t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'detached'::character varying::text])", name: "chk_billing_workspaces_status"
+    t.exclusion_constraint "account_id WITH =, tsrange(starts_at, detached_at, '[)'::text) WITH &&", where: "(foundation_state)::text = 'ready'::text", using: :gist, name: "excl_billing_workspace_intervals"
   end
 
   create_table "billing_accounts", force: :cascade do |t|
@@ -453,8 +459,17 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_02_013200) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "foundation_state", default: "ready", null: false
+    t.bigint "organization_id"
+    t.bigint "standalone_account_id"
+    t.index ["organization_id"], name: "idx_billing_accounts_org_owner", unique: true, where: "((foundation_state)::text = 'ready'::text)"
+    t.index ["organization_id"], name: "index_billing_accounts_on_organization_id"
+    t.index ["standalone_account_id"], name: "idx_billing_accounts_standalone_owner", unique: true, where: "((foundation_state)::text = 'ready'::text)"
+    t.index ["standalone_account_id"], name: "index_billing_accounts_on_standalone_account_id"
     t.index ["status"], name: "index_billing_accounts_on_status"
     t.check_constraint "default_currency::text ~ '^[A-Z]{3}$'::text", name: "chk_billing_accounts_currency"
+    t.check_constraint "foundation_state::text = 'legacy_pending'::text OR (organization_id IS NULL) <> (standalone_account_id IS NULL) AND default_currency::text = 'KZT'::text", name: "chk_billing_accounts_explicit_owner"
+    t.check_constraint "foundation_state::text = ANY (ARRAY['ready'::character varying, 'legacy_pending'::character varying]::text[])", name: "chk_billing_accounts_foundation_state"
     t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'past_due'::character varying::text, 'suspended'::character varying::text, 'closed'::character varying::text])", name: "chk_billing_accounts_status"
   end
 
@@ -599,7 +614,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_02_013200) do
 
   create_table "billing_subscriptions", force: :cascade do |t|
     t.bigint "billing_account_id", null: false
-    t.bigint "billing_plan_id", null: false
+    t.bigint "billing_plan_id"
     t.bigint "billing_plan_price_id"
     t.string "status", default: "incomplete", null: false
     t.datetime "current_period_starts_at"
@@ -612,12 +627,15 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_02_013200) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "foundation_state", default: "ready", null: false
     t.index ["billing_account_id"], name: "idx_billing_subscriptions_one_entitling", unique: true, where: "((status)::text = ANY (ARRAY[('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text, ('grace_period'::character varying)::text]))"
     t.index ["billing_account_id"], name: "index_billing_subscriptions_on_billing_account_id"
     t.index ["billing_plan_id"], name: "index_billing_subscriptions_on_billing_plan_id"
     t.index ["billing_plan_price_id"], name: "index_billing_subscriptions_on_billing_plan_price_id"
     t.index ["provider", "external_id"], name: "idx_billing_subscriptions_provider_external", unique: true, where: "(external_id IS NOT NULL)"
     t.check_constraint "current_period_starts_at IS NULL OR current_period_ends_at IS NULL OR current_period_ends_at > current_period_starts_at", name: "chk_billing_subscriptions_period"
+    t.check_constraint "foundation_state::text = 'legacy_pending'::text OR billing_plan_id IS NULL AND billing_plan_price_id IS NULL AND jsonb_typeof(plan_snapshot) = 'object'::text AND jsonb_typeof(price_snapshot) = 'object'::text AND plan_snapshot @> '{\"source\": \"account_plans\", \"schema_version\": 1}'::jsonb AND price_snapshot @> '{\"source\": \"account_plans\", \"currency\": \"KZT\", \"schema_version\": 1}'::jsonb AND plan_snapshot ?& ARRAY['catalog_version'::text, 'tariff'::text, 'modules'::text, 'features'::text, 'limits'::text, 'limit_sources'::text] AND price_snapshot ?& ARRAY['catalog_version'::text, 'tariff'::text, 'pricing'::text] AND (plan_snapshot -> 'catalog_version'::text) = (price_snapshot -> 'catalog_version'::text) AND (plan_snapshot -> 'tariff'::text) = (price_snapshot -> 'tariff'::text) AND jsonb_typeof(plan_snapshot -> 'limits'::text) = 'object'::text AND jsonb_typeof(plan_snapshot -> 'limit_sources'::text) = 'object'::text AND jsonb_typeof(price_snapshot -> 'pricing'::text) = 'object'::text", name: "chk_billing_subscriptions_snapshot_contract"
+    t.check_constraint "foundation_state::text = ANY (ARRAY['ready'::character varying, 'legacy_pending'::character varying]::text[])", name: "chk_billing_subscriptions_foundation_state"
     t.check_constraint "status::text = ANY (ARRAY['incomplete'::character varying::text, 'trialing'::character varying::text, 'active'::character varying::text, 'past_due'::character varying::text, 'grace_period'::character varying::text, 'suspended'::character varying::text, 'canceled'::character varying::text])", name: "chk_billing_subscriptions_status"
   end
 
@@ -4509,8 +4527,10 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_02_013200) do
   add_foreign_key "billing_account_memberships", "billing_accounts"
   add_foreign_key "billing_account_memberships", "users", on_delete: :cascade
   add_foreign_key "billing_account_profiles", "accounts"
-  add_foreign_key "billing_account_workspaces", "accounts", on_delete: :cascade
+  add_foreign_key "billing_account_workspaces", "accounts"
   add_foreign_key "billing_account_workspaces", "billing_accounts"
+  add_foreign_key "billing_accounts", "accounts", column: "standalone_account_id"
+  add_foreign_key "billing_accounts", "organizations"
   add_foreign_key "billing_audit_events", "billing_accounts"
   add_foreign_key "billing_audit_events", "users", column: "super_admin_id", on_delete: :nullify
   add_foreign_key "billing_entitlement_allocations", "accounts", on_delete: :cascade
