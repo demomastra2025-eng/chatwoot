@@ -23,11 +23,20 @@ module Llm::Config
     'agent_routing_escalation' => 'CAPTAIN_AGENT_ROUTING_ESCALATION_MODEL',
     'council_split' => 'CAPTAIN_COUNCIL_SPLIT_MODEL'
   }.freeze
+  INSTALLATION_DEFAULT_MODEL_FEATURES = %w[assistant editor copilot].freeze
+  INSTALLATION_MANAGED_MODEL_FEATURES = (
+    INSTALLATION_MANAGED_MODEL_CONFIGS.keys + INSTALLATION_DEFAULT_MODEL_FEATURES +
+    %w[agent_routing fact_check_gate inbound_triage knowledge_rerank]
+  ).freeze
   # The image readers have a platform default of their own (config/llm.yml): a blank slot is that default, never the installation default
   # model (CAPTAIN_DEFAULT_MODEL), so moving the agent to another model never moves the reading of images with it.
   OWN_DEFAULT_MODEL_FEATURES = %w[image_recognition image_handwriting].freeze
   OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1'.freeze
   OPENROUTER_DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'.freeze
+  THINKING_EFFORT_CONFIGS = {
+    'assistant' => 'CAPTAIN_AI_AGENT_THINKING_EFFORT', 'copilot' => 'CAPTAIN_AI_ASSISTANT_THINKING_EFFORT'
+  }.freeze
+  THINKING_EFFORT_DEFAULTS = { 'assistant' => 'low', 'copilot' => 'none' }.freeze
   RUNTIME_CACHE_KEY = :llm_config_runtime_cache
 
   class << self
@@ -97,6 +106,23 @@ module Llm::Config
       end
 
       default_model_available?(fallback, account: account) ? Llm::Models.canonical_model_name(fallback) : nil
+    end
+
+    # Function slots belong to the installation. Saved account/agent efforts are
+    # retained in storage only and never participate in runtime selection.
+    def thinking_effort_for(feature:, fallback: nil)
+      key = feature.to_s
+      slot = THINKING_EFFORT_CONFIGS[key]
+      effort = installation_config_value(slot).to_s if slot
+      return effort if Llm::RuntimePolicy::THINKING_EFFORTS.include?(effort)
+
+      fallback || THINKING_EFFORT_DEFAULTS.fetch(key, 'none')
+    end
+
+    def runtime_thinking_efforts
+      THINKING_EFFORT_CONFIGS.keys.each_with_object({}) do |feature, values|
+        values["#{feature}_thinking_effort"] = thinking_effort_for(feature: feature)
+      end
     end
 
     def provider_for_model(model_name, account: nil)
@@ -177,7 +203,7 @@ module Llm::Config
     end
 
     def installation_managed_model_feature?(feature_key)
-      INSTALLATION_MANAGED_MODEL_CONFIGS.key?(feature_key.to_s)
+      INSTALLATION_MANAGED_MODEL_FEATURES.include?(feature_key.to_s)
     end
 
     def custom_api_base_configured?(provider, account: nil)
@@ -320,32 +346,11 @@ module Llm::Config
       end
     end
 
-    def account_model_for(account, feature_key)
-      return if account.blank? || feature_key.blank?
-
-      model_name = account.captain_models.to_h.with_indifferent_access[feature_key]
-      return if model_name.blank?
-
-      model_name = normal_feature_model_name(feature_key, model_name, account: account)
-      return if model_name.blank?
-      return unless feature_model_allowed?(feature_key, model_name, account: account)
-
-      canonical_model = Llm::Models.canonical_model_name(model_name)
-      return unless runtime_usable_model?(canonical_model, account: account)
-
-      provider = provider_for_model(canonical_model, account: account)
-      return unless provider_available?(provider, account: account)
-
-      canonical_model
-    end
-
-    # The model fixed for the feature: the platform's own for a platform-managed feature, else the account's choice.
+    # Every model is selected by its platform feature slot or the platform default.
     def explicit_model_for(feature_key, account: nil)
-      if installation_managed_model_feature?(feature_key)
-        installation_managed_model_for(feature_key, account: account)
-      else
-        account_model_for(account, feature_key)
-      end
+      return unless INSTALLATION_MANAGED_MODEL_CONFIGS.key?(feature_key)
+
+      installation_managed_model_for(feature_key, account: account)
     end
 
     def installation_managed_model_for(feature_key, account: nil)
@@ -366,8 +371,7 @@ module Llm::Config
     end
 
     def installation_model_for(feature_key, account: nil)
-      model_name = installation_config_value('CAPTAIN_AI_AGENT_DEFAULT_MODEL').presence if feature_key.to_s == 'assistant'
-      model_name ||= installation_default_model
+      model_name = installation_default_model
       return if model_name.blank?
 
       model_name = normal_feature_model_name(feature_key, model_name, account: account) if feature_key.present?

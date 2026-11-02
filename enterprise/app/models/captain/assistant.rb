@@ -390,6 +390,7 @@ class Captain::Assistant < ApplicationRecord
                  :context_access, :tool_access, :model, :feature_image_understanding
 
   before_validation :initialize_context_access_config, on: :create
+  before_validation :initialize_capabilities_config, on: :create
   before_validation :ensure_usage_mode
   before_validation :normalize_instruction_description
   before_validation :merge_legacy_rules_into_prompt
@@ -413,6 +414,7 @@ class Captain::Assistant < ApplicationRecord
   validate :validate_instruction_fields
   validate :validate_fish_voice_reference
   validate :validate_conversational_model
+  validate :validate_capabilities_contract
   validate :validate_follow_up_settings
 
   scope :ordered, -> { order(created_at: :desc) }
@@ -512,6 +514,18 @@ class Captain::Assistant < ApplicationRecord
     )
   end
 
+  # The canonical binding reader resolves only selected IDs and their established
+  # dependencies. Registry-backed MCP calls need not enumerate unrelated tools.
+  def canonical_bound_tool_ids(scope_name)
+    scope = Captain::Capabilities.scope(config, scope_name)
+    return [] unless scope['enabled'] == true
+
+    selected = scope['tool_ids'] & Captain::ToolCatalog.available_tools_for_ids(self, scope_name, scope['tool_ids']).pluck(:id)
+    selected -= ['resolve_conversation'] if scope_name == Captain::ToolAccess::SCOPE_AGENT && !auto_completion_enabled?
+    expanded = companion_expanded_tool_ids(selected)
+    expanded & Captain::ToolCatalog.available_tools_for_ids(self, scope_name, expanded).pluck(:id)
+  end
+
   def effective_agent_tool_ids(referenced_tool_ids: [])
     effective_tool_ids_for(
       Captain::ToolAccess::SCOPE_AGENT,
@@ -520,6 +534,8 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def scenario_agent_tool_ids(referenced_tool_ids: [])
+    return allowed_agent_tool_ids if Captain::Capabilities.configured?(config)
+
     return [] unless tool_scope_enabled?(Captain::ToolAccess::SCOPE_AGENT)
 
     available_ids = available_tool_ids
@@ -542,7 +558,7 @@ class Captain::Assistant < ApplicationRecord
       Captain::ToolAccess::SCOPE_AGENT,
       fallback_ids: fallback_ids
     )
-    selected_ids = with_external_agent_tools(selected_ids) if external_agent?
+    selected_ids = with_external_agent_tools(selected_ids) if external_agent? && !Captain::Capabilities.configured?(config)
     selected_ids -= ['resolve_conversation'] unless auto_completion_enabled?
     selected_ids
   end
@@ -589,6 +605,7 @@ class Captain::Assistant < ApplicationRecord
 
   def voice_runtime_agent_tools
     return [] unless tool_scope_enabled?(Captain::ToolAccess::SCOPE_AGENT)
+    return allowed_agent_tools.reject { |tool| tool[:id].to_s == 'get_appointment_provider_status' } if Captain::Capabilities.configured?(config)
 
     selected_ids = selected_agent_tool_ids
     referenced_ids = prompt_referenced_tool_ids_for_template(:assistant)
@@ -759,6 +776,7 @@ class Captain::Assistant < ApplicationRecord
 
   def reload(*)
     remove_instance_variable(:@faq_entries) if defined?(@faq_entries)
+    remove_instance_variable(:@account_settings) if defined?(@account_settings)
     super
   end
 
@@ -827,17 +845,24 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def validate_conversational_model
+    return unless conversational_model_changed?
     return if model.blank?
     return errors.add(:config, :assistant_model_not_allowed) unless Llm::Models.valid_model_for?(:assistant, model, account: account)
-    return unless conversational_model_changed?
     return if Llm::Models.model_selectable_for_feature?(:assistant, model)
 
     errors.add(:config, :assistant_model_not_allowed)
   end
 
+  def validate_capabilities_contract
+    return unless Captain::Capabilities.configured?(config)
+    return if Captain::Capabilities.valid?(config['capabilities'])
+
+    errors.add(:config, :invalid_capabilities)
+  end
+
   # Only a newly chosen model has to be on the platform allowlist: an agent keeps the model it already has.
   def conversational_model_changed?
-    config_in_database.to_h.with_indifferent_access[:model].to_s.strip != model
+    config_in_database.to_h.with_indifferent_access[:model].to_s.strip != model.to_s.strip
   end
 
   def validate_follow_up_settings
@@ -1003,6 +1028,10 @@ class Captain::Assistant < ApplicationRecord
     MESSAGE_MODES.include?(mode) ? mode : MESSAGE_MODE_STATIC
   end
 
+  def initialize_capabilities_config
+    self.config = Captain::Capabilities.initialize_config(config)
+  end
+
   def initialize_context_access_config
     self.config = (config || {}).deep_stringify_keys
     config['context_access'] ||= {}
@@ -1140,6 +1169,8 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def effective_tool_ids_for(scope_name, referenced_tool_ids:)
+    return canonical_bound_tool_ids(scope_name) if Captain::Capabilities.configured?(config)
+
     return [] unless tool_scope_enabled?(scope_name)
 
     available_ids = available_tool_ids_for_scope(scope_name)

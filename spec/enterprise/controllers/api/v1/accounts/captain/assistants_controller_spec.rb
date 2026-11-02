@@ -65,7 +65,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response[:id]).to eq(assistant.id)
-        expect(json_response[:description]).to eq(assistant.description)
+        expect(json_response).not_to have_key(:description)
       end
 
       it 'does not expose historical handoff consent settings' do
@@ -128,6 +128,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         before do
           upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'catalog-test-key')
           upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.4-mini"]')
+          upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.4-mini')
           25.times do |index|
             Llm::ModelCatalogEntry.create!(
               provider_platform: 'openrouter', model_id: index.zero? ? 'openai/gpt-5.4-mini' : "vendor/model-#{index}",
@@ -594,11 +595,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         assistant: {
           name: 'New Assistant',
           description: 'Assistant Description',
-          config: {
-            feature_faq: true,
-            feature_memory: false,
-            feature_citation: true
-          }
+          config: {}
         }
       }
     end
@@ -623,6 +620,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     end
 
     context 'when it is an admin' do
+      let(:admin) { create(:super_admin).tap { |user| create(:account_user, account: account, user: user, role: :administrator) } }
+
       it 'creates a new assistant' do
         expect do
           post "/api/v1/accounts/#{account.id}/captain/assistants",
@@ -635,7 +634,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(json_response[:description]).to eq('Assistant Description')
         expect(json_response).not_to have_key(:response_guidelines)
         expect(json_response).not_to have_key(:guardrails)
-        expect(json_response[:config][:feature_citation]).to be(true)
         expect(response).to have_http_status(:success)
       end
 
@@ -680,19 +678,14 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(json_response.dig(:config, :voice_settings, :humanlike_defaults_profile)).to eq('standard_v1')
       end
 
-      it 'creates an assistant with feature_citation disabled' do
-        attributes_with_disabled_citation = valid_attributes.deep_dup
-        attributes_with_disabled_citation[:assistant][:config][:feature_citation] = false
-
+      it 'rejects the retired feature_citation flag on creation' do
+        attributes = valid_attributes.deep_dup
+        attributes[:assistant][:config] = { feature_citation: false }
         expect do
-          post "/api/v1/accounts/#{account.id}/captain/assistants",
-               params: attributes_with_disabled_citation,
-               headers: admin.create_new_auth_token,
-               as: :json
-        end.to change(Captain::Assistant, :count).by(1)
-
-        expect(json_response[:config][:feature_citation]).to be(false)
-        expect(response).to have_http_status(:success)
+          post "/api/v1/accounts/#{account.id}/captain/assistants", params: attributes, headers: admin.create_new_auth_token, as: :json
+        end.not_to change(Captain::Assistant, :count)
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response).to include(error: 'unsupported_assistant_settings', fields: ['config.feature_citation'])
       end
 
       it 'creates an internal assistant when usage_mode is provided' do
@@ -812,9 +805,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         assistant: {
           name: 'Updated Assistant',
           description: 'Updated instruction',
-          config: {
-            feature_citation: false
-          }
+          config: {}
         }
       }
     end
@@ -839,6 +830,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     end
 
     context 'when it is an admin' do
+      let(:admin) { create(:super_admin).tap { |user| create(:account_user, account: account, user: user, role: :administrator) } }
+
       it 'updates the assistant' do
         patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
               params: update_attributes,
@@ -882,7 +875,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(assistant.reload.description).to eq(original)
       end
 
-      it 'updates feature_citation config' do
+      it 'rejects retired feature_citation writes and preserves stored data' do
         assistant.update!(config: { 'feature_citation' => true })
 
         patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
@@ -890,8 +883,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
               headers: admin.create_new_auth_token,
               as: :json
 
-        expect(response).to have_http_status(:success)
-        expect(json_response[:config][:feature_citation]).to be(false)
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response).to include(error: 'unsupported_assistant_settings', fields: ['config.feature_citation'])
+        expect(assistant.reload.config['feature_citation']).to be(true)
       end
 
       it 'updates the audio transcript capability without replacing unrelated config' do
@@ -902,8 +896,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
               headers: admin.create_new_auth_token,
               as: :json
 
-        expect(response).to have_http_status(:success)
-        expect(assistant.reload.config).to include('feature_faq' => true, 'use_audio_transcriptions' => false)
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response[:error]).to eq('unsupported_assistant_settings')
+        expect(json_response[:fields]).to include('config.use_audio_transcriptions')
       end
 
       it 'updates voice settings without replacing unrelated config sections' do
@@ -1049,18 +1044,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
               headers: admin.create_new_auth_token,
               as: :json
 
-        expect(response).to have_http_status(:success)
-        expect(assistant.reload.config).to include(
-          'feature_faq' => false,
-          'tool_access' => {
-            'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff] }
-          },
-          'context_access' => {
-            'contact' => { 'enabled' => true, 'field_ids' => ['contact.name'] }
-          }
-        )
-        expect(assistant.description).to include('Reply briefly.')
-        expect(assistant.config).not_to have_key('rules')
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response[:error]).to eq('unsupported_assistant_settings')
+        expect(json_response[:fields]).to include('config.feature_faq')
       end
 
       it 'preserves tool and rules config when patching system settings only' do
@@ -1101,21 +1087,12 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
               headers: admin.create_new_auth_token,
               as: :json
 
-        expect(response).to have_http_status(:success)
-        expect(assistant.reload.config).to include(
-          'temperature' => 0.4,
-          'handoff_message_enabled' => true,
-          'handoff_message_mode' => 'ai',
-          'handoff_message' => 'Escalating now.',
-          'resolution_message_enabled' => true,
-          'resolution_message_mode' => 'static',
-          'tool_access' => {
-            'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff] }
-          }
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response[:error]).to eq('unsupported_assistant_settings')
+        expect(json_response[:fields]).to include(
+          'config.temperature', 'config.handoff_message_enabled', 'config.handoff_message_mode', 'config.handoff_message',
+          'config.resolution_message_enabled', 'config.resolution_message_mode'
         )
-        expect(assistant.config).not_to include('handoff_requires_explicit_consent', 'handoff_consent_reason')
-        expect(assistant.description).to include('Stay focused.')
-        expect(assistant.config).not_to have_key('rules')
       end
 
       it 'ignores per-agent safety selections: safety is a workspace setting, stored legacy data stays as it is' do
@@ -1145,18 +1122,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
               headers: admin.create_new_auth_token,
               as: :json
 
-        expect(response).to have_http_status(:success)
-        expect(assistant.reload.config).to include(
-          'temperature' => 0.6,
-          'tool_access' => {
-            'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] }
-          },
-          'safety_settings' => {
-            'moderation_enabled' => true,
-            'prompt_injection_action' => 'block',
-            'sensitive_info_action' => 'block'
-          }
-        )
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response[:error]).to eq('unsupported_assistant_settings')
+        expect(json_response[:fields]).to include('config.safety_settings')
       end
 
       it 'updates usage_mode when the assistant is not connected to inboxes' do

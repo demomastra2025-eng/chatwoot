@@ -10,14 +10,15 @@ RSpec.describe Llm::RuntimePolicy do
       allow(Llm::Models).to receive(:reasoning_efforts_for).with('gpt-5.1', account: account).and_return(%w[none low medium high])
       allow(Llm::Models).to receive(:reasoning_efforts_for).with('claude-sonnet-4.5', account: account).and_return(%w[low medium high])
     end
-    it 'returns nil when thinking is disabled' do
+    it 'uses the platform conversation default' do
       expect(
         described_class.thinking_options(feature: :assistant, account: account, model: 'gpt-5.1')
-      ).to be_nil
+      ).to eq(effort: 'low')
     end
 
     it 'returns effort for supported models' do
-      account.update!(captain_runtime: { 'assistant_thinking_effort' => 'high' })
+      account.update!(captain_runtime: { 'assistant_thinking_effort' => 'none' })
+      InstallationConfig.create!(name: 'CAPTAIN_AI_AGENT_THINKING_EFFORT', value: 'high')
 
       expect(
         described_class.thinking_options(feature: :assistant, account: account, model: 'gpt-5.1')
@@ -25,7 +26,8 @@ RSpec.describe Llm::RuntimePolicy do
     end
 
     it 'sends only the confirmed effort without inventing a provider token budget' do
-      account.update!(captain_runtime: { 'assistant_thinking_effort' => 'medium' })
+      account.update!(captain_runtime: { 'assistant_thinking_effort' => 'high' })
+      InstallationConfig.create!(name: 'CAPTAIN_AI_AGENT_THINKING_EFFORT', value: 'medium')
 
       expect(
         described_class.thinking_options(feature: :assistant, account: account, model: 'claude-sonnet-4.5')
@@ -52,14 +54,15 @@ RSpec.describe Llm::RuntimePolicy do
       end.to raise_error(ArgumentError, /does not support/)
     end
 
-    it 'preserves saved off for optional OpenRouter reasoning whose provider default would otherwise be medium' do
+    it 'ignores account off for optional reasoning and follows the platform default' do
       config = { 'provider' => 'openrouter', 'supported_parameters' => ['reasoning'],
                  'reasoning' => { 'supported_efforts' => %w[low medium high], 'mandatory' => false, 'default_effort' => 'medium' } }
       allow(Llm::Models).to receive(:model_config).with('vendor/optional', account: account).and_return(config)
+      allow(Llm::Models).to receive(:reasoning_efforts_for).with('vendor/optional', account: account).and_return(%w[none low medium high])
 
       expect(described_class.thinking_options(
         feature: :assistant, account: account, model: 'vendor/optional', preferences: { 'assistant_thinking_effort' => 'none' }
-      )).to eq(effort: 'none')
+      )).to eq(effort: 'low')
     end
   end
 
@@ -132,18 +135,18 @@ RSpec.describe Llm::RuntimePolicy do
         ).to eq(effort: 'low')
       end
 
-      it 'keeps the effort the workspace stored' do
+      it 'ignores the effort the workspace stored' do
         account.update!(captain_runtime: { 'assistant_thinking_effort' => 'high' })
 
-        expect(described_class.conversation_thinking_options(model: 'vendor/optional', account: account)).to eq(effort: 'high')
+        expect(described_class.conversation_thinking_options(model: 'vendor/optional', account: account)).to eq(effort: 'low')
       end
 
-      it 'keeps an effort that the run carries' do
+      it 'ignores an effort injected through runtime preferences' do
         expect(
           described_class.conversation_thinking_options(
             model: 'vendor/optional', account: account, preferences: { 'assistant_thinking_effort' => 'medium' }
           )
-        ).to eq(effort: 'medium')
+        ).to eq(effort: 'low')
       end
 
       it 'sends nothing to a model that cannot reason' do
@@ -152,6 +155,20 @@ RSpec.describe Llm::RuntimePolicy do
         expect(described_class.conversation_thinking_options(model: 'vendor/plain', account: account)).to be_nil
       end
     end
+  end
+
+  it 'uses separate platform function slots, including effective account getters and old saved overrides' do
+    InstallationConfig.create!(name: 'CAPTAIN_AI_AGENT_THINKING_EFFORT', value: 'medium')
+    InstallationConfig.create!(name: 'CAPTAIN_AI_ASSISTANT_THINKING_EFFORT', value: 'high')
+    account.update!(captain_runtime: { 'assistant_thinking_effort' => 'high', 'copilot_thinking_effort' => 'low' })
+    allow(Llm::Models).to receive(:reasoning_efforts_for).with('test/model', account: account).and_return(%w[low medium high])
+
+    expect(account.captain_assistant_thinking_effort).to eq('medium')
+    expect(account.captain_copilot_thinking_effort).to eq('high')
+    expect(account.captain_runtime_preferences).to include('assistant_thinking_effort' => 'medium', 'copilot_thinking_effort' => 'high')
+    expect(described_class.thinking_options(feature: :assistant, model: 'test/model', account: account)).to eq(effort: 'medium')
+    expect(described_class.thinking_options(feature: :copilot, model: 'test/model', account: account)).to eq(effort: 'high')
+    expect(account.reload.captain_runtime).to include('assistant_thinking_effort' => 'high', 'copilot_thinking_effort' => 'low')
   end
 
   describe '.moderation_enabled?' do

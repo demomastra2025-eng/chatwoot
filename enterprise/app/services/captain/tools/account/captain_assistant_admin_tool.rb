@@ -2,17 +2,8 @@
 
 class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Account::BaseAccountTool
   CONFIG_FIELD_KEYS = %w[
-    feature_citation welcome_message temperature context_access tool_access voice_settings
+    context_access tool_access capabilities voice_settings
   ].freeze
-  ACCOUNT_SETTING_KEYS = %w[
-    feature_faq feature_memory feature_web feature_document_reading feature_image_understanding
-    use_audio_transcriptions handoff_enabled auto_completion_enabled auto_reply_on_last_incoming
-    handoff_message handoff_message_enabled handoff_message_mode resolution_message resolution_message_enabled
-    resolution_message_mode message_collapse_window_seconds history_message_limit outcome_reason_settings safety_settings
-  ].freeze
-  HIDDEN_CONFIG_KEYS = (ACCOUNT_SETTING_KEYS + %w[
-    handoff_requires_explicit_consent handoff_consent_reason rules skills main_prompt_rules_migration
-  ]).freeze
   SENSITIVE_KEY_PATTERN = /(otp|token|secret|password|credential|authorization|process_?id|session|api_?key|access_?key|refresh|url|webhook)/i
   SENSITIVE_VALUE_PATTERN = %r{
     https?://[^\s"']*(?:webhook|token|secret|api[_-]?key|password|credential|callback)|
@@ -26,6 +17,20 @@ class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Accou
   end
 
   private
+
+  def tool_failure(error, retryable: nil)
+    if error.is_a?(Captain::AssistantConfigContract::Violation)
+      return Captain::ToolResult.failure(error: error.code, data: { error: error.code, fields: error.fields }, retryable: false)
+    end
+
+    super
+  end
+
+  def ensure_platform_prompt_access!(field)
+    return if Captain::PromptInspectorAccess.allowed?(user: @user)
+
+    raise Captain::AssistantConfigContract::Violation.new('platform_managed_prompt', [field])
+  end
 
   def find_captain_assistant!(assistant_id)
     account.captain_assistants.find(assistant_id)
@@ -45,20 +50,14 @@ class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Accou
   end
 
   def assistant_identity_payload(assistant)
-    {
-      id: assistant.id,
-      name: assistant.name,
-      description: redacted_value(assistant.description),
-      usage_mode: assistant.usage_mode
-    }
+    redacted_value(Captain::AssistantSerializer.new(assistant, user: @user).profile)
   end
 
   def assistant_config_summary_payload(assistant)
     {
       feature_faq: assistant.feature_faq,
       feature_memory: false,
-      feature_citation: cast_config_boolean(assistant.config&.dig('feature_citation')),
-      temperature: assistant.config&.dig('temperature')
+      effective_settings: Captain::AssistantConfigContract.effective_settings(assistant)
     }
   end
 
@@ -80,7 +79,7 @@ class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Accou
   end
 
   def merge_extended_assistant_payload!(payload, assistant)
-    payload[:config] = redacted_value(assistant.config.to_h.except(*HIDDEN_CONFIG_KEYS))
+    payload[:config] = redacted_value(Captain::AssistantSerializer.new(assistant, user: @user).config)
   end
 
   def parse_json_hash(value, field_name:, default: {})
@@ -111,13 +110,15 @@ class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Accou
     config = parse_json_hash(value, field_name: 'config_json').deep_stringify_keys
     raise ArgumentError, 'Separate rules were removed. Save instructions in description.' if config.key?('rules')
 
+    violation = Captain::AssistantConfigContract.write_violation({ config: config }, platform: Captain::PromptInspectorAccess.allowed?(user: @user))
+    raise Captain::AssistantConfigContract::Violation.new(violation[:error], violation[:fields]) if violation
+
+    unsupported = config.keys - CONFIG_FIELD_KEYS
+    if unsupported.any?
+      raise Captain::AssistantConfigContract::Violation.new('unsupported_assistant_settings', unsupported.map { |field| "config.#{field}" })
+    end
+
     config.slice(*CONFIG_FIELD_KEYS)
-  end
-
-  def cast_config_boolean(value)
-    return nil if value.nil?
-
-    ActiveModel::Type::Boolean.new.cast(value)
   end
 
   def redacted_value(value)

@@ -284,14 +284,10 @@ class Captain::Runtime::ChatFactory
 
     def thinking_options(agent, context_wrapper, account: nil, model: agent.model)
       override = playground_thinking_effort(context_wrapper)
-      saved = context_wrapper.context.dig(:state, :assistant_config, 'thinking_effort') ||
-              context_wrapper.context.dig(:state, :assistant_config, :thinking_effort)
       contract = Llm::ModelParameters.for(model, account: account)
       return resolve_override_thinking(contract, override, strict: model == agent.model) if override.present?
-      return contract.thinking(saved) if saved.present?
 
-      # The agent has no effort of its own: the workspace's stored choice, else `low` (an agent that talks to
-      # customers is the only caller that reasons; the council parts, which are runs of such agents, go through this same factory).
+      # Main runs and council parts share the same platform function slot.
       Llm::RuntimePolicy.conversation_thinking_options(
         model: model,
         account: account,

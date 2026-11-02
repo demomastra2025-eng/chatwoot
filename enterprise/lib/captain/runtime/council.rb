@@ -229,8 +229,6 @@ class Captain::Runtime::Council
     state[:assistant_id] = actor.id
     state[:assistant_config] = actor.config
     state[:captain_runtime] = Captain::AssistantSafetyPreferences.for(assistant: actor, feature: :assistant)
-    effort = actor.config.to_h['thinking_effort']
-    state[:captain_runtime]['assistant_thinking_effort'] = effort if effort.present?
     state[:prompt_context] = actor.prompt_context_state(state)
     # The fence keeps the run current (a newer message, a human reply, a status change) but not the routing of the main run,
     # which the part does not follow: its owner is not the acting agent. A run without a fence (a Playground run, a run

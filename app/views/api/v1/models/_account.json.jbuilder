@@ -1,4 +1,9 @@
-json.settings resource.settings.to_h.merge('conversation_assign_on_note_or_resolve_enabled' => resource.conversation_assign_on_note_or_resolve_enabled?, 'client_languages' => resource.resolved_client_languages, 'bilingual_templates_enabled' => resource.bilingual_templates_enabled?)
+public_settings = Accounts::PublicSettings.for(resource, user: Current.user, impersonation: @super_admin_impersonation)
+json.settings public_settings.merge(
+  'conversation_assign_on_note_or_resolve_enabled' => resource.conversation_assign_on_note_or_resolve_enabled?,
+  'client_languages' => resource.resolved_client_languages,
+  'bilingual_templates_enabled' => resource.bilingual_templates_enabled?
+)
 json.workspace_working_hours_timezone resource.workspace_working_hours_timezone
 json.created_at resource.created_at
 if resource.custom_attributes.present?

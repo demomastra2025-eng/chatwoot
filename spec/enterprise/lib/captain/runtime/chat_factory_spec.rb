@@ -257,15 +257,15 @@ RSpec.describe Captain::Runtime::ChatFactory do
         expect(thinking_sent(part_run: true)).to eq(effort: 'low')
       end
 
-      it 'keeps the explicit effort of the agent' do
-        expect(thinking_sent(state: { assistant_config: { 'thinking_effort' => 'high' } })).to eq(effort: 'high')
-        expect(thinking_sent(state: { assistant_config: { 'thinking_effort' => 'high' } }, part_run: true)).to eq(effort: 'high')
+      it 'ignores agent effort for both the main run and council parts' do
+        expect(thinking_sent(state: { assistant_config: { 'thinking_effort' => 'high' } })).to eq(effort: 'low')
+        expect(thinking_sent(state: { assistant_config: { 'thinking_effort' => 'high' } }, part_run: true)).to eq(effort: 'low')
       end
 
-      it 'keeps the effort the workspace stored' do
+      it 'ignores workspace effort' do
         account.update!(captain_runtime: { 'assistant_thinking_effort' => 'medium' })
 
-        expect(thinking_sent).to eq(effort: 'medium')
+        expect(thinking_sent).to eq(effort: 'low')
       end
 
       it 'sends no reasoning to a model that cannot reason' do

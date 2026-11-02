@@ -1,16 +1,5 @@
 # rubocop:disable Metrics/ClassLength
 class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::BaseController
-  ASSISTANT_CONFIG_FIELDS = [
-    :feature_faq, :feature_memory, :feature_citation, :feature_web, :feature_document_reading,
-    :model, :feature_image_understanding, :handoff_enabled, :auto_completion_enabled,
-    :welcome_message, :handoff_message, :resolution_message,
-    :handoff_message_enabled, :handoff_message_mode,
-    :resolution_message_enabled, :resolution_message_mode,
-    :temperature, :thinking_effort,
-    :auto_reply_on_last_incoming,
-    :use_audio_transcriptions,
-    :message_collapse_window_seconds, :history_message_limit
-  ].freeze
   VOICE_SETTINGS_ARRAY_FIELDS = Telephony::AiVoice::VoiceSettingsDefaults::ARRAY_KEYS.index_with { [] }.freeze
   VOICE_SETTINGS_SCALAR_FIELDS = (Telephony::AiVoice::VoiceSettingsDefaults::DEFAULTS.keys - VOICE_SETTINGS_ARRAY_FIELDS.keys).freeze
 
@@ -21,7 +10,8 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   before_action :set_assistant, only: [:show, :update, :destroy, :playground, :avatar, :prompt_preview, :voice_preview]
   before_action :ensure_internal_playground_available, only: :playground
   before_action :reject_separate_rules, only: [:create, :update]
-  around_action :with_model_metadata_snapshot, only: :show
+  before_action :enforce_assistant_config_contract, only: [:create, :update]
+  around_action :with_model_metadata_snapshot, only: [:index, :show]
 
   def index
     @assistants = account_assistants.ordered
@@ -42,16 +32,20 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     Current.account.with_lock { @assistant = account_assistants.create!(attributes) }
   rescue ActiveRecord::RecordInvalid => e
     render_profile_validation_error_or_raise(e)
+  rescue Captain::AssistantConfigContract::Violation => e
+    render json: { error: e.code, fields: e.fields }, status: :unprocessable_content
   end
 
   def update
-    attributes = assistant_update_params
     Current.account.with_lock do
-      @assistant.update!(attributes)
+      @assistant.reload
+      @assistant.update!(assistant_update_params)
       cancel_captain_follow_ups_if_disabled!
     end
   rescue ActiveRecord::RecordInvalid => e
     render_profile_validation_error_or_raise(e)
+  rescue Captain::AssistantConfigContract::Violation => e
+    render json: { error: e.code, fields: e.fields }, status: :unprocessable_content
   end
 
   def avatar
@@ -136,6 +130,14 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     render_not_found_error('Resource could not be found')
   end
 
+  def enforce_assistant_config_contract
+    platform = Captain::PromptInspectorAccess.allowed?(user: Current.user, impersonation: @super_admin_impersonation)
+    return render json: { error: 'platform_managed_assistant' }, status: :forbidden if action_name == 'create' && !platform
+
+    violation = Captain::AssistantConfigContract.write_violation(params[:assistant], platform: platform)
+    render json: violation, status: :unprocessable_content if violation
+  end
+
   def reject_separate_rules
     attributes = params[:assistant]
     return unless attributes.respond_to?(:key?)
@@ -149,7 +151,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def with_model_metadata_snapshot(&)
-    return yield if @assistant.internal_assistant?
+    return yield if @assistant&.internal_assistant?
 
     Llm::Config.with_runtime_cache do
       Llm::OpenRouterModelCatalog.with_model_configs_snapshot do
@@ -175,21 +177,19 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     @account_assistants ||= Captain::Assistant.for_account(Current.account.id).with_attached_avatar
   end
 
-  # Safety checks are one workspace-wide setting (Captain::AccountSettings), not an agent setting, and an agent has no channel list or
-  # transfer list (every enabled agent is a peer in every text channel). config.safety_settings and the old channel and transfer
-  # lists are therefore not permitted here: a legacy client may still send them, they are ignored.
+  # Workspace settings and platform model parameters are rejected before strong parameter filtering.
   def assistant_params
     permitted = params.require(:assistant).permit(
       :name,
       :description,
       :usage_mode,
       :active,
-      :routing_description,
-      config: ASSISTANT_CONFIG_FIELDS
+      :routing_description
     )
 
     merge_optional_config_param!(permitted, :context_access)
     merge_optional_config_param!(permitted, :tool_access)
+    merge_optional_config_param!(permitted, :capabilities)
     merge_optional_config_param!(permitted, :follow_up_settings)
     merge_optional_config_param!(permitted, :outcome_reason_settings)
     merge_optional_config_param!(permitted, :voice_settings, voice_settings: true)
@@ -200,9 +200,9 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   def assistant_create_params
     attributes = assistant_params.to_h.deep_symbolize_keys
     existing_config = attributes[:config].is_a?(Hash) ? attributes[:config].deep_stringify_keys : {}
+    existing_config = Captain::Capabilities.normalize_updates({}, existing_config, creating: true)
     existing_config['voice_settings'] = normalized_voice_settings(existing_config['voice_settings'])
     normalize_outcome_reason_settings!(existing_config)
-    existing_config = normalized_model_config(existing_config)
 
     attributes.merge(config: existing_config)
   end
@@ -213,17 +213,21 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
 
     existing_config = @assistant.config.is_a?(Hash) ? @assistant.config.deep_stringify_keys : {}
     incoming_config = attributes[:config].is_a?(Hash) ? attributes[:config].deep_stringify_keys : {}
+    incoming_config = Captain::Capabilities.normalize_updates(existing_config, incoming_config)
     if incoming_config.key?('voice_settings')
       incoming_config['voice_settings'] = normalized_voice_settings(existing_config['voice_settings'], incoming_config['voice_settings'])
     end
+    merge_follow_up_settings!(incoming_config, existing_config)
     normalize_outcome_reason_settings!(incoming_config, existing_config['outcome_reason_settings'])
 
-    attributes.merge(config: normalized_model_config(existing_config.merge(incoming_config)))
+    attributes.merge(config: existing_config.merge(incoming_config))
   end
 
-  def normalized_model_config(config)
-    model = config['model'].presence || Llm::Config.model_for(feature: :assistant, account: Current.account)
-    Llm::ModelParameters.for(model, account: Current.account).normalize_config(config)
+  def merge_follow_up_settings!(incoming, existing)
+    return unless incoming['follow_up_settings'].is_a?(Hash)
+
+    # A scheduling edit must retain the private instruction that was not sent.
+    incoming['follow_up_settings'] = existing['follow_up_settings'].to_h.merge(incoming['follow_up_settings'])
   end
 
   def cancel_captain_follow_ups_if_disabled!
@@ -263,7 +267,8 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     if voice_settings && raw_value.is_a?(ActionController::Parameters)
       raw_value = raw_value.permit(*VOICE_SETTINGS_SCALAR_FIELDS, VOICE_SETTINGS_ARRAY_FIELDS)
     end
-    permitted[:config] ||= {}
+    # Only the explicitly selected field below is added to this empty permitted container.
+    permitted[:config] ||= ActionController::Parameters.new.permit!
     permitted[:config][field_name] = normalize_optional_config_value(raw_value)
   end
 

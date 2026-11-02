@@ -7,6 +7,7 @@ class Api::V1::Accounts::Captain::ScenariosController < Api::V1::Accounts::BaseC
   before_action -> { check_authorization(Captain::Scenario) }
   before_action :set_assistant
   before_action :set_scenario, only: [:show, :update, :destroy]
+  before_action :enforce_platform_instructions, only: [:create, :update]
 
   def index
     @scenarios = assistant_scenarios.includes(:assistant, :standalone_agent)
@@ -46,6 +47,18 @@ class Api::V1::Accounts::Captain::ScenariosController < Api::V1::Accounts::BaseC
 
   private
 
+  def enforce_platform_instructions
+    return if Captain::PromptInspectorAccess.allowed?(user: Current.user, impersonation: @super_admin_impersonation)
+
+    if params[:scenario].respond_to?(:key?) && params[:scenario].key?(:tools)
+      return render json: { error: 'platform_managed_capabilities', fields: ['tools'] }, status: :unprocessable_content
+    end
+
+    return unless action_name == 'create' || (params[:scenario].respond_to?(:key?) && params[:scenario].key?(:instruction))
+
+    render json: { error: 'platform_managed_prompt', fields: ['instruction'] }, status: :unprocessable_content
+  end
+
   def set_assistant
     @assistant = account_assistants.find(params[:assistant_id])
   end
@@ -75,21 +88,26 @@ class Api::V1::Accounts::Captain::ScenariosController < Api::V1::Accounts::BaseC
       agent_key = STANDALONE_AGENT_ATTRIBUTE_MAP[key]
       values[agent_key] = value if agent_key
     end
-    if scenario_params.key?(:tools) || scenario_params.key?(:instruction)
-      attributes[:config] = standalone_agent_tool_config
-    end
+    legacy_instruction = scenario_params.key?(:instruction) && !Captain::Capabilities.configured?(standalone_agent.config)
+    attributes[:config] = standalone_agent_tool_config if scenario_params.key?(:tools) || legacy_instruction
     attributes
   end
 
   def standalone_agent_tool_config
     config = standalone_agent.config.to_h.deep_dup
     metadata = config['legacy_scenario_migration'] ||= {}
-    access = config['tool_access'] ||= {}
+    access = standalone_agent_tool_scopes(config)
     agent_access = access['agent'] ||= { 'enabled' => true, 'tool_ids' => [] }
     old_ids = Array(metadata['explicit_tool_ids']).map(&:to_s)
     new_ids = Array(scenario_params.key?(:tools) ? scenario_params[:tools] : @scenario.tools).map(&:to_s).uniq
     agent_access['tool_ids'] = (Array(agent_access['tool_ids']) - old_ids) | new_ids
     metadata['explicit_tool_ids'] = new_ids
     config
+  end
+
+  def standalone_agent_tool_scopes(config)
+    return config.fetch('capabilities').fetch('scopes') if Captain::Capabilities.configured?(config)
+
+    config['tool_access'] ||= {}
   end
 end

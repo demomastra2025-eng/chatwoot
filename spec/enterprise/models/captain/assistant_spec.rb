@@ -28,15 +28,13 @@ RSpec.describe Captain::Assistant, type: :model do
   end
 
   describe '#resolved_agent_model' do
-    it 'uses a valid per-assistant model and canonicalizes it at runtime' do
+    it 'uses the platform model even when a valid per-assistant override is stored' do
       account = create(:account)
       assistant = build(:captain_assistant, account: account, config: { 'model' => 'openai/gpt-5.4' })
-      allow(Llm::Models).to receive(:valid_model_for?)
-        .with(:assistant, 'openai/gpt-5.4', account: account).and_return(true)
-      allow(Llm::Models).to receive(:canonical_model_name)
-        .with('openai/gpt-5.4').and_return('openai/gpt-5.4')
+      expect(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account)
+                                                .and_return('openai/gpt-6-luna')
 
-      expect(assistant.resolved_agent_model).to eq('openai/gpt-5.4')
+      expect(assistant.resolved_agent_model).to eq('openai/gpt-6-luna')
     end
 
     it 'keeps the shared assistant model fallback when an agent has no model setting' do
@@ -45,8 +43,7 @@ RSpec.describe Captain::Assistant, type: :model do
 
       expect(Llm::Config).to receive(:model_for).with(
         feature: :assistant,
-        account: account,
-        fallback: LlmConstants::DEFAULT_MODEL
+        account: account
       ).and_return('openai/gpt-6-luna')
 
       expect(assistant.resolved_agent_model).to eq('openai/gpt-6-luna')
@@ -132,7 +129,8 @@ RSpec.describe Captain::Assistant, type: :model do
 
         assistant.name = 'Renamed agent'
         expect(assistant).to be_valid
-        expect(assistant.resolved_agent_model).to eq(unlisted_model)
+        platform_model = Llm::Config.model_for(feature: :assistant, account: account)
+        expect(assistant.resolved_agent_model).to eq(platform_model)
 
         assistant.config = assistant.config.merge('model' => listed_model)
         expect(assistant).to be_valid

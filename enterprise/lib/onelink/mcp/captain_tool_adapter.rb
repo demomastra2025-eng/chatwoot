@@ -23,6 +23,19 @@ module Onelink
         end
       end
 
+      # Capture both selection paths and their assistant-dependent runtime policies.
+      # Human permissions and workspace MCP authorization further intersect these
+      # sets independently of capability config, preserving every actor's access.
+      def capability_bindings
+        catalog = available_tool_definitions
+        external = catalog.reject { |tool| Captain::ToolRegistry.definition_for(tool[:id]).present? }
+        direct = registry_binding_definitions + external
+        {
+          catalog: binding_ids(catalog), catalog_runtime: runtime_binding_ids(catalog),
+          direct: binding_ids(direct), direct_runtime: runtime_binding_ids(direct)
+        }
+      end
+
       def catalog_entries
         with_llm_runtime_cache do
           catalog_tool_definitions.map { |tool_definition| catalog_entry(tool_definition) }
@@ -66,6 +79,26 @@ module Onelink
       private
 
       attr_reader :auth_context
+
+      def registry_binding_definitions
+        Captain::ToolRegistry.definitions.filter_map do |definition|
+          tool = definition.to_h.with_indifferent_access
+          next unless definition.supports_scope?(auth_context.scope_name) && required_integrations_available?(tool)
+          next unless runtime_requirements_available?(tool) && assistant_tool_selected?(tool)
+
+          tool
+        end
+      end
+
+      def binding_ids(definitions)
+        definitions.pluck(:id).map(&:to_s).uniq.sort
+      end
+
+      def runtime_binding_ids(definitions)
+        binding_ids(definitions.select do |tool|
+          Captain::ToolPolicy.runtime_allowed?(tool, assistant: auth_context.assistant, scope_name: auth_context.scope_name)
+        end)
+      end
 
       def tool_definition_for(name)
         registry_definition = Captain::ToolRegistry.definition_for(name)
@@ -123,6 +156,8 @@ module Onelink
       end
 
       def assistant_tool_selected?(tool_definition)
+        return canonical_tool_ids.include?(tool_definition[:id].to_s) if Captain::Capabilities.configured?(auth_context.assistant.config)
+
         raw_access = auth_context.assistant.config.is_a?(Hash) ? auth_context.assistant.config['tool_access'] : nil
         raw_access = raw_access.to_h.deep_stringify_keys if raw_access.respond_to?(:to_h)
         return true unless raw_access.is_a?(Hash) && raw_access.key?(auth_context.scope_name)
@@ -172,6 +207,8 @@ module Onelink
 
       def allowed_tool_ids_for(available_tools)
         available_ids = available_tools.map { |tool| tool[:id].to_s }
+        return canonical_tool_ids & available_ids if Captain::Capabilities.configured?(auth_context.assistant.config)
+
         raw_access = auth_context.assistant.config.is_a?(Hash) ? auth_context.assistant.config['tool_access'] : nil
         raw_access = raw_access.to_h.deep_stringify_keys if raw_access.respond_to?(:to_h)
         return available_ids unless raw_access.is_a?(Hash) && raw_access.key?(auth_context.scope_name)
@@ -186,6 +223,10 @@ module Onelink
         configured_ids = Array(raw_scope['tool_ids']).map(&:to_s)
         selected_ids = raw_scope.key?('tool_ids') ? configured_ids : default_ids
         Captain::ToolAccess.sanitize_tool_ids(selected_ids, available_ids)
+      end
+
+      def canonical_tool_ids
+        @canonical_tool_ids ||= auth_context.assistant.public_send("allowed_#{auth_context.scope_name}_tool_ids")
       end
 
       def with_llm_runtime_cache(&)
@@ -447,6 +488,9 @@ module Onelink
           isError: normalized[:success] == false
         }
         payload[:structuredContent] = parsed if parsed.is_a?(Hash) || parsed.is_a?(Array)
+        if normalized[:success] == false && normalized[:data].is_a?(Hash)
+          payload[:structuredContent] = redact_value(normalized[:data]).deep_stringify_keys
+        end
         payload
       end
 

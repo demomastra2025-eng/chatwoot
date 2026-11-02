@@ -108,7 +108,7 @@ RSpec.describe CaptainFeaturable do
     context 'when no models are explicitly configured' do
       it 'returns default models for all features' do
         Llm::Models.feature_keys.each do |feature_key|
-          expected_default = Llm::Models.default_model_for(feature_key)
+          expected_default = Llm::Config.model_for(feature: feature_key, account: account)
           expect(account.send("captain_#{feature_key}_model")).to eq(expected_default)
         end
       end
@@ -123,15 +123,15 @@ RSpec.describe CaptainFeaturable do
                         })
       end
 
-      it 'returns configured models for configured features' do
-        expect(account.captain_editor_model).to eq('gpt-4.1-mini')
-        expect(account.captain_assistant_model).to eq('gpt-5.1')
-        expect(account.captain_label_suggestion_model).to eq('gpt-4.1-nano')
+      it 'uses the platform resolver despite stored account model choices' do
+        %w[editor assistant label_suggestion].each do |feature|
+          expect(account.public_send("captain_#{feature}_model")).to eq(Llm::Config.model_for(feature: feature, account: account))
+        end
       end
 
       it 'returns default models for unconfigured features' do
-        expect(account.captain_copilot_model).to eq(Llm::Models.default_model_for('copilot'))
-        expect(account.captain_audio_transcription_model).to eq(Llm::Models.default_model_for('audio_transcription'))
+        expect(account.captain_copilot_model).to eq(Llm::Config.model_for(feature: 'copilot', account: account))
+        expect(account.captain_audio_transcription_model).to eq(Llm::Config.model_for(feature: 'audio_transcription', account: account))
       end
     end
 
@@ -141,7 +141,7 @@ RSpec.describe CaptainFeaturable do
       end
 
       it 'falls back to default model' do
-        expect(account.captain_editor_model).to eq(Llm::Models.default_model_for('editor'))
+        expect(account.captain_editor_model).to eq(Llm::Config.model_for(feature: 'editor', account: account))
       end
     end
 
@@ -150,8 +150,8 @@ RSpec.describe CaptainFeaturable do
         account.captain_models = { 'assistant' => 'claude-sonnet-4.6' }
       end
 
-      it 'returns the canonical Anthropic model id' do
-        expect(account.captain_assistant_model).to eq('claude-sonnet-4-6')
+      it 'ignores an archived Anthropic alias in favor of platform selection' do
+        expect(account.captain_assistant_model).to eq(Llm::Config.model_for(feature: :assistant, account: account))
       end
     end
 
@@ -162,7 +162,7 @@ RSpec.describe CaptainFeaturable do
 
       it 'returns default models for all features' do
         Llm::Models.feature_keys.each do |feature_key|
-          expected_default = Llm::Models.default_model_for(feature_key)
+          expected_default = Llm::Config.model_for(feature: feature_key, account: account)
           expect(account.send("captain_#{feature_key}_model")).to eq(expected_default)
         end
       end
@@ -240,12 +240,12 @@ RSpec.describe CaptainFeaturable do
       # record itself stays permissive so that internal tools such as the model rollout can still write models.
       it 'does not make the account record refuse a model that is technically valid' do
         expect(account.update(captain_models: { 'assistant' => other_model })).to be true
-        expect(account.captain_assistant_model).to eq(other_model)
+        expect(account.captain_assistant_model).to eq(Llm::Config.model_for(feature: :assistant, account: account))
       end
 
       it 'accepts a model from the list' do
         expect(account.update(captain_models: { 'assistant' => allowlisted_model })).to be true
-        expect(account.captain_assistant_model).to eq(allowlisted_model)
+        expect(account.captain_assistant_model).to eq(Llm::Config.model_for(feature: :assistant, account: account))
       end
     end
 

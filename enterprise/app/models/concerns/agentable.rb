@@ -183,23 +183,14 @@ module Concerns::Agentable
   end
 
   def agent_temperature
-    owner = respond_to?(:assistant) && assistant.present? ? assistant : self
-    value = owner.respond_to?(:temperature) ? owner.temperature : nil
-    Llm::ModelParameters.for(agent_model, account: respond_to?(:account) ? account : nil).temperature(value)
+    nil
   end
 
   def agent_model
     agent_account = respond_to?(:account) ? account : nil
-    model_owner = respond_to?(:assistant) && assistant.present? ? assistant : self
-    configured_model = model_owner.respond_to?(:model) ? model_owner.model.to_s.strip.presence : nil
-    if configured_model.present? && Llm::Models.valid_model_for?(:assistant, configured_model, account: agent_account)
-      return Llm::Models.canonical_model_name(configured_model)
-    end
-
     Llm::Config.model_for(
       feature: :assistant,
-      account: agent_account,
-      fallback: LlmConstants::DEFAULT_MODEL
+      account: agent_account
     )
   end
 

@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe 'Api::V1::Accounts::Captain::Scenarios', type: :request do
   let(:account) { create(:account) }
-  let(:admin) { create(:user, account: account, role: :administrator) }
+  let(:admin) { create(:super_admin).tap { |user| create(:account_user, account: account, user: user, role: :administrator) } }
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:assistant) { create(:captain_assistant, account: account) }
 

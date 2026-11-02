@@ -14,7 +14,13 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
   let(:account) { create(:account) }
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:agent) { create(:user, account: account, role: :agent) }
-  let!(:assistant) { create(:captain_assistant, account: account, usage_mode: 'internal_assistant') }
+  let!(:assistant) do
+    create(:captain_assistant, account: account, usage_mode: 'internal_assistant', config: { 'tool_access' => {
+             'assistant' => { 'enabled' => true, 'tool_ids' => %w[
+               search_documentation list_account_users update_mcp_access_policy update_priority create_contact
+             ] }
+           } })
+  end
 
   def json_response
     JSON.parse(response.body, symbolize_names: true)
