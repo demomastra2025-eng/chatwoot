@@ -14,6 +14,15 @@ import {
   upsertRecord,
 } from './shared';
 
+const defaultPatientRequirements = () => ({
+  firstName: true,
+  phone: true,
+  lastName: false,
+  iin: false,
+  middleName: false,
+  birthDate: false,
+});
+
 export const useSchedulingReferencesStore = defineStore(
   'schedulingReferences',
   {
@@ -22,14 +31,7 @@ export const useSchedulingReferencesStore = defineStore(
       cabinets: [],
       holidays: [],
       resources: [],
-      medelementRequiredPatientFields: {
-        firstName: true,
-        phone: true,
-        lastName: false,
-        iin: false,
-        middleName: false,
-        birthDate: false,
-      },
+      medelementRequiredPatientFields: defaultPatientRequirements(),
       products: [],
       moyskladStatus: {
         connected: false,
@@ -66,12 +68,26 @@ export const useSchedulingReferencesStore = defineStore(
     },
 
     actions: {
-      async loadResources(params = { include_inactive: true }) {
+      clearCalendarReferences() {
+        this.resources = [];
+        this.services = [];
+        this.medelementRequiredPatientFields = defaultPatientRequirements();
+        this.ui.error = null;
+        this.ui.isLoadingResources = false;
+        this.ui.isLoadingServices = false;
+      },
+
+      async loadResources(
+        params = { include_inactive: true },
+        { isCurrent = () => true } = {}
+      ) {
+        if (!isCurrent()) return [];
         this.ui.isLoadingResources = true;
         this.ui.error = null;
 
         try {
           const { data } = await SchedulingResourcesAPI.get(params);
+          if (!isCurrent()) return [];
           this.resources = normalizePayload(data);
           const meta = normalizeMeta(data);
           if (meta?.medelementRequiredPatientFields) {
@@ -95,10 +111,11 @@ export const useSchedulingReferencesStore = defineStore(
           }
           return this.resources;
         } catch (error) {
+          if (!isCurrent()) return [];
           this.ui.error = extractSchedulingError(error);
           throw error;
         } finally {
-          this.ui.isLoadingResources = false;
+          if (isCurrent()) this.ui.isLoadingResources = false;
         }
       },
 
@@ -348,19 +365,25 @@ export const useSchedulingReferencesStore = defineStore(
         }
       },
 
-      async loadServices(params = { include_inactive: true }) {
+      async loadServices(
+        params = { include_inactive: true },
+        { isCurrent = () => true } = {}
+      ) {
+        if (!isCurrent()) return [];
         this.ui.isLoadingServices = true;
         this.ui.error = null;
 
         try {
           const { data } = await SchedulingServicesAPI.get(params);
+          if (!isCurrent()) return [];
           this.services = normalizePayload(data);
           return this.services;
         } catch (error) {
+          if (!isCurrent()) return [];
           this.ui.error = extractSchedulingError(error);
           throw error;
         } finally {
-          this.ui.isLoadingServices = false;
+          if (isCurrent()) this.ui.isLoadingServices = false;
         }
       },
 

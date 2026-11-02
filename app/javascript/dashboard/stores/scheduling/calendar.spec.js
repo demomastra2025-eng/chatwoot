@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
 import { CALENDAR_STORAGE_KEY } from 'dashboard/routes/dashboard/scheduling/constants';
@@ -22,9 +22,120 @@ describe('useSchedulingCalendarStore', () => {
     showMock.mockReset();
   });
 
+  afterEach(() => vi.useRealTimers());
+
+  it('restores the last specialists and view on return, but starts at today', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-03T18:30:00Z'));
+    const store = useSchedulingCalendarStore();
+    store.setWorkspaceTimezone('Asia/Almaty');
+    store.enterCalendar({ accountId: 74, userId: 9, mobile: true });
+    expect(store.currentView).toBe('day');
+    expect(store.currentPresentation).toBe('list');
+    expect(store.selectedResourceIds).toEqual([]);
+    store.setSelectedResources([3]);
+    store.setPresentation('calendar');
+    store.setView('week');
+    store.setAnchorDate('2025-01-01T12:00:00Z');
+    store.enterCalendar({ accountId: 74, userId: 9, mobile: true });
+    expect(store.selectedResourceIds).toEqual([3]);
+    expect(store.currentView).toBe('week');
+    expect(store.currentPresentation).toBe('calendar');
+    expect(store.anchorDate).toBe('2026-11-03T07:00:00.000Z');
+    expect(store.currentRange.from.toISOString()).toBe(
+      '2026-11-01T19:00:00.000Z'
+    );
+    expect(
+      JSON.parse(localStorage.getItem(`${CALENDAR_STORAGE_KEY}:74:9`))
+    ).not.toHaveProperty('anchorDate');
+  });
+
+  it('isolates account and actor preferences including an explicitly empty selection', () => {
+    const store = useSchedulingCalendarStore();
+    store.enterCalendar({ accountId: 74, userId: 9 });
+    store.setSelectedResources([3, 4]);
+    store.enterCalendar({ accountId: 75, userId: 9, mobile: true });
+    expect(store.selectedResourceIds).toEqual([]);
+    expect(store.currentPresentation).toBe('list');
+    store.setSelectedResources([5]);
+    store.enterCalendar({ accountId: 74, userId: 10 });
+    expect(store.selectedResourceIds).toEqual([]);
+    store.enterCalendar({ accountId: 74, userId: 9 });
+    expect(store.selectedResourceIds).toEqual([3, 4]);
+    store.setSelectedResources([]);
+    store.enterCalendar({ accountId: 74, userId: 9 });
+    expect(store.selectedResourceIds).toEqual([]);
+  });
+
+  it('uses the workspace day across midnight and preserves an explicit date and manual navigation', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-03T19:05:00Z'));
+    const store = useSchedulingCalendarStore();
+    store.setWorkspaceTimezone('Asia/Almaty');
+    store.enterCalendar({ accountId: 74, userId: 9, mobile: true });
+    expect(store.anchorDate).toBe('2026-11-04T07:00:00.000Z');
+    store.enterCalendar({
+      accountId: 74,
+      userId: 9,
+      mobile: true,
+      date: '2026-11-10T07:00:00Z',
+    });
+    expect(store.anchorDate).toBe('2026-11-10T07:00:00.000Z');
+    store.shiftAnchor(1);
+    showMock.mockResolvedValue({ data: { payload: {} } });
+    await store.fetchCalendar();
+    expect(store.anchorDate).toBe('2026-11-11T07:00:00.000Z');
+    expect(showMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ from: '2026-11-10T19:00:00.000Z' })
+    );
+  });
+
+  it('does not attribute legacy preferences or invalid resource IDs to the current actor', () => {
+    localStorage.setItem(
+      CALENDAR_STORAGE_KEY,
+      JSON.stringify({ selectedResourceIds: [99], currentView: 'month' })
+    );
+    const store = useSchedulingCalendarStore();
+    store.enterCalendar({ accountId: 74, userId: 9, mobile: true });
+    expect(store.selectedResourceIds).toEqual([]);
+    expect(store.currentView).toBe('day');
+    localStorage.setItem(
+      `${CALENDAR_STORAGE_KEY}:74:9`,
+      JSON.stringify({
+        selectedResourceIds: [3, '3', 0, -2, 'bad'],
+        currentView: 'invalid',
+      })
+    );
+    store.enterCalendar({ accountId: 74, userId: 9, mobile: true });
+    expect(store.selectedResourceIds).toEqual([3]);
+    expect(store.currentView).toBe('day');
+  });
+
+  it('rejects a late response from the previous account entry', async () => {
+    const store = useSchedulingCalendarStore();
+    store.enterCalendar({ accountId: 74, userId: 9 });
+    store.setSelectedResources([3]);
+    let resolveOld;
+    showMock.mockReturnValueOnce(
+      new Promise(resolve => {
+        resolveOld = resolve;
+      })
+    );
+    const oldRequest = store.fetchCalendar();
+    store.enterCalendar({ accountId: 75, userId: 9 });
+    resolveOld({
+      data: { payload: { resources: [{ id: 3 }], appointments: [{ id: 1 }] } },
+    });
+    await oldRequest;
+    expect(store.resources).toEqual([]);
+    expect(store.appointments).toEqual([]);
+    expect(store.selectedResourceIds).toEqual([]);
+    expect(store.ui.isLoading).toBe(false);
+  });
+
   it('hydrates saved preferences and requests the calendar payload with filters', async () => {
     window.localStorage.setItem(
-      CALENDAR_STORAGE_KEY,
+      `${CALENDAR_STORAGE_KEY}:74:9`,
       JSON.stringify({
         anchorDate: '2026-03-09T00:00:00.000Z',
         currentView: 'day',
@@ -54,12 +165,17 @@ describe('useSchedulingCalendarStore', () => {
     });
 
     const store = useSchedulingCalendarStore();
+    store.enterCalendar({
+      accountId: 74,
+      userId: 9,
+      now: new Date('2026-11-03T18:00:00Z'),
+    });
     store.setStatusFilters(['confirmed']);
 
     const payload = await store.fetchCalendar();
 
     expect(store.currentView).toBe('day');
-    expect(store.anchorDate).toBe('2026-03-09T00:00:00.000Z');
+    expect(store.anchorDate).toBe('2026-11-03T12:00:00.000Z');
     expect(store.selectedResourceIds).toEqual([5, 8]);
     expect(showMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -196,6 +312,7 @@ describe('useSchedulingCalendarStore', () => {
     showMock.mockResolvedValue({ data: { payload: {} } });
     const store = useSchedulingCalendarStore();
 
+    store.enterCalendar({ accountId: 74, userId: 9 });
     await store.fetchCalendar();
 
     expect(showMock.mock.calls.at(-1)[0]).not.toHaveProperty('status');
@@ -209,7 +326,7 @@ describe('useSchedulingCalendarStore', () => {
       })
     );
     expect(
-      JSON.parse(window.localStorage.getItem(CALENDAR_STORAGE_KEY))
+      JSON.parse(window.localStorage.getItem(`${CALENDAR_STORAGE_KEY}:74:9`))
         .hideCancelledAppointments
     ).toBe(true);
   });

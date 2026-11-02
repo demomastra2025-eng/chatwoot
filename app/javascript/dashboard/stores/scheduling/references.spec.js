@@ -104,6 +104,66 @@ describe('useSchedulingReferencesStore', () => {
     vi.clearAllMocks();
   });
 
+  it.each(['resources', 'services'])(
+    'rejects stale %s success/error/finally without overwriting the active entry',
+    async type => {
+      const store = useSchedulingReferencesStore();
+      const load = type === 'resources' ? 'loadResources' : 'loadServices';
+      const requestMock =
+        type === 'resources' ? getResourcesMock : getServicesMock;
+      const loading =
+        type === 'resources' ? 'isLoadingResources' : 'isLoadingServices';
+      let active = true;
+      let resolveOld;
+      requestMock.mockReturnValueOnce(
+        new Promise(resolve => {
+          resolveOld = resolve;
+        })
+      );
+      const oldRequest = store[load]({}, { isCurrent: () => active });
+      active = false;
+      store.clearCalendarReferences();
+      let resolveCurrent;
+      requestMock.mockReturnValueOnce(
+        new Promise(resolve => {
+          resolveCurrent = resolve;
+        })
+      );
+      const currentRequest = store[load]();
+      resolveOld({
+        data: {
+          payload: [{ id: 99 }],
+          meta: { medelement_required_patient_fields: { iin: true } },
+        },
+      });
+      await oldRequest;
+      expect(store[type]).toEqual([]);
+      expect(store.ui[loading]).toBe(true);
+      expect(store.medelementRequiredPatientFields.iin).toBe(false);
+      resolveCurrent({ data: { payload: [{ id: 3 }] } });
+      await currentRequest;
+      expect(store[type]).toEqual([{ id: 3 }]);
+      expect(store.ui[loading]).toBe(false);
+
+      let rejectOld;
+      active = true;
+      requestMock.mockReturnValueOnce(
+        new Promise((resolve, reject) => {
+          rejectOld = reject;
+        })
+      );
+      const obsolete = store[load]({}, { isCurrent: () => active });
+      active = false;
+      store.ui.error = 'current error';
+      store.ui[loading] = true;
+      rejectOld(new Error('obsolete'));
+      await obsolete;
+      expect(store[type]).toEqual([{ id: 3 }]);
+      expect(store.ui.error).toBe('current error');
+      expect(store.ui[loading]).toBe(true);
+    }
+  );
+
   it('excludes raw API archive flags from active resources after loading', async () => {
     getResourcesMock.mockResolvedValue({
       data: {

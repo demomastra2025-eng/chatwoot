@@ -282,14 +282,18 @@ const stubs = {
   Spinner: true,
 };
 let wrapper;
-const mountPage = async (createSlot = slot, selectContact = true) => {
+const mountPage = async (
+  createSlot = slot,
+  selectContact = true,
+  extraStubs = {}
+) => {
   const pinia = createPinia();
   const vuex = createStore({ getters: { getCurrentUser: () => ({ id: 9 }) } });
   setActivePinia(pinia);
   wrapper = mount(SchedulingCalendarPage, {
     global: {
       plugins: [pinia, vuex],
-      stubs,
+      stubs: { ...stubs, ...extraStubs },
       mocks: {
         $t: key => key,
       },
@@ -378,6 +382,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
     mocks.calendar = reactive({
       anchorDate: '2026-10-10T05:00:00Z',
       currentView: 'day',
+      currentPresentation: 'calendar',
       selectedResourceIds: [3],
       appointments: [],
       resources: [resource],
@@ -393,6 +398,8 @@ describe('SchedulingCalendarPage pending local booking', () => {
       showInactiveAppointments: true,
       ui: { error: null, isLoading: false },
       hydratePreferences: vi.fn(),
+      enterCalendar: vi.fn(),
+      setPresentation: vi.fn(),
       setWorkspaceTimezone: vi.fn(),
       setSelectedResources: vi.fn(),
       setCustomAttributeFilters: vi.fn(),
@@ -410,6 +417,7 @@ describe('SchedulingCalendarPage pending local booking', () => {
       activeResources: [resource],
       services: [],
       activeServices: [],
+      clearCalendarReferences: vi.fn(),
       loadResources: vi.fn(() => Promise.resolve()),
       loadServices: vi.fn(() => Promise.resolve()),
     });
@@ -499,6 +507,169 @@ describe('SchedulingCalendarPage pending local booking', () => {
     expect(dispatch).toHaveBeenCalledWith('openPersonDialog', {
       contactId: 42,
     });
+  });
+
+  it('passes an explicit calendar date without changing its day in the browser timezone', async () => {
+    mocks.route.query.date = '2026-11-03';
+    await mountPage();
+    expect(mocks.calendar.enterCalendar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: '74',
+        userId: 9,
+        date: '2026-11-03T07:00:00.000Z',
+      })
+    );
+  });
+
+  it('ignores an impossible explicit day and starts with the ordinary entry default', async () => {
+    mocks.route.query.date = '2026-02-31';
+    await mountPage();
+    expect(mocks.calendar.enterCalendar).toHaveBeenCalledWith(
+      expect.objectContaining({ date: undefined })
+    );
+  });
+
+  it('keeps the mounted calendar during refresh and explains an empty specialist selection', async () => {
+    await mountPage();
+    const grid = wrapper.findComponent({ name: 'SchedulingCalendarGrid' });
+    const instance = grid.vm;
+    mocks.calendar.ui.isLoading = true;
+    await flushPromises();
+    expect(wrapper.findComponent({ name: 'SchedulingCalendarGrid' }).vm).toBe(
+      instance
+    );
+    mocks.calendar.selectedResourceIds = [];
+    mocks.calendar.visibleResources = [];
+    await flushPromises();
+    expect(grid.props('emptyMessage')).toBe(
+      'SCHEDULING.CALENDAR.SELECT_RESOURCES'
+    );
+  });
+
+  it('removes unavailable saved specialist IDs without selecting every specialist', async () => {
+    mocks.calendar.selectedResourceIds = [3, 4, 999];
+    await mountPage();
+    expect(mocks.calendar.setSelectedResources).toHaveBeenCalledWith([3]);
+  });
+
+  it('applies a changed explicit date in the same page without resetting preferences', async () => {
+    mocks.route.query.date = '2026-11-03';
+    await mountPage();
+    mocks.route.query.date = '2026-11-10';
+    await flushPromises();
+    expect(mocks.calendar.setAnchorDate).toHaveBeenLastCalledWith(
+      '2026-11-10T07:00:00.000Z'
+    );
+    expect(mocks.calendar.enterCalendar).toHaveBeenCalledTimes(1);
+    expect(mocks.calendar.selectedResourceIds).toEqual([3]);
+  });
+
+  it('preserves a manually navigated date when an appointment closes in the active session', async () => {
+    await mountPage();
+    mocks.calendar.anchorDate = '2026-11-10T07:00:00.000Z';
+    mocks.calendar.currentRange = {
+      from: new Date('2026-11-09T19:00:00Z'),
+      to: new Date('2026-11-10T18:59:59Z'),
+    };
+    SchedulingAppointmentsAPI.show.mockResolvedValueOnce({
+      data: {
+        payload: {
+          id: 505,
+          resource_id: 3,
+          starts_at: '2026-11-10T06:00:00Z',
+          ends_at: '2026-11-10T06:30:00Z',
+          status: 'confirmed',
+        },
+      },
+    });
+    mocks.route.params.appointmentId = '505';
+    await flushPromises();
+    mocks.calendar.setAnchorDate.mockClear();
+    delete mocks.route.params.appointmentId;
+    await flushPromises();
+    expect(mocks.calendar.anchorDate).toBe('2026-11-10T07:00:00.000Z');
+    expect(mocks.calendar.setAnchorDate).not.toHaveBeenCalled();
+  });
+
+  it('uses the workspace day for an appointment instant crossing the browser day boundary', async () => {
+    mocks.route.params.appointmentId = '505';
+    SchedulingAppointmentsAPI.show.mockResolvedValueOnce({
+      data: {
+        payload: {
+          id: 505,
+          resource_id: 3,
+          starts_at: '2026-11-04T02:00:00Z',
+          ends_at: '2026-11-04T02:30:00Z',
+          status: 'confirmed',
+        },
+      },
+    });
+    await mountPage();
+    expect(mocks.calendar.setAnchorDate).toHaveBeenLastCalledWith(
+      '2026-11-04T07:00:00.000Z'
+    );
+  });
+
+  it('keeps selected resource columns during a scoped payload refresh and removes stale appointments', async () => {
+    await mountPage();
+    const grid = wrapper.findComponent({ name: 'SchedulingCalendarGrid' });
+    const instance = grid.vm;
+    mocks.references.resources = [
+      resource,
+      { id: 4, active: true, name: 'Second doctor' },
+    ];
+    mocks.calendar.appointments = [
+      { id: 22, resourceId: 3, startsAt: slot.startsAt, endsAt: slot.endsAt },
+    ];
+    mocks.calendar.selectedResourceIds = [4];
+    mocks.calendar.visibleResources = [];
+    mocks.calendar.ui.isLoading = true;
+    await flushPromises();
+    expect(wrapper.findComponent({ name: 'SchedulingCalendarGrid' }).vm).toBe(
+      instance
+    );
+    expect(grid.props('resources').map(item => item.id)).toEqual([4]);
+    expect(grid.props('appointments')).toEqual([]);
+  });
+
+  it('clears applied and draft custom filters when the account changes, including reused field keys', async () => {
+    await mountPage(slot, true, {
+      SchedulingToolbar: { template: '<div><slot name="actions" /></div>' },
+    });
+    await wrapper
+      .get('button[aria-label="SCHEDULING.TOOLBAR.FILTERS"]')
+      .trigger('click');
+    const advanced = wrapper
+      .findAllComponents({ name: 'SchedulingCustomFieldAdvancedFilter' })
+      .find(field => field.props('definition').key === 'staff_note');
+    advanced.vm.$emit('update:modelValue', {
+      operator: 'contains',
+      value: 'old account',
+    });
+    await flushPromises();
+    const dialog = wrapper
+      .findAllComponents(DialogStub)
+      .find(item => item.attributes('title') === 'SCHEDULING.TOOLBAR.FILTERS');
+    dialog.vm.$emit('confirm');
+    await flushPromises();
+    expect(mocks.calendar.setCustomAttributeFilters).toHaveBeenLastCalledWith({
+      staff_note: { operator: 'contains', value: 'old account' },
+    });
+    mocks.route.params.accountId = '75';
+    mocks.crm.appointmentFieldDefinitions = fieldDefinitions.map(
+      definition => ({ ...definition })
+    );
+    await flushPromises();
+    expect(mocks.calendar.setCustomAttributeFilters).toHaveBeenLastCalledWith(
+      {}
+    );
+    await wrapper
+      .get('button[aria-label="SCHEDULING.TOOLBAR.FILTERS"]')
+      .trigger('click');
+    const nextAdvanced = wrapper
+      .findAllComponents({ name: 'SchedulingCustomFieldAdvancedFilter' })
+      .find(field => field.props('definition').key === 'staff_note');
+    expect(nextAdvanced.props('modelValue')).toBeNull();
   });
 
   it('selects only active nonarchived resources from the raw API, excluding inactive specialists', async () => {

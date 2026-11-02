@@ -392,6 +392,8 @@
       }
     },
     "TOOLBAR": {
+      "PREVIOUS": "Предыдущий период",
+      "NEXT": "Следующий период",
       "ALL_RESOURCES": "Все специалисты",
       "FILTERS": "Фильтры",
       "RESET_FILTERS": "Сбросить фильтры",
@@ -403,6 +405,7 @@
       "HIDE_CANCELLED_APPOINTMENTS": "Не показывать отменённые"
     },
     "CALENDAR": {
+      "SELECT_RESOURCES": "Выберите специалистов",
       "ALL_RESOURCES_UNAVAILABLE": "Все специалисты недоступны",
       "AVAILABLE_SLOTS": "{count} свободно",
       "DESCRIPTION": "Управляйте записями, занятостью специалистов и блокировками времени в одном нативном календаре.",

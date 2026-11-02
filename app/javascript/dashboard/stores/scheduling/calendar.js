@@ -8,6 +8,7 @@ import {
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import {
   buildCalendarRange,
+  calendarTodayAnchor,
   formatCalendarTitle,
   shiftAnchorDate,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
@@ -80,6 +81,8 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
     anchorDate: new Date().toISOString(),
     customAttributeFilters: {},
     currentView: 'week',
+    currentPresentation: 'calendar',
+    preferenceScope: null,
 
     initialized: false,
     payload: defaultPayload(),
@@ -131,44 +134,90 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
   },
 
   actions: {
+    enterCalendar({
+      accountId,
+      userId,
+      mobile = false,
+      date,
+      now = new Date(),
+    }) {
+      const scope = accountId && userId ? `${accountId}:${userId}` : null;
+      // A previous visit or actor's in-flight request must never populate this entry.
+      this.activeRequestId += 1;
+      this.payload = defaultPayload();
+      this.ui = { error: null, isLoading: false, lastLoadedAt: null };
+      if (scope !== this.preferenceScope) {
+        this.statusFilters = [];
+        this.customAttributeFilters = {};
+      }
+      this.preferenceScope = scope;
+      this.initialized = false;
+      this.currentView = mobile ? 'day' : 'week';
+      this.currentPresentation = mobile ? 'list' : 'calendar';
+      this.selectedResourceIds = [];
+      this.hideCancelledAppointments = false;
+      this.hydratePreferences();
+      this.anchorDate = (
+        date ? new Date(date) : calendarTodayAnchor(now, this.workspaceTimezone)
+      ).toISOString();
+    },
+
     hydratePreferences() {
       if (this.initialized || typeof window === 'undefined') return;
 
-      const rawPreferences = window.localStorage.getItem(CALENDAR_STORAGE_KEY);
-      if (!rawPreferences) {
-        this.initialized = true;
-        return;
-      }
-
       try {
+        // Unscoped legacy preferences cannot be attributed to this account/user.
+        const rawPreferences = this.preferenceScope
+          ? window.localStorage.getItem(
+              `${CALENDAR_STORAGE_KEY}:${this.preferenceScope}`
+            )
+          : null;
+        if (!rawPreferences) return;
         const parsed = JSON.parse(rawPreferences);
-        this.anchorDate = parsed.anchorDate || this.anchorDate;
-        this.currentView = parsed.currentView || this.currentView;
-
+        if (['day', 'week', 'month'].includes(parsed.currentView)) {
+          this.currentView = parsed.currentView;
+        }
+        if (['calendar', 'list'].includes(parsed.currentPresentation)) {
+          this.currentPresentation = parsed.currentPresentation;
+        }
         this.selectedResourceIds = Array.isArray(parsed.selectedResourceIds)
-          ? parsed.selectedResourceIds.map(Number)
+          ? [
+              ...new Set(
+                parsed.selectedResourceIds
+                  .map(Number)
+                  .filter(id => Number.isInteger(id) && id > 0)
+              ),
+            ]
           : [];
         this.hideCancelledAppointments =
           parsed.hideCancelledAppointments === true;
       } catch {
-        // Ignore malformed local preferences and continue with defaults.
+        // Malformed or unavailable local preferences do not prevent entry.
       } finally {
         this.initialized = true;
       }
     },
 
     persistPreferences() {
-      if (typeof window === 'undefined') return;
+      if (typeof window === 'undefined' || !this.preferenceScope) return;
+      try {
+        window.localStorage.setItem(
+          `${CALENDAR_STORAGE_KEY}:${this.preferenceScope}`,
+          JSON.stringify({
+            currentView: this.currentView,
+            currentPresentation: this.currentPresentation,
+            selectedResourceIds: this.selectedResourceIds,
+            hideCancelledAppointments: this.hideCancelledAppointments,
+          })
+        );
+      } catch {
+        // Storage may be unavailable; the current in-memory selection still works.
+      }
+    },
 
-      window.localStorage.setItem(
-        CALENDAR_STORAGE_KEY,
-        JSON.stringify({
-          anchorDate: this.anchorDate,
-          currentView: this.currentView,
-          selectedResourceIds: this.selectedResourceIds,
-          hideCancelledAppointments: this.hideCancelledAppointments,
-        })
-      );
+    setPresentation(presentation) {
+      this.currentPresentation = presentation;
+      this.persistPreferences();
     },
 
     setView(view) {
@@ -178,7 +227,6 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
 
     setAnchorDate(date) {
       this.anchorDate = date;
-      this.persistPreferences();
     },
 
     setWorkspaceTimezone(timezone) {
@@ -192,7 +240,6 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         direction,
         this.workspaceTimezone
       ).toISOString();
-      this.persistPreferences();
     },
 
     toggleResource(resourceId) {

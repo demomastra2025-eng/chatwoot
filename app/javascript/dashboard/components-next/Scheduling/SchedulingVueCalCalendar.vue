@@ -607,15 +607,18 @@ const weekDays = computed(() =>
     ? buildDayListForView('week', calendarAnchorDate.value)
     : []
 );
-const timelineScrollMinute = computed(() => {
-  const configuredStartMinutes = columns.value.flatMap(column =>
-    buildWorkingIntervalsForColumn(column).map(interval => interval.startMinute)
+const initialTimelineMinute = () => {
+  const now = toCalendarDate(new Date());
+  const includesToday = buildDayListForView(
+    props.view,
+    calendarAnchorDate.value
+  ).some(day => formatDateKey(day) === formatDateKey(now));
+  const minute = includesToday ? minuteOfDayFromDate(now) - 60 : 8 * 60;
+  return Math.min(
+    visibleWindow.value.endMinute - timelineStepMin.value,
+    Math.max(visibleWindow.value.startMinute, 8 * 60, minute)
   );
-
-  return configuredStartMinutes.length
-    ? Math.min(...configuredStartMinutes)
-    : 8 * 60;
-});
+};
 
 const schedules = computed(() => {
   if (isWeekSharedTimeline.value) {
@@ -1724,19 +1727,18 @@ const handleEventKeydown = (keyboardEvent, event) => {
   emit('selectAppointment', event.appointment);
 };
 
+let lastScrolledContext = '';
 const autoScrollTimeline = async () => {
-  if (!isTimelineView.value || !isVueCalReady.value) {
-    return;
-  }
+  if (!isTimelineView.value || !isVueCalReady.value) return;
+  const context = `${props.view}:${formatDateKey(calendarAnchorDate.value)}`;
+  if (context === lastScrolledContext) return;
 
   await nextTick();
-
   const viewApi = vueCalRef.value?.view;
-  if (!viewApi) {
-    return;
-  }
+  if (!viewApi?.scrollToTime) return;
 
-  viewApi.scrollToTime?.(timelineScrollMinute.value);
+  lastScrolledContext = context;
+  viewApi.scrollToTime(initialTimelineMinute());
 };
 
 const handleCalendarReady = () => {
@@ -1745,16 +1747,15 @@ const handleCalendarReady = () => {
 };
 
 watch(
-  [() => props.view, () => props.anchorDate, () => timelineScrollMinute.value],
-  autoScrollTimeline,
-  {
-    flush: 'post',
-  }
+  [() => props.view, () => props.anchorDate],
+  () => {
+    lastScrolledContext = '';
+    autoScrollTimeline();
+  },
+  { flush: 'post' }
 );
 
-onMounted(() => {
-  autoScrollTimeline();
-});
+onMounted(autoScrollTimeline);
 </script>
 
 <template>

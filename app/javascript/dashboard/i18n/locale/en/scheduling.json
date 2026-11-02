@@ -386,6 +386,8 @@
       }
     },
     "TOOLBAR": {
+      "PREVIOUS": "Previous period",
+      "NEXT": "Next period",
       "ALL_RESOURCES": "All specialists",
       "FILTERS": "Filters",
       "RESET_FILTERS": "Reset filters",
@@ -397,6 +399,7 @@
       "HIDE_CANCELLED_APPOINTMENTS": "Hide cancelled appointments"
     },
     "CALENDAR": {
+      "SELECT_RESOURCES": "Choose specialists",
       "ALL_RESOURCES_UNAVAILABLE": "All specialists unavailable",
       "AVAILABLE_SLOTS": "{count} free",
       "DESCRIPTION": "Manage appointments, specialist capacity, and blocked time from one native workspace calendar.",

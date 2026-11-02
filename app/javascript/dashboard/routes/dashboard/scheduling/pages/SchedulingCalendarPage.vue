@@ -11,6 +11,7 @@ import {
   watch,
 } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useMediaQuery } from '@vueuse/core';
 import { useRoute, useRouter } from 'vue-router';
 
 import { useAccount } from 'dashboard/composables/useAccount';
@@ -23,6 +24,7 @@ import ContactsAPI from 'dashboard/api/contacts';
 import ContactInfo from 'dashboard/routes/dashboard/conversation/contact/ContactInfo.vue';
 import SchedulingMedelementPatientsAPI from 'dashboard/api/scheduling/medelementPatients';
 import Button from 'dashboard/components-next/button/Button.vue';
+import SelectMenu from 'dashboard/components-next/selectmenu/SelectMenu.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
@@ -147,6 +149,13 @@ const router = useRouter();
 const { updateUISettings } = useUISettings();
 const currentUser = useMapGetter('getCurrentUser');
 let calendarDisposed = false;
+let calendarMounted = false;
+let calendarEntryGeneration = 0;
+let pageFetchGeneration = 0;
+let activeCalendarIdentity = null;
+let appliedDateQuery;
+const calendarIdentity = () =>
+  JSON.stringify([route.params.accountId, currentUser.value?.id]);
 let providerActionGeneration = 0;
 let activeProviderAction = null;
 const calendarPatientContext = () =>
@@ -171,7 +180,11 @@ const captureCalendarFormMutation = () => {
 // the calendar is rendered in the default company timezone. A future account
 // setting only has to replace this computed value.
 const workspaceTimezone = computed(() => DEFAULT_WORKSPACE_TIMEZONE);
-const currentPresentation = ref('calendar');
+const isMobileCalendar = useMediaQuery('(max-width: 767px)');
+const currentPresentation = computed({
+  get: () => calendarStore.currentPresentation,
+  set: value => calendarStore.setPresentation(value),
+});
 const contactEditorMode = ref(null);
 const contactSelectorFieldRef = ref(null);
 const contactProfile = ref(null);
@@ -324,6 +337,15 @@ const presentationOptions = computed(() =>
   }))
 );
 
+const mobileViewOptions = computed(() =>
+  ['list', 'calendar'].flatMap(presentation =>
+    calendarTypeViews.value.map(view => ({
+      value: `${presentation}:${view.value}`,
+      label: `${presentationLabels.value[presentation]} · ${view.label}`,
+    }))
+  )
+);
+
 const pageTitle = computed(() =>
   formatCalendarTitle(
     calendarStore.currentView,
@@ -363,6 +385,17 @@ const filterableResources = computed(() =>
 );
 
 const selectableResources = computed(() => referencesStore.activeResources);
+
+const selectedCalendarResources = computed(() => {
+  const payloadById = new Map(
+    calendarStore.resources.map(resource => [Number(resource.id), resource])
+  );
+  return filterableResources.value
+    .filter(resource =>
+      calendarStore.selectedResourceIds.includes(Number(resource.id))
+    )
+    .map(resource => payloadById.get(Number(resource.id)) || resource);
+});
 
 const selectedFormResource = computed(() => {
   const selectedResourceId = Number(formStore.form.resourceId);
@@ -827,7 +860,7 @@ const advancedAppointmentFieldDefinitions = computed(() =>
 );
 const calendarEmptyMessage = computed(() => {
   if (filterableResources.value.length && !hasSelectedResources.value) {
-    return t('SCHEDULING.TOOLBAR.RESOURCES_SELECTED', { count: 0 });
+    return t('SCHEDULING.CALENDAR.SELECT_RESOURCES');
   }
 
   return t('SCHEDULING.CALENDAR.NO_RESOURCES');
@@ -835,19 +868,52 @@ const calendarEmptyMessage = computed(() => {
 const visibleAppointments = computed(() => {
   if (!hasSelectedResources.value) return [];
 
-  return calendarStore.appointments.filter(appointment =>
-    appointmentMatchesCustomFieldFilters(
-      appointment,
-      filterableAppointmentFieldDefinitions.value,
-      customFieldFilters.value
-    )
+  return calendarStore.appointments.filter(
+    appointment =>
+      calendarStore.selectedResourceIds.includes(
+        Number(appointment.resourceId)
+      ) &&
+      appointmentMatchesCustomFieldFilters(
+        appointment,
+        filterableAppointmentFieldDefinitions.value,
+        customFieldFilters.value
+      )
   );
 });
 
 function fetchCalendar() {
   calendarStore.setWorkspaceTimezone(workspaceTimezone.value);
-  return calendarStore.fetchCalendar();
+  const identity = calendarIdentity();
+  const entryGeneration = calendarEntryGeneration;
+  pageFetchGeneration += 1;
+  const generation = pageFetchGeneration;
+  return calendarStore.fetchCalendar().then(payload => {
+    if (
+      !calendarDisposed &&
+      identity === calendarIdentity() &&
+      entryGeneration === calendarEntryGeneration &&
+      generation === pageFetchGeneration
+    ) {
+      isCalendarLoaded.value = true;
+    }
+    return payload;
+  });
 }
+
+const mobileView = computed({
+  get: () => `${currentPresentation.value}:${calendarStore.currentView}`,
+  set: value => {
+    const [presentation, view] = value.split(':');
+    calendarStore.setPresentation(presentation);
+    calendarStore.setView(view);
+    fetchCalendar();
+  },
+});
+const mobileViewLabel = computed(
+  () =>
+    mobileViewOptions.value.find(option => option.value === mobileView.value)
+      ?.label || ''
+);
 
 const currentView = computed({
   get: () => calendarStore.currentView,
@@ -1254,15 +1320,26 @@ const syncSelectedResources = () => {
 };
 
 const loadPage = async () => {
+  const context = calendarIdentity();
+  const entryGeneration = calendarEntryGeneration;
+  const isCurrent = () =>
+    !calendarDisposed &&
+    context === calendarIdentity() &&
+    entryGeneration === calendarEntryGeneration;
   await Promise.all([
     crmReferencesStore.loadFieldDefinitions('appointment'),
-    referencesStore.loadResources({ include_inactive: true }),
-    referencesStore.loadServices({ include_inactive: true }),
+    referencesStore.loadResources({ include_inactive: true }, { isCurrent }),
+    referencesStore.loadServices({ include_inactive: true }, { isCurrent }),
   ]);
+  if (
+    calendarDisposed ||
+    context !== calendarIdentity() ||
+    entryGeneration !== calendarEntryGeneration
+  )
+    return;
   syncSelectedResources();
   if (!isAppointmentPage.value && !numericQueryValue('appointmentId')) {
     await fetchCalendar();
-    isCalendarLoaded.value = true;
   }
 };
 
@@ -1544,7 +1621,7 @@ const syncCalendarContextToAppointment = appointment => {
     (!isCalendarLoaded.value || !inCurrentRange)
   ) {
     calendarStore.setAnchorDate(
-      calendarDayAnchor(
+      calendarTodayAnchor(
         appointment.startsAt,
         workspaceTimezone.value
       ).toISOString()
@@ -2697,6 +2774,24 @@ const retryAppointmentPage = async () => {
   }
 };
 
+const calendarEntryDate = () => {
+  const value = queryValue('date');
+  if (typeof value !== 'string') return undefined;
+  // Reject invalid date-only values before they reach the range builders.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    const date = new Date(year, month - 1, day, 12);
+    return date.getFullYear() === year &&
+      date.getMonth() === month - 1 &&
+      date.getDate() === day
+      ? calendarDayAnchor(date, workspaceTimezone.value).toISOString()
+      : undefined;
+  }
+  return Number.isNaN(new Date(value).getTime())
+    ? undefined
+    : calendarTodayAnchor(value, workspaceTimezone.value).toISOString();
+};
+
 watch(
   () => route.params?.appointmentId,
   async (appointmentId, previousAppointmentId) => {
@@ -2711,10 +2806,13 @@ watch(
       await openAppointmentFromRoute();
     } else if (previousAppointmentId) {
       handleDrawerClose();
-      if (!isCalendarLoaded.value || calendarStore.ui.error) {
-        await fetchCalendar();
-        isCalendarLoaded.value = true;
+      const date = calendarEntryDate();
+      if (date && queryValue('date') !== appliedDateQuery) {
+        calendarStore.setAnchorDate(date);
+        appliedDateQuery = queryValue('date');
       }
+      if (!isCalendarLoaded.value || calendarStore.ui.error)
+        await fetchCalendar();
     }
   }
 );
@@ -2733,19 +2831,77 @@ watch(
   }
 );
 
-onMounted(async () => {
+watch(
+  () => queryValue('date'),
+  async () => {
+    if (
+      !calendarMounted ||
+      activeCalendarIdentity !== calendarIdentity() ||
+      isAppointmentPage.value ||
+      numericQueryValue('appointmentId')
+    )
+      return;
+    const date = calendarEntryDate();
+    if (!date) return;
+    appliedDateQuery = queryValue('date');
+    calendarStore.setAnchorDate(date);
+    await fetchCalendar();
+  }
+);
+
+const enterCalendarPage = async () => {
+  calendarEntryGeneration += 1;
+  const generation = calendarEntryGeneration;
+  const identity = calendarIdentity();
+  if (activeCalendarIdentity !== null && activeCalendarIdentity !== identity) {
+    customFieldFilters.value = {};
+    Object.assign(appointmentFilterDraft, {
+      customFieldFilters: {},
+      hideCancelledAppointments: false,
+      statusFilters: [],
+    });
+    filterDialogRef.value?.close();
+  }
+  activeCalendarIdentity = identity;
+  appliedDateQuery = queryValue('date');
   handleDrawerClose();
+  isCalendarLoaded.value = false;
+  referencesStore.clearCalendarReferences();
   calendarStore.setWorkspaceTimezone(workspaceTimezone.value);
-  calendarStore.hydratePreferences();
-  currentPresentation.value = 'calendar';
+  calendarStore.enterCalendar({
+    accountId: route.params.accountId,
+    userId: currentUser.value?.id,
+    mobile: isMobileCalendar.value,
+    date: calendarEntryDate(),
+  });
   try {
     await loadPage();
+    if (
+      calendarDisposed ||
+      generation !== calendarEntryGeneration ||
+      identity !== calendarIdentity()
+    )
+      return;
     await handleAppointmentRouteState();
   } catch (error) {
-    if (!calendarDisposed && isAppointmentPage.value) {
+    if (
+      !calendarDisposed &&
+      generation === calendarEntryGeneration &&
+      identity === calendarIdentity() &&
+      isAppointmentPage.value
+    ) {
       appointmentPageError.value = formatErrorMessage(error);
     }
   }
+};
+
+watch([() => route.params.accountId, () => currentUser.value?.id], () => {
+  if (calendarMounted) enterCalendarPage();
+});
+
+onMounted(() => {
+  calendarMounted = true;
+  return enterCalendarPage();
 });
 </script>
 
@@ -2757,6 +2913,7 @@ onMounted(async () => {
     >
       <SchedulingToolbar
         v-model="currentView"
+        :mobile="isMobileCalendar"
         :anchor-date="calendarStore.anchorDate"
         :current-label="pageTitle"
         :views="calendarTypeViews"
@@ -2778,6 +2935,55 @@ onMounted(async () => {
         "
         @select-date="handleAnchorDateSelect"
       >
+        <template #mobile-create>
+          <Button
+            size="sm"
+            variant="solid"
+            color="blue"
+            icon="i-lucide-plus"
+            :aria-label="$t('SCHEDULING.CALENDAR.NEW_APPOINTMENT')"
+            @click="openNewAppointment"
+          />
+        </template>
+        <template #mobile-view>
+          <SelectMenu
+            v-model="mobileView"
+            :label="mobileViewLabel"
+            :options="mobileViewOptions"
+            :action-label="$t('SCHEDULING.GENERAL.TODAY')"
+            size="sm"
+            variant="ghost"
+            sub-menu-position="bottom"
+            sub-menu-align="start"
+            @action="
+              calendarStore.setAnchorDate(
+                calendarTodayAnchor(new Date(), workspaceTimezone).toISOString()
+              );
+              fetchCalendar();
+            "
+          />
+        </template>
+        <template #mobile-filters>
+          <div class="min-w-0 flex-1">
+            <SchedulingResourceFilter
+              compact
+              :resources="filterableResources"
+              :model-value="calendarStore.selectedResourceIds"
+              @update:model-value="
+                calendarStore.setSelectedResources($event);
+                fetchCalendar();
+              "
+            />
+          </div>
+          <Button
+            size="sm"
+            color="slate"
+            variant="ghost"
+            icon="i-lucide-filter"
+            :aria-label="$t('SCHEDULING.TOOLBAR.FILTERS')"
+            @click="openAppointmentFilterDialog"
+          />
+        </template>
         <template #leading>
           <SchedulingViewSwitcher
             v-model="currentPresentation"
@@ -2816,7 +3022,6 @@ onMounted(async () => {
         class="flex-1"
         :class="
           ['calendar', 'kanban'].includes(currentPresentation) &&
-          !calendarStore.ui.isLoading &&
           !calendarStore.ui.error
             ? 'min-h-0 overflow-hidden'
             : 'overflow-y-auto'
@@ -2825,14 +3030,13 @@ onMounted(async () => {
         <div
           :class="
             ['calendar', 'kanban'].includes(currentPresentation) &&
-            !calendarStore.ui.isLoading &&
             !calendarStore.ui.error
               ? 'flex h-full min-h-0 flex-col px-6 pb-4 pt-2'
               : 'flex flex-col gap-4 px-6 pb-4 pt-2'
           "
         >
           <div
-            v-if="calendarStore.ui.isLoading"
+            v-if="calendarStore.ui.isLoading && !isCalendarLoaded"
             class="flex items-center justify-center py-16"
           >
             <Spinner class="!w-8 !h-8" />
@@ -2855,7 +3059,7 @@ onMounted(async () => {
             :empty-message="calendarEmptyMessage"
             :holidays="calendarStore.holidays"
             :presentation="currentPresentation"
-            :resources="calendarStore.visibleResources"
+            :resources="selectedCalendarResources"
             :slots="calendarStore.slots"
             :time-offs="calendarStore.timeOffs"
             :view="calendarStore.currentView"

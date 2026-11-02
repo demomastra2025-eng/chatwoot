@@ -75,6 +75,7 @@ describe('SchedulingVueCalCalendar', () => {
     mountedWrappers = [];
     document.body.innerHTML = '';
     HTMLElement.prototype.scrollTo = originalScrollTo;
+    vi.useRealTimers();
   });
 
   it('renders unavailable time as background events in timeline views', async () => {
@@ -780,18 +781,27 @@ describe('SchedulingVueCalCalendar', () => {
     expect(new Date(payload.endsAt)).toEqual(new Date(2026, 2, 9, 11, 20));
   });
 
-  it('scrolls to 08:00 without a schedule and to the configured working-day start', async () => {
-    const wrapper = mountCalendar({ view: 'day' });
+  it('scrolls its timeline to the workspace evening and preserves manual scroll across data updates', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-03-09T18:30:00Z'));
+    HTMLElement.prototype.scrollTo = vi.fn(function scrollTo({ top }) {
+      this.scrollTop = top;
+    });
+    const wrapper = mountCalendar({
+      view: 'day',
+      workspaceTimezone: 'Asia/Almaty',
+    });
     await nextTick();
     await nextTick();
+    await nextTick();
+    const scrollable = wrapper.find('.vuecal__scrollable').element;
+    expect(scrollable.scrollTop).toBe(22.5 * 80);
     const vueCal = wrapper.findComponent(VueCal);
     const scrollToTime = vi.spyOn(vueCal.vm.view, 'scrollToTime');
-
-    await wrapper.setProps({ view: 'week' });
-    await nextTick();
-    expect(scrollToTime).toHaveBeenLastCalledWith(8 * 60);
-
+    scrollable.scrollTop = 417;
     await wrapper.setProps({
+      appointments: [],
+      resources: [...baseProps.resources],
       workRules: [
         {
           id: 1,
@@ -804,7 +814,33 @@ describe('SchedulingVueCalCalendar', () => {
       ],
     });
     await nextTick();
-    expect(scrollToTime).toHaveBeenLastCalledWith(9 * 60);
+    expect(scrollToTime).not.toHaveBeenCalled();
+    expect(scrollable.scrollTop).toBe(417);
+    await wrapper.setProps({ view: 'week' });
+    await nextTick();
+    expect(scrollToTime).toHaveBeenLastCalledWith(22 * 60 + 30);
+  });
+
+  it('starts no earlier than 08:00 at workspace midnight and does not scroll month', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-03-08T19:05:00Z'));
+    const wrapper = mountCalendar({
+      view: 'day',
+      workspaceTimezone: 'Asia/Almaty',
+    });
+    await nextTick();
+    await nextTick();
+    await nextTick();
+    expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledWith(
+      expect.objectContaining({ top: 8 * 80 })
+    );
+    const scrollToTime = vi.spyOn(
+      wrapper.findComponent(VueCal).vm.view,
+      'scrollToTime'
+    );
+    await wrapper.setProps({ view: 'month' });
+    await nextTick();
+    expect(scrollToTime).not.toHaveBeenCalled();
   });
 
   it('keeps long specialist names inside their day columns', async () => {
