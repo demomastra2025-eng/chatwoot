@@ -140,7 +140,9 @@ class Captain::CapabilitiesMigrationService
   end
 
   def authorize!
-    @actor = User.lock.find_by(id: @actor&.id)
+    # SHARE blocks authority UPDATE/DELETE while allowing existing account-first
+    # writers to take FK KEY SHARE on this user without forming a lock cycle.
+    @actor = User.lock('FOR SHARE').find_by(id: @actor&.id)
     reject!('platform_managed_capabilities') unless @actor && Captain::PromptInspectorAccess.allowed?(user: @actor)
   end
 
