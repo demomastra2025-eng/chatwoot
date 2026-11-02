@@ -33,6 +33,28 @@ RSpec.describe Messages::MessageBuilder do
     expect(Accounts::AiUsageEvent.count).to eq(1)
   end
 
+  [false, 'false', true, 'true'].each do |privacy|
+    it "uses the same privacy and metering policy for an attachment with private=#{privacy.inspect}" do
+      id = request['id']
+      allow(store).to receive(:fetch_raw).and_raise(Redis::CannotConnectError, 'injected cache failure')
+      params = ActionController::Parameters.new(
+        content: 'Fully edited answer with a file', private: privacy,
+        attachments: [Rack::Test::UploadedFile.new(Rails.root.join('spec/assets/sample.png'), 'image/png')],
+        content_attributes: { copilot: { assisted: true, action: 'reply_suggestion', suggestion_request_id: id } }.to_json
+      )
+      message = described_class.new(agent, conversation, params).perform
+      message.update!(source_id: 'attachment-provider-ack')
+      2.times { Accounts::DrainAiUsageJob.perform_now }
+
+      private_note = [true, 'true'].include?(privacy)
+      expect(message.reload.private?).to eq(private_note)
+      expect(message.attachments.count).to eq(1)
+      expect(message.additional_attributes.dig('captain_ai_suggestion', 'request_id')).to eq(private_note ? nil : id)
+      expect(usage).to eq(private_note ? 0 : 1)
+      expect(Accounts::AiUsageEvent.where(account_id: account.id).count).to eq(private_note ? 0 : 1)
+    end
+  end
+
   it 'counts only the segment carrying the accepted suggestion for a split logical reply' do
     first = send_draft
     first.update!(source_id: 'first-segment-ack')

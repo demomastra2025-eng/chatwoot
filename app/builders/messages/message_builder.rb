@@ -11,7 +11,7 @@ class Messages::MessageBuilder
     @params = params
     @skip_send_reply = skip_send_reply
     @skip_delivery_policy = skip_delivery_policy
-    @private = params[:private] || false
+    @private = ActiveModel::Type::Boolean.new.cast(params[:private]) || false
     @conversation = conversation
     @user = user
     @account = conversation.account
