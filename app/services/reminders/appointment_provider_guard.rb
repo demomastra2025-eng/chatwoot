@@ -179,7 +179,7 @@ class Reminders::AppointmentProviderGuard
         completed_at: nil,
         processing_started_at: nil,
         last_error: verification.reason,
-        metadata: retry_metadata(verification, schedule_revision: reminder.schedule_revision.to_i + 2),
+        metadata: retry_metadata(verification),
         schedule_revision: reminder.schedule_revision.to_i + 1,
         updated_at: Time.current
       )
@@ -198,7 +198,7 @@ class Reminders::AppointmentProviderGuard
     Reminders::ExecutionFinisher.materialized_message_for(reminder)
   end
 
-  def retry_metadata(verification, schedule_revision:)
+  def retry_metadata(verification, schedule_revision: reminder.schedule_revision.to_i + (reminder.manual_schedule_override? ? 1 : 2))
     policy = Reminders::MissedAutomationTouchPolicy.new(reminder: reminder)
     marker = policy.runtime_retry_metadata(schedule_revision: schedule_revision)
     metadata(verification).except(Reminder::APPOINTMENT_PROVIDER_RETRY_KEY).tap do |attributes|

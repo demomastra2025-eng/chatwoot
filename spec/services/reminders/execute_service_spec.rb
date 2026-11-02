@@ -397,6 +397,58 @@ RSpec.describe Reminders::ExecuteService do
         end
       end
 
+      context 'with an existing manual schedule override' do
+        let(:retry_reminder) do
+          super().tap { |touch| touch.update!(manual_schedule_override: true, scheduled_at: Time.current) }
+        end
+
+        it 'rechecks freshness after repeated busy responses and sends exactly once beyond original grace' do
+          freeze_time do
+            retry_reminder
+            execute_due_retry
+            expect(retry_reminder.reload).to be_pending
+            expect(conversation.messages.outgoing).to be_empty
+            expect(retry_reminder.scheduled_at).to eq(5.minutes.from_now)
+            travel 6.minutes
+            execute_due_retry
+            expect(retry_reminder.reload).to be_pending
+            travel 6.minutes
+            provider_recovers
+            execute_due_retry
+            expect(retry_reminder.reload).to be_completed
+            message = conversation.messages.outgoing.sole
+            claim = retry_reminder.processing_claim_token
+            allow(SendReplyJob).to receive(:perform_now)
+            2.times { Reminders::DeliverMaterializedMessageJob.perform_now(retry_reminder.id, message.id, claim) }
+            expect(SendReplyJob).to have_received(:perform_now).with(message.id).once
+            Reminders::ExecuteReminderJob.perform_now(retry_reminder.id, retry_reminder.processing_claim_token)
+            execute_due_retry
+            expect(conversation.messages.outgoing.pluck(:id)).to eq([message.id])
+          end
+        end
+
+        %w[scheduled_at relative_offset_seconds].each do |field|
+          it "invalidates provider retry eligibility after a manual #{field} edit" do
+            freeze_time do
+              execute_due_retry
+              expect(retry_reminder.reload).to be_pending
+              travel 6.minutes
+              value = field == 'scheduled_at' ? Time.current : -3.hours.to_i
+              retry_reminder.update!(field => value)
+              provider_recovers
+              allow(SendReplyJob).to receive(:perform_now)
+
+              execute_due_retry
+
+              expect(retry_reminder.reload).to be_cancelled
+              expect(retry_reminder.last_error).to eq(Reminders::MissedAutomationTouchPolicy::CANCEL_REASON)
+              expect(conversation.messages.outgoing).to be_empty
+              expect(SendReplyJob).not_to have_received(:perform_now)
+            end
+          end
+        end
+      end
+
       it 'retries delivery of the same materialized message without a new execution claim' do
         freeze_time do
           retry_reminder

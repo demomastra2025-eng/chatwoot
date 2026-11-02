@@ -48,7 +48,7 @@ class Reminders::MissedAutomationTouchPolicy
   end
 
   # Only the provider guard writes this protected marker, after an eligible execution.
-  # A claim rematerializes the original relative due time and increments its revision once.
+  # Without a manual override, a claim rematerializes the relative due time and increments its revision once.
   def runtime_retry_metadata(schedule_revision:)
     return unless automation_visit_touch? && !missed?
 
@@ -129,7 +129,7 @@ class Reminders::MissedAutomationTouchPolicy
     marker = reminder.metadata.to_h[Reminder::APPOINTMENT_PROVIDER_RETRY_KEY]
     return false unless marker.is_a?(Hash)
 
-    revision = reminder.schedule_revision.to_i + (reminder.pending? ? 1 : 0)
+    revision = reminder.schedule_revision.to_i + (reminder.pending? && !reminder.manual_schedule_override? ? 1 : 0)
     marker['schedule_revision'] == revision && marker['snapshot'] == runtime_retry_snapshot
   end
 
