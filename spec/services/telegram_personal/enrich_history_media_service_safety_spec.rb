@@ -54,9 +54,13 @@ RSpec.describe TelegramPersonal::EnrichHistoryMediaService do
     expect(enqueued_jobs.map { |job| job[:job] }).not_to include(SendReplyJob, EventDispatcherJob, AutoAssignment::AssignmentJob)
   end
 
-  %i[message inbox account source ids].each do |fence|
+  %i[message inbox account source ids channel channel_owner].each do |fence|
     it "does not attach after the #{fence} fence changes during the remote download" do
       message
+      original_attributes = message.content_attributes.deep_dup
+      alternate_channel = create(:channel_telegram_personal, account: channel.account) if fence == :channel
+      alternate_account = create(:account) if fence == :channel_owner
+      previous_suppression = Current.suppress_runtime_events
       allow(Down).to receive(:download) do
         case fence
         when :message then message.update!(content_attributes: message.content_attributes.merge(deleted: true))
@@ -64,12 +68,21 @@ RSpec.describe TelegramPersonal::EnrichHistoryMediaService do
         when :account then channel.account.update!(status: :suspended)
         when :source then message.update!(source_id: 'OTHER')
         when :ids then message.update!(content_attributes: message.content_attributes.merge(telegram_history_media_skipped_message_ids: ['999']))
+        when :channel then channel.inbox.update_columns(channel_id: alternate_channel.id) # rubocop:disable Rails/SkipsModelValidations
+        when :channel_owner then channel.update_columns(account_id: alternate_account.id) # rubocop:disable Rails/SkipsModelValidations
         end
         image_file
       end
-      described_class.new(message: message).perform
+      if fence == :ids
+        described_class.new(message: message).perform
+      else
+        expect { described_class.new(message: message).perform }.to raise_error(described_class::Error, 'history_media_unavailable')
+      end
       expect(message.reload.attachments).to be_empty
+      expect(message.content_attributes).to eq(original_attributes) if %i[channel channel_owner].include?(fence)
+      expect(downloaded_files.size).to eq(1)
       expect(downloaded_files).to all(be_closed)
+      expect(Current.suppress_runtime_events).to eq(previous_suppression)
     end
   end
 

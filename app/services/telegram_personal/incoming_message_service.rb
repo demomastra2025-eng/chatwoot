@@ -3,7 +3,7 @@ class TelegramPersonal::IncomingMessageService
 
   ATTACHMENT_PLACEHOLDER = '[Attachment]'.freeze
 
-  pattr_initialize [:inbox!, :params!, { history_media_context: nil }]
+  pattr_initialize [:inbox!, :params!, { history_media_context: nil, history_media_identity: nil }]
 
   def self.history_media_context_for(message)
     attributes = message.content_attributes.to_h
@@ -14,10 +14,7 @@ class TelegramPersonal::IncomingMessageService
       requested_ids: skipped.presence || stored.presence || [message.source_id]
     }
     references.transform_values! { |ids| ids.map { |id| TelegramPersonal::MessageSourceId.provider_id(id) }.reject(&:blank?).uniq.sort }
-    {
-      message_id: message.id, account_id: message.account_id, inbox_id: message.inbox_id,
-      conversation_id: message.conversation_id, source_id: message.source_id
-    }.merge(references)
+    { message_id: message.id }.merge(references)
   end
 
   def perform
@@ -235,6 +232,7 @@ class TelegramPersonal::IncomingMessageService
 
     @message = message
     @history_context = history_media_context || self.class.history_media_context_for(message)
+    @history_identity = history_media_identity || Messages::HistoryMediaIdentity.new(message)
     return unless history_media_context_current?
 
     prepared = []
@@ -265,17 +263,10 @@ class TelegramPersonal::IncomingMessageService
   end
 
   def history_media_context_current?
-    return false if @message.content_attributes.to_h['deleted'].present? || inbox.reload.deleting? || !@message.account.reload.active?
+    return false unless @history_identity.current?(@message)
     return false unless @message.content_attributes.to_h['telegram_history_media_incomplete']
-    return false unless history_media_owner_current?
 
     self.class.history_media_context_for(@message) == @history_context
-  end
-
-  def history_media_owner_current?
-    conversation = @message.conversation.reload
-    @message.inbox_id == inbox.id && @message.account_id == inbox.account_id &&
-      conversation.inbox_id == inbox.id && conversation.account_id == inbox.account_id
   end
 
   def prepare_missing_history_media(prepared)

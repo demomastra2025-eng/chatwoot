@@ -1,19 +1,24 @@
 class TelegramPersonal::EnrichHistoryMediaService
+  class Error < TelegramPersonal::GatewayClient::GatewayError; end
+
   pattr_initialize [:message!]
 
   def perform
     raise ArgumentError, 'Message does not belong to a Telegram Personal inbox' unless channel.is_a?(Channel::TelegramPersonal)
+
     message.reload
-    return message if message.content_attributes.to_h['deleted'].present?
-    return message if inbox.reload.deleting? || !message.account.reload.active? || message.source_id.blank?
+    identity = Messages::HistoryMediaIdentity.new(message)
+    identity.verify!(message)
     return message unless incomplete_history_media?
 
     context = TelegramPersonal::IncomingMessageService.history_media_context_for(message)
     Current.with_runtime_events_suppressed do
       payload = fetch_enriched_payload!
-      reconcile_enriched_payload!(payload, context)
+      reconcile_enriched_payload!(payload, context, identity)
     end
-    message.reload
+    identity.verify!(message)
+  rescue Messages::HistoryMediaIdentity::Changed
+    raise Error, 'history_media_unavailable'
   end
 
   private
@@ -31,10 +36,11 @@ class TelegramPersonal::EnrichHistoryMediaService
     payload
   end
 
-  def reconcile_enriched_payload!(payload, context)
+  def reconcile_enriched_payload!(payload, context, identity)
     TelegramPersonal::IncomingMessageService.new(
       inbox: inbox,
       history_media_context: context,
+      history_media_identity: identity,
       params: payload.to_h.deep_symbolize_keys.merge(imported_history: true, history_media_incomplete: false)
     ).perform
   end
