@@ -198,6 +198,70 @@ describe('SchedulingNotificationsPage', () => {
     expect(wrapper.text()).toContain('SCHEDULING.NOTIFICATIONS.APPROVED: 1');
   });
 
+  it('creates a missing channel preset instead of toggling or moving another channel rule', async () => {
+    mocks.rules = [rule({ active: true, name: 'Only first channel rule' })];
+    const original = structuredClone(mocks.rules[0]);
+    mocks.inboxes.push({
+      ...mocks.inboxes[0],
+      id: 4,
+      name: 'Second WhatsApp',
+      message_templates: [
+        {
+          ...mocks.inboxes[0].message_templates[0],
+          name: 'booking_created_notice',
+        },
+      ],
+    });
+    AutomationAPI.create.mockResolvedValue({ data: {} });
+    const wrapper = await mountPage();
+    await wrapper.find('select').setValue('4');
+    await flushPromises();
+    const card = wrapper.find(
+      '[data-testid="reminder-preset-card-appointment_created"]'
+    );
+    expect(card.find('button[role="switch"]').attributes('aria-checked')).toBe(
+      'false'
+    );
+    expect(wrapper.text()).toContain('Only first channel rule');
+    await card.find('button[role="switch"]').trigger('click');
+    await flushPromises();
+    expect(AutomationAPI.update).not.toHaveBeenCalled();
+    expect(AutomationAPI.create).toHaveBeenCalledTimes(1);
+    const [payload] = AutomationAPI.create.mock.calls[0];
+    expect(payload.actions[0].action_params[0].target_inbox_id).toBe(4);
+    expect(payload.active).toBe(true);
+    expect(mocks.rules[0]).toEqual(original);
+  });
+
+  it('updates the oldest duplicate of the selected channel and preserves other rules', async () => {
+    const second = rule({ id: 9, name: 'Additional selected channel rule' });
+    second.actions[0].action_params[0].target_inbox_id = 4;
+    mocks.rules = [
+      second,
+      rule({ id: 1 }),
+      {
+        ...structuredClone(second),
+        id: 5,
+        name: 'Primary selected channel rule',
+      },
+    ];
+    mocks.inboxes.push({ ...mocks.inboxes[0], id: 4, name: 'Second WhatsApp' });
+    const wrapper = await mountPage();
+    await wrapper.find('select').setValue('4');
+    await flushPromises();
+    const card = wrapper.find(
+      '[data-testid="reminder-preset-card-appointment_created"]'
+    );
+    await card.find('button[role="switch"]').trigger('click');
+    await flushPromises();
+    expect(AutomationAPI.update).toHaveBeenCalledWith(
+      5,
+      expect.objectContaining({ active: true })
+    );
+    expect(AutomationAPI.create).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain('Additional selected channel rule');
+  });
+
   it('recognizes a preset by marker after its send time changes and renders inline WhatsApp preview when expanded', async () => {
     mocks.rules = [
       rule({
