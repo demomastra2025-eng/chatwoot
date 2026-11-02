@@ -13,7 +13,7 @@ module Captain::AssistantConfigContract
     end
   end
 
-  VOICE_PROMPT_FIELDS = %w[system_prompt voice_character_prompt].freeze
+  VOICE_PROMPT_FIELDS = Telephony::AiVoice::PlatformPolicy::PROMPT_FIELDS
 
   def self.voice_prompt_fields(config)
     return [] unless config.respond_to?(:[])
@@ -39,13 +39,33 @@ module Captain::AssistantConfigContract
 
   def self.write_violation(attributes, platform:)
     return unless attributes.respond_to?(:key?)
-    return unsupported_settings(['config']) if attributes.key?(:config) && !attributes[:config].respond_to?(:keys)
+
+    attributes = normalized_attributes(attributes)
+    return unsupported_settings(['config']) if malformed_config?(attributes)
 
     restricted = platform_violation(attributes) unless platform
+    restricted ||= voice_violation(attributes[:config], platform: platform)
     return restricted if restricted
 
     fields = Captain::AssistantSerializer.unknown_fields(attributes[:config])
     unsupported_settings(fields) if fields.any?
+  end
+
+  def self.normalized_attributes(attributes)
+    attributes.is_a?(Hash) ? attributes.with_indifferent_access : attributes
+  end
+
+  def self.malformed_config?(attributes)
+    attributes.key?(:config) && !attributes[:config].respond_to?(:keys)
+  end
+
+  def self.voice_violation(config, platform:)
+    return unless config.respond_to?(:key?) && config.key?(:voice_settings)
+
+    violation = Telephony::AiVoice::PlatformPolicy.write_violation(config[:voice_settings], platform: platform, path: 'config.voice_settings')
+    return unless violation
+
+    violation[:error] == 'unsupported_voice_settings' ? unsupported_settings(violation[:fields]) : violation
   end
 
   def self.unsupported_settings(fields)
@@ -63,6 +83,7 @@ module Captain::AssistantConfigContract
 
   def self.effective_settings(assistant)
     settings = {
+      voice_options: Telephony::AiVoice::PlatformPolicy::VOICE_OPTIONS,
       feature_memory: assistant.feature_memory,
       history_message_limit: assistant.history_message_limit_value,
       message_collapse_window_seconds: assistant.message_collapse_window_seconds_value

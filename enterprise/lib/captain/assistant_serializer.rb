@@ -9,10 +9,7 @@ class Captain::AssistantSerializer
   FOLLOW_UP_STEP = { 'mode' => :string, 'message' => :string, 'objective' => :string, 'delay_seconds' => :number }.freeze
 
   def self.config_schema(prompt_access: true)
-    voice = Telephony::AiVoice::VoiceSettingsDefaults::DEFAULTS.transform_values do |default|
-      default.is_a?(Array) ? [:scalar] : :scalar
-    end
-    voice = voice.except(*Captain::AssistantConfigContract::VOICE_PROMPT_FIELDS) unless prompt_access
+    voice = Telephony::AiVoice::PlatformPolicy.schema(prompt_access: prompt_access)
     follow_up = { 'enabled' => :boolean, 'steps' => [FOLLOW_UP_STEP] }
     follow_up['prompt'] = :string if prompt_access
     {
@@ -25,35 +22,13 @@ class Captain::AssistantSerializer
   end
 
   def self.unknown_fields(value, schema = config_schema, path = 'config')
-    return [] unless value.respond_to?(:keys) && schema.is_a?(Hash)
-
-    value.keys.flat_map do |key|
-      field = "#{path}.#{key}"
-      next [field] unless schema.key?(key.to_s)
-
-      unknown_nested_fields(value[key], schema[key.to_s], field)
-    end
+    PublicJsonFields.unknown_fields(value, schema, path)
   end
-
-  def self.unknown_nested_fields(value, schema, path)
-    return [] if value.nil?
-    return object_unknown_fields(value, schema, path) if schema.is_a?(Hash)
-    return value.is_a?(Array) ? array_unknown_fields(value, schema.first, path) : [path] if schema.is_a?(Array)
-
-    value.respond_to?(:keys) || value.is_a?(Array) ? [path] : []
-  end
-
-  def self.object_unknown_fields(value, schema, path)
-    value.respond_to?(:keys) ? unknown_fields(value, schema, path) : [path]
-  end
-
-  def self.array_unknown_fields(value, schema, path)
-    value.each_with_index.flat_map { |item, index| unknown_nested_fields(item, schema, "#{path}.#{index}") }
-  end
-  private_class_method :unknown_nested_fields, :array_unknown_fields, :object_unknown_fields
 
   def initialize(assistant, user:, impersonation: nil)
     @assistant = assistant
+    @user = user
+    @impersonation = impersonation
     @prompt_access = Captain::PromptInspectorAccess.allowed?(user: user, impersonation: impersonation)
   end
 
@@ -68,7 +43,11 @@ class Captain::AssistantSerializer
   def config
     schema = self.class.config_schema(prompt_access: @prompt_access)
     schema = schema.except('tool_access') if Captain::Capabilities.configured?(@assistant.config)
-    PublicJsonFields.project(@assistant.config, schema)
+    PublicJsonFields.project(@assistant.config, schema).merge(
+      'voice_settings' => Telephony::AiVoice::PlatformPolicy.new(
+        account: @assistant.account, settings: @assistant.config.to_h['voice_settings']
+      ).public_settings(user: @user, impersonation: @impersonation)
+    )
   end
 
   def api_payload

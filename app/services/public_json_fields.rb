@@ -34,6 +34,33 @@ module PublicJsonFields
     SCALAR_TYPES.fetch(schema).any? { |type| value.is_a?(type) }
   end
 
+  def unknown_fields(value, schema, path)
+    return [] unless value.respond_to?(:keys) && schema.is_a?(Hash)
+
+    value.keys.flat_map do |key|
+      field = "#{path}.#{key}"
+      next [field] unless schema.key?(key.to_s)
+
+      unknown_nested_fields(value[key], schema[key.to_s], field)
+    end
+  end
+
+  def unknown_nested_fields(value, schema, path)
+    return [] if value.nil?
+    return object_unknown_fields(value, schema, path) if schema.is_a?(Hash)
+    return value.is_a?(Array) ? array_unknown_fields(value, schema.first, path) : [path] if schema.is_a?(Array)
+
+    value.respond_to?(:keys) || value.is_a?(Array) ? [path] : []
+  end
+
+  def object_unknown_fields(value, schema, path)
+    value.respond_to?(:keys) ? unknown_fields(value, schema, path) : [path]
+  end
+
+  def array_unknown_fields(value, schema, path)
+    value.each_with_index.flat_map { |item, index| unknown_nested_fields(item, schema, "#{path}.#{index}") }
+  end
+
   def from_json_schema(schema)
     return schema.fetch('properties', {}).transform_values { |child| from_json_schema(child) } if Array(schema['type']).include?('object')
     return [from_json_schema(schema.fetch('items', {}))] if Array(schema['type']).include?('array')

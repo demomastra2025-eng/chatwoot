@@ -155,11 +155,10 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def self.normalized_voice_settings(policy, captain_assistant, explicit_settings)
-    return Telephony::AiVoice::VoiceSettingsDefaults.normalize(explicit_settings) if explicit_settings.present?
-
     policy_settings = (policy&.ai_voice_settings || {}).deep_stringify_keys
     assistant_settings = (captain_assistant&.config&.dig('voice_settings') || {}).deep_stringify_keys
-    Telephony::AiVoice::VoiceSettingsDefaults.normalize(policy_settings.merge(assistant_settings))
+    settings = policy_settings.merge(assistant_settings).merge(explicit_settings.to_h.deep_stringify_keys)
+    Telephony::AiVoice::PlatformPolicy.new(account: captain_assistant&.account || policy&.account, settings: settings).resolve
   end
 
   def self.transfer_tool_description(mode)
@@ -1211,11 +1210,7 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def voice_settings
-    @voice_settings ||= begin
-      policy_settings = (routing_policy&.ai_voice_settings || {}).deep_stringify_keys
-      assistant_settings = (captain_assistant&.config&.dig('voice_settings') || {}).deep_stringify_keys
-      Telephony::AiVoice::VoiceSettingsDefaults.normalize(policy_settings.merge(assistant_settings))
-    end
+    @voice_settings ||= self.class.send(:normalized_voice_settings, routing_policy, captain_assistant, nil)
   end
 
   def call_session

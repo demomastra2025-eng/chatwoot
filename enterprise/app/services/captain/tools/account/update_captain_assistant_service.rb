@@ -65,6 +65,9 @@ class Captain::Tools::Account::UpdateCaptainAssistantService < Captain::Tools::A
   def merged_config(assistant, config_json)
     current_config = assistant.config || {}
     incoming = Captain::Capabilities.normalize_updates(current_config, filtered_config_updates(config_json))
+    if incoming.key?('voice_settings')
+      incoming['voice_settings'] = Telephony::AiVoice::PlatformPolicy.merge_updates(current_config['voice_settings'], incoming['voice_settings'])
+    end
     current_config.deep_stringify_keys.merge(incoming)
   end
 end

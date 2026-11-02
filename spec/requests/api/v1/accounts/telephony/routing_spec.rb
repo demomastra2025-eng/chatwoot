@@ -80,7 +80,6 @@ RSpec.describe 'Telephony Routing API', type: :request do
            fallback_ai_app_ref: 'fallback-ai-app',
            captain_assistant_id: assistant.id,
            ai_voice_settings: {
-             provider: 'gemini-live',
              language: 'ru-KZ',
              interruptions_enabled: true
            }

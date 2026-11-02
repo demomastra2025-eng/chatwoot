@@ -29,6 +29,7 @@ RSpec.describe Telephony::AiVoice::PreviewContextBuilder do
   end
 
   before do
+    allow(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account).and_return('platform/text-model')
     allow(Captain::Assistant::PromptPreviewService).to receive(:new).with(assistant: assistant).and_return(preview_service)
   end
 
@@ -38,8 +39,10 @@ RSpec.describe Telephony::AiVoice::PreviewContextBuilder do
     expect(context[:account_id]).to eq(account.id)
     expect(context[:call_ref]).to match(/\Apreview:#{assistant.id}:[0-9a-f-]{36}\z/)
     expect(context[:ai]).to include(
-      'provider' => 'cartesia',
-      'model' => 'openai/gpt-5.4-mini',
+      'provider' => 'gemini-live',
+      'model' => 'gemini-3.1-flash-live-preview',
+      'voice' => 'sulafat',
+      'delegation_model' => 'platform/text-model',
       'max_duration_sec' => 120
     )
     expect(context[:ai]).not_to have_key('recording_enabled')

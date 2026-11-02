@@ -230,14 +230,21 @@ if resource.channel_type == 'Channel::Voice' && !channel_missing
   end
 
   if resource.respond_to?(:telephony_number_binding) && resource.telephony_number_binding.present?
-    json.telephony resource.telephony_number_binding.to_telephony_h
+    json.telephony resource.telephony_number_binding.to_telephony_h(
+      user: Current.user, impersonation: @super_admin_impersonation
+    )
   end
   voice_call_routing = (resource.respond_to?(:telephony_number_binding) && resource.telephony_number_binding&.routing_policy&.settings&.to_h&.[]('call_routing')) ||
                        resource.channel.try(:provider_config)&.to_h&.[]('call_routing')
-  json.call_routing voice_call_routing if voice_call_routing.present?
+  if voice_call_routing.present?
+    public_call_routing = PublicJsonFields.project(voice_call_routing, Telephony::RoutingPolicy::CALL_ROUTING_SCHEMA)
+    json.call_routing public_call_routing
+  end
   if Current.account_user&.administrator? && resource.channel.provider.in?(Channel::Voice::PROVIDER_OWNED_SIP_PROVIDERS)
     raw_voice_config = resource.channel.try(:provider_config)&.to_h&.deep_stringify_keys || {}
-    sanitized_voice_config = raw_voice_config.except('beeline_api_token', 'binotel_api_secret')
+    # AI settings have dedicated actor-aware DTOs. Transport configuration is
+    # also a PATCH input in existing clients; it must never round-trip AI policy.
+    sanitized_voice_config = raw_voice_config.except('beeline_api_token', 'binotel_api_secret', 'ai_voice_settings')
     sanitized_voice_config['beeline_api_token_configured'] = true if raw_voice_config['beeline_api_token'].present?
     sanitized_voice_config['binotel_api_secret_configured'] = true if raw_voice_config['binotel_api_secret'].present?
     json.provider_config sanitized_voice_config

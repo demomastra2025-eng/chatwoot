@@ -1,7 +1,8 @@
 <script setup>
-import { defineAsyncComponent, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStore } from 'dashboard/composables/store';
+import { usePromptInspectorAccess } from 'dashboard/composables/captain/usePromptInspectorAccess';
 import { useAlert } from 'dashboard/composables';
 import CaptainAssistantAPI from 'dashboard/api/captain/assistant';
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -24,6 +25,8 @@ const VoiceAgentPreview = defineAsyncComponent(
 
 const { t } = useI18n();
 const store = useStore();
+const { canInspectPrompts } = usePromptInspectorAccess();
+const canManageVoice = computed(() => props.canEdit && canInspectPrompts.value);
 
 const formRef = ref(null);
 const isDirty = ref(false);
@@ -39,7 +42,7 @@ const setDirty = value => {
 // edited, so a change is detected from the native events of its controls:
 // inputs, selects and text editors fire input/change, switches are buttons.
 const markDirty = event => {
-  if (!props.canEdit) return;
+  if (!canManageVoice.value) return;
   if (event.type === 'click' && !event.target?.closest?.('[role="switch"]')) {
     return;
   }
@@ -52,15 +55,15 @@ watch(
 );
 
 const save = async () => {
-  if (!props.canEdit || isSaving.value) return false;
+  if (!canManageVoice.value || isSaving.value) return false;
 
-  const payload = await formRef.value?.buildPayload?.();
-  const voiceSettings = payload?.assistant?.config?.voice_settings;
-  if (!voiceSettings) return false;
-
-  const assistantId = props.assistant.id;
   isSaving.value = true;
   try {
+    const payload = await formRef.value?.buildPayload?.();
+    const voiceSettings = payload?.assistant?.config?.voice_settings;
+    if (!voiceSettings) return false;
+
+    const assistantId = props.assistant.id;
     const response = await CaptainAssistantAPI.update(assistantId, {
       config: { voice_settings: voiceSettings },
     });
@@ -97,15 +100,14 @@ defineExpose({ isDirty, save });
     </div>
 
     <VoiceAgentPreview
-      v-if="assistant?.id"
+      v-if="canInspectPrompts && assistant?.id"
       :assistant-id="assistant.id"
-      :configured-provider="
-        assistant.config?.voice_settings?.provider || 'gemini-live'
-      "
+      :configured-provider="assistant.config?.voice_settings?.provider"
     />
 
     <div
-      :inert="!canEdit"
+      v-if="canInspectPrompts"
+      :inert="!canManageVoice"
       data-testid="agent-voice-form"
       @input="markDirty"
       @change="markDirty"
@@ -120,7 +122,7 @@ defineExpose({ isDirty, save });
       />
     </div>
 
-    <div v-if="canEdit" class="flex justify-end">
+    <div v-if="canManageVoice" class="flex justify-end">
       <Button
         :label="t('CAPTAIN.AGENT_TABS.VOICE.SAVE')"
         :is-loading="isSaving"

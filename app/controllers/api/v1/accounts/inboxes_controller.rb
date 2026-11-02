@@ -9,6 +9,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
   before_action :fetch_inbox, except: [:index, :create]
   before_action :validate_limit, only: [:create]
+  before_action :enforce_voice_settings_contract!, only: [:create, :update]
   # we are already handling the authorization in fetch inbox
   before_action :check_authorization, except: [:show]
   before_action :ensure_company_managed_settings!, only: [:create, :update]
@@ -74,7 +75,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
     with_stable_whatsapp_update_locks do
       ActiveRecord::Base.transaction do
-        @inbox.channel.lock! if @inbox.channel.is_a?(Channel::Whatsapp)
+        lock_channel_for_update!
         inbox_params = permitted_params.except(:channel, :csat_config)
         inbox_params[:csat_config] = format_csat_config(permitted_params[:csat_config]) if permitted_params[:csat_config].present?
         @inbox.update!(inbox_params)
@@ -540,12 +541,29 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     attrs
   end
 
+  def lock_channel_for_update!
+    return Telephony::NumberBinding.lock_voice_config!(@inbox.channel) if @inbox.channel_type == 'Channel::Voice'
+
+    @inbox.channel.lock! if @inbox.channel.is_a?(Channel::Whatsapp)
+  end
+
+  def enforce_voice_settings_contract!
+    voice_channel = action_name == 'create' ? params.dig(:channel, :type) == 'voice' : @inbox.channel.is_a?(Channel::Voice)
+    incoming = params.dig(:channel, :provider_config)
+    return unless voice_channel && incoming.respond_to?(:key?) && incoming.key?(:ai_voice_settings)
+
+    platform = Telephony::AiVoice::PlatformPolicy.prompt_access?(user: Current.user, impersonation: @super_admin_impersonation)
+    Telephony::AiVoice::PlatformPolicy.validate_write!(
+      incoming[:ai_voice_settings], platform: platform, path: 'channel.provider_config.ai_voice_settings'
+    )
+  end
+
   def normalized_voice_channel_params(channel_params)
     attrs = channel_params.to_h.with_indifferent_access
     return attrs if attrs[:provider_config].blank?
 
-    incoming_provider_config = attrs[:provider_config].to_h.deep_stringify_keys
     provider_config = @inbox.channel.provider_config.to_h.deep_stringify_keys
+    incoming_provider_config = merged_voice_provider_updates(provider_config, attrs[:provider_config])
     incoming_provider_config.delete('binotel_api_secret_configured')
     provider_config.delete('binotel_api_secret_configured')
     if incoming_provider_config.key?('binotel_api_key') && incoming_provider_config['binotel_api_key'].to_s.strip.blank?
@@ -578,6 +596,14 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     end
     attrs[:provider_config] = provider_config.deep_merge(incoming_provider_config)
     attrs
+  end
+
+  def merged_voice_provider_updates(existing, incoming)
+    updates = incoming.to_h.deep_stringify_keys
+    if updates.key?('ai_voice_settings')
+      updates['ai_voice_settings'] = Telephony::AiVoice::PlatformPolicy.merge_updates(existing['ai_voice_settings'], updates['ai_voice_settings'])
+    end
+    updates
   end
 
   def enriched_whatsapp_cloud_channel_attributes(channel_params, existing_channel: nil)

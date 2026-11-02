@@ -39,7 +39,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   before_action :current_account
   before_action :authorize_account_update, only: [:show, :update]
   before_action :reject_installation_managed_models, only: :update
-  before_action :reject_client_transcription_prompt, :reject_account_thinking_effort, only: :update
+  before_action :reject_client_transcription_prompt, :reject_account_thinking_effort, :reject_account_voice_policy, only: :update
 
   def show
     render json: preferences_payload
@@ -91,6 +91,24 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
 
   def authorize_account_update
     authorize @current_account, :update?
+  end
+
+  def reject_account_voice_policy
+    # These inputs have never been account settings. Check the submitted payload
+    # before strong parameters can silently discard a new voice override.
+    policy = Telephony::AiVoice::PlatformPolicy
+    voice_fields = policy::RETIRED_FIELDS + %w[voice_settings ai_voice_settings]
+    fields = requested_account_voice_fields(params[:captain_runtime], voice_fields, 'captain_runtime')
+    fields += requested_account_voice_fields(params[:captain_models], Llm::ProviderVisibilityPolicy::VOICE_SURFACES, 'captain_models')
+    return if fields.empty?
+
+    render json: { error: 'platform_managed_voice_policy', fields: fields }, status: :unprocessable_content
+  end
+
+  def requested_account_voice_fields(settings, keys, path)
+    return [] unless settings.respond_to?(:keys)
+
+    Telephony::AiVoice::PlatformPolicy.field_paths(settings, keys, path)
   end
 
   # The models of the recognition, guardrail, embedding and hint features are chosen by the platform.

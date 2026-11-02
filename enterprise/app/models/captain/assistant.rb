@@ -1123,7 +1123,7 @@ class Captain::Assistant < ApplicationRecord
   def validate_fish_voice_reference
     voice_settings = config.to_h['voice_settings']
     return unless voice_settings.is_a?(Hash)
-    return unless voice_settings['provider'] == 'fish'
+    return unless Telephony::AiVoice::VoiceSettingsDefaults::DEFAULTS['provider'] == 'fish'
 
     provider_model_id = voice_settings['voice'].to_s
     return if provider_model_id == FISH_DEFAULT_VOICE_ID

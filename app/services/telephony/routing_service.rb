@@ -16,8 +16,9 @@ class Telephony::RoutingService
     fallback_message: :fallback_message
   }.freeze
 
-  def initialize(account:)
+  def initialize(account:, user: nil, impersonation: nil)
     @account = account
+    @public_actor = { user: user, impersonation: impersonation }
   end
 
   def capabilities
@@ -39,21 +40,17 @@ class Telephony::RoutingService
     }
   end
 
-  def applications
-    []
-  end
+  def applications = []
 
   def numbers
-    account.telephony_number_bindings.recent.map(&:to_telephony_h)
+    account.telephony_number_bindings.recent.map { |binding| binding.to_telephony_h(**@public_actor) }
   end
 
   def number(number_ref)
-    account.telephony_number_bindings.find_by!(number_ref: number_ref).to_telephony_h
+    account.telephony_number_bindings.find_by!(number_ref: number_ref).to_telephony_h(**@public_actor)
   end
 
-  def trunks
-    []
-  end
+  def trunks = []
 
   def agents
     account.telephony_sip_profiles.includes(:user, :provider_connection).recent.map(&:to_telephony_h)
@@ -62,58 +59,60 @@ class Telephony::RoutingService
   def update_number_route!(number_binding:, attributes:)
     Telephony::ProviderPolicy.ensure_enabled!(number_binding.provider)
 
-    attributes = normalized_route_attributes(attributes)
-    sync_voice_channel_route_config!(number_binding, attributes)
+    Telephony::NumberBinding.with_voice_config_lock(number_binding.voice_channel) do
+      number_binding.lock!
+      attributes = attributes.to_h.with_indifferent_access
+      merge_voice_updates!(number_binding, attributes)
+      sync_voice_channel_route_config!(number_binding, attributes)
 
-    policy = number_binding.routing_policy || number_binding.build_routing_policy(account: account)
-    policy.assign_attributes(policy_attributes(attributes, policy))
-    policy.save!
+      policy = number_binding.routing_policy || number_binding.build_routing_policy(account: account)
+      policy.assign_attributes(policy_attributes(attributes, policy))
+      policy.save!
 
-    number_binding.update!(
-      app_ref: number_binding.runtime_app_ref,
-      last_synced_at: Time.current
-    )
-
-    {
-      routing_policy: policy,
-      response: local_sync_response(number_binding)
-    }
+      finish_route_update!(number_binding, policy)
+    end
   end
 
   def toggle_ai!(number_binding:, enabled:, ai_app_ref: nil)
     Telephony::ProviderPolicy.ensure_enabled!(number_binding.provider)
 
-    policy = number_binding.routing_policy || number_binding.build_routing_policy(account: account)
-    settings = (policy.settings || {}).deep_dup
+    Telephony::NumberBinding.with_voice_config_lock(number_binding.voice_channel) do
+      number_binding.lock!
+      policy = number_binding.routing_policy || number_binding.build_routing_policy(account: account)
+      settings = (policy.settings || {}).deep_dup
 
-    apply_ai_route!(number_binding, policy, settings, enabled: enabled, ai_app_ref: ai_app_ref)
-    policy.ai_enabled = enabled
-    policy.settings = settings
-    policy.save!
-
-    number_binding.update!(
-      app_ref: number_binding.runtime_app_ref,
-      last_synced_at: Time.current
-    )
-
-    {
-      routing_policy: policy,
-      response: local_sync_response(number_binding, ai_enabled: enabled)
-    }
+      apply_ai_route!(number_binding, policy, settings, enabled: enabled, ai_app_ref: ai_app_ref)
+      policy.ai_enabled = enabled
+      policy.settings = settings
+      policy.save!
+      finish_route_update!(number_binding, policy, ai_enabled: enabled)
+    end
   end
 
   private
 
   attr_reader :account
 
+  def finish_route_update!(number_binding, policy, ai_enabled: nil)
+    number_binding.update!(app_ref: number_binding.runtime_app_ref, last_synced_at: Time.current)
+    { routing_policy: policy, response: local_sync_response(number_binding, ai_enabled: ai_enabled) }
+  end
+
+  def merge_voice_updates!(number_binding, attributes)
+    return unless attributes.key?(:ai_voice_settings)
+
+    platform = Telephony::AiVoice::PlatformPolicy.prompt_access?(**@public_actor)
+    Telephony::AiVoice::PlatformPolicy.validate_write!(attributes[:ai_voice_settings], platform: platform)
+    retained = number_binding.routing_policy&.ai_voice_settings.to_h
+    channel_settings = number_binding.voice_channel&.provider_config_hash&.[]('ai_voice_settings')
+    retained = retained.merge(channel_settings) if channel_settings.is_a?(Hash)
+    attributes[:ai_voice_settings] = Telephony::AiVoice::PlatformPolicy.merge_updates(retained, attributes[:ai_voice_settings])
+  end
+
   def janus_voice_inboxes
     account.inboxes.where(channel_type: 'Channel::Voice').includes(:channel).select do |inbox|
       inbox.channel&.provider.in?(JANUS_SIP_PROVIDERS)
     end
-  end
-
-  def normalized_route_attributes(attributes)
-    attributes.to_h.with_indifferent_access
   end
 
   def policy_attributes(attributes, policy)

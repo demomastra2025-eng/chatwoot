@@ -41,7 +41,7 @@ class Captain::AssistantPolicy < ApplicationPolicy
   end
 
   def voice_preview?
-    update?
+    prompt_preview?
   end
 
   def preview?

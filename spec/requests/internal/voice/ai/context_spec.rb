@@ -31,6 +31,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
   end
 
   before do
+    allow(Llm::Config).to receive(:model_for).and_call_original
+    allow(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account).and_return('platform/text-model')
     account.enable_features!('channel_voice')
     Telephony::NumberBinding.sync_from_voice_channel!(voice_channel)
     number_binding.routing_policy.update!(
@@ -68,6 +70,34 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     end
 
     expect(response).to have_http_status(:unauthorized)
+  end
+
+  it 'denies dashboard and user access tokens at both machine endpoints before building prompts or tools' do
+    user = create(:user, account: account, role: :administrator)
+    expect(Telephony::AiVoice::ContextBuilder).not_to receive(:new)
+    expect(Telephony::AiVoice::ToolExecutionService).not_to receive(:new)
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'synthetic-internal-secret') do
+      [user.create_new_auth_token, { api_access_token: user.access_token.token },
+       { 'Authorization' => "Bearer #{user.access_token.token}" }].each do |headers|
+        get '/internal/voice/ai/context', params: { call_ref: call_session.external_call_ref }, headers: headers.dup, as: :json
+        expect(response).to have_http_status(:unauthorized)
+        post '/internal/voice/ai/tools/resolve', params: { call_ref: call_session.external_call_ref }, headers: headers.dup, as: :json
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+  end
+
+  it 'fails missing delegation before a new runtime session can be created' do
+    allow(Llm::Config).to receive(:model_for).with(feature: :assistant, account: account).and_return(nil)
+    expect do
+      with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'synthetic-internal-secret') do
+        get '/internal/voice/ai/context',
+            params: { call_ref: 'new-runtime-context', account_id: account.id, number_ref: number_binding.number_ref },
+            headers: { 'Authorization' => 'Bearer synthetic-internal-secret' }, as: :json
+      end
+    end.not_to change(Telephony::CallSession, :count)
+    expect(response).to have_http_status(:service_unavailable)
+    expect(response.parsed_body['error']).to eq('voice_delegation_unavailable')
   end
 
   it 'accepts the dedicated Pipecat callback token' do
@@ -146,8 +176,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'deployment_mode' => 'onelink_managed',
       'app_ref' => 'onelink-ai-voice-app',
       'provider' => 'gemini-live',
-      'model' => 'gemini-2.0-flash-live-001',
-      'voice' => 'Puck',
+      'model' => 'gemini-3.1-flash-live-preview',
+      'voice' => 'puck',
       'language' => 'ru-KZ',
       'thinking_level' => 'minimal',
       'context_window_compression_enabled' => true,
@@ -380,7 +410,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     )
   end
 
-  it 'passes supported Gemini 2.5 native audio features to the voice runtime' do
+  it 'ignores saved native-audio model and feature overrides' do
     assistant.update!(
       config: assistant.config.merge(
         'voice_settings' => {
@@ -401,9 +431,9 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body['ai']).to include(
-      'model' => 'gemini-2.5-flash-native-audio-preview-12-2025',
-      'proactive_audio_enabled' => true,
-      'affective_dialog_enabled' => true,
+      'model' => 'gemini-3.1-flash-live-preview',
+      'proactive_audio_enabled' => false,
+      'affective_dialog_enabled' => false,
       'api_version' => 'v1beta'
     )
   end
@@ -413,7 +443,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     ['openai-realtime', 'gpt-realtime-2', 'alloy'],
     ['elevenlabs', 'openai/gpt-5.4-mini', 'Xb7hH8MSUJpSbSDYk0k2']
   ].each do |provider, model, voice|
-    it "returns #{provider} provider settings without applying Gemini defaults" do
+    it "uses the platform native profile instead of saved #{provider} overrides" do
       assistant.update!(
         config: assistant.config.merge(
           'voice_settings' => {
@@ -433,10 +463,10 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body['ai']).to include(
-        'provider' => provider,
-        'model' => model,
-        'voice' => voice,
-        'delegation_model' => 'gpt-5.4-mini'
+        'provider' => 'gemini-live',
+        'model' => 'gemini-3.1-flash-live-preview',
+        'voice' => 'sulafat',
+        'delegation_model' => 'platform/text-model'
       )
     end
   end
@@ -773,7 +803,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(faq_tool).to include('source' => 'captain', 'timeout_ms' => 10_000, 'foreground_wait_ms' => 2_800)
   end
 
-  it 'returns prompt-referenced Captain CRM tools for the voice runtime catalog' do
+  it 'returns explicitly bound Captain CRM tools for the voice runtime catalog' do
     account.enable_features!('crm_deals')
     crm_assistant = create(
       :captain_assistant,
@@ -787,7 +817,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
         tool_access: {
           agent: {
             enabled: true,
-            tool_ids: ['faq_lookup']
+            tool_ids: %w[faq_lookup create_deal update_deal transition_deal_stage get_deal search_deals list_deal_pipelines list_deal_stages]
           }
         }
       }

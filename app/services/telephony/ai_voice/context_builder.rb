@@ -1,9 +1,4 @@
 class Telephony::AiVoice::ContextBuilder
-  DEFAULT_PROVIDER = 'gemini-live'.freeze
-  DEFAULT_MODEL = 'gemini-3.1-flash-live-preview'.freeze
-  DEFAULT_VOICE = 'sulafat'.freeze
-  DEFAULT_LANGUAGE = 'auto'.freeze
-  DEFAULT_FIRST_MESSAGE = 'Здравствуйте! Чем могу помочь?'.freeze
   DEFAULT_SYSTEM_PROMPT = <<~PROMPT.squish.freeze
     Ты голосовой ассистент в телефонном звонке.
     Говори естественно и соразмерно вопросу.
@@ -42,7 +37,6 @@ class Telephony::AiVoice::ContextBuilder
     'when a request cannot be completed without one, transfer or hand it over to staff.'
   ].freeze
   VOICE_CHARACTER_PROMPT_LABEL = 'Voice character prompt'.freeze
-  DEFAULT_MAX_DURATION_SEC = 900
   CALLBACK_HANDOFF_CAPABILITY = 'callback_handoff_v1'.freeze
 
   def initialize(params:, runtime_capabilities: [])
@@ -53,6 +47,8 @@ class Telephony::AiVoice::ContextBuilder
   def perform
     ensure_call_ref!
     ensure_voice_agent_enabled!
+    ensure_call_session_creation_scope! unless call_session
+    platform_policy.validate_runtime!
     session = call_session || create_call_session!
     @call_session ||= session
     v_scope_id = Llm::IinTokenVault.voice_scope_id(session)
@@ -545,11 +541,16 @@ class Telephony::AiVoice::ContextBuilder
 
   def ai_settings
     @ai_settings ||= begin
-      legacy_settings = (routing_policy&.ai_voice_settings || {}).deep_stringify_keys
-      normalized = Telephony::AiVoice::VoiceSettingsDefaults.normalize(legacy_settings.merge(captain_voice_settings))
+      normalized = platform_policy.resolve
       channel_limit = routing_policy&.max_call_duration_seconds || Telephony::RoutingPolicy::DEFAULT_MAX_CALL_DURATION_SECONDS
       normalized.merge('max_duration_sec' => [normalized['max_duration_sec'].to_i, channel_limit].min)
     end
+  end
+
+  def platform_policy
+    @platform_policy ||= Telephony::AiVoice::PlatformPolicy.new(
+      account: account, settings: (routing_policy&.ai_voice_settings || {}).deep_stringify_keys.merge(captain_voice_settings)
+    )
   end
 
   def captain_voice_settings

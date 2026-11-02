@@ -36,7 +36,7 @@ class Api::V1::Accounts::Telephony::ResourcesController < Api::V1::Accounts::Tel
   private
 
   def routing_service
-    @routing_service ||= Telephony::RoutingService.new(account: Current.account)
+    @routing_service ||= Telephony::RoutingService.new(account: Current.account, user: Current.user, impersonation: @super_admin_impersonation)
   end
 
   def readiness_service

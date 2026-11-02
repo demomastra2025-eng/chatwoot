@@ -4,6 +4,7 @@ class Telephony::AiVoice::PreviewContextBuilder
   pattr_initialize [:assistant!]
 
   def perform
+    platform_policy.validate_runtime!
     {
       call_ref: "preview:#{assistant.id}:#{SecureRandom.uuid}",
       account_id: assistant.account_id,
@@ -26,9 +27,11 @@ class Telephony::AiVoice::PreviewContextBuilder
   private
 
   def voice_settings
-    @voice_settings ||= Telephony::AiVoice::VoiceSettingsDefaults.normalize(
-      assistant.config.to_h.deep_stringify_keys.fetch('voice_settings', {})
-    ).except('recording_enabled')
+    @voice_settings ||= platform_policy.resolve.except('recording_enabled')
+  end
+
+  def platform_policy
+    @platform_policy ||= Telephony::AiVoice::PlatformPolicy.new(account: assistant.account, settings: assistant.config.to_h['voice_settings'])
   end
 
   def system_prompt

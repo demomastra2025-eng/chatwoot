@@ -1,12 +1,13 @@
 class Api::V1::Accounts::Telephony::RoutingController < Api::V1::Accounts::Telephony::BaseController
   before_action :check_admin_authorization?
   before_action :set_number_binding, only: [:update]
+  before_action :enforce_voice_settings_contract!, only: [:update]
 
   def update
     result = routing_service.update_number_route!(number_binding: @number_binding, attributes: routing_params)
 
     render_payload(
-      @number_binding.reload.to_telephony_h,
+      @number_binding.reload.to_telephony_h(user: Current.user, impersonation: @super_admin_impersonation),
       meta: { janus_sip: result[:response] }
     )
   end
@@ -20,7 +21,7 @@ class Api::V1::Accounts::Telephony::RoutingController < Api::V1::Accounts::Telep
     )
 
     render_payload(
-      number_binding.reload.to_telephony_h,
+      number_binding.reload.to_telephony_h(user: Current.user, impersonation: @super_admin_impersonation),
       meta: { janus_sip: result[:response] }
     )
   end
@@ -36,7 +37,14 @@ class Api::V1::Accounts::Telephony::RoutingController < Api::V1::Accounts::Telep
   end
 
   def routing_service
-    @routing_service ||= Telephony::RoutingService.new(account: Current.account)
+    @routing_service ||= Telephony::RoutingService.new(account: Current.account, user: Current.user, impersonation: @super_admin_impersonation)
+  end
+
+  def enforce_voice_settings_contract!
+    return unless params.key?(:ai_voice_settings)
+
+    platform = Telephony::AiVoice::PlatformPolicy.prompt_access?(user: Current.user, impersonation: @super_admin_impersonation)
+    Telephony::AiVoice::PlatformPolicy.validate_write!(params[:ai_voice_settings], platform: platform)
   end
 
   def routing_params

@@ -4,7 +4,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   VOICE_SETTINGS_SCALAR_FIELDS = (Telephony::AiVoice::VoiceSettingsDefaults::DEFAULTS.keys - VOICE_SETTINGS_ARRAY_FIELDS.keys).freeze
 
   before_action :current_account
-  before_action :hide_prompt_preview_from_clinics, only: :prompt_preview
+  before_action :hide_prompt_preview_from_clinics, only: [:prompt_preview, :voice_preview]
   before_action -> { check_authorization(Captain::Assistant) }
 
   before_action :set_assistant, only: [:show, :update, :destroy, :playground, :avatar, :prompt_preview, :voice_preview]
@@ -100,6 +100,8 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     context = Telephony::AiVoice::PreviewContextBuilder.new(assistant: @assistant).perform
     preview = Telephony::AiVoice::JanusSipRuntimeClient.new.create_preview(context)
     render json: preview.slice('token', 'expires_in', 'websocket_path')
+  rescue Telephony::Error => e
+    render json: { error: e.code }, status: e.status
   rescue Telephony::AiVoice::JanusSipRuntimeClient::ConnectionError,
          Telephony::AiVoice::JanusSipRuntimeClient::AttachError => e
     Rails.logger.warn "[AI VOICE PREVIEW] assistant=#{@assistant.id} unavailable: #{e.class} #{e.message}"
@@ -215,7 +217,9 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     incoming_config = attributes[:config].is_a?(Hash) ? attributes[:config].deep_stringify_keys : {}
     incoming_config = Captain::Capabilities.normalize_updates(existing_config, incoming_config)
     if incoming_config.key?('voice_settings')
-      incoming_config['voice_settings'] = normalized_voice_settings(existing_config['voice_settings'], incoming_config['voice_settings'])
+      incoming_config['voice_settings'] = Telephony::AiVoice::PlatformPolicy.merge_updates(
+        existing_config['voice_settings'], incoming_config['voice_settings']
+      )
     end
     merge_follow_up_settings!(incoming_config, existing_config)
     normalize_outcome_reason_settings!(incoming_config, existing_config['outcome_reason_settings'])
@@ -247,10 +251,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def normalized_voice_settings(*sources)
-    merged = sources.each_with_object({}) do |source, settings|
-      settings.merge!(source) if source.is_a?(Hash)
-    end
-    Telephony::AiVoice::VoiceSettingsDefaults.normalize(merged)
+    sources.compact.reduce({}) { |settings, source| Telephony::AiVoice::PlatformPolicy.merge_updates(settings, source) }
   end
 
   def render_profile_validation_error_or_raise(error)

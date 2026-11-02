@@ -526,12 +526,12 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
     end
 
     def create_thread_conversation(thread:, inbox:)
-      contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: inbox)
+      contact_inbox = create(:contact_inbox, contact: thread.contact, inbox: inbox)
       target = create(
         :conversation,
         account: account,
         inbox: inbox,
-        contact: conversation.contact,
+        contact: thread.contact,
         contact_inbox: contact_inbox
       )
       link = CommunicationThreadConversation.find_by!(account_id: account.id, conversation_id: target.id)
@@ -673,8 +673,8 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
 
     it 'locks the linked conversations for a colliding display ID before a primary key' do
       account.enable_features!('communication_threads')
-      primary_key_thread = create(:communication_thread, account: account, contact: conversation.contact)
-      display_id_thread = create(:communication_thread, account: account, contact: conversation.contact)
+      primary_key_thread = conversation.communication_thread || create(:communication_thread, account: account, contact: conversation.contact)
+      display_id_thread = create(:communication_thread, account: account)
       primary_key_thread.update_column(:display_id, 2_000_000 + primary_key_thread.id) # rubocop:disable Rails/SkipsModelValidations
       display_id_thread.update_column(:display_id, primary_key_thread.id) # rubocop:disable Rails/SkipsModelValidations
 

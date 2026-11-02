@@ -300,6 +300,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
   end
 
   describe 'POST /api/v1/accounts/{account.id}/captain/assistants/{id}/voice_preview' do
+    let(:platform) { create(:super_admin).tap { |user| create(:account_user, account: account, user: user, role: :administrator) } }
     let(:assistant) { create(:captain_assistant, account: account) }
     let(:context) { { call_ref: 'preview:assistant' } }
     let(:runtime_client) do
@@ -328,7 +329,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
     it 'returns only the ephemeral browser capability fields' do
       post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/voice_preview",
-           headers: admin.create_new_auth_token,
+           headers: platform.create_new_auth_token,
            as: :json
 
       expect(response).to have_http_status(:success)
@@ -345,7 +346,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         .and_raise(Telephony::AiVoice::JanusSipRuntimeClient::AttachError, 'invalid capability response')
 
       post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/voice_preview",
-           headers: admin.create_new_auth_token,
+           headers: platform.create_new_auth_token,
            as: :json
 
       expect(response).to have_http_status(:service_unavailable)
@@ -361,7 +362,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       allow(runtime_client).to receive(:create_preview).and_raise(error)
 
       post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/voice_preview",
-           headers: admin.create_new_auth_token,
+           headers: platform.create_new_auth_token,
            as: :json
 
       expect(response).to have_http_status(:too_many_requests)

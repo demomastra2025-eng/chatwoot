@@ -117,14 +117,26 @@ class Telephony::NumberBinding < ApplicationRecord
   scope :recent, -> { order(updated_at: :desc, id: :desc) }
   scope :managed, -> { where(managed_by: MANAGED_BY_ONELINK, ownership_status: MANAGED_OWNERSHIP_STATUSES) }
 
+  # Every writer and the delayed channel callback use the existing assignment
+  # fence before the row lock. Reload before reading JSON, including on re-entry.
+  def self.lock_voice_config!(voice_channel)
+    Telephony::AiVoice::AssistantAssignmentLock.acquire!(voice_channel.inbox.id)
+    voice_channel.lock!
+  end
+
+  def self.with_voice_config_lock(voice_channel)
+    transaction do
+      lock_voice_config!(voice_channel) if voice_channel.present?
+      yield voice_channel&.provider_config_hash&.with_indifferent_access
+    end
+  end
+
   def self.sync_from_voice_channel!(voice_channel)
     return unless voice_channel&.provider.in?(PROVIDER_OWNED_SIP_PROVIDERS)
     return unless voice_channel.inbox.present?
 
-    config = voice_channel.provider_config_hash.with_indifferent_access
-
-    transaction do
-      binding = find_or_initialize_by(inbox_id: voice_channel.inbox.id)
+    with_voice_config_lock(voice_channel) do |config|
+      binding = locked_voice_binding(voice_channel.inbox.id)
       phone_fields = phone_fields_from_config(config, voice_channel)
       binding.account = voice_channel.account
       binding.provider = voice_channel.provider
@@ -168,6 +180,13 @@ class Telephony::NumberBinding < ApplicationRecord
       binding
     end
   end
+
+  def self.locked_voice_binding(inbox_id)
+    binding = find_or_initialize_by(inbox_id: inbox_id)
+    binding.lock! if binding.persisted?
+    binding
+  end
+  private_class_method :locked_voice_binding
 
   def voice_channel
     inbox&.channel
@@ -264,7 +283,7 @@ class Telephony::NumberBinding < ApplicationRecord
     routing_policy&.bridge_payload || { mode: 'operator' }
   end
 
-  def to_telephony_h
+  def to_telephony_h(user: nil, impersonation: nil)
     payload = {
       provider: provider,
       number_ref: number_ref,
@@ -279,7 +298,7 @@ class Telephony::NumberBinding < ApplicationRecord
       managed_by: managed_by,
       ownership_status: ownership_status,
       last_synced_at: last_synced_at,
-      routing_policy: routing_policy&.to_telephony_h
+      routing_policy: routing_policy&.to_telephony_h(user: user, impersonation: impersonation)
     }
     payload.compact
   end

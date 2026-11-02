@@ -39,6 +39,7 @@
 #
 class Telephony::RoutingPolicy < ApplicationRecord
   include Telephony::RoutingPolicy::CallDurationLimit
+  include Telephony::RoutingPolicy::PublicSettings
 
   self.table_name = 'telephony_routing_policies'
 
@@ -122,27 +123,6 @@ class Telephony::RoutingPolicy < ApplicationRecord
 
   def ai_app_ref_candidates
     [onelink_ai_app_ref, ai_app_ref, fallback_ai_app_ref, ENV.fetch('ONELINK_AI_VOICE_APP_REF', nil)]
-  end
-
-  def to_telephony_h
-    {
-      mode: mode,
-      ai_enabled: ai_enabled,
-      ai_app_ref: ai_app_ref,
-      ai_deployment_mode: ai_deployment_mode,
-      onelink_ai_app_ref: onelink_ai_app_ref,
-      fallback_ai_app_ref: fallback_ai_app_ref,
-      effective_ai_app_ref: effective_ai_app_ref,
-      captain_assistant_id: captain_assistant_id,
-      ai_voice_settings: ai_voice_settings,
-      operator_agent_ref: operator_agent_ref,
-      operator_agent_aor: operator_agent_aor,
-      operator_distribution_mode: operator_distribution_mode,
-      fallback_mode: fallback_mode,
-      fallback_message: fallback_message,
-      business_hours: business_hours,
-      settings: settings
-    }.compact
   end
 
   def self.normalized_operator_distribution_mode(value)
