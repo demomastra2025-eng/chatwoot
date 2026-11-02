@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_11_02_103000) do
+ActiveRecord::Schema[7.2].define(version: 2026_11_03_010000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1190,6 +1190,45 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_02_103000) do
     t.index ["assistant_id", "enabled"], name: "index_captain_scenarios_on_assistant_id_and_enabled"
     t.index ["assistant_id"], name: "index_captain_scenarios_on_assistant_id"
     t.index ["enabled"], name: "index_captain_scenarios_on_enabled"
+  end
+
+  create_table "captain_shadow_training_candidates", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "run_id", null: false
+    t.string "kind", null: false
+    t.string "status", default: "pending", null: false
+    t.jsonb "proposal", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_captain_shadow_training_candidates_on_account_id"
+    t.index ["run_id", "kind"], name: "idx_shadow_training_candidate_once", unique: true
+    t.index ["run_id"], name: "index_captain_shadow_training_candidates_on_run_id"
+  end
+
+  create_table "captain_shadow_training_runs", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "conversation_id", null: false
+    t.bigint "assistant_id"
+    t.bigint "user_id", null: false
+    t.bigint "inbound_message_id", null: false
+    t.bigint "human_message_id", null: false
+    t.string "status", default: "queued", null: false
+    t.jsonb "snapshot", default: {}, null: false
+    t.text "human_reply", null: false
+    t.text "shadow_reply"
+    t.jsonb "comparison", default: {}, null: false
+    t.string "error_code"
+    t.string "execution_token"
+    t.datetime "phase_started_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "inbound_message_id"], name: "idx_shadow_training_inbound_once", unique: true
+    t.index ["account_id"], name: "index_captain_shadow_training_runs_on_account_id"
+    t.index ["assistant_id"], name: "index_captain_shadow_training_runs_on_assistant_id"
+    t.index ["conversation_id"], name: "index_captain_shadow_training_runs_on_conversation_id"
+    t.index ["human_message_id"], name: "index_captain_shadow_training_runs_on_human_message_id"
+    t.index ["inbound_message_id"], name: "index_captain_shadow_training_runs_on_inbound_message_id"
+    t.index ["user_id"], name: "index_captain_shadow_training_runs_on_user_id"
   end
 
   create_table "captain_skills", force: :cascade do |t|
@@ -4651,6 +4690,14 @@ ActiveRecord::Schema[7.2].define(version: 2026_11_02_103000) do
   add_foreign_key "captain_reply_suggestion_identities", "accounts", on_delete: :cascade
   add_foreign_key "captain_reply_suggestion_identities", "conversations", on_delete: :cascade
   add_foreign_key "captain_reply_suggestion_identities", "users", on_delete: :cascade
+  add_foreign_key "captain_shadow_training_candidates", "accounts", on_delete: :cascade
+  add_foreign_key "captain_shadow_training_candidates", "captain_shadow_training_runs", column: "run_id", on_delete: :cascade
+  add_foreign_key "captain_shadow_training_runs", "accounts", on_delete: :cascade
+  add_foreign_key "captain_shadow_training_runs", "captain_assistants", column: "assistant_id", on_delete: :cascade
+  add_foreign_key "captain_shadow_training_runs", "conversations", on_delete: :cascade
+  add_foreign_key "captain_shadow_training_runs", "messages", column: "human_message_id", on_delete: :cascade
+  add_foreign_key "captain_shadow_training_runs", "messages", column: "inbound_message_id", on_delete: :cascade
+  add_foreign_key "captain_shadow_training_runs", "users", on_delete: :cascade
   add_foreign_key "captain_skills", "accounts"
   add_foreign_key "communication_thread_conversations", "accounts"
   add_foreign_key "communication_thread_conversations", "communication_threads"
