@@ -1529,6 +1529,73 @@ describe('ConfigurationPage Virtual PBX save feedback and Beeline dialing', () =
     });
   });
 
+  it('hydrates WhatsApp call routing from the typed DTO after partial provider updates', async () => {
+    const typedRouting = {
+      show_extended_call_card: false,
+      inbound: {
+        schedule_mode: 'business_hours',
+        ring_timeout_seconds: 47,
+        skip_busy_operators: false,
+        fallback_action: 'ai',
+        groups: [
+          {
+            id: 'saved',
+            name: 'Saved team',
+            strategy: 'round_robin',
+            ring_seconds: 40,
+            user_ids: [7],
+          },
+        ],
+      },
+      outbound: { access_mode: 'selected_operators', allowed_user_ids: [7] },
+    };
+    const inbox = {
+      id: 95,
+      name: 'WhatsApp Calling',
+      channel_type: 'Channel::Whatsapp',
+      provider: 'whatsapp_cloud',
+      call_routing: typedRouting,
+      provider_config: { calling_enabled: true, ai_voice_enabled: false },
+      members: [{ id: 7, name: 'Ada Agent' }],
+    };
+    const wrapper = buildWrapper({ inbox });
+    await flushPromises();
+    expect(wrapper.vm.callRoutingForm).toMatchObject(typedRouting);
+
+    // Registration/reauthorization responses update provider_config and keep
+    // the inbox's existing typed routing field.
+    await wrapper.setProps({
+      inbox: {
+        ...inbox,
+        provider_config: {
+          calling_enabled: true,
+          authorization_status: 'connected',
+        },
+      },
+    });
+    await flushPromises();
+    expect(wrapper.vm.callRoutingForm).toMatchObject(typedRouting);
+    wrapper.vm.callRoutingForm.inbound.ring_timeout_seconds = 55;
+    await wrapper.vm.saveWhatsAppCallRouting();
+    expect(storeDispatchMock).toHaveBeenCalledWith(
+      'inboxes/updateInbox',
+      expect.objectContaining({
+        channel: {
+          provider_config: expect.objectContaining({
+            call_routing: expect.objectContaining({
+              show_extended_call_card: false,
+              inbound: expect.objectContaining({
+                schedule_mode: 'business_hours',
+                ring_timeout_seconds: 55,
+                skip_busy_operators: false,
+              }),
+            }),
+          }),
+        },
+      })
+    );
+  });
+
   it('renders and saves the Visual Call Routing Builder for WhatsApp Calling', async () => {
     const whatsappCallingInbox = {
       id: 95,

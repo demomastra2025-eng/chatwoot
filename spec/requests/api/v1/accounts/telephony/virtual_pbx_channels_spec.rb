@@ -122,6 +122,91 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     end
   end
 
+  context 'with a private call routing archive' do
+    let(:public_call_routing) do
+      { 'show_extended_call_card' => false,
+        'inbound' => { 'routing_authority' => 'onelink', 'schedule_mode' => 'business_hours', 'ring_timeout_seconds' => 47,
+                       'skip_busy_operators' => false } }
+    end
+    let(:private_call_routing) do
+      public_call_routing.deep_merge('show_extended_call_card' => 'false',
+                                     'inbound' => { 'ring_timeout_seconds' => '47', 'skip_busy_operators' => '0',
+                                                    'archive' => { 'system_prompt' => 'PRIVATE_VPBX_ROUTING_ARCHIVE' } })
+    end
+
+    def install_private_routing(channel)
+      channel.update!(provider_config: channel.provider_config.merge('call_routing' => private_call_routing))
+      policy = channel.inbox.telephony_number_binding.routing_policy
+      policy.update!(settings: policy.settings.merge('call_routing' => private_call_routing))
+      policy
+    end
+
+    it 'projects the whole HTTP response including optional diagnostics without changing private config' do
+      channel = create_reference_channel
+      policy = install_private_routing(channel)
+      private_config = Telephony::VirtualPbx::ConfigBuilder.new(account: account).for_inbox(channel.inbox.id)
+
+      [false, true].each do |diagnostics|
+        get "#{base_path}/#{channel.inbox.id}", params: { include_diagnostics: diagnostics }, headers: headers
+        expect(response).to have_http_status(:ok)
+        expect(response.body).not_to include('PRIVATE_VPBX_ROUTING_ARCHIVE')
+        body = response.parsed_body.fetch('payload')
+        expect(body.dig('ui_config', 'routing', 'call_routing')).to eq(public_call_routing)
+        next unless diagnostics
+
+        expect(body.dig('diagnostics', 'config', 'routing', 'call_routing')).to eq(public_call_routing)
+        expect(body.dig('diagnostics', 'config', 'provider_config')).not_to have_key('call_routing')
+      end
+
+      expect(Telephony::VirtualPbx::ConfigBuilder.new(account: account).for_inbox(channel.inbox.id)).to eq(private_config)
+      expect([channel.reload.provider_config.fetch('call_routing'), policy.reload.settings.fetch('call_routing')]).to eq(
+        [private_call_routing, private_call_routing]
+      )
+    end
+
+    def expect_public_routing_body(body, *paths)
+      expect(response).to have_http_status(:ok)
+      expect(response.body).not_to include('PRIVATE_VPBX_ROUTING_ARCHIVE')
+      paths.each do |keys|
+        # The existing diagnostic sanitizer redacts every key containing auth.
+        expected = if keys.include?('payload')
+                     public_call_routing.deep_merge('inbound' => { 'routing_authority' => '[REDACTED]' })
+                   else
+                     public_call_routing
+                   end
+        expect(body.dig(*keys)).to eq(expected)
+      end
+    end
+
+    it 'keeps meaningful before/after routing during dry-run and an unrelated committed update' do
+      post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      inbox = Inbox.find(response.parsed_body.dig('payload', 'ui_config', 'inbox_id'))
+      policy = install_private_routing(inbox.channel)
+      saved_config = inbox.channel.reload.provider_config.deep_dup
+      saved_settings = policy.reload.settings.deep_dup
+
+      put "#{base_path}/#{inbox.id}", params: { channel_name: 'Dry run name', include_diagnostics: true }, headers: headers, as: :json
+      body = response.parsed_body.fetch('payload')
+      expect_public_routing_body(body, %w[diagnostics existing_config routing call_routing], %w[diagnostics payload routing call_routing])
+      expect(body).to include('dry_run' => true, 'valid' => true)
+      expect([inbox.reload.name, inbox.channel.reload.provider_config, policy.reload.settings]).to eq(
+        [valid_create_payload[:channel_name], saved_config, saved_settings]
+      )
+
+      put_with_configuration_version "#{base_path}/#{inbox.id}",
+                                     params: { channel_name: 'Saved name', dry_run: false, include_diagnostics: true },
+                                     headers: headers, as: :json
+      body = response.parsed_body.fetch('payload')
+      expect_public_routing_body(body, %w[config routing call_routing], %w[diagnostics payload routing call_routing],
+                                 %w[ui_config routing call_routing])
+      expect(body).to include('dry_run' => false, 'valid' => true)
+      expect([inbox.reload.name, inbox.channel.reload.provider_config, policy.reload.settings]).to eq(
+        ['Saved name', saved_config, saved_settings]
+      )
+    end
+  end
+
   it 'returns a read-only unified config for a legacy/reference channel' do
     voice_channel = create_reference_channel
 

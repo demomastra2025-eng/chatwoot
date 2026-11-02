@@ -554,7 +554,7 @@ class Telephony::VirtualPbx::ProvisioningService
       ui_config: config_builder.ui_config_from(config)
     }.merge(extra || {})
     payload[:diagnostics] = { config: config } if include_diagnostics
-    payload
+    config_builder.public_payload(payload)
   end
 
   def product_plan(plan)
@@ -623,7 +623,7 @@ class Telephony::VirtualPbx::ProvisioningService
       }.compact
     end
 
-    payload
+    config_builder.public_payload(payload)
   end
 
   # Keep remote_commit accepted while mutations are intentionally local-only.
@@ -670,7 +670,7 @@ class Telephony::VirtualPbx::ProvisioningService
       }.compact
     end
 
-    payload
+    config_builder.public_payload(payload)
   end
 
   def normalize_payload(payload, fallback: nil)

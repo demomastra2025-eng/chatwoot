@@ -167,7 +167,7 @@ class Telephony::VirtualPbx::ConfigBuilder
                               end
     resolved_routing_authority = resolve_routing_authority(config[:provider_kind], routing)
 
-    {
+    payload = {
       id: config[:id],
       inbox_id: config[:inbox_id],
       configuration_version: config[:configuration_version],
@@ -235,6 +235,20 @@ class Telephony::VirtualPbx::ConfigBuilder
       },
       warnings: config[:warnings] || []
     }.compact
+    public_payload(payload)
+  end
+
+  # Project response copies only. Private provisioning snapshots must retain
+  # legacy routing fields for unrelated updates and configuration fingerprints.
+  def public_payload(value, parent_key = nil)
+    case value
+    when Hash
+      public_object(value, parent_key)
+    when Array
+      value.map { |child| public_payload(child, parent_key) }
+    else
+      value
+    end
   end
 
   def sanitize(value, parent_key = nil)
@@ -253,6 +267,18 @@ class Telephony::VirtualPbx::ConfigBuilder
   private
 
   attr_reader :account
+
+  def public_object(value, parent_key)
+    value.each_with_object({}) do |(key, child), result|
+      next if parent_key.to_s == 'provider_config' && key.to_s == 'call_routing'
+
+      result[key] = if key.to_s == 'call_routing'
+                      Telephony::RoutingPolicy.public_call_routing(child)
+                    else
+                      public_payload(child, key)
+                    end
+    end
+  end
 
   def resolve_inbox(inbox_or_id)
     return inbox_or_id if inbox_or_id.is_a?(Inbox) && inbox_or_id.account_id == account.id

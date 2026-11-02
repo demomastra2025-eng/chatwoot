@@ -916,7 +916,7 @@ export default {
       this.aiVoiceEnabled = !!this.inbox.provider_config?.ai_voice_enabled;
       if (this.isAWhatsAppCloudChannel) {
         this.callRoutingForm = this.normalizeCallRoutingConfig(
-          this.inbox.provider_config?.call_routing
+          this.inbox.call_routing
         );
         this.callRoutingDirty = false;
       }

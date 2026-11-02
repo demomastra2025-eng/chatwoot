@@ -12,6 +12,28 @@ RSpec.describe 'Telephony Readiness API', type: :request do
     account.enable_features!('channel_voice')
   end
 
+  it 'projects private virtual PBX call routing across the whole readiness response' do
+    public_routing = { 'show_extended_call_card' => false,
+                       'inbound' => { 'routing_authority' => 'onelink', 'ring_timeout_seconds' => 47, 'skip_busy_operators' => false } }
+    private_routing = public_routing.deep_merge('inbound' => { 'archive' => { 'system_prompt' => 'PRIVATE_READINESS_ROUTING_ARCHIVE' } })
+    voice_channel.update!(provider_config: voice_channel.provider_config.merge('call_routing' => private_routing))
+    policy = voice_inbox.telephony_number_binding.routing_policy
+    policy.update!(settings: policy.settings.merge('call_routing' => private_routing))
+    builder = Telephony::VirtualPbx::ConfigBuilder.new(account: account)
+    snapshot = builder.for_inbox(voice_inbox.id)
+
+    get path, headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).not_to include('PRIVATE_READINESS_ROUTING_ARCHIVE')
+    payload = response.parsed_body.fetch('payload').fetch('inboxes').first.fetch('virtual_pbx')
+    expect(payload.dig('routing', 'call_routing')).to eq(public_routing)
+    expect(payload.fetch('provider_config')).not_to have_key('call_routing')
+    expect(builder.for_inbox(voice_inbox.id)).to eq(snapshot)
+    expect(voice_channel.reload.provider_config.fetch('call_routing')).to eq(private_routing)
+    expect(policy.reload.settings.fetch('call_routing')).to eq(private_routing)
+  end
+
   it 'returns ready for local Janus SIP inbox setup' do
     voice_inbox
 

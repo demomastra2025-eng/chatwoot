@@ -156,8 +156,11 @@ if resource.whatsapp_web?
     json.evolution resource.channel.try(:evolution_state_payload, include_qr_code: include_whatsapp_web_qr_code)
   end
   wa_web_call_routing = resource.channel.try(:provider_config)&.to_h&.[]('call_routing')
-  json.call_routing wa_web_call_routing if wa_web_call_routing.present?
-  json.provider_config resource.channel.try(:provider_config) if Current.account_user&.administrator?
+  if wa_web_call_routing.present?
+    public_call_routing = Telephony::RoutingPolicy.public_call_routing(wa_web_call_routing)
+    json.call_routing public_call_routing
+  end
+  json.provider_config resource.channel.try(:provider_config)&.to_h&.except('call_routing') if Current.account_user&.administrator?
 end
 
 json.provider resource.channel.try(:provider)
@@ -216,7 +219,10 @@ if resource.whatsapp? && !channel_missing
     json.whatsapp_flows wa_flows if wa_flows.present?
   end
   wa_call_routing = resource.channel.try(:provider_config)&.to_h&.[]('call_routing')
-  json.call_routing wa_call_routing if wa_call_routing.present?
+  if wa_call_routing.present?
+    public_call_routing = Telephony::RoutingPolicy.public_call_routing(wa_call_routing)
+    json.call_routing public_call_routing
+  end
   json.reauthorization_required resource.channel.try(:reauthorization_required?)
   json.calling_enabled resource.channel.try(:calling_enabled?) || false
   json.media_server_enabled defined?(Call) ? Call.media_server_enabled?(inbox: resource) : false
@@ -237,7 +243,7 @@ if resource.channel_type == 'Channel::Voice' && !channel_missing
   voice_call_routing = (resource.respond_to?(:telephony_number_binding) && resource.telephony_number_binding&.routing_policy&.settings&.to_h&.[]('call_routing')) ||
                        resource.channel.try(:provider_config)&.to_h&.[]('call_routing')
   if voice_call_routing.present?
-    public_call_routing = PublicJsonFields.project(voice_call_routing, Telephony::RoutingPolicy::CALL_ROUTING_SCHEMA)
+    public_call_routing = Telephony::RoutingPolicy.public_call_routing(voice_call_routing)
     json.call_routing public_call_routing
   end
   if Current.account_user&.administrator? && resource.channel.provider.in?(Channel::Voice::PROVIDER_OWNED_SIP_PROVIDERS)

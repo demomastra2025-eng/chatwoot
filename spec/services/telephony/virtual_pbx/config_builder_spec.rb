@@ -22,6 +22,38 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     )
   end
 
+  it 'projects public routing copies without changing private provisioning snapshots or fingerprints' do
+    raw_routing = {
+      'show_extended_call_card' => false,
+      'inbound' => { 'ring_timeout_seconds' => 47, 'archive' => { 'system_prompt' => 'PRIVATE_VPBX_ROUTING_ARCHIVE' } }
+    }
+    channel = create_native_sip_channel(phone_number: '+17775550128', provider_config: { call_routing: raw_routing })
+    policy = channel.inbox.telephony_number_binding.routing_policy
+    policy.update!(settings: policy.settings.merge('call_routing' => raw_routing))
+    builder = described_class.new(account: account)
+    private_config = builder.for_inbox(channel.inbox.id)
+    snapshot = private_config.deep_dup
+    stored_config = channel.reload.provider_config.deep_dup
+    stored_policy = policy.reload.settings.deep_dup
+
+    expect(private_config.dig(:provider_config, 'call_routing')).to eq(raw_routing)
+    expect(private_config.dig(:routing, :call_routing)).to eq(
+      raw_routing.deep_merge('inbound' => { 'routing_authority' => 'onelink' })
+    )
+    ui = builder.ui_config_from(private_config)
+    public_copy = builder.public_payload(diagnostics: { configs: [private_config] })
+
+    expect(ui.to_json).not_to include('PRIVATE_VPBX_ROUTING_ARCHIVE')
+    expect(ui.dig(:routing, :call_routing)).to eq(
+      'show_extended_call_card' => false, 'inbound' => { 'ring_timeout_seconds' => 47, 'routing_authority' => 'onelink' }
+    )
+    expect(public_copy.to_json).not_to include('PRIVATE_VPBX_ROUTING_ARCHIVE')
+    expect(public_copy.dig(:diagnostics, :configs, 0, :provider_config)).not_to have_key('call_routing')
+    expect([private_config, builder.for_inbox(channel.inbox.id), channel.reload.provider_config, policy.reload.settings]).to eq(
+      [snapshot, snapshot, stored_config, stored_policy]
+    )
+  end
+
   it 'keeps Wazo blocked until every external calling boundary is explicitly verified' do
     profile = instance_double(
       Telephony::SipProfile,

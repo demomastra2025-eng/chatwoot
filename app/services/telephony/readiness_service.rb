@@ -80,7 +80,7 @@ class Telephony::ReadinessService
       last_synced_at: binding&.last_synced_at,
       number_ref: binding&.number_ref,
       route: build_route_payload(binding, policy),
-      virtual_pbx: virtual_pbx,
+      virtual_pbx: Telephony::VirtualPbx::ConfigBuilder.new(account: account).public_payload(virtual_pbx),
       warnings: warnings
     }.compact
   end

@@ -1,6 +1,6 @@
 class Whatsapp::ProviderConfigPresenter
   PUBLIC_PROVIDER_CONFIG_KEYS = %w[
-    ai_voice_enabled authorization_expires_at authorization_status business_account_id business_id call_routing
+    ai_voice_enabled authorization_expires_at authorization_status business_account_id business_id
     calling_capable calling_enabled connection_state coexistence_sync embedded_signup_flow meta_webhook_lifecycle
     phone_number_id phone_registration source status token_health webhook_callback_recovery whatsapp_flows
   ].freeze
