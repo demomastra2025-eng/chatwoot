@@ -900,7 +900,7 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div class="grid gap-2 text-sm">
+          <div class="grid grid-cols-1 gap-2 text-sm">
             <div
               class="flex items-center justify-between gap-3 border-b border-n-weak py-2"
             >
