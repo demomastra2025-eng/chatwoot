@@ -270,7 +270,7 @@ class Telephony::VirtualPbx::ConfigBuilder
 
   def public_object(value, parent_key)
     value.each_with_object({}) do |(key, child), result|
-      next if parent_key.to_s == 'provider_config' && key.to_s == 'call_routing'
+      next if parent_key.to_s == 'provider_config' && %w[call_routing ai_voice_settings].include?(key.to_s)
 
       result[key] = if key.to_s == 'call_routing'
                       Telephony::RoutingPolicy.public_call_routing(child)

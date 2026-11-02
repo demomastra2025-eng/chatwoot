@@ -69,13 +69,18 @@ RSpec.describe 'Inbox call routing public projection', type: :request do
   end
 
   context 'with WhatsApp Web' do
-    let(:channel) { create(:channel_whatsapp_web, account: account, provider_config: { 'call_routing' => raw_routing, 'calling_enabled' => false }) }
+    let(:channel) do
+      create(:channel_whatsapp_web, account: account,
+                                    provider_config: { 'call_routing' => raw_routing, 'calling_enabled' => false,
+                                                       'ai_voice_settings' => { 'system_prompt' => 'PRIVATE_WA_AI_PROMPT',
+                                                                                'archive' => { 'prompt' => 'PRIVATE_WA_AI_ARCHIVE' } } })
+    end
 
     it 'hides every raw routing alias and preserves private storage during a transport roundtrip' do
       saved = channel.provider_config.deep_dup
       get path, headers: headers, as: :json
       expect(response).to have_http_status(:ok)
-      expect(response.body).not_to include('PRIVATE_WA_ROUTING_ARCHIVE')
+      expect(response.body).not_to include('PRIVATE_WA_ROUTING_ARCHIVE', 'PRIVATE_WA_AI_PROMPT', 'PRIVATE_WA_AI_ARCHIVE')
       expect(response.parsed_body['call_routing']).to eq(public_routing)
       public_config = response.parsed_body.fetch('provider_config')
       expect(public_config).not_to have_key('call_routing')
@@ -83,7 +88,7 @@ RSpec.describe 'Inbox call routing public projection', type: :request do
       # update writes only the editable business field, never a raw config copy.
       patch path, params: { channel: { sign_messages: true } }, headers: headers, as: :json
       expect(response).to have_http_status(:ok)
-      expect(response.body).not_to include('PRIVATE_WA_ROUTING_ARCHIVE')
+      expect(response.body).not_to include('PRIVATE_WA_ROUTING_ARCHIVE', 'PRIVATE_WA_AI_PROMPT', 'PRIVATE_WA_AI_ARCHIVE')
       expect(channel.reload).to have_attributes(sign_messages: true, provider_config: saved)
     end
   end

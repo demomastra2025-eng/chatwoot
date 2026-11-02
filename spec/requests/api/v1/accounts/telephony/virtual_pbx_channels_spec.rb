@@ -135,7 +135,10 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     end
 
     def install_private_routing(channel)
-      channel.update!(provider_config: channel.provider_config.merge('call_routing' => private_call_routing))
+      channel.update!(provider_config: channel.provider_config.merge(
+        'call_routing' => private_call_routing,
+        'ai_voice_settings' => { 'system_prompt' => 'PRIVATE_VPBX_AI_PROMPT', 'archive' => { 'prompt' => 'PRIVATE_VPBX_AI_ARCHIVE' } }
+      ))
       policy = channel.inbox.telephony_number_binding.routing_policy
       policy.update!(settings: policy.settings.merge('call_routing' => private_call_routing))
       policy
@@ -166,7 +169,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
 
     def expect_public_routing_body(body, *paths)
       expect(response).to have_http_status(:ok)
-      expect(response.body).not_to include('PRIVATE_VPBX_ROUTING_ARCHIVE')
+      expect(response.body).not_to include('PRIVATE_VPBX_ROUTING_ARCHIVE', 'PRIVATE_VPBX_AI_PROMPT', 'PRIVATE_VPBX_AI_ARCHIVE')
       paths.each do |keys|
         # The existing diagnostic sanitizer redacts every key containing auth.
         expected = if keys.include?('payload')

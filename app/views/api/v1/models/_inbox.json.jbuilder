@@ -160,7 +160,9 @@ if resource.whatsapp_web?
     public_call_routing = Telephony::RoutingPolicy.public_call_routing(wa_web_call_routing)
     json.call_routing public_call_routing
   end
-  json.provider_config resource.channel.try(:provider_config)&.to_h&.except('call_routing') if Current.account_user&.administrator?
+  if Current.account_user&.administrator?
+    json.provider_config resource.channel.try(:provider_config)&.to_h&.except('call_routing', 'ai_voice_settings')
+  end
 end
 
 json.provider resource.channel.try(:provider)
