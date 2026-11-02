@@ -87,7 +87,52 @@ RSpec.describe Captain::CapabilitiesMigrationService do
     stop_workers(revocation, migration)
   end
 
+  it 'allows a real thread assignee foreign key while activation waits for its Account', :aggregate_failures do
+    account = create(:account)
+    actor = create(:super_admin)
+    assistant = create(:captain_assistant, :legacy, account: account)
+    thread_record = CommunicationThread.new(account: account, contact: create(:contact, account: account), assignee: actor)
+    manifest = Captain::Mcp::ToolCatalog.without_discovery do
+      described_class.new(assistant: assistant, actor: actor).prepare_transition(policy: policy, expected_account_id: account.id)
+    end
+    account_locked = Queue.new
+    release_insert = Queue.new
+    migration_pid = Queue.new
+    results = Queue.new
+    allow(thread_record).to receive(:ensure_display_id).and_wrap_original do |method|
+      method.call
+      # The real save transaction still holds Account; INSERT and its assignee
+      # FK KEY SHARE happen only after this checkpoint is released.
+      account_locked << ActiveRecord::Base.connection.select_value('SELECT pg_backend_pid()')
+      release_insert.pop
+    end
+    writer = worker(results, :thread_writer) do
+      thread_record.save!
+      :created
+    end
+    blocker_pid = Timeout.timeout(15) { account_locked.pop }
+    migration = worker(results, :migration) do
+      migration_pid << ActiveRecord::Base.connection.select_value('SELECT pg_backend_pid()')
+      Captain::Mcp::ToolCatalog.without_discovery do
+        described_class.new(assistant: Captain::Assistant.find(assistant.id), actor: User.find(actor.id))
+                       .activate!(expected_digest: manifest[:source_digest], policy: policy, expected_account_id: account.id)
+      end
+      :migrated
+    end
+    wait_for_blocking(Timeout.timeout(15) { migration_pid.pop }, blocker_pid)
+    release_insert << true
+    [writer, migration].each { |thread| Timeout.timeout(25) { thread.join } }
+    expect(Array.new(2) { results.pop }.to_h).to eq(thread_writer: :created, migration: :migrated)
+    expect(CommunicationThread.find_by(id: thread_record.id)&.assignee_id).to eq(actor.id)
+    expect(Captain::Capabilities.configured?(assistant.reload.config)).to be(true)
+  ensure
+    release_insert << true if release_insert&.empty?
+    stop_workers(writer, migration)
+  end
+
   it 'validates the scoped fish reference inside a genuinely read-only plan snapshot', :aggregate_failures do
+    defaults = Telephony::AiVoice::VoiceSettingsDefaults::DEFAULTS
+    stub_const('Telephony::AiVoice::VoiceSettingsDefaults::DEFAULTS', defaults.merge('provider' => 'fish').freeze)
     account = create(:account)
     actor = create(:super_admin)
     voice = Telephony::AiVoice::FishVoice.create!(account: account, provider_model_id: SecureRandom.hex(16),
