@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, toRef, watch } from 'vue';
+import { computed, nextTick, ref, toRef } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { VueCal } from 'vue-cal';
@@ -126,7 +126,6 @@ const TIMELINE_HOUR_STEP_MIN = 60;
 
 const { t, locale } = useI18n();
 const vueCalRef = ref(null);
-const isVueCalReady = ref(false);
 
 const localeCode = computed(() => {
   const normalized = locale.value?.replace(/_/g, '-').toLowerCase();
@@ -176,6 +175,11 @@ const isTimelineView = computed(() => ['day', 'week'].includes(props.view));
 const buildWorkspaceTimeOffIntervals = column =>
   buildTimeOffIntervals(props.timeOffs, column, toCalendarDate);
 const calendarAnchorDate = computed(() => toCalendarDate(props.anchorDate));
+// A new public ready lifecycle avoids scrolling the outgoing DOM during VueCal's
+// internal view transition. Data/resource refreshes keep this key and their scroll.
+const calendarViewportKey = computed(
+  () => `${props.view}:${formatDateKey(calendarAnchorDate.value)}`
+);
 const monthDays = computed(() =>
   buildDayListForView('month', calendarAnchorDate.value)
 );
@@ -1727,35 +1731,13 @@ const handleEventKeydown = (keyboardEvent, event) => {
   emit('selectAppointment', event.appointment);
 };
 
-let lastScrolledContext = '';
-const autoScrollTimeline = async () => {
-  if (!isTimelineView.value || !isVueCalReady.value) return;
-  const context = `${props.view}:${formatDateKey(calendarAnchorDate.value)}`;
-  if (context === lastScrolledContext) return;
-
+const handleCalendarReady = async () => {
+  if (!isTimelineView.value) return;
+  const context = calendarViewportKey.value;
   await nextTick();
-  const viewApi = vueCalRef.value?.view;
-  if (!viewApi?.scrollToTime) return;
-
-  lastScrolledContext = context;
-  viewApi.scrollToTime(initialTimelineMinute());
+  if (context !== calendarViewportKey.value) return;
+  vueCalRef.value?.view?.scrollToTime?.(initialTimelineMinute());
 };
-
-const handleCalendarReady = () => {
-  isVueCalReady.value = true;
-  autoScrollTimeline();
-};
-
-watch(
-  [() => props.view, () => props.anchorDate],
-  () => {
-    lastScrolledContext = '';
-    autoScrollTimeline();
-  },
-  { flush: 'post' }
-);
-
-onMounted(autoScrollTimeline);
 </script>
 
 <template>
@@ -1771,6 +1753,7 @@ onMounted(autoScrollTimeline);
     <div class="scheduling-vue-cal__viewport">
       <div class="scheduling-vue-cal__frame">
         <VueCal
+          :key="calendarViewportKey"
           ref="vueCalRef"
           class="scheduling-vue-cal__calendar bg-transparent"
           :all-day-events="allDayEvents"

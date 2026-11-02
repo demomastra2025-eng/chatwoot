@@ -36,13 +36,14 @@ const baseProps = {
 let mountedWrappers = [];
 const originalScrollTo = HTMLElement.prototype.scrollTo;
 
-const mountCalendar = props => {
+const mountCalendar = (props, options = {}) => {
   const wrapper = mount(SchedulingVueCalCalendar, {
     props: {
       ...baseProps,
       ...props,
     },
     attachTo: document.body,
+    ...options,
   });
 
   mountedWrappers.push(wrapper);
@@ -818,8 +819,60 @@ describe('SchedulingVueCalCalendar', () => {
     expect(scrollable.scrollTop).toBe(417);
     await wrapper.setProps({ view: 'week' });
     await nextTick();
-    expect(scrollToTime).toHaveBeenLastCalledWith(22 * 60 + 30);
+    await nextTick();
+    await nextTick();
+    expect(wrapper.findComponent(VueCal).vm).not.toBe(vueCal.vm);
+    expect(
+      wrapper.get('.vuecal__scrollable--week-view').element.scrollTop
+    ).toBe(22.5 * 80);
   });
+
+  it.each([
+    ['day', 'week'],
+    ['week', 'day'],
+    ['month', 'week'],
+  ])(
+    'scrolls the entering %s → %s timeline after the native view transition',
+    async (from, to) => {
+      vi.useFakeTimers({
+        toFake: [
+          'Date',
+          'setTimeout',
+          'clearTimeout',
+          'requestAnimationFrame',
+          'cancelAnimationFrame',
+        ],
+      });
+      vi.setSystemTime(new Date('2026-03-09T14:30:00Z'));
+      HTMLElement.prototype.scrollTo = vi.fn(function scrollTo({ top }) {
+        this.scrollTop = top;
+      });
+      const style = document.createElement('style');
+      style.textContent =
+        '.vuecal__scrollable { transition-property: opacity; transition-duration: 0.2s; transition-delay: 0s; }';
+      document.head.appendChild(style);
+      try {
+        const wrapper = mountCalendar(
+          { view: from, workspaceTimezone: 'Asia/Almaty' },
+          { global: { stubs: { transition: false } } }
+        );
+        await nextTick();
+        await nextTick();
+        await vi.advanceTimersByTimeAsync(250);
+        await wrapper.setProps({ view: to });
+        await nextTick();
+        await nextTick();
+        await vi.advanceTimersByTimeAsync(250);
+        const enteringTimeline = wrapper.get(
+          `.vuecal__scrollable--${to}-view`
+        ).element;
+        expect(enteringTimeline.scrollTop).toBeGreaterThan(0);
+        expect(enteringTimeline.scrollTop).toBe(18.5 * 80);
+      } finally {
+        style.remove();
+      }
+    }
+  );
 
   it('starts no earlier than 08:00 at workspace midnight and does not scroll month', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -834,13 +887,11 @@ describe('SchedulingVueCalCalendar', () => {
     expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledWith(
       expect.objectContaining({ top: 8 * 80 })
     );
-    const scrollToTime = vi.spyOn(
-      wrapper.findComponent(VueCal).vm.view,
-      'scrollToTime'
-    );
+    HTMLElement.prototype.scrollTo.mockClear();
     await wrapper.setProps({ view: 'month' });
     await nextTick();
-    expect(scrollToTime).not.toHaveBeenCalled();
+    await nextTick();
+    expect(HTMLElement.prototype.scrollTo).not.toHaveBeenCalled();
   });
 
   it('keeps long specialist names inside their day columns', async () => {
