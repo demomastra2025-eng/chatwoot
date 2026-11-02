@@ -192,7 +192,7 @@ RSpec.describe CaptainFeaturable do
       prefs = account.captain_preferences
 
       expect(prefs[:runtime]).to include(
-        'assistant_thinking_effort' => 'none',
+        'assistant_thinking_effort' => 'low',
         'copilot_thinking_effort' => 'none',
         'assistant_moderation' => false,
         'copilot_moderation' => false,
@@ -204,7 +204,7 @@ RSpec.describe CaptainFeaturable do
         'trace_input_capture' => true,
         'trace_output_capture' => true
       )
-      expect(account.captain_assistant_thinking_effort).to eq('none')
+      expect(account.captain_assistant_thinking_effort).to eq('low')
       expect(account.captain_assistant_moderation?).to be false
       expect(account.captain_copilot_moderation?).to be false
       expect(account.captain_knowledge_chunk_size).to eq(Captain::KnowledgeSettings::DEFAULT_CHUNK_SIZE)
@@ -212,7 +212,8 @@ RSpec.describe CaptainFeaturable do
       expect(account.captain_trace_output_capture?).to be true
     end
 
-    it 'returns stored runtime preferences when configured' do
+    it 'uses platform effort while retaining stored runtime business preferences' do
+      upsert_installation_config('CAPTAIN_AI_AGENT_THINKING_EFFORT', 'medium')
       account.update!(captain_runtime: {
                         'assistant_thinking_effort' => 'high',
                         'copilot_moderation' => true,
@@ -221,11 +222,12 @@ RSpec.describe CaptainFeaturable do
                         'trace_output_capture' => false
                       })
 
-      expect(account.captain_assistant_thinking_effort).to eq('high')
+      expect(account.captain_assistant_thinking_effort).to eq('medium')
       expect(account.captain_copilot_moderation?).to be true
       expect(account.captain_knowledge_chunk_size).to eq(24_000)
       expect(account.captain_trace_input_capture?).to be false
       expect(account.captain_trace_output_capture?).to be false
+      expect(account.reload.captain_runtime['assistant_thinking_effort']).to eq('high')
     end
   end
 

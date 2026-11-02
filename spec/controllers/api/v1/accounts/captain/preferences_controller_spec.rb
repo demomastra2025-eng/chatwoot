@@ -520,7 +520,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             params: {
               captain_runtime: {
                 privacy_profile: 'sensitive',
-                assistant_thinking_effort: 'high',
                 assistant_moderation: true,
                 openrouter_allow_model_fallbacks: false,
                 moderation_failure_mode: 'fail_closed',
@@ -547,7 +546,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(response).to have_http_status(:success)
         expect(json_response[:runtime]).to include(
           privacy_profile: 'sensitive',
-          assistant_thinking_effort: 'high',
           assistant_moderation: true,
           openrouter_allow_model_fallbacks: false,
           moderation_failure_mode: 'fail_closed',
@@ -570,7 +568,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         )
         expect(account.reload.captain_runtime).to include(
           'privacy_profile' => 'sensitive',
-          'assistant_thinking_effort' => 'high',
           'assistant_moderation' => true,
           'openrouter_allow_model_fallbacks' => false,
           'moderation_failure_mode' => 'fail_closed',

@@ -9,8 +9,6 @@ RSpec.describe 'Captain workspace profile copilot tools' do
       record.update!(
         name: 'Old Company',
         locale: source_locale,
-        domain: 'reply.old.example.com',
-        support_email: 'support.old@example.com',
         custom_attributes: {
           'industry' => 'Retail',
           'company_size' => '11-50',
@@ -62,9 +60,6 @@ RSpec.describe 'Captain workspace profile copilot tools' do
         'id' => account.id,
         'name' => 'Old Company',
         'locale' => source_locale,
-        'domain' => 'reply.old.example.com',
-        'support_email' => 'support.old@example.com',
-        'configured_support_email' => 'support.old@example.com',
         'status' => 'active'
       )
       expect(payload.dig('workspace', 'custom_attributes')).to include(
@@ -79,7 +74,13 @@ RSpec.describe 'Captain workspace profile copilot tools' do
       )
       expect(payload.dig('workspace', 'available_locales')).to include(source_locale)
       expect(payload.dig('workspace', 'counts')).to include('users' => 1, 'teams' => 1, 'inboxes' => 1)
-      expect(payload.dig('editable_fields', 'account')).to include('name', 'locale', 'domain', 'support_email')
+    end
+
+    it 'does not expose retired workspace fields' do
+      payload = JSON.parse(service.execute)
+
+      expect(payload['workspace']).not_to include('domain', 'support_email', 'configured_support_email')
+      expect(payload.dig('editable_fields', 'account')).to eq(%w[name locale])
     end
 
     it 'returns a compact MCP access summary inside the workspace profile' do
@@ -112,8 +113,6 @@ RSpec.describe 'Captain workspace profile copilot tools' do
       {
         name: 'New Company',
         locale: target_locale,
-        domain: '',
-        support_email: 'support.new@example.com',
         industry: 'Services',
         company_size: '51-200',
         timezone: 'Asia/Almaty',
@@ -135,20 +134,16 @@ RSpec.describe 'Captain workspace profile copilot tools' do
       expect(payload['workspace']).to include(
         'id' => account.id,
         'name' => 'New Company',
-        'locale' => target_locale,
-        'domain' => '',
-        'configured_support_email' => 'support.new@example.com'
+        'locale' => target_locale
       )
       expect(payload['updated_fields']).to include(
         'account.name',
         'account.locale',
-        'account.domain',
-        'account.support_email',
         'custom_attributes.industry',
         'settings.auto_resolve_after',
         'settings.scheduling_company_enabled'
       )
-      expect(account).to have_attributes(name: 'New Company', locale: target_locale, domain: '', support_email: 'support.new@example.com')
+      expect(account).to have_attributes(name: 'New Company', locale: target_locale)
       expect(account.custom_attributes).to include('industry' => 'Services', 'company_size' => '51-200', 'timezone' => 'Asia/Almaty')
       expect(account.settings).to include(
         'reporting_timezone' => 'Asia/Almaty',
@@ -159,6 +154,18 @@ RSpec.describe 'Captain workspace profile copilot tools' do
         'scheduling_contact_required' => false,
         'scheduling_company_enabled' => false
       )
+    end
+
+    %i[domain support_email].each do |retired_field|
+      it "rejects retired #{retired_field} without mutating the account" do
+        updater = service
+        before_attributes = account.reload.attributes.deep_dup
+
+        result = updater.execute(**{ retired_field => 'retired.example.test' })
+
+        expect(result).to include("Unsupported workspace profile fields: #{retired_field}")
+        expect(account.reload.attributes).to eq(before_attributes)
+      end
     end
 
     it 'rejects invalid locale without mutating the account' do

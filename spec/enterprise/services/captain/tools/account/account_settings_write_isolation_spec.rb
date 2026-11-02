@@ -28,7 +28,7 @@ RSpec.describe 'Captain account settings write isolation' do # rubocop:disable R
       fresh.update!(
         workspace_greeting: { 'enabled' => false, 'message' => 'Company saved', 'excluded_inbox_ids' => [] },
         auto_resolve_message: 'Concurrent unrelated value'
-)
+      )
     end
     expect(record.account.workspace_greeting['message']).to eq('Before')
     [service, fresh.settings.slice('workspace_greeting', 'auto_resolve_message', 'audio_transcriptions')]
