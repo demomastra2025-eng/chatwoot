@@ -50,6 +50,19 @@ export const touchParams = rule => {
     : action?.action_params || {};
 };
 
+export const findPresetRuleForInbox = (rules, presetKey, inboxId) => {
+  if (!inboxId) return undefined;
+
+  // The oldest rule is primary; duplicates remain in the additional rules list.
+  return (rules || [])
+    .filter(
+      rule =>
+        extractPresetKeyFromRule(rule) === presetKey &&
+        String(touchParams(rule)?.target_inbox_id) === String(inboxId)
+    )
+    .sort((left, right) => Number(left.id) - Number(right.id))[0];
+};
+
 export const eventKeyForRule = rule => {
   const params = touchParams(rule);
   if (

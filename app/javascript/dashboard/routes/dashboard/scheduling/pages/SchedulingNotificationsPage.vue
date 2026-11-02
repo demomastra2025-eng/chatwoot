@@ -24,7 +24,6 @@ import {
   APPOINTMENT_SEMANTIC_VARIABLES,
   buildFieldReferenceForSemanticKey,
   buildPresetMarker,
-  extractPresetKeyFromRule,
   findSemanticVariableByFieldId,
   findSemanticVariableByToken,
 } from 'dashboard/helper/appointmentTemplatePresets';
@@ -36,6 +35,7 @@ import {
 } from 'dashboard/helper/appointmentFieldFill';
 import {
   APPOINTMENT_NOTIFICATION_EVENTS,
+  findPresetRuleForInbox,
   eventKeyForRule,
   touchParams,
 } from '../calendarNotificationRules';
@@ -155,15 +155,10 @@ const presetTemplate = preset =>
   pageTemplates.value.find(item => item.name === preset.templateName);
 
 const presetRule = preset =>
-  notificationRules.value.find(
-    rule =>
-      extractPresetKeyFromRule(rule) === preset.key &&
-      (!selectedInboxId.value ||
-        String(touchParams(rule)?.target_inbox_id) ===
-          String(selectedInboxId.value))
-  ) ||
-  notificationRules.value.find(
-    rule => extractPresetKeyFromRule(rule) === preset.key
+  findPresetRuleForInbox(
+    notificationRules.value,
+    preset.key,
+    selectedInboxId.value
   );
 
 const otherRules = computed(() => {

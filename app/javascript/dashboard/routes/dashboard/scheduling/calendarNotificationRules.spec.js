@@ -1,11 +1,44 @@
 import { describe, expect, it } from 'vitest';
 import {
   eventKeyForRule,
+  findPresetRuleForInbox,
   presetRows,
   scheduleFor,
 } from './calendarNotificationRules';
 
 describe('calendar appointment notification rules', () => {
+  const presetRule = (id, inboxId) => ({
+    id,
+    description: '[scheduling_preset:appointment_created]',
+    actions: [
+      {
+        action_name: 'create_touch',
+        action_params: [{ target_inbox_id: inboxId }],
+      },
+    ],
+  });
+
+  it('does not substitute a matching preset from another channel or a channel-less legacy rule', () => {
+    expect(
+      findPresetRuleForInbox(
+        [presetRule(1, 3), presetRule(2, null)],
+        'appointment_created',
+        4
+      )
+    ).toBeUndefined();
+    expect(
+      findPresetRuleForInbox([presetRule(1, 3)], 'appointment_created', '')
+    ).toBeUndefined();
+  });
+
+  it('selects the oldest matching rule within the channel without reordering the source list', () => {
+    const rules = [presetRule(8, '4'), presetRule(1, 3), presetRule(6, 4)];
+    expect(findPresetRuleForInbox(rules, 'appointment_created', '4')?.id).toBe(
+      6
+    );
+    expect(rules.map(rule => rule.id)).toEqual([8, 1, 6]);
+  });
+
   it('allows zero offset at the start and keeps completed notices at the visit end', () => {
     expect(scheduleFor('started', 'at_time', 0, 60)).toEqual({
       relative_anchor: 'appointment.starts_at',
