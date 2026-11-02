@@ -68,6 +68,7 @@ module Captain::ReplySuggestion::RequestStore
     end
 
     def finish!(record, status:, result: nil, reason_code: nil, duration_ms: nil)
+      Captain::ReplySuggestion::Identity.register!(record) if status.to_s == 'draft'
       write!(
         record.merge(
           'status' => status.to_s, 'result' => result, 'reason_code' => reason_code, 'duration_ms' => duration_ms,

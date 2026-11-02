@@ -13,6 +13,7 @@ class ContactMergeAction
       # Lock order: phone identity lock first (the base update re-takes it), then the bulk reassignments.
       Contacts::PhoneIdentityLock.acquire!(account_id: @account.id)
       validate_contacts
+      reference_merger.prepare!
       merge_conversations
       merge_communication_threads
       merge_messages
@@ -76,12 +77,12 @@ class ContactMergeAction
   end
 
   def merge_remaining_contact_references
-    Contacts::ReferenceMergeService.new(
-      account: @account,
-      base_contact: @base_contact,
-      mergee_contact: @mergee_contact
-    ).perform
+    reference_merger.reassign_remaining_references!
     merge_contact_phones
+  end
+
+  def reference_merger
+    @reference_merger ||= Contacts::ReferenceMergeService.new(account: @account, base_contact: @base_contact, mergee_contact: @mergee_contact)
   end
 
   # The labels of the card that goes away stay with the person. They are written, together with everything the person

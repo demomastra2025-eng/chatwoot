@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Monthly (Asia/Almaty, UTC+5) metering for:
-# 1. Patient AI dialogs (`captain_ai_dialogs`): 1 dialog = up to 24 hours OR up to 20 AI replies in a conversation.
+# 1. Patient AI dialogs (`captain_ai_dialogs`): 1 dialog = up to 24 hours OR up to 20 AI replies per contact, across channels within an account.
 # 2. AI-ROP call analysis minutes (`call_analysis_minutes`): per-second accumulation; calls < 5s and unanswered calls are excluded.
 #
 # Exceeding a positive monthly quota is strictly non-blocking: overages are billed at 30 KZT/dialog and 10 KZT/min.
@@ -18,7 +18,6 @@ class Accounts::MonthlyAiUsageService
   OVERAGE_AI_DIALOG_KZT = 30
   OVERAGE_CALL_MINUTE_KZT = 10
   MAX_RETENTION_MONTHS = 6
-  MAX_TRACKED_MESSAGE_IDS = 25
 
   MONTHLY_BUCKET_SQL = <<~SQL.squish.freeze
     custom_attributes = jsonb_set(
@@ -72,70 +71,113 @@ class Accounts::MonthlyAiUsageService
     seconds.positive? ? (seconds / 60.0).ceil : 0
   end
 
-  # Records one outbound AI reply in a conversation. Opens a new billable 24h / 20-reply dialog window when none is active.
-  # Returns :new_dialog when the monthly dialog counter was incremented, :existing_dialog when absorbed into the active window,
-  # or :duplicate when message_id was already recorded.
-  def record_ai_dialog_reply!(conversation, message_id: nil, at: Time.current)
-    return false unless @account && conversation
+  # One entry point for provider acknowledgements and manager-sent suggestion feedback.
+  # `sent` alone is the Message default, so external channels also need a provider id/receipt.
+  def record_sent_message!(message)
+    return false unless source_owned?(message)
+    return false unless public_reply?(message)
 
-    msg_key = message_id.to_s.presence
-    outcome = :existing_dialog
-    timestamp = at.to_time.getlocal(ALMATY_OFFSET).iso8601
-    Conversation.transaction do
-      locked = Conversation.lock.find(conversation.id)
-      attrs = (locked.additional_attributes || {}).deep_dup
-      window = attrs[CONVERSATION_WINDOW_KEY]
-      if duplicate_reply_message?(window, msg_key)
-        outcome = :duplicate
-      else
-        attrs[CONVERSATION_WINDOW_KEY], opened_new_window = next_window_state(window, at, timestamp, msg_key)
-        # rubocop:disable Rails/SkipsModelValidations
-        locked.update_columns(additional_attributes: attrs)
-        # rubocop:enable Rails/SkipsModelValidations
-        conversation.additional_attributes = attrs
-        increment_monthly_bucket!(AI_DIALOGS_MONTHLY_KEY, period_key(at), 1) if opened_new_window
-        outcome = opened_new_window ? :new_dialog : :existing_dialog
-      end
-    end
-    outcome
+    # The provider can hold an object loaded before suggestion feedback added its provenance.
+    # Read the persisted row under the save transaction rather than trusting that object's JSON.
+    sent = Message.find_by(id: message.id, account_id: @account.id)
+    return false unless sent && acknowledged?(sent)
+
+    return false unless ai_reply?(sent)
+    return record_historical_message!(sent) if sent.ai_usage_version.nil?
+
+    record_ai_dialog_reply!(sent.conversation, message_id: sent.id, at: sent.ai_usage_sent_at)
   end
 
-  # Records analyzed call seconds when the call was answered and lasted at least 5 seconds.
-  def record_call_analysis!(duration_seconds:, unanswered: false, at: Time.current)
-    return false unless @account
+  # Internal accounting boundary; callers must supply the persisted message identity.
+  def record_ai_dialog_reply!(conversation, message_id:, at: Time.current)
+    return false unless source_owned?(conversation)
+    return false if message_id.blank?
+
+    Contact.transaction do
+      Contacts::PhoneIdentityLock.acquire!(account_id: @account.id)
+      contact_id = Conversation.where(account_id: @account.id, id: conversation.id).pick(:contact_id)
+      contact = @account.contacts.find_by(id: contact_id)
+      next false unless contact
+
+      contact.with_lock do
+        window = Accounts::AiDialogWindow.new(contact, at: at)
+        window.import_legacy_events!
+        next :duplicate unless insert_event!("message:#{message_id}", AI_DIALOGS_MONTHLY_KEY, at, 1, contact.id)
+
+        opened = apply_dialog_history!(window)
+        opened ? :new_dialog : :existing_dialog
+      end
+    end
+  end
+
+  def reconcile_ai_dialogs!(contact, at: Time.current)
+    raise ArgumentError, 'Contact belongs to another account' unless source_owned?(contact)
+
+    Contact.transaction do
+      Contacts::PhoneIdentityLock.acquire!(account_id: @account.id)
+      contact.with_lock { apply_dialog_history!(Accounts::AiDialogWindow.new(contact, at: at)) }
+    end
+  end
+
+  # The source identity is required, even when its caller already holds a row lock.
+  # The event and counter participate in the caller's transcript transaction.
+  def record_call_analysis!(call:, duration_seconds:, unanswered: false, at: Time.current)
+    return false unless source_owned?(call)
     return false if unanswered
 
     seconds = parse_seconds(duration_seconds)
-    return false if seconds.nil? || !seconds.finite? || seconds < MIN_BILLABLE_CALL_SECONDS
+    return false unless billable_seconds?(seconds)
 
-    increment_monthly_bucket!(CALL_SECONDS_MONTHLY_KEY, period_key(at), seconds.round)
-    true
+    Accounts::AiUsageEvent.transaction do
+      key = "call:#{call.class.base_class.name}:#{call.id}"
+      next false unless insert_event!(key, CALL_SECONDS_MONTHLY_KEY, at, seconds.round)
+
+      increment_monthly_bucket!(CALL_SECONDS_MONTHLY_KEY, period_key(at), seconds.round)
+      true
+    end
   end
 
   private
 
-  def duplicate_reply_message?(window, msg_key)
-    msg_key.present? && window.is_a?(Hash) && Array(window['message_ids']).include?(msg_key)
+  def apply_dialog_history!(window)
+    opened = window.record_reply!
+    window.period_deltas.each { |period, delta| increment_monthly_bucket!(AI_DIALOGS_MONTHLY_KEY, period, delta) }
+    opened
   end
 
-  def next_window_state(window, at, timestamp, msg_key)
-    current = window.is_a?(Hash) ? window : {}
-    tracked_ids = append_message_id(current['message_ids'], msg_key)
-    if active_dialog_window?(current, at)
-      state = { 'started_at' => current['started_at'], 'replies_count' => current['replies_count'].to_i + 1 }
-      state['message_ids'] = tracked_ids if tracked_ids.any?
-      [state, false]
-    else
-      state = { 'started_at' => timestamp, 'replies_count' => 1 }
-      state['message_ids'] = tracked_ids if tracked_ids.any?
-      [state, true]
-    end
+  def record_historical_message!(message)
+    insert_event!("message:#{message.id}", AI_DIALOGS_MONTHLY_KEY, message.ai_usage_sent_at || message.created_at, 0)
   end
 
-  def append_message_id(existing_ids, msg_key)
-    ids = Array(existing_ids).map(&:to_s).reject(&:blank?)
-    ids << msg_key if msg_key.present?
-    ids.last(MAX_TRACKED_MESSAGE_IDS)
+  def public_reply?(message)
+    message.outgoing? && !message.private?
+  end
+
+  def source_owned?(source)
+    @account.present? && source&.persisted? && source.account_id == @account.id
+  end
+
+  def billable_seconds?(seconds)
+    seconds.present? && seconds.finite? && seconds >= MIN_BILLABLE_CALL_SECONDS
+  end
+
+  def ai_reply?(message)
+    attrs = message.additional_attributes.to_h
+    attrs['captain_ai_reply'].is_a?(Hash) || attrs['captain_follow_up'].is_a?(Hash) || attrs['captain_ai_suggestion'].is_a?(Hash)
+  end
+
+  def acknowledged?(message)
+    return false if message.failed?
+
+    message.source_id.present? || message.delivered? || message.read? ||
+      message.inbox.channel_type.in?(%w[Channel::WebWidget Channel::Api])
+  end
+
+  def insert_event!(key, bucket, at, quantity = 1, contact_id = nil)
+    Accounts::AiUsageEvent.insert_all( # rubocop:disable Rails/SkipsModelValidations
+      [{ account_id: @account.id, contact_id: contact_id, event_key: key, bucket: bucket, occurred_at: at, quantity: quantity }],
+      unique_by: [:account_id, :event_key], returning: [:id]
+    ).rows.any?
   end
 
   def monthly_value(bucket_key, period)
@@ -144,23 +186,6 @@ class Accounts::MonthlyAiUsageService
 
     value = bucket[period].to_i
     value.positive? ? value : 0
-  end
-
-  def active_dialog_window?(window, at)
-    started_at = parse_time(window['started_at'])
-    replies_count = window['replies_count'].to_i
-    return false unless started_at && replies_count.positive? && replies_count < DIALOG_WINDOW_MAX_REPLIES
-
-    elapsed = at.to_time - started_at
-    !elapsed.negative? && elapsed < DIALOG_WINDOW_DURATION
-  end
-
-  def parse_time(raw)
-    return if raw.blank?
-
-    Time.iso8601(raw.to_s)
-  rescue ArgumentError
-    Time.zone.parse(raw.to_s)
   end
 
   def parse_seconds(raw)
@@ -172,7 +197,7 @@ class Accounts::MonthlyAiUsageService
 
   # rubocop:disable Rails/SkipsModelValidations
   def increment_monthly_bucket!(bucket_key, period, delta)
-    return unless delta.to_i.positive?
+    return if delta.to_i.zero?
 
     sql = Arel.sql(
       ActiveRecord::Base.sanitize_sql_array([MONTHLY_BUCKET_SQL, { bucket: bucket_key, period: period, delta: delta.to_i }])

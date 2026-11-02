@@ -1,6 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Captain::ReplySuggestion::FeedbackService do
+  include_context 'with active AI metering'
   let(:account) { create(:account) }
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:conversation) { create(:conversation, account: account, inbox: create(:inbox, account: account)) }
@@ -93,6 +94,87 @@ RSpec.describe Captain::ReplySuggestion::FeedbackService do
         'reason_preview' => 'Решает врач.', 'next_message_id' => sent.id, 'next_message_delay_seconds' => 0, 'final_text' => 'Ответила сама'
       )
       expect(Redis::Alfred.get("#{store::PREFIX}:dismissed:#{account.id}:#{agent.id}:#{conversation.id}")).to be_nil
+    end
+  end
+
+  describe 'metering manager-sent AI suggestions' do
+    def usage
+      Accounts::MonthlyAiUsageService.new(account.reload)
+    end
+
+    def outgoing_suggestion(**attributes)
+      create(:message, account: account, conversation: conversation, sender: agent, message_type: :outgoing,
+                       content: 'Edited by staff', **attributes)
+    end
+
+    it 'counts an edited suggestion only after its provider acknowledgement, with either callback order' do
+      # Use an external channel: status sent is merely the default before a provider acknowledgement.
+      channel = create(:channel_telegram, account: account)
+      conversation.update!(inbox: channel.inbox)
+      sent = outgoing_suggestion
+      perform('sent', message_id: sent.id, edited_before_send: true)
+      expect(usage.ai_dialogs_consumed).to eq(0)
+      expect(sent.reload.additional_attributes).to have_key('captain_ai_suggestion')
+
+      sent.update!(source_id: 'ack-one')
+      perform('sent', message_id: sent.id, edited_before_send: true)
+      sent.update!(status: :delivered)
+      expect(usage.ai_dialogs_consumed).to eq(1)
+      expect(Accounts::AiUsageEvent.where(account_id: account.id).count).to eq(1)
+
+      second = outgoing_suggestion(source_id: 'ack-two')
+      perform('sent', message_id: second.id)
+      expect(usage.ai_dialogs_consumed).to eq(1)
+      expect(Accounts::AiDialogState.find_by!(contact_id: conversation.contact_id).state['replies_count']).to eq(2)
+    end
+
+    it 'shares one 20-reply window between autonomous replies and edited staff suggestions' do
+      19.times do |idx|
+        outgoing_suggestion(source_id: "auto-ack-#{idx}", additional_attributes: { 'captain_ai_reply' => {} })
+      end
+      sent = outgoing_suggestion(source_id: 'human-ack')
+      perform('sent', message_id: sent.id, edited_before_send: true)
+      expect(usage.ai_dialogs_consumed).to eq(1)
+      outgoing_suggestion(source_id: 'next-auto-ack', additional_attributes: { 'captain_ai_reply' => {} })
+      expect(usage.ai_dialogs_consumed).to eq(2)
+      expect(Accounts::AiUsageEvent.count).to eq(21)
+    end
+
+    it 'does not count applied, dismissed or generated unsent drafts, missing, failed or private messages' do
+      perform('applied')
+      perform('dismissed')
+      perform('sent', message_id: 999_999)
+      failed = outgoing_suggestion(status: :failed, source_id: 'failed-id')
+      perform('sent', message_id: failed.id)
+      note = outgoing_suggestion(private: true, source_id: 'private-id')
+      perform('sent', message_id: note.id)
+      expect(usage.ai_dialogs_consumed).to eq(0)
+      expect(Accounts::AiUsageEvent.count).to eq(0)
+    end
+
+    it 'counts a failed send once after a successful retry and preserves its provenance through edits' do
+      sent = outgoing_suggestion(status: :failed)
+      perform('sent', message_id: sent.id)
+      sent.reload.update!(content: 'Corrected again', status: :sent, source_id: 'retry-ack')
+      sent.update!(status: :read)
+      expect(usage.ai_dialogs_consumed).to eq(1)
+      expect(Accounts::AiUsageEvent.count).to eq(1)
+    end
+
+    it 'does not bill a message belonging to another sender or account' do
+      other = create(:user, account: account)
+      sent = outgoing_suggestion(sender: other, source_id: 'other-sender')
+      perform('sent', message_id: sent.id)
+      foreign = create(:message, message_type: :outgoing, source_id: 'other-account')
+      perform('sent', message_id: foreign.id)
+      expect(usage.ai_dialogs_consumed).to eq(0)
+    end
+
+    it 'still counts an acknowledged send when its suggestion state expired' do
+      sent = outgoing_suggestion(source_id: 'expired-state-ack')
+      allow(store).to receive(:fetch_raw).with(record['id']).and_return(nil)
+      perform('sent', message_id: sent.id, generated_text: suggestion_text)
+      expect(usage.ai_dialogs_consumed).to eq(1)
     end
   end
 

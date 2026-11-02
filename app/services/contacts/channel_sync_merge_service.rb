@@ -28,24 +28,28 @@ class Contacts::ChannelSyncMergeService
   end
 
   def perform
+    ActiveRecord::Base.transaction { perform_merge }
+  rescue Contacts::ReferenceMergeService::UnsafeMergeError
+    false
+  end
+
+  private
+
+  def perform_merge
     # Lock order: phone identity lock first, then appointments, contacts and their chats (see the number transfer).
     Contacts::PhoneIdentityLock.acquire!(account_id: target_contact.account_id)
     Contacts::PatientIdentityMergeGuard.lock_patient_bindings!(source_contact, target_contact)
     return false unless Contacts::PatientIdentityMergeGuard.allowed?(source_contact: source_contact, target_contact: target_contact)
 
     reference_merger = build_reference_merger
-    reference_merger.ensure_safe_to_merge!
+    reference_merger.prepare!
 
     now = Time.current
     reassign_core_associations!(now)
     reference_merger.reassign_remaining_references!
     unify_labels!
     finalize_contact_merge!(now)
-  rescue Contacts::ReferenceMergeService::UnsafeMergeError
-    false
   end
-
-  private
 
   attr_reader :source_contact, :target_contact, :preferred_name_block
 

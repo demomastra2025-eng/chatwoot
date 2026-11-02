@@ -11,7 +11,7 @@ class Messages::MessageBuilder
     @params = params
     @skip_send_reply = skip_send_reply
     @skip_delivery_policy = skip_delivery_policy
-    @private = params[:private] || false
+    @private = ActiveModel::Type::Boolean.new.cast(params[:private]) || false
     @conversation = conversation
     @user = user
     @account = conversation.account
@@ -30,6 +30,7 @@ class Messages::MessageBuilder
     @message = @conversation.messages.build(message_params)
     @message.preserve_waiting_since = preserve_waiting_since?
     @message.skip_send_reply = @skip_send_reply
+    attach_ai_suggestion_identity!
     process_attachments
     process_emails
     # When the message has no quoted content, it will just be rendered as a regular message
@@ -40,6 +41,21 @@ class Messages::MessageBuilder
   end
 
   private
+
+  def attach_ai_suggestion_identity!
+    return unless message_type == 'outgoing' && !@private
+
+    copilot = content_attributes.to_h.with_indifferent_access[:copilot].to_h.with_indifferent_access
+    return unless copilot[:assisted] && copilot[:action] == 'reply_suggestion'
+    if copilot[:suggestion_request_id].blank?
+      raise Captain::ReplySuggestion::SentIdentity::OwnershipError, I18n.t('captain.reply_suggestion.errors.not_found')
+    end
+
+    provenance = Captain::ReplySuggestion::SentIdentity.attributes(
+      request_id: copilot[:suggestion_request_id], account: @account, conversation: @conversation, user: @user
+    )
+    @message.additional_attributes = @message.additional_attributes.to_h.merge(provenance)
+  end
 
   # Extracts content attributes from the given params.
   # - Converts ActionController::Parameters to a regular hash if needed.

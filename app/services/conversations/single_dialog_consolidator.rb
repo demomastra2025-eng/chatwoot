@@ -7,6 +7,7 @@ class Conversations::SingleDialogConsolidator # rubocop:disable Metrics/ClassLen
     assignment_quota_usages
     calls
     captain_follow_up_attempts
+    captain_reply_suggestion_identities
     confirmation_requests
     conversation_status_transitions
     copilot_threads

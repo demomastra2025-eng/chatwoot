@@ -106,6 +106,42 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
     )
   end
 
+  describe 'atomic call metering' do
+    let(:metering) { Accounts::MonthlyAiUsageService.new(account) }
+
+    before do
+      allow(Telephony::CallTranscript).to receive(:probe).and_return('channels' => 1, 'duration_seconds' => 31)
+      allow(Accounts::MonthlyAiUsageService).to receive(:new).with(account).and_return(metering)
+    end
+
+    it 'rolls back transcript, billed_at and usage if a fault occurs after the counter write' do
+      allow(metering).to receive(:record_call_analysis!).and_wrap_original do |original, **args|
+        original.call(**args)
+        raise ActiveRecord::StatementInvalid, 'injected after usage write'
+      end
+      expect { described_class.new(call_session).perform }.to raise_error(ActiveRecord::StatementInvalid)
+      expect([call_session.reload.transcript_ref, call_session.metadata.dig('recording', 'transcription')]).to eq([nil, nil])
+      expect(Accounts::AiUsageEvent.count).to eq(0)
+      expect(metering.class.new(account.reload).call_analysis_seconds_consumed).to eq(0)
+
+      allow(metering).to receive(:record_call_analysis!).and_call_original
+      described_class.new(call_session).perform
+      described_class.new(call_session, force: true).perform
+      expect(metering.class.new(account.reload).call_analysis_seconds_consumed).to eq(31)
+      expect(Accounts::AiUsageEvent.count).to eq(1)
+      expect(call_session.reload.metadata.dig('recording', 'transcription', 'billed_at')).to be_present
+    end
+
+    it 'keeps historical billed calls free on forced retranscription after the additive migration' do
+      metadata = call_session.metadata.deep_dup
+      metadata['recording']['transcription'] = { 'billed_at' => 1.day.ago.iso8601 }
+      call_session.update!(metadata: metadata)
+      described_class.new(call_session, force: true).perform
+      expect(Accounts::AiUsageEvent.count).to eq(0)
+      expect(metering.class.new(account.reload).call_analysis_seconds_consumed).to eq(0)
+    end
+  end
+
   it 'does not transcribe when workspace call transcription is disabled' do
     account.update!(call_transcriptions: false)
 

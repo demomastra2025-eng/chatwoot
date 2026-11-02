@@ -288,21 +288,21 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   end
 
   def persist_call_transcript!(result, source, transcript_ref)
-    metering_payload = nil
     billable_source = source.to_s == 'audio_transcription'
     call_session.with_lock do
       metadata = (call_session.reload.metadata || {}).deep_dup
       recording = metadata['recording'] ||= {}
       existing_billed_at = recording.dig('transcription', 'billed_at')
       recording['audio_probe'] = @audio_probe if @audio_probe.present?
-      billed_at = existing_billed_at || (Time.current.iso8601 if billable_source)
+      billed_at = transcription_billed_at(existing_billed_at, billable_source)
       recording['transcription'] = transcription_metadata(result, source, recording, billed_at: billed_at)
       call_session.update!(metadata: metadata, transcript_ref: transcript_ref)
-      if billable_source && existing_billed_at.blank?
-        metering_payload = build_call_metering_payload(recording, metadata, result)
-      end
+      record_call_metering!(build_call_metering_payload(recording, metadata, result)) if billable_source && existing_billed_at.blank?
     end
-    record_call_metering!(metering_payload)
+  end
+
+  def transcription_billed_at(existing, billable_source)
+    existing || (Time.current.iso8601 if billable_source)
   end
 
   def build_call_metering_payload(recording, metadata, result)
@@ -315,7 +315,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   def record_call_metering!(payload)
     return unless payload
 
-    Accounts::MonthlyAiUsageService.new(account).record_call_analysis!(**payload)
+    Accounts::MonthlyAiUsageService.new(account).record_call_analysis!(call: call_session, **payload)
   end
 
   def transcription_metadata(result, source, recording, billed_at: nil)

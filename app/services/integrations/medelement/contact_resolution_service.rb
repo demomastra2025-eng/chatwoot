@@ -9,21 +9,10 @@ class Integrations::Medelement::ContactResolutionService
 
   def merge_contacts!(base_contact_id:, mergee_contact_id:)
     ensure_contact_conflict!
-    base_contact = nil
-
-    conflict.with_lock do
-      ensure_open_conflict!
-      base_contact, mergee_contact = locked_contacts!(base_contact_id, mergee_contact_id)
-      ensure_merge_direction!(base_contact, mergee_contact)
-
-      ContactMergeAction.new(
-        account: conflict.account,
-        base_contact: base_contact,
-        mergee_contact: mergee_contact
-      ).perform
-      resolve!("Contacts merged into ##{base_contact.id}")
+    ActiveRecord::Base.transaction do
+      Contacts::PhoneIdentityLock.acquire!(account_id: conflict.account_id)
+      merge_contacts_under_lock!(base_contact_id, mergee_contact_id)
     end
-    base_contact
   end
 
   def delete!(contact_id:)
@@ -58,6 +47,24 @@ class Integrations::Medelement::ContactResolutionService
   private
 
   attr_reader :conflict, :user
+
+  def merge_contacts_under_lock!(base_contact_id, mergee_contact_id)
+    base_contact = nil
+
+    conflict.with_lock do
+      ensure_open_conflict!
+      base_contact, mergee_contact = locked_contacts!(base_contact_id, mergee_contact_id)
+      ensure_merge_direction!(base_contact, mergee_contact)
+
+      ContactMergeAction.new(
+        account: conflict.account,
+        base_contact: base_contact,
+        mergee_contact: mergee_contact
+      ).perform
+      resolve!("Contacts merged into ##{base_contact.id}")
+    end
+    base_contact
+  end
 
   def ensure_contact_conflict!
     return if conflict.entity_type == 'contact'
