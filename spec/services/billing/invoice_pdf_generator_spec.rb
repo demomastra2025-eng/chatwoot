@@ -11,6 +11,17 @@ RSpec.describe Billing::InvoicePdfGenerator do
     'Қызмет көрсету: әділет, ілім, ғылым, өмір, ұлт, үміт, қазақ, кеңес, һақ — пакет 100\100'
   end
 
+  before do
+    stub_const('Billing::TtfFontParser', Class.new(Billing::TtfFontParser))
+    allow(File).to receive(:exist?).and_call_original
+    %w[
+      /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+      /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
+      /usr/share/fonts/truetype/freefont/FreeSans.ttf
+      /usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf
+    ].each { |path| allow(File).to receive(:exist?).with(path).and_return(false) }
+  end
+
   def ensure_kazakh_profile
     Billing::AccountProfile.find_or_create_by!(account: account) do |prof|
       prof.billing_enabled = true
@@ -43,6 +54,24 @@ RSpec.describe Billing::InvoicePdfGenerator do
     end
   end
 
+  it 'loads the bundled font with all Kazakh glyphs and tenge when system font packages are absent' do
+    font = Billing::TtfFontParser.default_font
+
+    expect(font.raw_bytes).to eq(File.binread(Rails.root.join('lib/fonts/billing/DejaVuSans.ttf')))
+    'ӘәҒғҚқҢңӨөҰұҮүҺһІі₸'.each_codepoint do |codepoint|
+      gid, mapped = font.glyph_for_codepoint(codepoint)
+      expect(mapped).to be(true)
+      expect(gid).to be_positive
+    end
+  end
+
+  it 'raises instead of silently degrading the PDF if the bundled font is missing' do
+    font_path = Rails.root.join('lib/fonts/billing/DejaVuSans.ttf').to_s
+    allow(File).to receive(:binread).with(font_path).and_raise(Errno::ENOENT, font_path)
+
+    expect { Billing::TtfFontParser.default_font }.to raise_error(Errno::ENOENT)
+  end
+
   it 'embeds TrueType Type0 CIDFontType2 Identity-H font and extracts all Kazakh glyphs, tenge, and em-dash losslessly' do
     invoice = build_invoice
     pdf_bytes = described_class.new(invoice: invoice).render
@@ -50,6 +79,7 @@ RSpec.describe Billing::InvoicePdfGenerator do
     expect(pdf_bytes).to include('/Subtype /Type0', '/Subtype /CIDFontType2', '/Encoding /Identity-H', '/ToUnicode')
 
     normalized = extract_pdf_text(pdf_bytes).squish
+    expect(normalized).to include('СЧЁТ НА ОПЛАТУ', 'Оплата за доступ к платформе OneLink (без НДС)')
     expect(normalized).to include(kazakh_buyer_name)
     expect(normalized).to include('әділет, ілім, ғылым, өмір, ұлт, үміт, қазақ, кеңес, һақ — пакет 100\100')
     expect(normalized).to include('210540012345', '199 000.00 KZT (₸)', 'КЗ-2026/01–А')

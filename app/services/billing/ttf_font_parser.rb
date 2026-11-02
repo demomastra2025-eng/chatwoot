@@ -3,22 +3,14 @@
 require 'zlib'
 
 class Billing::TtfFontParser
-  CANDIDATE_TTF_PATHS = [
-    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-    '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
-    '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'
-  ].freeze
+  DEFAULT_TTF_PATH = File.expand_path('../../../lib/fonts/billing/DejaVuSans.ttf', __dir__).freeze
   DEFAULT_GLYPH_WIDTH = 600
 
   attr_reader :raw_bytes, :compressed_bytes, :units_per_em, :bbox, :ascent, :descent, :widths, :cmap
 
   class << self
     def default_font
-      return @default_font if defined?(@default_font)
-
-      path = CANDIDATE_TTF_PATHS.find { |candidate| File.exist?(candidate) }
-      @default_font = path ? new(File.binread(path)) : nil
+      @default_font ||= new(File.binread(DEFAULT_TTF_PATH))
     end
   end
 
