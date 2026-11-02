@@ -134,6 +134,7 @@
       "TOOL_FAILED": "failed"
     },
     "HEADER": {
+      "BACK": "Back",
       "RESOLVE_ACTION": "Resolve",
       "REOPEN_ACTION": "Reopen",
       "OPEN_ACTION": "Open",
@@ -376,7 +377,7 @@
         "ROLE_COUNCIL": "council",
         "ROLE_HANDOFF": "handoff",
         "ROLE_ENTRY": "coordinator",
-        "ACTION_SUGGESTS": "AI suggests: {action}",
+        "ACTION_SUGGESTS": "AI: {action}",
         "ACTION_SUGGESTS_DEFAULT": "AI suggests an action",
         "ACTION_ALLOW": "Allow",
         "ACTION_DENY": "Deny",

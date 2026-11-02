@@ -137,6 +137,7 @@
       "TOOL_FAILED": "ошибка"
     },
     "HEADER": {
+      "BACK": "Назад",
       "RESOLVE_ACTION": "Закрыть",
       "REOPEN_ACTION": "Открыть",
       "OPEN_ACTION": "Открыть",
@@ -379,7 +380,7 @@
         "ROLE_COUNCIL": "консилиум",
         "ROLE_HANDOFF": "передача",
         "ROLE_ENTRY": "координатор",
-        "ACTION_SUGGESTS": "AI предлагает: {action}",
+        "ACTION_SUGGESTS": "AI: {action}",
         "ACTION_SUGGESTS_DEFAULT": "AI предлагает выполнить действие",
         "ACTION_ALLOW": "Разрешить",
         "ACTION_DENY": "Запретить",

@@ -1579,6 +1579,40 @@ describe('useCopilotReply', () => {
   });
 
   describe('pending actions', () => {
+    it('sends one approval when approve and reject arrive again before the response', async () => {
+      const copilot = create();
+      await startAndReceiveDraft(copilot, {
+        pending_actions: [sampleAction],
+      });
+      let finishApproval;
+      TasksAPI.approveAction.mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            finishApproval = resolve;
+          })
+      );
+
+      const firstApproval = copilot.approveAction(sampleAction);
+      const secondApproval = copilot.approveAction(sampleAction);
+      const rejection = copilot.rejectAction(sampleAction);
+
+      expect(TasksAPI.approveAction).toHaveBeenCalledTimes(1);
+      expect(TasksAPI.rejectAction).not.toHaveBeenCalled();
+      expect(copilot.actionLoadingById.value[sampleAction.action_id]).toBe(
+        'approving'
+      );
+
+      finishApproval({
+        data: { action: { ...sampleAction, status: 'approved' } },
+      });
+      await Promise.all([firstApproval, secondApproval, rejection]);
+
+      expect(copilot.pendingActions.value[0].status).toBe('approved');
+      expect(
+        copilot.actionLoadingById.value[sampleAction.action_id]
+      ).toBeUndefined();
+    });
+
     it('populates pendingActions from the draft and handles approveAction', async () => {
       const copilot = create();
       await startAndReceiveDraft(copilot, {

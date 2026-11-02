@@ -1,9 +1,9 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useStore } from 'vuex';
 import { useElementSize } from '@vueuse/core';
-import BackButton from '../BackButton.vue';
+import Button from 'dashboard/components-next/button/Button.vue';
 import MoreActions from './MoreActions.vue';
 import ConversationPatientTabs from './ConversationPatientTabs.vue';
 import Avatar from 'next/avatar/Avatar.vue';
@@ -43,6 +43,7 @@ const { t } = useI18n();
 const store = useStore();
 const { openPanel } = useConversationSidepanelAvailability();
 const route = useRoute();
+const router = useRouter();
 const conversationHeader = ref(null);
 const { width } = useElementSize(conversationHeader);
 const { isAWebWidgetInbox } = useInbox();
@@ -376,20 +377,23 @@ const statusMeta = computed(() => {
 <template>
   <div ref="conversationHeader" class="flex w-full min-w-0 shrink-0 flex-col">
     <div
-      class="flex flex-col gap-3 items-center justify-between w-full min-w-0 xl:flex-row px-3 pt-3 pb-2"
-      :class="
-        hasMultiplePatients ? 'min-h-[6rem] xl:min-h-[3rem]' : 'h-24 xl:h-12'
-      "
+      class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 w-full min-w-0 px-3 py-2 xl:flex xl:justify-between"
     >
-      <div
-        class="flex items-center justify-start w-full xl:w-auto max-w-full min-w-0 xl:flex-1"
-      >
-        <BackButton
-          v-if="showBackButton"
-          :back-url="backButtonUrl"
-          class="ltr:mr-2 rtl:ml-2"
-        />
+      <div class="flex items-center justify-start min-w-0 xl:flex-1">
+        <div v-if="showBackButton" class="shrink-0 ltr:mr-2 rtl:ml-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            color="slate"
+            icon="i-lucide-chevron-left"
+            :aria-label="t('CONVERSATION.HEADER.BACK')"
+            data-test-id="conversation-header-back"
+            @click="router.push(backButtonUrl)"
+          />
+        </div>
         <Avatar
+          class="shrink-0"
           :name="contactDisplayName"
           :src="currentContact.thumbnail"
           :size="32"
@@ -398,20 +402,22 @@ const statusMeta = computed(() => {
           rounded-full
         />
         <div
-          class="flex flex-col items-start min-w-0 ml-2 overflow-hidden rtl:ml-0 rtl:mr-2"
+          class="flex flex-1 flex-col items-start min-w-0 ml-2 overflow-hidden rtl:ml-0 rtl:mr-2"
         >
           <div
             data-test-id="conversation-header-title-row"
-            class="flex flex-row items-center max-w-full gap-1.5 p-0 m-0"
+            class="flex w-full min-w-0 items-center gap-1.5 p-0 m-0"
           >
             <span
+              data-test-id="conversation-header-contact-name"
+              :title="contactDisplayName"
               class="min-w-0 truncate text-sm font-medium leading-tight text-n-slate-12"
             >
               {{ contactDisplayName }}
             </span>
             <span
               v-if="!isDraft"
-              class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium leading-4 whitespace-nowrap"
+              class="hidden xl:inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium leading-4 whitespace-nowrap"
               :class="statusMeta.className"
             >
               {{ statusMeta.label }}
@@ -419,7 +425,7 @@ const statusMeta = computed(() => {
             <div
               v-if="hasHeaderContext"
               data-test-id="conversation-header-context-row"
-              class="inline-flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap"
+              class="hidden xl:inline-flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap"
             >
               <button
                 v-if="primaryDealStage"
@@ -487,10 +493,15 @@ const statusMeta = computed(() => {
               v-if="!isHMACVerified"
               v-tooltip="$t('CONVERSATION.UNVERIFIED_SESSION')"
               size="14"
+              role="img"
+              :aria-label="t('CONVERSATION.UNVERIFIED_SESSION')"
               class="text-n-amber-10 my-0 mx-0 min-w-[14px] flex-shrink-0"
               icon="warning"
             />
-            <span v-if="isSnoozed" class="font-medium text-xs text-n-amber-10">
+            <span
+              v-if="isSnoozed"
+              class="hidden xl:inline font-medium text-xs text-n-amber-10"
+            >
               {{ snoozedDisplayText }}
             </span>
           </div>
@@ -498,7 +509,7 @@ const statusMeta = computed(() => {
           <div
             v-if="visibleContactIdentities.length"
             data-test-id="conversation-header-identity-row"
-            class="flex items-center gap-2 overflow-hidden text-xs conversation--header--actions text-ellipsis whitespace-nowrap"
+            class="hidden xl:flex max-w-full items-center gap-2 overflow-hidden text-xs conversation--header--actions text-ellipsis whitespace-nowrap"
           >
             <span
               v-for="identity in visibleContactIdentities"
@@ -517,7 +528,7 @@ const statusMeta = computed(() => {
         </div>
       </div>
       <div
-        class="flex flex-row items-center justify-start xl:justify-end flex-shrink-0 gap-2 w-full xl:w-auto header-actions-wrap"
+        class="flex items-center justify-end shrink-0 gap-2 header-actions-wrap"
       >
         <SLACardLabel
           v-if="hasSlaPolicyId"
@@ -527,6 +538,27 @@ const statusMeta = computed(() => {
           class="hidden md:flex"
         />
         <MoreActions v-if="!isDraft" :conversation-id="currentChat.id" />
+      </div>
+      <div
+        v-if="contactIdentityLabels.length || !isDraft"
+        data-test-id="conversation-header-mobile-context"
+        class="col-span-2 flex min-w-0 items-center gap-2 xl:hidden"
+      >
+        <span
+          v-if="contactIdentityLabels.length"
+          class="min-w-0 flex-1 truncate text-xs text-n-slate-11"
+          :title="contactIdentityLabels[0]"
+        >
+          {{ contactIdentityLabels[0] }}
+        </span>
+        <span
+          v-if="!isDraft"
+          class="min-w-0 truncate text-xs font-medium"
+          :class="isSnoozed ? 'text-n-amber-10' : 'text-n-slate-11'"
+          :title="isSnoozed ? snoozedDisplayText : statusMeta.label"
+        >
+          {{ isSnoozed ? snoozedDisplayText : statusMeta.label }}
+        </span>
       </div>
     </div>
     <ConversationPatientTabs

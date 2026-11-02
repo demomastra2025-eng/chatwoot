@@ -15,6 +15,15 @@ import { snoozedReopenTime } from 'dashboard/helper/snoozeHelpers';
 const storeState = vi.hoisted(() => ({
   selectedChat: { id: 7, status: 'open' },
   openPanel: vi.fn(),
+  routerPush: vi.fn(),
+  widgetInbox: false,
+  contact: {
+    id: 1,
+    name: 'Аружан',
+    phone_number: '+770****1122',
+    thumbnail: '',
+    availability_status: 'online',
+  },
 }));
 const routeState = vi.hoisted(() => ({
   name: 'communication_thread_conversation',
@@ -46,9 +55,6 @@ const translate = (key, params = {}) => {
   );
 };
 
-vi.mock('../BackButton.vue', () => ({
-  default: { template: '<div data-test-id="back-button" />' },
-}));
 vi.mock('../InboxName.vue', () => ({
   default: {
     props: ['inbox'],
@@ -74,6 +80,7 @@ vi.mock('dashboard/helper/URLHelper', () => ({
 }));
 
 vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: storeState.routerPush }),
   useRoute: () => ({
     name: routeState.name,
     params: { communication_thread_id: 7 },
@@ -90,13 +97,7 @@ vi.mock('vuex', () => ({
       },
       getCurrentAccountId: 530,
       getCurrentUser: { id: 9 },
-      'contacts/getContact': () => ({
-        id: 1,
-        name: 'Аружан',
-        phone_number: '+770****1122',
-        thumbnail: '',
-        availability_status: 'online',
-      }),
+      'contacts/getContact': () => storeState.contact,
       'inboxes/getInbox': () => ({ id: 4593, name: '+771****5175' }),
       'inboxes/getInboxes': [{ id: 4593 }, { id: 102 }],
     },
@@ -108,7 +109,7 @@ vi.mock('vue-i18n', () => ({
 }));
 
 vi.mock('dashboard/composables/useInbox', () => ({
-  useInbox: () => ({ isAWebWidgetInbox: { value: false } }),
+  useInbox: () => ({ isAWebWidgetInbox: { value: storeState.widgetInbox } }),
 }));
 
 vi.mock('dashboard/composables/useConversationSidepanelAvailability', () => ({
@@ -151,7 +152,6 @@ const mountComponent = (props, globalOverrides = {}) =>
       mocks: { $t: translate },
       stubs: {
         Avatar: { template: '<div data-test-id="avatar" />' },
-        BackButton: true,
         InboxName: true,
         MoreActions: { template: '<div data-test-id="more-actions" />' },
         SLACardLabel: true,
@@ -164,12 +164,15 @@ describe('ConversationHeader', () => {
   afterEach(() => {
     storeState.selectedChat = { id: 7, status: 'open' };
     routeState.name = 'communication_thread_conversation';
+    storeState.contact.name = 'Аружан';
+    storeState.widgetInbox = false;
     listUrl.mockClear();
+    storeState.routerPush.mockClear();
     window.sessionStorage.clear();
     window.history.replaceState({}, '', '/');
   });
 
-  it('returns to the remembered list URL with its filters', () => {
+  it('returns to the remembered list URL with its filters', async () => {
     rememberConversationListReturnPath({
       accountId: 530,
       threadId: 7,
@@ -178,22 +181,26 @@ describe('ConversationHeader', () => {
 
     const wrapper = mountComponent({ showBackButton: true });
 
-    expect(
-      wrapper.findComponent({ name: 'BackButton' }).attributes('back-url')
-    ).toBe(
+    await wrapper
+      .get('[data-test-id="conversation-header-back"]')
+      .trigger('click');
+    expect(storeState.routerPush).toHaveBeenCalledWith(
       '/app/accounts/530/custom_view/9/conversations?status=pending&crm_stage_id=20'
     );
   });
 
-  it('falls back to the thread list URL when no list was remembered', () => {
+  it('falls back to the thread list URL when no list was remembered', async () => {
     const wrapper = mountComponent({ showBackButton: true });
 
-    expect(
-      wrapper.findComponent({ name: 'BackButton' }).attributes('back-url')
-    ).toBe('/app/accounts/530/communication_threads');
+    await wrapper
+      .get('[data-test-id="conversation-header-back"]')
+      .trigger('click');
+    expect(storeState.routerPush).toHaveBeenCalledWith(
+      '/app/accounts/530/communication_threads'
+    );
   });
 
-  it('ignores a list URL remembered for another thread', () => {
+  it('ignores a list URL remembered for another thread', async () => {
     rememberConversationListReturnPath({
       accountId: 530,
       threadId: 8,
@@ -202,9 +209,53 @@ describe('ConversationHeader', () => {
 
     const wrapper = mountComponent({ showBackButton: true });
 
+    await wrapper
+      .get('[data-test-id="conversation-header-back"]')
+      .trigger('click');
+    expect(storeState.routerPush).toHaveBeenCalledWith(
+      '/app/accounts/530/communication_threads'
+    );
+  });
+
+  it.each(['open', 'pending', 'resolved'])(
+    'keeps the actual %s status beside the primary identity on mobile',
+    status => {
+      storeState.selectedChat = { id: 7, status };
+      const wrapper = mountComponent();
+      const context = wrapper.get(
+        '[data-test-id="conversation-header-mobile-context"]'
+      );
+      expect(context.text()).toContain('+770****1122');
+      expect(context.text()).toContain(
+        translate(`CHAT_LIST.CHAT_STATUS_FILTER_ITEMS.${status}.TEXT`)
+      );
+    }
+  );
+
+  it.each([
+    'Очень длинное демонстрационное имя контакта для проверки мобильного диалога',
+    'Мобильді диалогтың ықшам тақырыбын тексеруге арналған ұзын көрсетілім атауы',
+  ])('keeps the full long contact name accessible: %s', name => {
+    storeState.contact.name = name;
+    const wrapper = mountComponent({ showBackButton: true });
     expect(
-      wrapper.findComponent({ name: 'BackButton' }).attributes('back-url')
-    ).toBe('/app/accounts/530/communication_threads');
+      wrapper
+        .get('[data-test-id="conversation-header-contact-name"]')
+        .attributes('title')
+    ).toBe(name);
+    expect(
+      wrapper.get('[data-test-id="conversation-header-mobile-context"]').text()
+    ).toContain('+770****1122');
+    expect(wrapper.find('[data-test-id="more-actions"]').exists()).toBe(true);
+  });
+
+  it('keeps the unverified-session warning accessible next to the contact', () => {
+    storeState.widgetInbox = true;
+    const wrapper = mountComponent();
+    const warning = wrapper.get('[role="img"]');
+    expect(warning.attributes('aria-label')).toBe(
+      translate('CONVERSATION.UNVERIFIED_SESSION')
+    );
   });
 
   it('shows when a snoozed person wakes up', () => {
@@ -403,11 +454,14 @@ describe('ConversationHeader', () => {
       expect(wrapper.find('[data-test-id="more-actions"]').exists()).toBe(true);
     });
 
-    it('goes back to the list of threads from the route of a person', () => {
+    it('goes back to the list of threads from the route of a person', async () => {
       routeState.name = 'communication_thread_contact';
       storeState.selectedChat = draftChat;
 
-      mountComponent({ chat: draftChat, showBackButton: true });
+      const wrapper = mountComponent({ chat: draftChat, showBackButton: true });
+      await wrapper
+        .get('[data-test-id="conversation-header-back"]')
+        .trigger('click');
 
       expect(listUrl).toHaveBeenCalledWith(
         expect.objectContaining({ communicationThread: true })

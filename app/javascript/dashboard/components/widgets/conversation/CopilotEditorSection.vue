@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
+import Button from 'dashboard/components-next/button/Button.vue';
 import CopilotWorkingState from 'dashboard/components/widgets/conversation/copilot/CopilotWorkingState.vue';
 
 const props = defineProps({
@@ -107,12 +108,17 @@ const normalizedPendingActions = computed(() => {
       const details = Array.isArray(item.details)
         ? item.details.filter(d => d && d.label && d.value)
         : [];
+      const description = String(item.description || '').trim();
       return {
         raw: item,
         actionId,
         status: String(item.status || 'pending'),
         title: String(item.title || '').trim(),
-        description: String(item.description || ''),
+        description: details.some(
+          detail => String(detail.value).trim() === description
+        )
+          ? ''
+          : description,
         details,
         resultSummary: String(item.result_summary || item.resultSummary || ''),
         loadingState: props.actionLoadingById?.[actionId] || null,
@@ -172,7 +178,7 @@ watch(
   }
 );
 
-// «AI предлагает: Записать на приём»: no agent or tool name
+// «AI: Записать на приём»: no agent or tool name
 const actionTitleText = action =>
   action.title
     ? t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_SUGGESTS', {
@@ -271,8 +277,8 @@ onMounted(() => {
           class="rounded-lg border border-n-weak bg-n-alpha-1 px-3 py-2.5 text-xs"
           data-test="copilot-action-card"
         >
-          <div class="flex flex-wrap items-start justify-between gap-2">
-            <div class="min-w-0 flex-1 space-y-1">
+          <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start">
+            <div class="min-w-0 flex-1 space-y-1 break-words">
               <div
                 class="font-semibold text-n-slate-12 leading-4"
                 data-test="copilot-action-title"
@@ -288,7 +294,7 @@ onMounted(() => {
                 <span
                   v-for="(detail, idx) in action.details"
                   :key="`${action.actionId}-${idx}`"
-                  class="inline-flex items-center gap-1"
+                  class="inline-flex min-w-0 max-w-full flex-wrap items-baseline gap-1"
                 >
                   <span class="text-n-slate-10">{{ detail.label }}:</span>
                   <span class="font-medium text-n-slate-12">
@@ -296,7 +302,7 @@ onMounted(() => {
                   </span>
                 </span>
               </div>
-              <div v-else-if="action.description" class="text-n-slate-11">
+              <div v-if="action.description" class="text-n-slate-11">
                 {{ action.description }}
               </div>
 
@@ -318,7 +324,7 @@ onMounted(() => {
               </div>
             </div>
 
-            <div class="flex items-center gap-1.5 shrink-0">
+            <div class="flex flex-wrap items-center gap-2 shrink-0">
               <template
                 v-if="
                   action.status === 'pending' ||
@@ -326,55 +332,45 @@ onMounted(() => {
                   action.status === 'executing'
                 "
               >
-                <button
+                <Button
                   type="button"
-                  class="inline-flex items-center gap-1 rounded-md bg-n-brand-solid px-2.5 py-1 text-xs font-medium text-n-brand-contrast hover:enabled:brightness-110 disabled:opacity-50"
+                  size="sm"
+                  variant="solid"
+                  color="blue"
+                  icon="i-lucide-check"
                   data-test="copilot-action-approve"
+                  :is-loading="
+                    action.loadingState === 'approving' ||
+                    action.status === 'executing'
+                  "
+                  :label="
+                    action.loadingState === 'approving' ||
+                    action.status === 'executing'
+                      ? t(
+                          'CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_EXECUTING'
+                        )
+                      : t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_ALLOW')
+                  "
                   :disabled="
                     Boolean(action.loadingState) ||
                     action.status === 'executing'
                   "
                   @click="onApproveAction(action)"
-                >
-                  <Icon
-                    :icon="
-                      action.loadingState === 'approving' ||
-                      action.status === 'executing'
-                        ? 'i-lucide-loader-circle'
-                        : 'i-lucide-check'
-                    "
-                    class="size-3.5"
-                    :class="{
-                      'animate-spin':
-                        action.loadingState === 'approving' ||
-                        action.status === 'executing',
-                    }"
-                  />
-                  <span>
-                    {{
-                      action.loadingState === 'approving' ||
-                      action.status === 'executing'
-                        ? t(
-                            'CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_EXECUTING'
-                          )
-                        : t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_ALLOW')
-                    }}
-                  </span>
-                </button>
-                <button
+                />
+                <Button
                   type="button"
-                  class="inline-flex items-center gap-1 rounded-md bg-n-alpha-2 px-2.5 py-1 text-xs font-medium text-n-slate-12 hover:enabled:bg-n-alpha-3 disabled:opacity-50"
+                  size="sm"
+                  variant="ghost"
+                  color="slate"
                   data-test="copilot-action-reject"
+                  :label="t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_DENY')"
+                  :is-loading="action.loadingState === 'rejecting'"
                   :disabled="
                     Boolean(action.loadingState) ||
                     action.status === 'executing'
                   "
                   @click="onRejectAction(action)"
-                >
-                  <span>
-                    {{ t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_DENY') }}
-                  </span>
-                </button>
+                />
               </template>
               <span
                 v-else-if="action.status === 'approved'"
@@ -395,10 +391,13 @@ onMounted(() => {
                 </span>
               </span>
               <!-- A failed card stays until the manager closes it -->
-              <button
+              <Button
                 v-if="action.status === 'failed'"
                 type="button"
-                class="inline-flex size-6 items-center justify-center rounded-md text-n-slate-11 hover:enabled:bg-n-alpha-2 hover:enabled:text-n-slate-12 disabled:opacity-50"
+                size="sm"
+                variant="ghost"
+                color="slate"
+                icon="i-lucide-x"
                 :title="t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_CLOSE')"
                 :aria-label="
                   t('CONVERSATION.REPLYBOX.COPILOT_TRACE.ACTION_CLOSE')
@@ -406,9 +405,7 @@ onMounted(() => {
                 :disabled="Boolean(action.loadingState)"
                 data-test="copilot-action-close"
                 @click="onCloseAction(action)"
-              >
-                <Icon icon="i-lucide-x" class="size-3.5" />
-              </button>
+              />
             </div>
           </div>
         </div>

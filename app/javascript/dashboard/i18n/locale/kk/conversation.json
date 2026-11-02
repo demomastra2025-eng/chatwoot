@@ -118,6 +118,7 @@
       "YOU_ANSWERED": "You answered"
     },
     "HEADER": {
+      "BACK": "Артқа",
       "RESOLVE_ACTION": "Resolve",
       "REOPEN_ACTION": "Reopen",
       "OPEN_ACTION": "Open",
@@ -308,7 +309,7 @@
         "SLOW": "Бұл әдеттегіден сәл ұзағырақ уақыт алып жатыр…"
       },
       "COPILOT_TRACE": {
-        "ACTION_SUGGESTS": "AI ұсынады: {action}",
+        "ACTION_SUGGESTS": "AI: {action}",
         "ACTION_SUGGESTS_DEFAULT": "AI әрекетті орындауды ұсынады",
         "ACTION_ALLOW": "Рұқсат ету",
         "ACTION_DENY": "Тыйым салу",

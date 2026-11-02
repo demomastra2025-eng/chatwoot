@@ -108,14 +108,14 @@ describe('CopilotEditorSection.vue', () => {
   });
 
   describe('the approval card of an action', () => {
-    it('says «AI предлагает: …», shows the details and offers Разрешить / Запретить', () => {
+    it('says «AI: …», shows the details and offers Разрешить / Запретить', () => {
       mountComponent();
 
       expect(
         wrapper.find('[data-test="copilot-pending-actions"]').exists()
       ).toBe(true);
       expect(wrapper.find('[data-test="copilot-action-title"]').text()).toBe(
-        'AI предлагает: Записать на приём'
+        'AI: Записать на приём'
       );
       const detailsText = wrapper
         .find('[data-test="copilot-action-details"]')
@@ -128,6 +128,95 @@ describe('CopilotEditorSection.vue', () => {
       const rejectBtn = wrapper.find('[data-test="copilot-action-reject"]');
       expect(approveBtn.text()).toContain('Разрешить');
       expect(rejectBtn.text()).toContain('Запретить');
+    });
+
+    it.each([
+      [
+        'ru',
+        ru,
+        'Добавить личную заметку',
+        'Перезвонить после консультации и уточнить удобное время следующего визита',
+      ],
+      [
+        'kk',
+        kk,
+        'Жеке ескерту қосу',
+        'Кеңес беруден кейін қоңырау шалып, келесі қабылдауға ыңғайлы уақытты нақтылау',
+      ],
+      [
+        'en',
+        en,
+        'Add a private note',
+        'Call after the consultation and confirm a convenient time for the next appointment',
+      ],
+    ])(
+      'shows the full note and every parameter in %s before approval',
+      (locale, messages, title, note) => {
+        mountComponent(
+          {
+            pendingActions: [
+              {
+                ...sampleAction,
+                title,
+                description: note,
+                details: [
+                  ...sampleAction.details,
+                  { label: '2026', value: '03.11.2026, 10:00–10:30' },
+                ],
+              },
+            ],
+          },
+          locale,
+          messages
+        );
+        const card = wrapper.get('[data-test="copilot-action-card"]');
+        expect(card.get('[data-test="copilot-action-title"]').text()).toContain(
+          title
+        );
+        expect(card.text()).toContain(note);
+        expect(card.text()).toContain('03.11.2026, 10:00–10:30');
+        expect(card.findAll('button')).toHaveLength(2);
+      }
+    );
+
+    it.each(['executing', 'approving', 'rejecting'])(
+      'prevents approval and rejection while %s',
+      async loading => {
+        mountComponent({
+          pendingActions: [
+            {
+              ...sampleAction,
+              status: loading === 'executing' ? 'executing' : 'pending',
+            },
+          ],
+          actionLoadingById:
+            loading === 'executing' ? {} : { 'act-101': loading },
+        });
+        await wrapper
+          .get('[data-test="copilot-action-approve"]')
+          .trigger('click');
+        await wrapper
+          .get('[data-test="copilot-action-reject"]')
+          .trigger('click');
+        expect(wrapper.emitted('approveAction')).toBeUndefined();
+        expect(wrapper.emitted('rejectAction')).toBeUndefined();
+      }
+    );
+
+    it('does not repeat a description already shown as a detail value', () => {
+      const note = 'Перезвонить после консультации';
+      mountComponent({
+        pendingActions: [
+          {
+            ...sampleAction,
+            description: note,
+            details: [{ label: 'Заметка', value: note }],
+          },
+        ],
+      });
+      expect(
+        wrapper.get('[data-test="copilot-action-card"]').text().split(note)
+      ).toHaveLength(2);
     });
 
     it('names no agent and no tool, even when the action carries them', () => {
@@ -330,7 +419,7 @@ describe('CopilotEditorSection.vue', () => {
       });
       const liveTitles = live.findAll('[data-test="copilot-action-title"]');
       expect(liveTitles).toHaveLength(1);
-      expect(liveTitles[0].text()).toBe('AI предлагает: Перенести запись');
+      expect(liveTitles[0].text()).toBe('AI: Перенести запись');
       live.unmount();
 
       const draft = mountComponent({
