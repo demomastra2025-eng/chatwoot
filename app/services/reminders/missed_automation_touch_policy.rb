@@ -47,6 +47,26 @@ class Reminders::MissedAutomationTouchPolicy
     automation_touch? && appointment_touch?
   end
 
+  # Only the provider guard writes this protected marker, after an eligible execution.
+  # A claim rematerializes the original relative due time and increments its revision once.
+  def runtime_retry_metadata(schedule_revision:)
+    return unless automation_visit_touch? && !missed?
+
+    { 'snapshot' => runtime_retry_snapshot, 'schedule_revision' => schedule_revision }
+  end
+
+  def delivery_retry_skip_reason
+    return unless automation_visit_touch?
+
+    return CLOSED_REASON if closed_before_visit?
+    return STARTED_REASON if started_before_visit?
+    return if reminder.metadata.to_h[Reminder::APPOINTMENT_PROVIDER_RETRY_KEY].blank?
+    return CANCEL_REASON if late?
+    return if runtime_retry?
+
+    'appointment_changed_during_provider_retry'
+  end
+
   private
 
   def cancel_reminder!(reason)
@@ -98,11 +118,33 @@ class Reminders::MissedAutomationTouchPolicy
 
   def late?
     due_at = recomputed_due_at
-    due_at.present? && due_at < now - GRACE_WINDOW
+    !(before_visit? && runtime_retry?) && due_at.present? && due_at < now - GRACE_WINDOW
   end
 
   def started_before_visit?
     before_visit? && reminder.remindable.starts_at <= now
+  end
+
+  def runtime_retry?
+    marker = reminder.metadata.to_h[Reminder::APPOINTMENT_PROVIDER_RETRY_KEY]
+    return false unless marker.is_a?(Hash)
+
+    revision = reminder.schedule_revision.to_i + (reminder.pending? ? 1 : 0)
+    marker['schedule_revision'] == revision && marker['snapshot'] == runtime_retry_snapshot
+  end
+
+  def runtime_retry_snapshot
+    {
+      'reminder_id' => reminder.id,
+      'appointment_id' => reminder.remindable_id,
+      'appointment' => reminder.remindable.attributes.slice(
+        'starts_at', 'ends_at', 'resource_id', 'contact_id', 'patient_contact_id', 'source', 'external_ref'
+      ).as_json,
+      'definition' => reminder.attributes.slice(
+        'timing_mode', 'relative_anchor', 'relative_offset_seconds', 'relative_time_mode',
+        'relative_time_of_day', 'timezone', 'manual_schedule_override'
+      )
+    }
   end
 
   def log_cancellation

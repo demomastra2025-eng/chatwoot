@@ -327,6 +327,264 @@ RSpec.describe Reminders::ExecuteService do
       end
     end
 
+    context 'when an on-time automation reminder waits for MedElement' do
+      let(:conversation) { create(:conversation, status: :open) }
+      let(:account) { conversation.account }
+      let(:contact_inbox) do
+        create(:contact_inbox, contact: conversation.contact, inbox: conversation.inbox).tap do |record|
+          conversation.update!(contact_inbox: record)
+        end
+      end
+      let(:appointment) do
+        create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation,
+                                        starts_at: 2.hours.from_now, ends_at: 150.minutes.from_now)
+      end
+      let(:retry_reminder) do
+        create(:reminder, account: account, conversation: conversation, touch_conversation: conversation,
+                          remindable: appointment, timing_mode: :relative, relative_anchor: 'appointment.starts_at',
+                          relative_offset_seconds: -2.hours.to_i, status: :pending, body: 'Visit reminder',
+                          metadata: { 'touch_source' => 'automation' })
+      end
+      let(:verifier) { instance_double(Integrations::Medelement::AppointmentFreshnessVerifier) }
+
+      before do
+        contact_inbox
+        account.enable_features!('scheduling')
+        allow(Integrations::Medelement::AppointmentFreshnessVerifier).to receive(:new).and_return(verifier)
+        allow(verifier).to receive(:perform) do
+          Integrations::Medelement::AppointmentFreshnessVerifier::Result.new(
+            status: 'blocked', reason: 'provider_unavailable', checked_at: Time.current, command_id: nil, command_status: nil
+          )
+        end
+      end
+
+      def execute_due_retry
+        Reminders::ProcessPendingRemindersJob.perform_now
+        retry_reminder.reload
+        Reminders::ExecuteReminderJob.perform_now(retry_reminder.id, retry_reminder.processing_claim_token)
+      end
+
+      def provider_recovers
+        allow(verifier).to receive(:perform) do
+          Integrations::Medelement::AppointmentFreshnessVerifier::Result.new(
+            status: 'fresh', reason: nil, checked_at: Time.current, command_id: nil, command_status: nil
+          )
+        end
+      end
+
+      it 'rechecks freshness after repeated busy responses and sends exactly once beyond original grace' do
+        freeze_time do
+          retry_reminder
+          execute_due_retry
+          expect(retry_reminder.reload).to be_pending
+          expect(conversation.messages.outgoing).to be_empty
+          expect(retry_reminder.scheduled_at).to eq(5.minutes.from_now)
+          travel 6.minutes
+          execute_due_retry
+          expect(retry_reminder.reload).to be_pending
+          travel 6.minutes
+          provider_recovers
+          execute_due_retry
+          expect(retry_reminder.reload).to be_completed
+          message = conversation.messages.outgoing.sole
+          claim = retry_reminder.processing_claim_token
+          allow(SendReplyJob).to receive(:perform_now)
+          2.times { Reminders::DeliverMaterializedMessageJob.perform_now(retry_reminder.id, message.id, claim) }
+          expect(SendReplyJob).to have_received(:perform_now).with(message.id).once
+          Reminders::ExecuteReminderJob.perform_now(retry_reminder.id, retry_reminder.processing_claim_token)
+          execute_due_retry
+          expect(conversation.messages.outgoing.pluck(:id)).to eq([message.id])
+        end
+      end
+
+      it 'retries delivery of the same materialized message without a new execution claim' do
+        freeze_time do
+          retry_reminder
+          provider_recovers
+          execute_due_retry
+          message = conversation.messages.outgoing.sole
+          claim = retry_reminder.processing_claim_token
+          allow(verifier).to receive(:perform) do
+            Integrations::Medelement::AppointmentFreshnessVerifier::Result.new(
+              status: 'blocked', reason: 'provider_unavailable', checked_at: Time.current, command_id: nil, command_status: nil
+            )
+          end
+          Reminders::DeliverMaterializedMessageJob.perform_now(retry_reminder.id, message.id, claim)
+          expect(retry_reminder.reload).to be_completed
+          expect(retry_reminder.processing_claim_token).to eq(claim)
+          expect(enqueued_jobs).to include(hash_including(job: Reminders::DeliverMaterializedMessageJob,
+                                                          args: [retry_reminder.id, message.id, claim], at: 5.minutes.from_now.to_f))
+          travel 6.minutes
+          provider_recovers
+          allow(SendReplyJob).to receive(:perform_now)
+          Reminders::DeliverMaterializedMessageJob.perform_now(retry_reminder.id, message.id, claim)
+          Reminders::DeliverMaterializedMessageJob.perform_now(retry_reminder.id, message.id, claim)
+          execute_due_retry
+          expect(conversation.messages.outgoing.pluck(:id)).to eq([message.id])
+          expect(SendReplyJob).to have_received(:perform_now).with(message.id).once
+          expect(retry_reminder.reload.last_error).to be_nil
+        end
+      end
+
+      %w[completed no_show cancelled started moved].each do |change|
+        it "does not dispatch an already materialized retry after the visit is #{change}" do
+          freeze_time do
+            retry_reminder
+            provider_recovers
+            execute_due_retry
+            message = conversation.messages.outgoing.sole
+            claim = retry_reminder.processing_claim_token
+            allow(verifier).to receive(:perform) do
+              Integrations::Medelement::AppointmentFreshnessVerifier::Result.new(
+                status: 'blocked', reason: 'provider_unavailable', checked_at: Time.current, command_id: nil, command_status: nil
+              )
+            end
+            Reminders::DeliverMaterializedMessageJob.perform_now(retry_reminder.id, message.id, claim)
+            case change
+            when 'started' then travel 2.hours
+            when 'moved' then appointment.update!(starts_at: 3.hours.from_now, ends_at: 210.minutes.from_now)
+            else appointment.update!(status: change)
+            end
+            travel 6.minutes
+            provider_recovers
+            allow(SendReplyJob).to receive(:perform_now)
+            Reminders::DeliverMaterializedMessageJob.perform_now(retry_reminder.id, message.id, claim)
+            execute_due_retry
+            expect(retry_reminder.reload).to be_cancelled
+            expect(SendReplyJob).not_to have_received(:perform_now)
+            expect(conversation.messages.outgoing.pluck(:id)).to eq([message.id])
+          end
+        end
+      end
+
+      it 'ignores client-supplied provider retry metadata' do
+        retry_reminder.update!(metadata: retry_reminder.metadata.merge('appointment_provider_retry' => { 'snapshot' => 'forged' }))
+        expect(retry_reminder.reload.metadata).not_to have_key('appointment_provider_retry')
+      end
+
+      it 'preserves the server retry marker against client edits but invalidates it on a schedule edit' do
+        freeze_time do
+          retry_reminder
+          execute_due_retry
+          marker = retry_reminder.reload.metadata.fetch('appointment_provider_retry')
+          retry_reminder.update!(metadata: retry_reminder.metadata.merge('appointment_provider_retry' => { 'snapshot' => 'forged' }),
+                                 relative_offset_seconds: -3.hours.to_i)
+          expect(retry_reminder.reload.metadata.fetch('appointment_provider_retry')).to eq(marker)
+          travel 6.minutes
+          provider_recovers
+          execute_due_retry
+          expect(retry_reminder.reload.last_error).to eq(Reminders::MissedAutomationTouchPolicy::CANCEL_REASON)
+          expect(conversation.messages.outgoing).to be_empty
+        end
+      end
+
+      it 'preserves the original grace limit for end-anchored automation retries' do
+        freeze_time do
+          retry_reminder.update!(relative_anchor: 'appointment.ends_at', relative_offset_seconds: -150.minutes.to_i)
+          execute_due_retry
+          expect(retry_reminder.reload).to be_pending
+          travel 6.minutes
+          provider_recovers
+          execute_due_retry
+          expect(retry_reminder.reload.last_error).to eq(Reminders::MissedAutomationTouchPolicy::CANCEL_REASON)
+          expect(conversation.messages.outgoing).to be_empty
+        end
+      end
+
+      it 'keeps the original grace limit at delivery for an end-anchored automation' do
+        freeze_time do
+          retry_reminder.update!(relative_anchor: 'appointment.ends_at', relative_offset_seconds: -150.minutes.to_i)
+          provider_recovers
+          execute_due_retry
+          message = conversation.messages.outgoing.sole
+          claim = retry_reminder.processing_claim_token
+          allow(verifier).to receive(:perform) do
+            Integrations::Medelement::AppointmentFreshnessVerifier::Result.new(
+              status: 'blocked', reason: 'provider_unavailable', checked_at: Time.current, command_id: nil, command_status: nil
+            )
+          end
+          Reminders::DeliverMaterializedMessageJob.perform_now(retry_reminder.id, message.id, claim)
+          travel 6.minutes
+          provider_recovers
+          allow(SendReplyJob).to receive(:perform_now)
+          Reminders::DeliverMaterializedMessageJob.perform_now(retry_reminder.id, message.id, claim)
+          expect(retry_reminder.reload.last_error).to eq(Reminders::MissedAutomationTouchPolicy::CANCEL_REASON)
+          expect(SendReplyJob).not_to have_received(:perform_now)
+          expect(conversation.messages.outgoing.count).to eq(1)
+        end
+      end
+
+      it 'still cancels a genuinely late first attempt' do
+        freeze_time do
+          retry_reminder
+          travel 6.minutes
+          provider_recovers
+          execute_due_retry
+          expect(retry_reminder.reload.last_error).to eq(Reminders::MissedAutomationTouchPolicy::CANCEL_REASON)
+          expect(conversation.messages.outgoing).to be_empty
+          expect(verifier).not_to have_received(:perform)
+        end
+      end
+
+      %w[completed no_show cancelled].each do |status|
+        it "cancels the retry if the appointment becomes #{status}" do
+          freeze_time do
+            retry_reminder
+            execute_due_retry
+            appointment.update!(status: status)
+            travel 6.minutes
+            provider_recovers
+            execute_due_retry
+            expect(retry_reminder.reload.last_error).to eq(Reminders::MissedAutomationTouchPolicy::CLOSED_REASON)
+            expect(conversation.messages.outgoing).to be_empty
+          end
+        end
+      end
+
+      it 'stops retrying when the visit starts' do
+        freeze_time do
+          retry_reminder
+          execute_due_retry
+          travel 2.hours
+          provider_recovers
+          execute_due_retry
+          expect(retry_reminder.reload).to be_cancelled
+          expect(conversation.messages.outgoing).to be_empty
+        end
+      end
+
+      it 'uses the new due time after a move instead of delivering the old retry' do
+        freeze_time do
+          retry_reminder
+          execute_due_retry
+          appointment.update!(starts_at: 3.hours.from_now, ends_at: 210.minutes.from_now)
+          travel 6.minutes
+          provider_recovers
+          execute_due_retry
+          expect(retry_reminder.reload).to be_pending
+          expect(retry_reminder.scheduled_at).to eq(54.minutes.from_now)
+          expect(conversation.messages.outgoing).to be_empty
+          travel 54.minutes
+          execute_due_retry
+          expect(retry_reminder.reload).to be_completed
+          expect(conversation.messages.outgoing.count).to eq(1)
+        end
+      end
+
+      it 'rejects an old retry after a move to an already missed schedule' do
+        freeze_time do
+          retry_reminder
+          execute_due_retry
+          appointment.update!(starts_at: 1.hour.from_now, ends_at: 90.minutes.from_now)
+          travel 6.minutes
+          provider_recovers
+          execute_due_retry
+          expect(retry_reminder.reload.last_error).to eq(Reminders::MissedAutomationTouchPolicy::CANCEL_REASON)
+          expect(conversation.messages.outgoing).to be_empty
+        end
+      end
+    end
+
     it 'runs the appointment provider guard before message materialization' do
       conversation = create(:conversation)
       appointment = create(:scheduling_appointment, account: conversation.account, conversation: conversation)

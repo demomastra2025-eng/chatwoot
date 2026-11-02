@@ -1,3 +1,5 @@
+# Keep provider command gating and claim-safe retries in the same lifecycle guard.
+# rubocop:disable Metrics/ClassLength
 class Reminders::AppointmentProviderGuard
   CONTINUE = :continue
   STOP = :stop
@@ -25,11 +27,7 @@ class Reminders::AppointmentProviderGuard
     return CONTINUE if appointment.blank?
     return handle_cancellation_notification(appointment) if provider_cancellation_notification?(appointment)
 
-    verification = if appointment.status == 'cancelled'
-                     local_cancellation_result
-                   else
-                     create_command_result(appointment) || verification || verify_appointment(appointment)
-                   end
+    verification = verification_for(appointment, verification)
     return CONTINUE if verification.allowed?
 
     verification.terminal? ? cancel!(verification) : defer!(verification)
@@ -39,6 +37,12 @@ class Reminders::AppointmentProviderGuard
   private
 
   attr_reader :reminder, :phase
+
+  def verification_for(appointment, verification)
+    return local_cancellation_result if appointment.status == 'cancelled'
+
+    delivery_retry_result || create_command_result(appointment) || verification || verify_appointment(appointment)
+  end
 
   def create_command_result(appointment)
     return unless reminder.metadata.to_h[Reminder::AUTOMATION_EVENT_NAME_KEY] == 'appointment_created'
@@ -160,6 +164,12 @@ class Reminders::AppointmentProviderGuard
       reminder.reload
       next unless guardable?
 
+      message = materialized_message
+      if message.present?
+        retry_materialized_delivery!(verification, message)
+        next
+      end
+
       # This is a runtime retry, not a schedule-definition edit. Bypass relative schedule
       # rematerialization while still invalidating the current execution claim.
       # rubocop:disable Rails/SkipsModelValidations
@@ -169,12 +179,44 @@ class Reminders::AppointmentProviderGuard
         completed_at: nil,
         processing_started_at: nil,
         last_error: verification.reason,
-        metadata: metadata(verification),
+        metadata: retry_metadata(verification, schedule_revision: reminder.schedule_revision.to_i + 2),
         schedule_revision: reminder.schedule_revision.to_i + 1,
         updated_at: Time.current
       )
       # rubocop:enable Rails/SkipsModelValidations
     end
+  end
+
+  def delivery_retry_result
+    return if materialized_message.blank?
+
+    reason = Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).delivery_retry_skip_reason
+    cancellation_result('cancelled', reason) if reason
+  end
+
+  def materialized_message
+    Reminders::ExecutionFinisher.materialized_message_for(reminder)
+  end
+
+  def retry_metadata(verification, schedule_revision:)
+    policy = Reminders::MissedAutomationTouchPolicy.new(reminder: reminder)
+    marker = policy.runtime_retry_metadata(schedule_revision: schedule_revision)
+    metadata(verification).except(Reminder::APPOINTMENT_PROVIDER_RETRY_KEY).tap do |attributes|
+      attributes[Reminder::APPOINTMENT_PROVIDER_RETRY_KEY] = marker if marker
+    end
+  end
+
+  def retry_materialized_delivery!(verification, message)
+    attributes = retry_metadata(verification, schedule_revision: reminder.schedule_revision.to_i).merge(
+      Reminder::PROCESSING_CLAIM_KEY => reminder.processing_claim_token
+    )
+    # Keep the existing message and claim: re-claiming pending would erase materialization metadata.
+    # rubocop:disable Rails/SkipsModelValidations
+    reminder.update_columns(metadata: attributes, updated_at: Time.current)
+    # rubocop:enable Rails/SkipsModelValidations
+    Reminders::DeliverMaterializedMessageJob.set(wait: RETRY_DELAY).perform_later(
+      reminder.id, message.id, reminder.processing_claim_token
+    )
   end
 
   def guardable?
@@ -194,3 +236,4 @@ class Reminders::AppointmentProviderGuard
     )
   end
 end
+# rubocop:enable Metrics/ClassLength

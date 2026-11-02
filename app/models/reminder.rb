@@ -129,6 +129,7 @@ class Reminder < ApplicationRecord
     POST_DELIVERY_ACTION_MESSAGE_ID_KEY,
     POST_DELIVERY_ACTION_EXECUTED_AT_KEY
   ].freeze
+  APPOINTMENT_PROVIDER_RETRY_KEY = 'appointment_provider_retry'.freeze
   INTERNAL_METADATA_KEYS = (
     TRANSIENT_METADATA_KEYS + [
       POST_DELIVERY_AUDIT_SOURCE_KEY,
@@ -138,6 +139,7 @@ class Reminder < ApplicationRecord
       AUTOMATION_ACTION_KEY,
       AUTOMATION_ACTION_SIGNATURE_KEY,
       ROUTE_ERROR_CODE_KEY,
+      APPOINTMENT_PROVIDER_RETRY_KEY,
       'captain_playground'
     ]
   ).freeze
