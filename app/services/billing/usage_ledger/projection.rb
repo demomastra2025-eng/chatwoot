@@ -25,8 +25,17 @@ class Billing::UsageLedger::Projection
     @sources = @input.events.sort_by { |event| [event.occurred_at, event.id] }.to_h { |event| [event.id.to_s, verified_source(event)] }
     preserve_sources!
     allocations, windows = allocate
-    fingerprint = Digest::SHA256.hexdigest(JSON.generate([@sources.sort, allocations.sort, windows]))
+    fingerprint = Digest::SHA256.hexdigest(JSON.generate(canonical([@sources, allocations, windows])))
     { sources: @sources, allocations: allocations, window_sources: windows, fingerprint: fingerprint }
+  end
+
+  # PostgreSQL JSONB key order must not change the identity of an exact replay.
+  def canonical(value)
+    case value
+    when Hash then value.sort.map { |key, member| [key, canonical(member)] }
+    when Array then value.map { |member| canonical(member) }
+    else value
+    end
   end
 
   def replay?(fingerprint)
@@ -41,9 +50,31 @@ class Billing::UsageLedger::Projection
     raise Billing::UsageLedger::Refused, :provenance_missing unless workspace_valid?(workspace, event, period)
 
     validate_terms!(event, period, subscription)
+    core = source_tuple(event, workspace, period, subscription)
+    previous = previous_source(event.id)
+    return confirmed_source!(previous, core, period, event) if previous
 
+    raise Billing::UsageLedger::Refused, :terms_changed if changed_terms?(period, event)
+
+    Billing::UsageLedger::SubscriptionEvidence.capture(event: event, source: core, subscription: subscription, payer_id: period.billing_account_id)
+  end
+
+  def source_tuple(event, workspace, period, subscription)
     { 'at' => event.occurred_at.utc.iso8601(6), 'bucket' => event.bucket, 'quantity' => event.quantity,
       'workspace_id' => workspace.id, 'period_id' => period.id, 'subscription_id' => subscription.id }
+  end
+
+  def previous_source(event_id)
+    ([@input.target] + @input.merge_projections).compact.filter_map { |projection| projection.sources[event_id.to_s] }.first
+  end
+
+  def confirmed_source!(previous, core, period, event)
+    valid = previous.slice(*Billing::UsageLedger::SubscriptionEvidence::CORE_KEYS) == core &&
+            Billing::UsageLedger::SubscriptionEvidence.valid?(previous, event_id: event.id, account_id: @input.account_id) &&
+            previous.dig('subscription_evidence', 'billing_account_id') == period.billing_account_id
+    raise Billing::UsageLedger::Refused, :provenance_changed unless valid
+
+    previous.deep_dup
   end
 
   def workspace_valid?(workspace, event, period)
@@ -55,8 +86,7 @@ class Billing::UsageLedger::Projection
     month = event.occurred_at.in_time_zone(Billing::ALMATY_TIMEZONE).to_date.beginning_of_month
     raise Billing::UsageLedger::Refused, :historical_terms_missing unless proved_period?(period, subscription, month)
 
-    raise Billing::UsageLedger::Refused, :terms_changed unless matching_terms?(subscription, period) && subscription.created_at <= event.occurred_at
-    raise Billing::UsageLedger::Refused, :terms_changed if changed_terms?(period, event)
+    raise Billing::UsageLedger::Refused, :terms_changed unless matching_terms?(subscription, period)
   end
 
   def proved_period?(period, subscription, month)
@@ -70,8 +100,10 @@ class Billing::UsageLedger::Projection
 
   def changed_terms?(period, event)
     # A different snapshot is not permission to choose a renewal/proration policy.
-    BillingSubscription.ready.where(billing_account_id: period.billing_account_id, created_at: period.starts_at..event.occurred_at)
-                       .any? { |candidate| !matching_terms?(candidate, period) }
+    @input.subscriptions.values.any? do |candidate|
+      candidate.ready? && candidate.billing_account_id == period.billing_account_id &&
+        candidate.created_at.between?(period.starts_at, event.occurred_at) && !matching_terms?(candidate, period)
+    end
   end
 
   def preserve_sources!

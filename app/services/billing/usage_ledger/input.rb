@@ -32,11 +32,17 @@ class Billing::UsageLedger::Input
   private
 
   def lock_evidence!
-    payer_ids = periods.values.map(&:billing_account_id).uniq.sort
-    BillingAccount.where(id: payer_ids).order(:id).lock('FOR NO KEY UPDATE').load
-    @workspaces = BillingAccountWorkspace.where(id: workspaces.keys).order(:id).lock.index_by(&:id)
+    lock_contracts!
     Accounts::AiUsageEvent.where(id: event_ids, account_id: account_id).order(:id).lock.load
     load_events!
+  end
+
+  def lock_contracts!
+    payer_ids = (periods.values.map(&:billing_account_id) + subscriptions.values.map(&:billing_account_id)).uniq.sort
+    BillingAccount.where(id: payer_ids).order(:id).lock('FOR NO KEY UPDATE').load
+    # Mutable cycle/status is read again only after payer, before any later lock class.
+    @subscriptions = subscription_scope(payer_ids).order(:id).lock.index_by(&:id)
+    @workspaces = BillingAccountWorkspace.where(id: workspaces.keys).order(:id).lock.index_by(&:id)
   end
 
   def lock_projections!
@@ -117,7 +123,11 @@ class Billing::UsageLedger::Input
     raise Billing::UsageLedger::Refused, :historical_terms_missing unless periods.size == ids.size
 
     @workspaces = BillingAccountWorkspace.where(id: provenance.values.pluck(:workspace_id).uniq).index_by(&:id)
-    @subscriptions = BillingSubscription.where(id: provenance.values.pluck(:subscription_id).uniq).index_by(&:id)
+    @subscriptions = subscription_scope(periods.values.map(&:billing_account_id)).index_by(&:id)
+  end
+
+  def subscription_scope(payer_ids)
+    BillingSubscription.where(billing_account_id: payer_ids).or(BillingSubscription.where(id: provenance.values.pluck(:subscription_id).uniq))
   end
 
   def previous_period_ids

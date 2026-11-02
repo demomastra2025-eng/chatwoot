@@ -48,6 +48,9 @@ RSpec.describe Billing::UsageLedger do
   it 'owns a cross-month window in the first reply month in Almaty' do
     current = package
     october = ledger_period(payer: current[:payer], subscription: current[:subscription], month: Date.new(2026, 10, 1))
+    # The October month anchor remains frozen; these new events need the actual Oct15-Nov15 cycle.
+    current[:subscription].update!(current_period_starts_at: current[:period].anchor_starts_at,
+                                   current_period_ends_at: current[:period].anchor_ends_at)
     old = current.merge(period: october)
     e1 = ledger_event(account: account, contact: contact, at: Time.utc(2026, 10, 31, 18, 59))
     e2 = ledger_event(account: account, contact: contact, at: Time.utc(2026, 10, 31, 19, 1))
@@ -75,7 +78,7 @@ RSpec.describe Billing::UsageLedger do
     expect(Billing::UsageRevision.count).to eq(1)
   end
 
-  it 'takes real SQL locks in identity-contact-account-payer-source-projection-period order' do
+  it 'takes real SQL locks in identity-contact-account-payer-subscription-source-projection-period order' do
     first = ledger_event(account: account, contact: contact, at: at)
     described_class.reconcile!(**ledger_inputs(account: account, contact: contact, entries: [[first, package]]))
     second = ledger_event(account: account, contact: contact, at: at + 1.minute)
@@ -83,7 +86,8 @@ RSpec.describe Billing::UsageLedger do
     listener = ActiveSupport::Notifications.subscribe('sql.active_record') { |*, payload| statements << payload[:sql] }
     described_class.reconcile!(**ledger_inputs(account: account, contact: contact, entries: [[first, package], [second, package]], version: 1))
     indices = [statements.index { |sql| sql.include?('pg_advisory_xact_lock') }]
-    %w[contacts accounts billing_accounts account_ai_usage_events billing_usage_projections billing_usage_periods].each do |table|
+    %w[contacts accounts billing_accounts billing_subscriptions billing_account_workspaces account_ai_usage_events billing_usage_projections
+       billing_usage_periods].each do |table|
       indices << statements.index { |sql| sql.include?("FROM \"#{table}\"") && sql.include?('FOR ') }
     end
     expect(indices).to all(be_a(Integer))

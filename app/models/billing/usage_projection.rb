@@ -2,7 +2,7 @@
 
 # Financial allocations survive Contact deletion and the mutable AiDialogState's merge/reset.
 class Billing::UsageProjection < ApplicationRecord
-  SOURCE_KEYS = %w[at bucket period_id quantity subscription_id workspace_id].freeze
+  SOURCE_KEYS = %w[at bucket period_id quantity subscription_evidence subscription_id workspace_id].freeze
   INTEGER_SOURCE_KEYS = %w[period_id quantity subscription_id workspace_id].freeze
   BUCKETS = [Accounts::MonthlyAiUsageService::AI_DIALOGS_MONTHLY_KEY, Accounts::MonthlyAiUsageService::CALL_SECONDS_MONTHLY_KEY].freeze
 
@@ -16,6 +16,7 @@ class Billing::UsageProjection < ApplicationRecord
   validates :subject_id, :version, numericality: { only_integer: true, greater_than: 0 }
   validates :fingerprint, format: { with: /\A[0-9a-f]{64}\z/ }
   validate :numeric_payload
+  validate :confirmed_sources_preserved, on: :update
 
   def retired?
     retired_at.present?
@@ -38,13 +39,25 @@ class Billing::UsageProjection < ApplicationRecord
   end
 
   def sources_valid?
-    numeric_keys?(sources) && sources.values.all? { |source| source_valid?(source) }
+    numeric_keys?(sources) && sources.all? { |event_id, source| source_valid?(event_id, source) }
   end
 
-  def source_valid?(source)
+  def source_valid?(event_id, source)
     valid = source.is_a?(Hash) && source.keys.all?(String) && source.keys.sort == SOURCE_KEYS
-    valid && BUCKETS.include?(source['bucket']) && INTEGER_SOURCE_KEYS.all? { |key| positive?(source[key]) } &&
-      source_time?(source['at'])
+    valid && source_units_valid?(source) &&
+      source_time?(source['at']) && Billing::UsageLedger::SubscriptionEvidence.valid?(source, event_id: event_id, account_id: account_id)
+  end
+
+  def source_units_valid?(source)
+    BUCKETS.include?(source['bucket']) && INTEGER_SOURCE_KEYS.all? { |key| positive?(source[key]) }
+  end
+
+  def confirmed_sources_preserved
+    return unless will_save_change_to_sources?
+
+    previous = sources_in_database
+    unchanged = previous.is_a?(Hash) && sources.is_a?(Hash) && previous.all? { |event_id, source| sources[event_id] == source }
+    errors.add(:sources, 'confirmed source evidence is immutable') unless unchanged
   end
 
   def source_time?(value)

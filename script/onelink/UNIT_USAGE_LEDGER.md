@@ -40,8 +40,18 @@ Oct15–Nov15 is valid evidence: renewal need not cover the entire AI calendar
 month. The subscription must already exist at that anchor. The copied anchor
 evidence is immutable; subsequent reads never reconstruct it from today's cycle.
 
-An existing proven period survives an ordinary renewal. An event must name its
-actual immutable subscription. Different term snapshots encountered within the
+An existing proven period survives an ordinary renewal. Each NEW event also needs
+a freshly locked, entitling subscription whose actual current cycle contains that
+event and whose creation predates it. A month anchor never supplies entitlement.
+The service alone captures an exact-event typed witness in projection.sources,
+binding the canonical event/account, core provenance, observed status and cycle.
+It cannot be supplied by the caller or transferred to another event. Confirmed
+witnesses remain byte-identical across replay, merge, late insertion, renewal and
+later cancellation. Snapshots and owner must still match. Existing sources without
+that witness are refused without writes: source02293 was never activated and is
+not an adopted financial baseline. A historical event outside the currently known
+cycle without its own prior witness requires review; no lifecycle is inferred.
+Different term snapshots encountered for a new event within the
 month return `needs_review`; no proration, second quota or invented monetary
 transition is selected. Ambiguous historical coverage remains refused. The
 captured cycle is anchor evidence, not a new definition of contract duration.
@@ -69,7 +79,8 @@ audit. Source disappearance and clinical deletion are not merge instructions.
 
 The source-only writer owns this order: existing account identity advisory lock
 (AI) → existing Contacts by ID → Account `FOR NO KEY UPDATE` → all predetermined
-payers by ID → workspace/source rows → financial projections by ID → periods by
+payers by ID → subscription rows by ID (fresh cycle/status reload) → workspace/
+source rows → financial projections by ID → periods by
 ID. All branch writers for one payer serialize before updating period revisions.
 No provider IO runs under these transactions. Preview calculates without writes;
 reconcile reloads under locks and verifies the expected projection version.
@@ -84,6 +95,8 @@ order, and future Invoice/Profile paths must not reacquire Account/Contact after
 payer/period locks. Those paths, durable invoice continuation/reservations,
 financial cutover, monetary corrections and seat enforcement are not implemented
 here. No new global queue or automatic backfill is installed.
+In particular, future subscription lifecycle writers must take payer before term
+rows, including inserts: these source-only locks do not install that runtime protocol.
 
 The additive migration refuses pre-existing ledger tables rather than silently
 adopting them. `down` explicitly refuses destructive rollback; keep the financial
