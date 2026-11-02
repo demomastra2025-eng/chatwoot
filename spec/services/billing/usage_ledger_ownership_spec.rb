@@ -52,9 +52,9 @@ RSpec.describe Billing::UsageLedger do
         inputs = ledger_inputs(account: account, contact: contact, entries: [[source[:event], package], [target_event, package]],
                                version: existing_target ? 1 : 0, baseline: existing_target ? nil : :empty)
         before = financial_rows
+        statements = without_financial_writes(inputs, status: :needs_review, code: :merge_owner_missing)
         expect(described_class.preview(**inputs)).to include(status: :needs_review, code: :merge_owner_missing, deltas: {})
         expect(financial_rows).to eq(before)
-        statements = without_financial_writes(inputs, status: :needs_review, code: :merge_owner_missing)
         account_lock = statements.index { |sql| sql.include?('FROM "accounts"') && sql.include?('FOR NO KEY UPDATE') }
         contact_locks = statements.each_index.select { |index| statements[index].include?('FROM "contacts"') && statements[index].include?('FOR ') }
         expect(account_lock).to be_a(Integer)
