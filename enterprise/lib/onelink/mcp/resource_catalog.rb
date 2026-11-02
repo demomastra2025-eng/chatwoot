@@ -120,11 +120,7 @@ module Onelink
       end
 
       def assistant_payload
-        {
-          id: auth_context.assistant.persisted? ? auth_context.assistant.id : nil,
-          name: auth_context.assistant.name,
-          usage_mode: auth_context.assistant.usage_mode
-        }
+        Captain::AssistantSerializer.new(auth_context.assistant, user: auth_context.user).profile.slice(:id, :name, :usage_mode)
       end
 
       def mcp_access_summary
@@ -141,14 +137,7 @@ module Onelink
         assistants = Captain::Assistant.for_account(auth_context.account.id).ordered.limit(100)
         {
           assistants: assistants.map do |assistant|
-            {
-              id: assistant.id,
-              name: assistant.name,
-              description: assistant.description,
-              usage_mode: assistant.usage_mode,
-              created_at: assistant.created_at&.iso8601,
-              updated_at: assistant.updated_at&.iso8601
-            }
+            Captain::AssistantSerializer.new(assistant, user: auth_context.user).profile
           end
         }
       end

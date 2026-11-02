@@ -62,7 +62,6 @@ class Captain::AgentRunContext
     state[:assistant_config] = actor.config
     prior_runtime = state[:captain_runtime]
     state[:captain_runtime] = Captain::AssistantSafetyPreferences.for(assistant: actor, feature: :assistant)
-    state[:captain_runtime]['assistant_thinking_effort'] = actor.config['thinking_effort'] if actor.config['thinking_effort'].present?
     apply_playground_effort(state, actor, previous_id, prior_runtime)
     state[:prompt_context] = actor.prompt_context_state(state)
     context[:current_agent] = "assistant_#{actor.id}"

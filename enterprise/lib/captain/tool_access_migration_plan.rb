@@ -1,14 +1,14 @@
 # frozen_string_literal: true
 
-# Pure inventory: no prompts in reports and no data writes. Unknown grants and divergent
-# MCP/Captain defaults block activation instead of silently dropping or widening access.
+# Inventory and candidate simulation: no prompts in reports and no data writes.
+# Every binding surface must remain equivalent before activation can be offered.
 class Captain::ToolAccessMigrationPlan
   SCOPE_BLOCKERS = {
     unknown_tool_ids: 'unknown_tool_ids', mcp_difference: 'mcp_surface_difference', voice_difference: 'voice_surface_difference'
   }.freeze
 
   def self.for(assistant)
-    new(assistant).plan
+    ActiveRecord::Base.cache { new(assistant).plan }
   end
 
   def initialize(assistant)
@@ -17,8 +17,11 @@ class Captain::ToolAccessMigrationPlan
 
   def plan
     scopes = Captain::ToolAccess::SCOPE_ORDER.index_with { |scope| scope_plan(scope) }
+    differences = Captain::CapabilitySurfaces.compare(@assistant, scopes)
     blockers = blockers_for(scopes)
-    result = { assistant_id: @assistant.id, status: status(blockers), blockers: blockers, scopes: scopes, unknown_scopes: unknown_scopes }
+    blockers << 'canonical_surface_difference' if differences.any?
+    result = { assistant_id: @assistant.id, status: status(blockers), blockers: blockers, scopes: scopes, unknown_scopes: unknown_scopes,
+               surface_differences: differences }
     result.merge(source_digest: Captain::Capabilities.digest([@assistant.config, @assistant.description, result]))
   end
 
@@ -34,13 +37,22 @@ class Captain::ToolAccessMigrationPlan
     raw = Captain::ToolAccess.raw_scope(@assistant.config.to_h, scope) || {}
     available = Captain::ToolAccess.available_tool_ids_for(@assistant, scope).map(&:to_s)
     ids = scope_ids(scope, raw)
-    proposed = ids.values.reduce([], :|).sort
+    # Stored dormant grants remain recoverable. A mention only becomes a binding
+    # when the legacy reader actually granted it; ignored references stay provenance.
+    proposed = proposed_ids(scope, ids)
     ids.merge(
       enabled: @assistant.normalized_tool_access.fetch(scope)['enabled'], proposed_tool_ids: proposed,
+      ignored_instruction_tool_ids: ids[:instruction_tool_ids] - ids[:effective_tool_ids],
       mcp_difference: mcp_difference(scope, raw, available, ids[:effective_tool_ids]),
       voice_difference: voice_difference(scope, ids[:effective_tool_ids]),
       **availability_report(proposed, available)
     )
+  end
+
+  def proposed_ids(scope, ids)
+    return Captain::Capabilities.scope(@assistant.config, scope).fetch('tool_ids', []).sort if Captain::Capabilities.configured?(@assistant.config)
+
+    (ids[:stored_tool_ids] | ids[:effective_tool_ids]).sort
   end
 
   def scope_ids(scope, raw)

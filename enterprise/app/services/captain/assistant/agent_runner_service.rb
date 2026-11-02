@@ -1343,10 +1343,7 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def runtime_preferences_for_run
-    preferences = Captain::AssistantSafetyPreferences.for(assistant: @assistant, feature: :assistant, account: account)
-    return preferences unless @source == 'playground' && @test_overrides.key?(:thinking_effort)
-
-    preferences.merge('assistant_thinking_effort' => @test_overrides[:thinking_effort])
+    Captain::AssistantSafetyPreferences.for(assistant: @assistant, feature: :assistant, account: account)
   end
 
   def add_playground_latency(response, started_at)

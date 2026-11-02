@@ -4,15 +4,6 @@ class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Accou
   CONFIG_FIELD_KEYS = %w[
     context_access tool_access capabilities voice_settings
   ].freeze
-  ACCOUNT_SETTING_KEYS = %w[
-    feature_faq feature_memory feature_web feature_document_reading feature_image_understanding
-    use_audio_transcriptions handoff_enabled auto_completion_enabled auto_reply_on_last_incoming
-    handoff_message handoff_message_enabled handoff_message_mode resolution_message resolution_message_enabled
-    resolution_message_mode message_collapse_window_seconds history_message_limit outcome_reason_settings safety_settings
-  ].freeze
-  HIDDEN_CONFIG_KEYS = (ACCOUNT_SETTING_KEYS + %w[
-    handoff_requires_explicit_consent handoff_consent_reason rules skills main_prompt_rules_migration
-  ]).freeze
   SENSITIVE_KEY_PATTERN = /(otp|token|secret|password|credential|authorization|process_?id|session|api_?key|access_?key|refresh|url|webhook)/i
   SENSITIVE_VALUE_PATTERN = %r{
     https?://[^\s"']*(?:webhook|token|secret|api[_-]?key|password|credential|callback)|
@@ -59,13 +50,7 @@ class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Accou
   end
 
   def assistant_identity_payload(assistant)
-    payload = {
-      id: assistant.id,
-      name: assistant.name,
-      usage_mode: assistant.usage_mode
-    }
-    payload[:description] = redacted_value(assistant.description) if Captain::PromptInspectorAccess.allowed?(user: @user)
-    payload
+    redacted_value(Captain::AssistantSerializer.new(assistant, user: @user).profile)
   end
 
   def assistant_config_summary_payload(assistant)
@@ -94,9 +79,7 @@ class Captain::Tools::Account::CaptainAssistantAdminTool < Captain::Tools::Accou
   end
 
   def merge_extended_assistant_payload!(payload, assistant)
-    prompt_access = Captain::PromptInspectorAccess.allowed?(user: @user)
-    config = Captain::AssistantConfigContract.public_config(assistant, prompt_access: prompt_access).except(*HIDDEN_CONFIG_KEYS)
-    payload[:config] = redacted_value(config)
+    payload[:config] = redacted_value(Captain::AssistantSerializer.new(assistant, user: @user).config)
   end
 
   def parse_json_hash(value, field_name:, default: {})

@@ -122,6 +122,53 @@ RSpec.describe Captain::AssistantConfigContract, type: :request do
     expect(payload['fields']).to contain_exactly('assistant', 'editor', 'copilot')
   end
 
+  it 'rejects account effort overrides for ordinary and platform administrators atomically' do
+    [admin, platform].each do |user|
+      original = account.reload.settings.deep_dup
+      put "/api/v1/accounts/#{account.id}/captain/preferences",
+          params: { captain_runtime: { assistant_thinking_effort: 'high', copilot_thinking_effort: 'high', assistant_moderation: true } },
+          headers: user.create_new_auth_token, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(payload).to include('error' => 'installation_managed_thinking_effort',
+                                 'fields' => %w[captain_runtime.assistant_thinking_effort captain_runtime.copilot_thinking_effort])
+      expect(account.reload.settings).to eq(original)
+    end
+  end
+
+  actors = %i[admin platform]
+  [{ unsupported_control: true }, { voice_settings: { unknown_setting: true } },
+   { voice_settings: { first_message: { archive: 'raw' } } }, nil, []].each_with_index do |config, index|
+    actors.each do |actor|
+      it "rejects unknown or malformed config case #{index} for #{actor} before filtering or applying business edits" do
+        original = assistant.attributes.deep_dup
+        patch "#{path}/#{assistant.id}", params: { assistant: { name: 'Must not save', active: false, config: config } },
+                                         headers: public_send(actor).create_new_auth_token, as: :json
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(payload['error']).to eq('unsupported_assistant_settings')
+        expect(payload['fields']).not_to be_empty
+        expect(assistant.reload.attributes).to eq(original)
+      end
+    end
+  end
+
+  it 'protects follow-up technical instructions while retaining ordinary scheduling changes' do
+    assistant.update!(config: { 'follow_up_settings' => { 'prompt' => 'Private follow-up instruction', 'enabled' => false, 'steps' => [] } })
+    get "#{path}/#{assistant.id}", headers: admin_headers, as: :json
+    expect(response.body).not_to include('Private follow-up instruction', '"prompt"')
+    patch "#{path}/#{assistant.id}", params: { assistant: { config: { follow_up_settings: { prompt: 'Client prompt' } } } },
+                                     headers: admin_headers, as: :json
+    expect(payload).to include('error' => 'platform_managed_prompt', 'fields' => ['config.follow_up_settings.prompt'])
+    expect(response).to have_http_status(:unprocessable_content)
+
+    patch "#{path}/#{assistant.id}", params: { assistant: { name: 'Safe rename', active: false, routing_description: 'Billing',
+                                                            config: { follow_up_settings: { enabled: false, steps: [] } } } },
+                                     headers: admin_headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(assistant.reload).to have_attributes(name: 'Safe rename', active: false, routing_description: 'Billing')
+    expect(assistant.config.dig('follow_up_settings', 'prompt')).to eq('Private follow-up instruction')
+  end
+
   it 'closes scenario instruction read/write paths while retaining metadata access' do
     scenario = create(:captain_scenario, assistant: assistant, account: account, instruction: 'Private scenario instruction')
     scenario_path = "#{path}/#{assistant.id}/scenarios/#{scenario.id}"
@@ -191,7 +238,7 @@ RSpec.describe Captain::AssistantConfigContract, type: :request do
       expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
       [admin, agent].each do |user|
         post "/api/v1/accounts/#{account.id}/captain/playground", params: { 'message_content' => 'Hello', field => 'override' },
-                                                                  headers: user.create_new_auth_token, as: :json
+                                                                  headers: user.reload.create_new_auth_token, as: :json
         expect(response).to have_http_status(:unprocessable_content)
         expect(payload).to include('error' => 'unsupported_playground_setting', 'field' => field)
       end

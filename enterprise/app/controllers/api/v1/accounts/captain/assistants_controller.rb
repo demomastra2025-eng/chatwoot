@@ -217,9 +217,17 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     if incoming_config.key?('voice_settings')
       incoming_config['voice_settings'] = normalized_voice_settings(existing_config['voice_settings'], incoming_config['voice_settings'])
     end
+    merge_follow_up_settings!(incoming_config, existing_config)
     normalize_outcome_reason_settings!(incoming_config, existing_config['outcome_reason_settings'])
 
     attributes.merge(config: existing_config.merge(incoming_config))
+  end
+
+  def merge_follow_up_settings!(incoming, existing)
+    return unless incoming['follow_up_settings'].is_a?(Hash)
+
+    # A scheduling edit must retain the private instruction that was not sent.
+    incoming['follow_up_settings'] = existing['follow_up_settings'].to_h.merge(incoming['follow_up_settings'])
   end
 
   def cancel_captain_follow_ups_if_disabled!

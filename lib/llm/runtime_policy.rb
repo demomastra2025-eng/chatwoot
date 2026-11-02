@@ -36,8 +36,8 @@ class Llm::RuntimePolicy
     'medium' => 4_096,
     'high' => 8_192
   }.freeze
-  # Reasoning belongs to the agents that talk to customers (the agent runtime and the council parts), and
-  # they think at `low` unless the agent or the workspace chose an effort. Every other call states "none".
+  # Conversation reasoning defaults to low. Only installation function slots can
+  # change it; transient platform diagnostics pass an explicit override.
   CONVERSATION_THINKING_EFFORT = 'low'
   NO_THINKING_EFFORT = 'none'
 
@@ -64,30 +64,20 @@ class Llm::RuntimePolicy
       nil
     end
 
-    # What the customer-facing agent runtime thinks with when the agent itself has no `thinking_effort`: the
-    # workspace's own stored choice, else `low`.
-    def conversation_thinking_options(model:, account: nil, preferences: nil)
-      if explicit_assistant_effort?(account, preferences)
-        return thinking_options(feature: :assistant, model: model, account: account, preferences: preferences)
-      end
-
-      Llm::ModelParameters.for(model, account: account).thinking(CONVERSATION_THINKING_EFFORT)
+    def conversation_thinking_options(model:, account: nil, **_legacy_preferences)
+      Llm::ModelParameters.for(model, account: account).thinking(Llm::Config.thinking_effort_for(feature: :assistant))
     end
 
-    def thinking_options(feature:, model:, account: nil, preferences: nil, effort_override: nil)
-      effort = (effort_override || runtime_preferences(account, preferences)["#{feature}_thinking_effort"]).to_s
-      return nil if effort.blank?
-      if effort == 'none' && effort_override.nil?
-        return { effort: 'none' } if Llm::ModelParameters.for(model, account: account).disabled_reasoning_uses_flag?
+    def thinking_options(feature:, model:, account: nil, effort_override: nil, **_legacy_preferences)
+      effort = (effort_override || Llm::Config.thinking_effort_for(feature: feature)).to_s
+      return if effort.blank?
 
-        return nil
-      end
-      if effort_override.present? && !Llm::Models.reasoning_efforts_for(model, account: account).include?(effort)
-        raise ArgumentError, 'The model does not support the requested reasoning effort.'
-      end
-      return nil unless Llm::Models.reasoning_efforts_for(model, account: account).include?(effort)
+      return disabled_thinking_options(model, account) if effort == 'none' && effort_override.nil?
 
-      { effort: effort }
+      supported = Llm::Models.reasoning_efforts_for(model, account: account).include?(effort)
+      validate_diagnostic_effort!(supported, effort_override)
+
+      { effort: effort } if supported
     end
 
     def moderation_enabled?(feature:, account: nil, preferences: nil)
@@ -249,13 +239,14 @@ class Llm::RuntimePolicy
 
     private
 
-    # The workspace stored an effort, or the run carries one other than the built-in default.
-    def explicit_assistant_effort?(account, preferences)
-      stored = account.captain_runtime.to_h.with_indifferent_access['assistant_thinking_effort'] if account.respond_to?(:captain_runtime)
-      return true if stored.present?
+    def validate_diagnostic_effort!(supported, override)
+      return if supported || override.blank?
 
-      effort = preferences.to_h.stringify_keys['assistant_thinking_effort'].to_s
-      effort.present? && effort != CaptainFeaturable::RUNTIME_DEFAULTS['assistant_thinking_effort']
+      raise ArgumentError, 'The model does not support the requested reasoning effort.'
+    end
+
+    def disabled_thinking_options(model, account)
+      { effort: 'none' } if Llm::ModelParameters.for(model, account: account).disabled_reasoning_uses_flag?
     end
 
     def runtime_preferences(account, preferences)

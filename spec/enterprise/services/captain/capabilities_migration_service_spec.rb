@@ -6,7 +6,7 @@ RSpec.describe Captain::CapabilitiesMigrationService do
   let(:account) { create(:account) }
   let(:actor) { create(:super_admin) }
   let(:assistant) do
-    create(:captain_assistant, account: account, usage_mode: 'internal_assistant', description: 'Keep these instructions.', config: {
+    create(:captain_assistant, :legacy, account: account, usage_mode: 'internal_assistant', description: 'Keep these instructions.', config: {
              'tool_access' => {
                'agent' => { 'enabled' => true, 'tool_ids' => ['add_private_note'] },
                'assistant' => { 'enabled' => true, 'tool_ids' => ['get_contact'] }

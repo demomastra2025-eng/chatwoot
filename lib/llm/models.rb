@@ -796,10 +796,10 @@ module Llm::Models
       {}
     end
 
-    def reasoning_required_for_feature?(feature_key, runtime_preferences)
+    def reasoning_required_for_feature?(feature_key, _runtime_preferences)
       return false unless OPENROUTER_REASONING_RUNTIME_FEATURES.include?(feature_key.to_s)
 
-      effort = runtime_preferences.to_h.with_indifferent_access["#{feature_key}_thinking_effort"].to_s
+      effort = Llm::Config.thinking_effort_for(feature: feature_key, fallback: 'none')
       effort.present? && effort != 'none'
     end
 

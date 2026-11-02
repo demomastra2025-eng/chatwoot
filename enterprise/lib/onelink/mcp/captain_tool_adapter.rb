@@ -23,6 +23,19 @@ module Onelink
         end
       end
 
+      # Capture both selection paths and their assistant-dependent runtime policies.
+      # Human permissions and workspace MCP authorization further intersect these
+      # sets independently of capability config, preserving every actor's access.
+      def capability_bindings
+        catalog = available_tool_definitions
+        external = catalog.reject { |tool| Captain::ToolRegistry.definition_for(tool[:id]).present? }
+        direct = registry_binding_definitions + external
+        {
+          catalog: binding_ids(catalog), catalog_runtime: runtime_binding_ids(catalog),
+          direct: binding_ids(direct), direct_runtime: runtime_binding_ids(direct)
+        }
+      end
+
       def catalog_entries
         with_llm_runtime_cache do
           catalog_tool_definitions.map { |tool_definition| catalog_entry(tool_definition) }
@@ -66,6 +79,26 @@ module Onelink
       private
 
       attr_reader :auth_context
+
+      def registry_binding_definitions
+        Captain::ToolRegistry.definitions.filter_map do |definition|
+          tool = definition.to_h.with_indifferent_access
+          next unless definition.supports_scope?(auth_context.scope_name) && required_integrations_available?(tool)
+          next unless runtime_requirements_available?(tool) && assistant_tool_selected?(tool)
+
+          tool
+        end
+      end
+
+      def binding_ids(definitions)
+        definitions.pluck(:id).map(&:to_s).uniq.sort
+      end
+
+      def runtime_binding_ids(definitions)
+        binding_ids(definitions.select do |tool|
+          Captain::ToolPolicy.runtime_allowed?(tool, assistant: auth_context.assistant, scope_name: auth_context.scope_name)
+        end)
+      end
 
       def tool_definition_for(name)
         registry_definition = Captain::ToolRegistry.definition_for(name)
@@ -193,7 +226,7 @@ module Onelink
       end
 
       def canonical_tool_ids
-        auth_context.assistant.public_send("allowed_#{auth_context.scope_name}_tool_ids")
+        @canonical_tool_ids ||= auth_context.assistant.public_send("allowed_#{auth_context.scope_name}_tool_ids")
       end
 
       def with_llm_runtime_cache(&)

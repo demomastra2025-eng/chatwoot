@@ -116,7 +116,7 @@ module CaptainFeaturable
     stored_runtime = captain_runtime || {}
     runtime = Captain::KnowledgeSettings.runtime_defaults.merge(RUNTIME_DEFAULTS).merge(stored_runtime)
     runtime['knowledge_chunk_size'] = Captain::KnowledgeSettings.normalize_chunk_size(runtime['knowledge_chunk_size'])
-    runtime
+    runtime.merge(Llm::Config.runtime_thinking_efforts)
   end
 
   def validate_captain_models

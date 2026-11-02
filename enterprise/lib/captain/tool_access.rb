@@ -76,6 +76,7 @@ module Captain::ToolAccess
   def selected_ids_for(assistant, scope_name, raw_scope, default_ids, available_ids)
     configured_ids = Array(raw_scope['tool_ids']).map(&:to_s)
     selected = sanitize_tool_ids(raw_scope.key?('tool_ids') ? configured_ids : default_ids, available_ids)
+    return selected if Captain::Capabilities.configured?(assistant.config)
     return selected unless scope_name == SCOPE_AGENT && assistant.external_agent?
 
     account_tool_ids_for(assistant, selected, available_ids)
@@ -163,23 +164,36 @@ module Captain::ToolAccess
     normalized_id = tool_id.to_s
     return true unless PER_ASSISTANT_WEB_TOOL_IDS.include?(normalized_id)
     return false if assistant.blank?
+    return workspace_web_enabled?(assistant, normalized_id) if scope_name == SCOPE_AGENT && assistant.external_agent?
+    return canonical_web_enabled?(assistant, normalized_id, scope_name) if Captain::Capabilities.configured?(assistant.config)
 
-    if scope_name == SCOPE_AGENT && assistant.external_agent?
-      understanding = assistant.account_settings.section('understanding')
-      return understanding[normalized_id == 'web_search' ? 'web_search' : 'web_page_reading']
-    end
+    legacy_web_enabled?(assistant, normalized_id, scope_name)
+  end
 
+  def workspace_web_enabled?(assistant, tool_id)
+    assistant.account_settings.section('understanding')[tool_id == 'web_search' ? 'web_search' : 'web_page_reading']
+  end
+
+  def canonical_web_enabled?(assistant, tool_id, scope_name)
+    scope = Captain::Capabilities.scope(assistant.config, scope_name)
+    scope['enabled'] == true && Array(scope['tool_ids']).include?(tool_id)
+  end
+
+  def legacy_web_enabled?(assistant, tool_id, scope_name)
     config = assistant.config.to_h.deep_stringify_keys
-    raw_scope = raw_scope(config, scope_name)
-    unless raw_scope.is_a?(Hash)
-      return ActiveModel::Type::Boolean.new.cast(config['feature_web']) if config.key?('feature_web')
+    scope = raw_scope(config, scope_name)
+    return legacy_web_default(config) unless scope.is_a?(Hash)
 
-      return true
-    end
+    enabled = !scope.key?('enabled') || ActiveModel::Type::Boolean.new.cast(scope['enabled'])
+    enabled && legacy_web_selection(scope).include?(tool_id)
+  end
 
-    enabled = raw_scope.key?('enabled') ? ActiveModel::Type::Boolean.new.cast(raw_scope['enabled']) : true
-    selected_ids = raw_scope.key?('tool_ids') ? Array(raw_scope['tool_ids']).map(&:to_s) : DEFAULT_AGENT_TOOL_IDS
-    enabled && selected_ids.include?(normalized_id)
+  def legacy_web_default(config)
+    config.key?('feature_web') ? ActiveModel::Type::Boolean.new.cast(config['feature_web']) : true
+  end
+
+  def legacy_web_selection(scope)
+    scope.key?('tool_ids') ? Array(scope['tool_ids']).map(&:to_s) : DEFAULT_AGENT_TOOL_IDS
   end
 
   def available_tools_for_scope(assistant, scope_name)

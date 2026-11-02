@@ -39,7 +39,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   before_action :current_account
   before_action :authorize_account_update, only: [:show, :update]
   before_action :reject_installation_managed_models, :reject_unselectable_models, :reject_disallowed_provider_keys, only: :update
-  before_action :reject_client_transcription_prompt, only: :update
+  before_action :reject_client_transcription_prompt, :reject_account_thinking_effort, only: :update
 
   def show
     render json: preferences_payload
@@ -86,6 +86,16 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   end
 
   # The models of the recognition, guardrail, embedding and hint features are chosen by the platform.
+  def reject_account_thinking_effort
+    runtime = params[:captain_runtime]
+    return unless runtime.respond_to?(:keys)
+
+    fields = (runtime.keys.map(&:to_s) & %w[assistant_thinking_effort copilot_thinking_effort]).map { |key| "captain_runtime.#{key}" }
+    return if fields.empty?
+
+    render json: { error: 'installation_managed_thinking_effort', fields: fields }, status: :unprocessable_content
+  end
+
   def reject_installation_managed_models
     locked_model_keys = requested_installation_managed_model_keys
     return if locked_model_keys.empty?
@@ -196,8 +206,6 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   def permitted_captain_runtime
     permitted = params.require(:captain_runtime).permit(
       :privacy_profile,
-      :assistant_thinking_effort,
-      :copilot_thinking_effort,
       :assistant_moderation,
       :copilot_moderation,
       :openrouter_allow_model_fallbacks,
@@ -318,8 +326,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   end
 
   def runtime_with_account_preferences
-    runtime = Current.account.captain_runtime_preferences
-    platform_prompt_access? ? runtime : runtime.except('audio_transcription_prompt', :audio_transcription_prompt)
+    Accounts::PublicSettings.runtime_for(Current.account, user: Current.user, impersonation: @super_admin_impersonation)
   end
 
   def runtime_metadata_payload

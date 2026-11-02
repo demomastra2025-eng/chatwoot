@@ -4,7 +4,7 @@ require 'rake'
 RSpec.describe Captain::Capabilities do
   let(:account) { create(:account) }
   let(:assistant) do
-    create(:captain_assistant, account: account, usage_mode: 'internal_assistant', description: 'Private inventory instructions', config: {
+    create(:captain_assistant, :legacy, account: account, usage_mode: 'internal_assistant', description: 'Private inventory instructions', config: {
              'tool_access' => {
                'agent' => { 'enabled' => false, 'tool_ids' => [] },
                'assistant' => { 'enabled' => false, 'tool_ids' => [] }

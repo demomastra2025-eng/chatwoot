@@ -45,6 +45,20 @@ module Captain::Capabilities
     value.stringify_keys.sort.to_h.transform_values { |item| sorted_value(item) }
   end
 
+  # Creation always starts on the canonical source. Only explicit selected IDs
+  # are converted; prompt mentions never initialize grants. Existing rows are untouched.
+  def initialize_config(config)
+    result = config.to_h.deep_stringify_keys.deep_dup
+    return result if configured?(result)
+
+    canonical = { 'version' => VERSION, 'scopes' => {
+      'agent' => { 'enabled' => true, 'tool_ids' => [] },
+      'assistant' => { 'enabled' => false, 'tool_ids' => [] }
+    } }
+    canonical = canonical_alias({ KEY => canonical }, result.delete('tool_access')) if result.key?('tool_access')
+    result.merge(KEY => canonical)
+  end
+
   def normalize_updates(current_config, incoming_config, creating: false)
     incoming = incoming_config.deep_stringify_keys.deep_dup
     if incoming.key?(KEY)

@@ -33,6 +33,10 @@ module Llm::Config
   OWN_DEFAULT_MODEL_FEATURES = %w[image_recognition image_handwriting].freeze
   OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1'.freeze
   OPENROUTER_DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'.freeze
+  THINKING_EFFORT_CONFIGS = {
+    'assistant' => 'CAPTAIN_AI_AGENT_THINKING_EFFORT', 'copilot' => 'CAPTAIN_AI_ASSISTANT_THINKING_EFFORT'
+  }.freeze
+  THINKING_EFFORT_DEFAULTS = { 'assistant' => 'low', 'copilot' => 'none' }.freeze
   RUNTIME_CACHE_KEY = :llm_config_runtime_cache
 
   class << self
@@ -102,6 +106,23 @@ module Llm::Config
       end
 
       default_model_available?(fallback, account: account) ? Llm::Models.canonical_model_name(fallback) : nil
+    end
+
+    # Function slots belong to the installation. Saved account/agent efforts are
+    # retained in storage only and never participate in runtime selection.
+    def thinking_effort_for(feature:, fallback: nil)
+      key = feature.to_s
+      slot = THINKING_EFFORT_CONFIGS[key]
+      effort = installation_config_value(slot).to_s if slot
+      return effort if Llm::RuntimePolicy::THINKING_EFFORTS.include?(effort)
+
+      fallback || THINKING_EFFORT_DEFAULTS.fetch(key, 'none')
+    end
+
+    def runtime_thinking_efforts
+      THINKING_EFFORT_CONFIGS.keys.each_with_object({}) do |feature, values|
+        values["#{feature}_thinking_effort"] = thinking_effort_for(feature: feature)
+      end
     end
 
     def provider_for_model(model_name, account: nil)
