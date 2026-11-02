@@ -23,6 +23,13 @@ RSpec.describe Channels::WhatsappWeb::HistorySyncJob do
     expect(described_class.queue_name).to eq('whatsappweb_history')
   end
 
+  it 'does not run a previously queued import after deletion begins' do
+    channel = create(:channel_whatsapp_web)
+    channel.inbox.mark_pending_deletion!
+    expect(WhatsappWeb::HistorySyncService).not_to receive(:new)
+    described_class.perform_now(channel.id, 'full')
+  end
+
   it 'delegates to the history sync service' do
     channel = create(:channel_whatsapp_web)
     service = instance_double(WhatsappWeb::HistorySyncService, perform: true)

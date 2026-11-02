@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import BaseBubble from 'next/message/bubbles/Base.vue';
 import FormattedContent from './FormattedContent.vue';
+import HistoryMediaAction from './HistoryMediaAction.vue';
 import AttachmentChips from 'next/message/chips/AttachmentChips.vue';
 import CaptainToolExecutionGroup from 'dashboard/components-next/message/CaptainToolExecutionGroup.vue';
 import TranslationToggle from 'dashboard/components-next/message/TranslationToggle.vue';
@@ -277,6 +278,7 @@ const handleSeeOriginal = () => {
         @toggle="handleSeeOriginal"
       />
       <AttachmentChips :attachments="attachments" class="gap-2" />
+      <HistoryMediaAction />
       <div
         v-if="flowBooking"
         data-testid="whatsapp-flow-booking"

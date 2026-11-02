@@ -84,7 +84,7 @@ class InboxPolicy < ApplicationPolicy
   end
 
   def repair_whatsapp_web?
-    @account_user.administrator?
+    platform_support_access?
   end
 
   def whatsapp_web_diagnostics?
@@ -112,11 +112,11 @@ class InboxPolicy < ApplicationPolicy
   end
 
   def telegram_personal_history_sync?
-    @account_user.administrator?
+    platform_support_access?
   end
 
   def telegram_personal_contacts_sync?
-    @account_user.administrator?
+    platform_support_access?
   end
 
   def telegram_personal_disconnect?
@@ -145,5 +145,11 @@ class InboxPolicy < ApplicationPolicy
 
   def weixin_diagnostics?
     @account_user.administrator?
+  end
+
+  private
+
+  def platform_support_access?
+    Platform::SupportAccess.allowed?(user: user, impersonation: user_context[:super_admin_impersonation])
   end
 end

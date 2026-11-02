@@ -60,7 +60,6 @@ export default {
           channel: {
             type: 'whatsapp_web',
             phone_number: this.normalizedPhoneNumber(),
-            history_lookback_days: 0,
           },
         });
 

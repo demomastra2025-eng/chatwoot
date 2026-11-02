@@ -44,10 +44,6 @@ class Inboxes extends CacheEnabledApiClient {
     return axios.post(`${this.url}/${inboxId}/disconnect_whatsapp_web`);
   }
 
-  repairWhatsappWeb(inboxId) {
-    return axios.post(`${this.url}/${inboxId}/repair_whatsapp_web`);
-  }
-
   getWhatsappWebDiagnostics(inboxId) {
     return axios.get(`${this.url}/${inboxId}/whatsapp_web_diagnostics`);
   }
@@ -77,20 +73,6 @@ class Inboxes extends CacheEnabledApiClient {
 
   reconnectTelegramPersonal(inboxId) {
     return axios.post(`${this.url}/${inboxId}/telegram_personal_reconnect`);
-  }
-
-  historySyncTelegramPersonal(inboxId, payload = {}) {
-    return axios.post(
-      `${this.url}/${inboxId}/telegram_personal_history_sync`,
-      payload
-    );
-  }
-
-  contactsSyncTelegramPersonal(inboxId, payload = {}) {
-    return axios.post(
-      `${this.url}/${inboxId}/telegram_personal_contacts_sync`,
-      payload
-    );
   }
 
   disconnectTelegramPersonal(inboxId) {

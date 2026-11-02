@@ -1287,7 +1287,7 @@
       "TELEGRAM_QR_ALT": "Telegram QR code",
       "TELEGRAM_PERSONAL": {
         "TITLE": "Telegram Personal connection",
-        "DESCRIPTION": "Authorize a personal Telegram account. OneLink uses MTProto and keeps this inbox bound to a single private Telegram session.",
+        "DESCRIPTION": "Connect your personal Telegram using a QR code or confirmation code. History is imported automatically.",
         "LOADING": "Preparing the Telegram Personal authorization flow.",
         "REQUESTING_CODE": "Requesting a Telegram login code.",
         "REQUESTING_QR": "Preparing a Telegram QR login.",
@@ -1453,7 +1453,8 @@
         "NOT_AVAILABLE": "Not available",
         "RAW_JID": "raw_jid:",
         "CANONICAL_JID": "canonical_jid:",
-        "IDENTIFIER": "identifier:"
+        "IDENTIFIER": "identifier:",
+        "AUTO_HISTORY_HINT": "Messages and contacts are imported automatically."
       },
       "TELEGRAM_PERSONAL": {
         "TITLE": "Telegram Personal",

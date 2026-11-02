@@ -144,12 +144,9 @@ if resource.whatsapp_web?
   json.last_error resource.channel.try(:last_error)
   json.last_synced_at resource.channel.try(:last_synced_at)
   json.conversation_pending resource.channel.try(:conversation_pending)
-  json.history_lookback_days resource.channel.try(:history_lookback_days)
   json.ignore_jids resource.channel.try(:ignore_jids)
   json.sign_messages resource.channel.try(:sign_messages)
   json.sign_delimiter resource.channel.try(:sign_delimiter)
-  json.import_contacts resource.channel.try(:import_contacts)
-  json.import_messages resource.channel.try(:import_messages)
   json.sync_labels resource.channel.try(:sync_labels)
   json.sync_groups resource.channel.try(:sync_groups)
   json.additional_attributes do

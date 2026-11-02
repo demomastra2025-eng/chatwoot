@@ -399,8 +399,6 @@ class WhatsappWeb::IncomingEventService
   end
 
   def process_contact_update
-    return unless channel.import_contacts?
-
     event_records.each do |record|
       WhatsappWeb::ContactSyncService.new(channel: channel, contact_payload: record).perform
     end
@@ -420,7 +418,6 @@ class WhatsappWeb::IncomingEventService
 
   def process_history_sync_complete
     mark_connected_from_history_events!
-    return unless channel.history_sync_enabled?
 
     channel.record_provider_history_snapshot!(
       message_count: event_data[:messageCount].to_i,

@@ -7,11 +7,13 @@ class Channels::WhatsappWeb::HistorySyncJob < MutexApplicationJob
   def perform(channel_id, mode = 'incremental', sync_context = {})
     channel = Channel::WhatsappWeb.find_by(id: channel_id)
     return if channel.blank?
+    return unless channel.history_sync_allowed?
     return if stale_sync_request?(channel, sync_context)
 
     with_lock(lock_key(channel_id), LOCK_TIMEOUT) do
       channel = Channel::WhatsappWeb.find_by(id: channel_id)
       return if channel.blank?
+      return unless channel.history_sync_allowed?
       return if stale_sync_request?(channel, sync_context)
 
       WhatsappWeb::HistorySyncService.new(channel: channel, mode: mode, sync_context: sync_context).perform

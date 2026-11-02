@@ -163,9 +163,6 @@ export default {
       isRunningTelegramPersonalVerifyCode: false,
       isRunningTelegramPersonalVerifyPassword: false,
       isRunningTelegramPersonalReconnect: false,
-      isRunningTelegramPersonalHistorySync: false,
-      isRunningTelegramPersonalFullHistorySync: false,
-      isRunningTelegramPersonalContactsSync: false,
       isRunningTelegramPersonalDisconnect: false,
       telegramPersonalCode: '',
       telegramPersonalPassword: '',
@@ -190,12 +187,9 @@ export default {
       showDeleteInboxPopup: false,
       isDeletingInbox: false,
       whatsappWebConversationPending: false,
-      whatsappWebHistoryLookbackDays: 0,
       whatsappWebIgnoreJids: '',
       whatsappWebSignMessages: false,
       whatsappWebSignDelimiter: '\\n',
-      whatsappWebImportContacts: true,
-      whatsappWebImportMessages: true,
       whatsappWebSyncLabels: true,
       whatsappWebSyncGroups: false,
     };
@@ -1183,19 +1177,9 @@ export default {
       this.replyTime = this.inbox.reply_time;
       this.whatsappWebConversationPending =
         this.inbox.conversation_pending || false;
-      this.whatsappWebHistoryLookbackDays =
-        this.inbox.history_lookback_days ?? 0;
       this.whatsappWebIgnoreJids = (this.inbox.ignore_jids || []).join('\n');
       this.whatsappWebSignMessages = this.inbox.sign_messages || false;
       this.whatsappWebSignDelimiter = this.inbox.sign_delimiter || '\\n';
-      this.whatsappWebImportContacts =
-        this.inbox.import_contacts !== undefined
-          ? this.inbox.import_contacts
-          : true;
-      this.whatsappWebImportMessages =
-        this.inbox.import_messages !== undefined
-          ? this.inbox.import_messages
-          : true;
       this.whatsappWebSyncLabels =
         this.inbox.sync_labels !== undefined ? this.inbox.sync_labels : true;
       this.whatsappWebSyncGroups = Boolean(this.inbox.sync_groups);
@@ -1718,70 +1702,6 @@ export default {
         this.isRunningTelegramPersonalReconnect = false;
       }
     },
-    async historySyncTelegramPersonal() {
-      try {
-        this.isRunningTelegramPersonalHistorySync = true;
-        await this.$store.dispatch(
-          'inboxes/historySyncTelegramPersonal',
-          this.currentInboxId
-        );
-        await this.fetchTelegramPersonalDiagnostics();
-        useAlert(
-          this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.HISTORY_SYNC_SUCCESS')
-        );
-      } catch (error) {
-        useAlert(
-          error.message ||
-            this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.HISTORY_SYNC_ERROR')
-        );
-      } finally {
-        this.isRunningTelegramPersonalHistorySync = false;
-      }
-    },
-    async fullHistorySyncTelegramPersonal() {
-      try {
-        this.isRunningTelegramPersonalFullHistorySync = true;
-        await this.$store.dispatch('inboxes/historySyncTelegramPersonal', {
-          inboxId: this.currentInboxId,
-          payload: {
-            force: true,
-            reset_cursor: true,
-            include_contacts: false,
-          },
-        });
-        await this.fetchTelegramPersonalDiagnostics();
-        useAlert(
-          this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.FULL_HISTORY_SYNC_SUCCESS')
-        );
-      } catch (error) {
-        useAlert(
-          error.message ||
-            this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.FULL_HISTORY_SYNC_ERROR')
-        );
-      } finally {
-        this.isRunningTelegramPersonalFullHistorySync = false;
-      }
-    },
-    async contactsSyncTelegramPersonal() {
-      try {
-        this.isRunningTelegramPersonalContactsSync = true;
-        await this.$store.dispatch(
-          'inboxes/contactsSyncTelegramPersonal',
-          this.currentInboxId
-        );
-        await this.fetchTelegramPersonalDiagnostics();
-        useAlert(
-          this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.CONTACTS_SYNC_SUCCESS')
-        );
-      } catch (error) {
-        useAlert(
-          error.message ||
-            this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.CONTACTS_SYNC_ERROR')
-        );
-      } finally {
-        this.isRunningTelegramPersonalContactsSync = false;
-      }
-    },
     async disconnectTelegramPersonal() {
       try {
         this.isRunningTelegramPersonalDisconnect = true;
@@ -2183,13 +2103,9 @@ export default {
       if (this.isAWhatsAppWebInbox) {
         Object.assign(channelPayload, {
           conversation_pending: this.whatsappWebConversationPending,
-          history_lookback_days:
-            this.normalizedWhatsappWebHistoryLookbackDays(),
           ignore_jids: this.normalizedWhatsappWebIgnoreJids(),
           sign_messages: this.whatsappWebSignMessages,
           sign_delimiter: this.whatsappWebSignDelimiter || '\\n',
-          import_contacts: this.whatsappWebImportContacts,
-          import_messages: this.whatsappWebImportMessages,
           sync_labels: this.whatsappWebSyncLabels,
           sync_groups: this.whatsappWebSyncGroups,
         });
@@ -2267,15 +2183,6 @@ export default {
     },
     toggleSenderNameType(key) {
       this.senderNameType = key;
-    },
-    normalizedWhatsappWebHistoryLookbackDays() {
-      const value = Number(this.whatsappWebHistoryLookbackDays);
-
-      if (!Number.isFinite(value) || value <= 0) {
-        return 0;
-      }
-
-      return Math.min(Math.trunc(value), 3650);
     },
     normalizedWhatsappWebIgnoreJids() {
       return this.whatsappWebIgnoreJids
@@ -2632,33 +2539,11 @@ export default {
                     {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.NATIVE_SETTINGS') }}
                   </p>
 
+                  <p class="mb-3 text-sm text-n-slate-11">
+                    {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.AUTO_HISTORY_HINT') }}
+                  </p>
+
                   <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                    <label
-                      class="flex items-start justify-between gap-3 rounded-lg border border-n-weak bg-n-surface-1 p-3 cursor-pointer hover:border-n-strong transition-colors"
-                    >
-                      <span class="text-sm font-medium text-n-slate-12">
-                        {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.IMPORT_CONTACTS') }}
-                      </span>
-                      <input
-                        v-model="whatsappWebImportContacts"
-                        type="checkbox"
-                        class="mt-0.5 size-4 shrink-0 rounded border-n-strong text-n-brand focus:ring-n-brand"
-                      />
-                    </label>
-
-                    <label
-                      class="flex items-start justify-between gap-3 rounded-lg border border-n-weak bg-n-surface-1 p-3 cursor-pointer hover:border-n-strong transition-colors"
-                    >
-                      <span class="text-sm font-medium text-n-slate-12">
-                        {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.IMPORT_MESSAGES') }}
-                      </span>
-                      <input
-                        v-model="whatsappWebImportMessages"
-                        type="checkbox"
-                        class="mt-0.5 size-4 shrink-0 rounded border-n-strong text-n-brand focus:ring-n-brand"
-                      />
-                    </label>
-
                     <label
                       class="flex items-start justify-between gap-3 rounded-lg border border-n-weak bg-n-surface-1 p-3 cursor-pointer hover:border-n-strong transition-colors"
                     >
@@ -2734,35 +2619,10 @@ export default {
                   </div>
 
                   <div
+                    v-if="whatsappWebSignMessages"
                     class="mt-4 grid grid-cols-1 gap-4 border-t border-n-weak pt-4 sm:grid-cols-2"
                   >
                     <label class="block">
-                      <span
-                        class="mb-1 block text-sm font-medium text-n-slate-12"
-                      >
-                        {{
-                          $t(
-                            'INBOX_MGMT.EDIT.WHATSAPP_WEB.HISTORY_LOOKBACK_DAYS'
-                          )
-                        }}
-                      </span>
-                      <input
-                        v-model="whatsappWebHistoryLookbackDays"
-                        class="!mb-0 w-full rounded-lg border-0 bg-n-surface-1 px-3 py-2 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak focus:outline-n-brand"
-                        type="number"
-                        min="0"
-                        max="3650"
-                      />
-                      <p class="mb-0 mt-1 text-xs text-n-slate-11">
-                        {{
-                          $t(
-                            'INBOX_MGMT.EDIT.WHATSAPP_WEB.HISTORY_LOOKBACK_DAYS_HINT'
-                          )
-                        }}
-                      </p>
-                    </label>
-
-                    <label v-if="whatsappWebSignMessages" class="block">
                       <span
                         class="mb-1 block text-sm font-medium text-n-slate-12"
                       >
@@ -3596,37 +3456,6 @@ export default {
                             </span>
                           </div>
                         </div>
-
-                        <div class="mt-4 flex flex-wrap gap-2">
-                          <NextButton
-                            sm
-                            outline
-                            slate
-                            icon="i-lucide-download"
-                            :label="
-                              $t(
-                                'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.HISTORY_SYNC'
-                              )
-                            "
-                            :is-loading="isRunningTelegramPersonalHistorySync"
-                            @click="historySyncTelegramPersonal"
-                          />
-                          <NextButton
-                            sm
-                            outline
-                            slate
-                            icon="i-lucide-history"
-                            :label="
-                              $t(
-                                'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.FULL_HISTORY_SYNC'
-                              )
-                            "
-                            :is-loading="
-                              isRunningTelegramPersonalFullHistorySync
-                            "
-                            @click="fullHistorySyncTelegramPersonal"
-                          />
-                        </div>
                       </div>
 
                       <!-- Contacts Sync Sub-Card -->
@@ -3699,22 +3528,6 @@ export default {
                               {{ telegramPersonalContactsSyncError }}
                             </span>
                           </div>
-                        </div>
-
-                        <div class="mt-4 flex flex-wrap gap-2">
-                          <NextButton
-                            sm
-                            outline
-                            slate
-                            icon="i-lucide-users"
-                            :label="
-                              $t(
-                                'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.CONTACTS_SYNC'
-                              )
-                            "
-                            :is-loading="isRunningTelegramPersonalContactsSync"
-                            @click="contactsSyncTelegramPersonal"
-                          />
                         </div>
                       </div>
                     </div>

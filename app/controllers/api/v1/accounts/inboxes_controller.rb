@@ -1,6 +1,7 @@
 class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   include Api::V1::InboxesHelper
   include ChannelAvailabilityGuard
+  include PlatformSupportContext
   rescue_from Telephony::Error, with: :render_telephony_error
   rescue_from Whatsapp::WabaLock::LockAcquisitionError, with: :render_waba_lock_contention
   rescue_from WhatsappWeb::LifecycleLock::LockAcquisitionError, with: :render_whatsapp_web_lock_contention
@@ -21,6 +22,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
                        :reauthorize_whatsapp_web, :disconnect_whatsapp_web, :repair_whatsapp_web]
   before_action :render_pending_deletion_diagnostics,
                 only: [:whatsapp_web_diagnostics]
+  before_action :ensure_platform_managed_history!, only: [:create, :update]
 
   include Api::V1::Accounts::Concerns::WhatsappHealthManagement
   before_action :validate_whatsapp_web_channel,
@@ -475,6 +477,16 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     params.each { |k, v| params[k] = params[k] == 'null' ? nil : v }
     normalize_voice_channel_params!
     params.permit(*inbox_attributes, channel: [:type, *channel_attributes])
+  end
+
+  def ensure_platform_managed_history!
+    channel = params[:channel].is_a?(ActionController::Parameters) ? params[:channel] : {}
+    return unless @inbox&.whatsapp_web? || channel[:type] == 'whatsapp_web'
+
+    retired = Channel::WhatsappWeb::RETIRED_HISTORY_SETTINGS.map(&:to_s) & (params.keys + channel.keys)
+    return if retired.empty?
+
+    render json: { error: 'platform_managed_history', fields: retired }, status: :unprocessable_entity
   end
 
   def normalize_voice_channel_params!

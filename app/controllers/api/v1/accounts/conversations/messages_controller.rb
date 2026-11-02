@@ -1,4 +1,14 @@
 class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::Conversations::BaseController
+  def enrich_media
+    @message = Messages::EnrichHistoryMediaService.new(message: message).perform
+    render 'api/v1/accounts/conversations/messages/update'
+  rescue MutexApplicationJob::LockAcquisitionError
+    render json: { error: 'history_media_busy' }, status: :conflict
+  rescue Messages::EnrichHistoryMediaService::Error, TelegramPersonal::GatewayClient::GatewayError, ActiveRecord::RecordInvalid,
+         WhatsappWeb::Providers::EvolutionService::RequestError
+    render json: { error: 'history_media_unavailable' }, status: :unprocessable_content
+  end
+
   def index
     @messages = message_finder.perform
     @first_unread_message_id = first_unread_message_id if first_unread_cursor_requested?

@@ -371,6 +371,7 @@ Rails.application.routes.draw do
                   post :translate
                   post :retry
                   post :react
+                  post :enrich_media
                 end
               end
               resources :assignments, only: [:create]

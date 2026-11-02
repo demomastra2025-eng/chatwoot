@@ -947,12 +947,9 @@ RSpec.describe 'Inboxes API', type: :request do
                    type: 'whatsapp_web',
                    phone_number: '+77066318623',
                    conversation_pending: true,
-                   history_lookback_days: 90,
                    ignore_jids: ['15550001111@s.whatsapp.net'],
                    sign_messages: true,
                    sign_delimiter: '\\n--\\n',
-                   import_contacts: true,
-                   import_messages: true,
                    sync_labels: false
                  }
                },
@@ -963,7 +960,6 @@ RSpec.describe 'Inboxes API', type: :request do
           expect(response.parsed_body['channel_type']).to eq('Channel::WhatsappWeb')
           expect(response.parsed_body['phone_number']).to eq('+77066318623')
           expect(response.parsed_body['conversation_pending']).to be(true)
-          expect(response.parsed_body['history_lookback_days']).to eq(90)
           expect(response.parsed_body['ignore_jids']).to eq(['15550001111@s.whatsapp.net'])
           expect(response.parsed_body['sign_messages']).to be(true)
           expect(response.parsed_body['sign_delimiter']).to eq('\\n--\\n')

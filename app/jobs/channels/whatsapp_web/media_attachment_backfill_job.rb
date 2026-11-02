@@ -1,4 +1,4 @@
-class Channels::WhatsappWeb::MediaAttachmentBackfillJob < ApplicationJob
+class Channels::WhatsappWeb::MediaAttachmentBackfillJob < MutexApplicationJob
   MAX_ATTEMPTS = 3
   RETRY_DELAY = 30.seconds
 
@@ -10,12 +10,21 @@ class Channels::WhatsappWeb::MediaAttachmentBackfillJob < ApplicationJob
   def perform(channel_id, source_id, record_payload = {}, attempt_number = 1)
     return if source_id.blank?
 
+    source_digest = Digest::SHA256.hexdigest(source_id.to_s)
+    with_lock("WHATSAPP_WEB_MEDIA_BACKFILL_MUTEX::#{channel_id}::#{source_digest}", 3.minutes) do
+      backfill(channel_id, source_id, record_payload, attempt_number)
+    end
+  end
+
+  private
+
+  def backfill(channel_id, source_id, record_payload, attempt_number)
     channel = eligible_channel(channel_id)
     return if channel.blank?
 
     message = Message.find_by(source_id: source_id.to_s, inbox_id: channel.inbox.id)
     return retry_later(channel, source_id, record_payload, attempt_number) if message.blank?
-    return if message.attachments.any?
+    return if message.attachments.any? || message.content_attributes.to_h['deleted'].present?
 
     record = provider_media_record(channel, source_id.to_s, record_payload, outgoing: message.outgoing?)
     attachment_payload = extract_attachment_payload(record)
@@ -27,11 +36,9 @@ class Channels::WhatsappWeb::MediaAttachmentBackfillJob < ApplicationJob
     )
   end
 
-  private
-
   def eligible_channel(channel_id)
     channel = Channel::WhatsappWeb.find_by(id: channel_id)
-    return if channel.blank? || channel.inbox.blank?
+    return if channel.blank? || channel.inbox.blank? || channel.inbox.deleting? || channel.lifecycle_state == 'deleting'
     return unless channel.account.active?
 
     channel
@@ -145,15 +152,17 @@ class Channels::WhatsappWeb::MediaAttachmentBackfillJob < ApplicationJob
   end
 
   def save_backfill_attachment!(message, file_type, file)
-    return if message.attachments.reload.any?
+    message.with_lock do
+      return if message.attachments.reload.any? || message.inbox.reload.deleting? || message.content_attributes.to_h['deleted'].present?
 
-    attachment = message.attachments.new(
-      account_id: message.account_id,
-      file_type: file_type,
-      file: { io: file, filename: file.original_filename, content_type: file.content_type }
-    )
-    attachment.skip_storage_limit_validation!
-    attachment.save!
+      attachment = message.attachments.new(
+        account_id: message.account_id,
+        file_type: file_type,
+        file: { io: file, filename: file.original_filename, content_type: file.content_type }
+      )
+      attachment.skip_storage_limit_validation!
+      attachment.save!
+    end
   ensure
     file.close! if file.respond_to?(:close!)
   end

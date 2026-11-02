@@ -1052,19 +1052,6 @@ export const actions = {
       }
     });
   },
-  repairWhatsappWeb: async ({ commit }, inboxId) => {
-    return runWhatsappWebLifecycleRequest(inboxId, async () => {
-      try {
-        const response = await InboxesAPI.repairWhatsappWeb(inboxId);
-        const repairedInbox = response.data;
-
-        commit(types.default.EDIT_INBOXES, repairedInbox);
-        return repairedInbox;
-      } catch (error) {
-        throw new Error(error?.response?.data?.error || error.message);
-      }
-    });
-  },
   getWhatsappWebDiagnostics: async (_, inboxId) => {
     try {
       const response = await InboxesAPI.getWhatsappWebDiagnostics(inboxId);
@@ -1123,38 +1110,6 @@ export const actions = {
     try {
       clearTelegramPersonalDiagnosticsCache(inboxId);
       const response = await InboxesAPI.reconnectTelegramPersonal(inboxId);
-      commit(types.default.EDIT_INBOXES, response.data);
-      return response.data;
-    } catch (error) {
-      throw new Error(error?.response?.data?.error || error.message);
-    }
-  },
-  historySyncTelegramPersonal: async ({ commit }, payload) => {
-    try {
-      const inboxId = typeof payload === 'object' ? payload.inboxId : payload;
-      const requestPayload =
-        typeof payload === 'object' ? payload.payload || {} : {};
-      clearTelegramPersonalDiagnosticsCache(inboxId);
-      const response = await InboxesAPI.historySyncTelegramPersonal(
-        inboxId,
-        requestPayload
-      );
-      commit(types.default.EDIT_INBOXES, response.data);
-      return response.data;
-    } catch (error) {
-      throw new Error(error?.response?.data?.error || error.message);
-    }
-  },
-  contactsSyncTelegramPersonal: async ({ commit }, payload) => {
-    try {
-      const inboxId = typeof payload === 'object' ? payload.inboxId : payload;
-      const requestPayload =
-        typeof payload === 'object' ? payload.payload || {} : {};
-      clearTelegramPersonalDiagnosticsCache(inboxId);
-      const response = await InboxesAPI.contactsSyncTelegramPersonal(
-        inboxId,
-        requestPayload
-      );
       commit(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {

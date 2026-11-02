@@ -1,4 +1,10 @@
 {
+  "HISTORY_MEDIA": {
+    "LOAD": "Load attachment",
+    "ERROR": "Could not load the attachment. Try again.",
+    "UNAVAILABLE": "The attachment is currently unavailable from the source. Try again later.",
+    "RETRY": "Try again"
+  },
   "PAGINATION_FOOTER": {
     "SHOWING": "Showing {startItem} - {endItem} of {totalItems} item | Showing {startItem} - {endItem} of {totalItems} items",
     "CURRENT_PAGE_INFO": "{currentPage} of {totalPages} page | {currentPage} of {totalPages} pages"

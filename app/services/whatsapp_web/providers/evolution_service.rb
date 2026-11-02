@@ -611,7 +611,6 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   def request_history_sync_if_provider_ready
     channel.reload
     return unless channel.connection_state == 'open'
-    return unless channel.history_sync_enabled?
     return if channel.provider_history_synced_at.blank?
     return if channel.full_history_baseline_current?
 

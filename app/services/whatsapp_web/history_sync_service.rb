@@ -4,15 +4,16 @@ class WhatsappWeb::HistorySyncService
   pattr_initialize [:channel!, :mode, { sync_context: {} }]
 
   def perform
+    Current.with_runtime_events_suppressed { sync_history }
+  end
+
+  private
+
+  def sync_history
     starting_provider_history_synced_at = channel.provider_history_synced_at
     fulfilled_provider_history_synced_at = requested_provider_history_snapshot || starting_provider_history_synced_at
-    message_count = 0
-    contact_count = 0
-
-    contact_count += sync_contacts if full_sync?
-    contact_count += sync_chats if full_sync?
-    synced_messages, message_contacts = sync_messages
-    message_count += synced_messages
+    contact_count = full_sync? ? sync_contacts + sync_chats : 0
+    message_count, message_contacts = sync_messages
     contact_count += message_contacts
 
     persist_sync_state(
@@ -31,11 +32,7 @@ class WhatsappWeb::HistorySyncService
     raise
   end
 
-  private
-
   def sync_contacts
-    return 0 unless channel.import_contacts?
-
     touched_contact_ids = {}
     page = 1
 
@@ -57,8 +54,6 @@ class WhatsappWeb::HistorySyncService
   end
 
   def sync_messages
-    return [0, 0] unless channel.import_messages?
-
     response = channel.provider_service.fetch_messages(page: 1, offset: BATCH_SIZE, from: window_start)
     total_pages = [response.dig('messages', 'pages').to_i, 1].max
     imported_messages = 0
@@ -78,8 +73,6 @@ class WhatsappWeb::HistorySyncService
   end
 
   def sync_chats
-    return 0 unless channel.import_messages?
-
     touched_contact_ids = {}
     page = 1
 
@@ -112,7 +105,6 @@ class WhatsappWeb::HistorySyncService
     return if channel.ignored_remote_jid?(remote_jid)
 
     activity_at = chat_activity_at(payload)
-    return if activity_at.present? && outside_import_window?(activity_at)
 
     is_group = remote_jid.end_with?('@g.us')
     group_title = payload[:name].presence || payload[:subject].presence || payload[:pushName].presence if is_group
@@ -154,20 +146,8 @@ class WhatsappWeb::HistorySyncService
     nil
   end
 
-  def outside_import_window?(timestamp)
-    window = channel.history_lookback_window
-    return false if window.blank?
-
-    timestamp < window.ago
-  end
-
   def window_start
-    if full_sync?
-      window = channel.history_lookback_window
-      return window.ago if window.present?
-
-      return nil
-    end
+    return nil if full_sync?
 
     channel.last_incremental_sync_at ||
       channel.last_local_history_sync_finished_at ||

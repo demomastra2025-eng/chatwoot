@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 
 import WhatsappWebRiskNotice from '../components/WhatsappWebRiskNotice.vue';
@@ -22,6 +22,21 @@ const mountForm = () =>
   });
 
 describe('WhatsApp Web connect step', () => {
+  it('creates a channel without exposing an editable history limit', async () => {
+    const wrapper = mountForm();
+    wrapper.vm.$store.dispatch.mockResolvedValue({ id: 51 });
+    await wrapper.find('input[type="tel"]').setValue('77000000001');
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+    expect(wrapper.vm.$store.dispatch).toHaveBeenCalledWith(
+      'inboxes/createChannel',
+      {
+        channel: { type: 'whatsapp_web', phone_number: '+77000000001' },
+      }
+    );
+    wrapper.unmount();
+  });
+
   it('warns about the unofficial channel before the number is connected', () => {
     const wrapper = mountForm();
     const notice = wrapper.find('[data-testid="whatsapp-web-risk-notice"]');

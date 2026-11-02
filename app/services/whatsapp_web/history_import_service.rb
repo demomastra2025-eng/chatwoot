@@ -46,7 +46,6 @@ class WhatsappWeb::HistoryImportService
     return if source_id.blank? || remote_jid.blank?
     return if ignored_remote_jid?(remote_jid)
     return if remote_jid.end_with?('@g.us') && !channel.sync_groups?
-    return if outside_import_window?(record)
     return if duplicate_message?(source_id)
 
     content = extract_text(record)
@@ -135,6 +134,7 @@ class WhatsappWeb::HistoryImportService
         mimetype: attachment_payload[:mimetype],
         media_url: attachment_payload[:media_url]
       }.compact
+      content_attributes[:history_attachment][:deferred] = true if WhatsappWeb::HistoryMediaPolicy.deferred?(message_time_for(record))
     end
     content_attributes
   end
@@ -267,6 +267,7 @@ class WhatsappWeb::HistoryImportService
 
   def prepare_attachment_file(attachment_payload, source_id:, record:)
     return if attachment_payload.blank? || attachment_payload[:kind] == :location
+    return if WhatsappWeb::HistoryMediaPolicy.deferred?(message_time_for(record))
 
     attachment_file = file_from_base64_payload(attachment_payload)
     return attachment_file if attachment_file.present?
@@ -577,13 +578,6 @@ class WhatsappWeb::HistoryImportService
 
   def message_time_for(record)
     Time.zone.at(record[:messageTimestamp].to_i)
-  end
-
-  def outside_import_window?(record)
-    window = channel.history_lookback_window
-    return false if window.blank?
-
-    message_time_for(record) < window.ago
   end
 
   def ignored_remote_jid?(remote_jid)

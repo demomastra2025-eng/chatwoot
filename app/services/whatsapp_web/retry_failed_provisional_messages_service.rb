@@ -5,6 +5,8 @@ class WhatsappWeb::RetryFailedProvisionalMessagesService
   pattr_initialize [:channel!, :contact!]
 
   def perform
+    return if Current.suppress_runtime_events
+
     retryable_messages.each do |message|
       retry_message!(message)
     end

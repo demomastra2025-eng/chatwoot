@@ -358,15 +358,12 @@ describe('Channel settings save payload', () => {
     ).not.toHaveProperty('webhook_url');
   });
 
-  it('sends the unchanged WhatsApp Web options', () => {
+  it('sends business WhatsApp Web options without retired history settings', () => {
     expect(payloadFor({ isAWhatsAppWebInbox: true }).channel).toEqual({
       conversation_pending: false,
-      history_lookback_days: 0,
       ignore_jids: [],
       sign_messages: false,
       sign_delimiter: '\\n',
-      import_contacts: true,
-      import_messages: true,
       sync_labels: true,
       sync_groups: false,
     });

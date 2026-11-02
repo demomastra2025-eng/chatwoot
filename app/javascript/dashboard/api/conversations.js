@@ -10,6 +10,12 @@ class ConversationApi extends ApiClient {
     return axios.get(`${this.url}/${conversationID}/labels`);
   }
 
+  enrichHistoryMedia(conversationID, messageID) {
+    return axios.post(
+      `${this.url}/${conversationID}/messages/${messageID}/enrich_media`
+    );
+  }
+
   // Sends the whole list. Prefer changeLabels: a list that is out of date erases labels it never saw.
   updateLabels(conversationID, labels) {
     return axios.post(`${this.url}/${conversationID}/labels`, { labels });

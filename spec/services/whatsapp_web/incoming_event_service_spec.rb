@@ -1022,7 +1022,7 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       expect(channel.lifecycle_state).to eq('disconnected')
     end
 
-    it 'does not enqueue a sync job when imports are disabled' do
+    it 'enqueues a full sync despite disabled retired import settings' do
       channel.update!(import_contacts: false, import_messages: false)
 
       expect do
@@ -1036,7 +1036,7 @@ RSpec.describe WhatsappWeb::IncomingEventService do
             }
           }.with_indifferent_access
         ).perform
-      end.not_to have_enqueued_job(Channels::WhatsappWeb::HistorySyncJob)
+      end.to have_enqueued_job(Channels::WhatsappWeb::HistorySyncJob)
     end
 
     it 'records provider history snapshots and schedules a debounced full sync while the local baseline is stale' do

@@ -8,6 +8,9 @@ RSpec.describe 'Api::V1::Accounts::TelegramPersonalChannelsController', type: :r
   let(:account) { create(:account) }
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:agent) { create(:user, account: account, role: :agent) }
+  let(:support) do
+    create(:super_admin).tap { |user| create(:account_user, account: account, user: user, role: :administrator) }
+  end
   let(:channel) { create(:channel_telegram_personal, account: account) }
   let(:inbox) { channel.inbox }
 
@@ -181,7 +184,7 @@ RSpec.describe 'Api::V1::Accounts::TelegramPersonalChannelsController', type: :r
   end
 
   describe 'POST /api/v1/accounts/:account_id/inboxes/:id/telegram_personal_contacts_sync' do
-    it 'requests a contact sync for administrators' do
+    it 'requests a contact sync for platform support' do
       allow_any_instance_of(TelegramPersonal::GatewayClient).to receive(:sync_channel!).and_return({})
       expect_any_instance_of(TelegramPersonal::GatewayClient).to receive(:contacts_sync!)
         .with(force: false)
@@ -196,7 +199,7 @@ RSpec.describe 'Api::V1::Accounts::TelegramPersonalChannelsController', type: :r
 
       post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/telegram_personal_contacts_sync",
            params: { force: false },
-           headers: admin.create_new_auth_token,
+           headers: support.create_new_auth_token,
            as: :json
 
       expect(response).to have_http_status(:success)
@@ -246,7 +249,7 @@ RSpec.describe 'Api::V1::Accounts::TelegramPersonalChannelsController', type: :r
 
       post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/telegram_personal_history_sync",
            params: { reset_cursor: true, include_contacts: true },
-           headers: admin.create_new_auth_token,
+           headers: support.create_new_auth_token,
            as: :json
 
       expect(response).to have_http_status(:success)

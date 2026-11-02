@@ -87,7 +87,7 @@ RSpec.describe WhatsappWeb::HistoryImportService do
     expect(channel.inbox.messages.where(source_id: 'history-msg-duplicate').count).to eq(1)
   end
 
-  it 'skips records outside the configured lookback window' do
+  it 'imports old records despite a retired lookback limit' do
     channel.update!(history_lookback_days: 7)
 
     result = described_class.new(
@@ -108,8 +108,8 @@ RSpec.describe WhatsappWeb::HistoryImportService do
       ]
     ).perform
 
-    expect(result).to eq(messages_imported: 0, contacts_touched: 0)
-    expect(channel.inbox.messages.find_by(source_id: 'history-msg-old')).to be_nil
+    expect(result).to eq(messages_imported: 1, contacts_touched: 1)
+    expect(channel.inbox.messages.find_by(source_id: 'history-msg-old')).to be_present
   end
 
   it 'imports old records when lookback days are disabled' do

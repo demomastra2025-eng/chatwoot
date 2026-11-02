@@ -1,4 +1,10 @@
 {
+  "HISTORY_MEDIA": {
+    "LOAD": "Загрузить вложение",
+    "ERROR": "Не удалось загрузить вложение. Попробуйте ещё раз.",
+    "UNAVAILABLE": "Источник пока не отдаёт это вложение. Попробуйте позже.",
+    "RETRY": "Повторить"
+  },
   "PAGINATION_FOOTER": {
     "SHOWING": "Показаны {startItem}-{endItem} из {totalItems} элементов",
     "CURRENT_PAGE_INFO": "{currentPage} из {totalPages} страниц"

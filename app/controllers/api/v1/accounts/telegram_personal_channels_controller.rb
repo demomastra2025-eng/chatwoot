@@ -1,4 +1,6 @@
 class Api::V1::Accounts::TelegramPersonalChannelsController < Api::V1::Accounts::BaseController
+  include PlatformSupportContext
+
   rescue_from TelegramPersonal::GatewayClient::GatewayError, with: :render_gateway_error
 
   before_action :fetch_inbox

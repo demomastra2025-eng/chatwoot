@@ -1218,7 +1218,7 @@
       "TELEGRAM_QR_ALT": "Telegram QR code",
       "TELEGRAM_PERSONAL": {
         "TITLE": "Telegram Personal connection",
-        "DESCRIPTION": "Authorize a personal Telegram account. OneLink keeps this inbox bound to a single private Telegram session.",
+        "DESCRIPTION": "Жеке Telegram тіркелгіңізді QR-код немесе растау коды арқылы қосыңыз. Тарих автоматты түрде жүктеледі.",
         "LOADING": "Preparing the Telegram Personal authorization flow.",
         "REQUESTING_CODE": "Requesting a Telegram login code.",
         "REQUESTING_QR": "Preparing a Telegram QR login.",
@@ -1355,7 +1355,8 @@
         "SIGN_DELIMITER": "Signature delimiter",
         "SIGN_DELIMITER_PLACEHOLDER": "\\n",
         "SYNC_GROUPS": "Топтық чаттарды синхрондау",
-        "SYNC_GROUPS_HINT": "Әдепкі бойынша өшірулі: үлкен жұмыс және жеке топтар диалогтар тізімін толтырмауы үшін."
+        "SYNC_GROUPS_HINT": "Әдепкі бойынша өшірулі: үлкен жұмыс және жеке топтар диалогтар тізімін толтырмауы үшін.",
+        "AUTO_HISTORY_HINT": "Хабарламалар мен контактілер автоматты түрде жүктеледі."
       },
       "TELEGRAM_PERSONAL": {
         "TITLE": "Telegram Personal lifecycle",

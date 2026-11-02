@@ -92,10 +92,12 @@ class Channel::WhatsappWeb < ApplicationRecord
     'label_map' => {}
   }.freeze
   HISTORY_SYNC_REQUEST_STALE_AFTER = 30.minutes
+  FULL_HISTORY_POLICY_VERSION = 1
+  RETIRED_HISTORY_SETTINGS = %i[history_lookback_days import_contacts import_messages].freeze
   IMMUTABLE_RUNTIME_ATTRS = %i[phone_number provider provider_config].freeze
   EDITABLE_ATTRS = [
-    :phone_number, :provider, :conversation_pending, :history_lookback_days,
-    :sign_messages, :sign_delimiter, :import_contacts, :import_messages, :sync_labels, :sync_groups,
+    :phone_number, :provider, :conversation_pending,
+    :sign_messages, :sign_delimiter, :sync_labels, :sync_groups,
     { provider_config: {} }, { ignore_jids: [] }
   ].freeze
 
@@ -226,16 +228,6 @@ class Channel::WhatsappWeb < ApplicationRecord
     "#{frontend_url}/webhooks/whatsapp_web/#{webhook_identifier}"
   end
 
-  def history_lookback_window
-    return if history_unlimited?
-
-    history_lookback_days.days
-  end
-
-  def history_unlimited?
-    history_lookback_days.to_i <= 0
-  end
-
   def custom_ignore_jids
     Array.wrap(ignore_jids).filter_map { |jid| jid.to_s.strip.presence }.uniq
   end
@@ -250,10 +242,6 @@ class Channel::WhatsappWeb < ApplicationRecord
 
   def formatted_sign_delimiter
     sign_delimiter.to_s.gsub('\\n', "\n").presence || "\n"
-  end
-
-  def history_sync_enabled?
-    import_contacts? || import_messages?
   end
 
   def sync_groups
@@ -526,8 +514,6 @@ class Channel::WhatsappWeb < ApplicationRecord
   end
 
   def history_sync_in_progress?
-    return false unless history_sync_enabled?
-
     requested_at = history_sync_requested_at
     return false if requested_at.blank?
     return false if history_sync_failed_without_pending_retry?(requested_at: requested_at)
@@ -539,11 +525,9 @@ class Channel::WhatsappWeb < ApplicationRecord
   end
 
   def full_history_baseline_present?
-    return false if history_synced_at.blank?
-    return false if import_messages? && sync_state_payload['last_history_message_count'].to_i <= 0 && inbox.messages.none?
-    return false if import_contacts? && sync_state_payload['last_history_contact_count'].to_i <= 0 && inbox.contact_inboxes.none?
+    return false unless sync_state_payload['full_history_policy_version'] == FULL_HISTORY_POLICY_VERSION
 
-    true
+    history_synced_at.present?
   end
 
   def full_history_baseline_current?
@@ -582,6 +566,8 @@ class Channel::WhatsappWeb < ApplicationRecord
   end
 
   def history_sync_request_fulfilled?(requested_at: nil, expected_provider_history_synced_at: nil)
+    return false if sync_state_payload['last_history_sync_mode'] == 'full' && !full_history_baseline_present?
+
     expected_snapshot = normalize_sync_snapshot_time(expected_provider_history_synced_at)
     if expected_snapshot.present?
       return false if local_history_provider_synced_at.blank?
@@ -597,10 +583,11 @@ class Channel::WhatsappWeb < ApplicationRecord
 
   def request_history_sync!(mode, force: false, wait: nil, expected_provider_history_synced_at: nil)
     normalized_mode = mode.to_s == 'full' ? 'full' : 'incremental'
-    return false unless history_sync_enabled?
 
     with_lock do
       reload
+      return false unless history_sync_allowed?
+
       expected_snapshot = normalize_sync_snapshot_time(expected_provider_history_synced_at)
       if !force && history_sync_request_pending? &&
          !provider_snapshot_supersedes_pending_request?(expected_snapshot)
@@ -625,6 +612,10 @@ class Channel::WhatsappWeb < ApplicationRecord
       job.perform_later(id, normalized_mode, sync_context)
       true
     end
+  end
+
+  def history_sync_allowed?
+    lifecycle_state != 'deleting' && inbox.present? && !inbox.reload.deleting?
   end
 
   def record_history_sync!(message_count:, contact_count:, incremental: false, error: nil,
@@ -816,6 +807,7 @@ class Channel::WhatsappWeb < ApplicationRecord
         'local_history_provider_synced_at' => next_local_snapshot&.iso8601
       )
       next_payload['last_history_contact_count'] = contact_count unless contact_count.nil?
+      next_payload['full_history_policy_version'] = FULL_HISTORY_POLICY_VERSION if mode == 'full' && error.blank?
 
       update!(sync_state: next_payload, last_synced_at: timestamp, last_error: error)
     end

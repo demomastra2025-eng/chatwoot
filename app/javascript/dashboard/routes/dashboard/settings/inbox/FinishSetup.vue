@@ -65,13 +65,10 @@ const telegramPersonalRedirectTimeout = ref(null);
 const telegramPersonalPollingInterval = ref(null);
 const telegramPersonalCode = ref('');
 const telegramPersonalPassword = ref('');
-const telegramPersonalImportFullHistory = ref(false);
 const isRequestingTelegramPersonalCode = ref(false);
 const isRequestingTelegramPersonalQr = ref(false);
 const isVerifyingTelegramPersonalCode = ref(false);
 const isVerifyingTelegramPersonalPassword = ref(false);
-const isSchedulingTelegramPersonalFullHistory = ref(false);
-const hasHandledTelegramPersonalSetupFullHistory = ref(false);
 const telegramPersonalQrCode = ref('');
 const weixinRedirectTimeout = ref(null);
 const weixinPollingInterval = ref(null);
@@ -398,10 +395,6 @@ const telegramPersonalStatusMessage = computed(() => {
     return t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.REQUESTING_QR');
   }
 
-  if (isSchedulingTelegramPersonalFullHistory.value) {
-    return t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.REQUESTING_FULL_HISTORY');
-  }
-
   switch (telegramPersonalLifecycleState.value) {
     case 'connected':
       return t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.CONNECTED');
@@ -721,54 +714,6 @@ function clearWeixinRedirectTimeout() {
   }
 }
 
-async function maybeScheduleTelegramPersonalSetupFullHistorySync({
-  silent = true,
-  markHandled = false,
-} = {}) {
-  if (!telegramPersonalImportFullHistory.value || !currentInbox.value?.id) {
-    if (markHandled) {
-      hasHandledTelegramPersonalSetupFullHistory.value = true;
-    }
-    return;
-  }
-
-  if (
-    hasHandledTelegramPersonalSetupFullHistory.value ||
-    isSchedulingTelegramPersonalFullHistory.value
-  ) {
-    return;
-  }
-
-  hasHandledTelegramPersonalSetupFullHistory.value = true;
-
-  try {
-    isSchedulingTelegramPersonalFullHistory.value = true;
-    await store.dispatch('inboxes/historySyncTelegramPersonal', {
-      inboxId: currentInbox.value.id,
-      payload: {
-        force: true,
-        reset_cursor: true,
-        include_contacts: true,
-      },
-    });
-
-    if (!silent) {
-      useAlert(
-        t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.FULL_HISTORY_SYNC_SUCCESS')
-      );
-    }
-  } catch (error) {
-    if (!silent) {
-      useAlert(
-        error.message ||
-          t('INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.FULL_HISTORY_SYNC_ERROR')
-      );
-    }
-  } finally {
-    isSchedulingTelegramPersonalFullHistory.value = false;
-  }
-}
-
 function stopTelegramPersonalPolling() {
   if (telegramPersonalPollingInterval.value) {
     window.clearInterval(telegramPersonalPollingInterval.value);
@@ -988,10 +933,6 @@ async function verifyTelegramPersonalCode() {
       code: telegramPersonalCode.value.trim(),
     });
     telegramPersonalCode.value = '';
-    await maybeScheduleTelegramPersonalSetupFullHistorySync({
-      silent: true,
-      markHandled: true,
-    });
   } catch (error) {
     useAlert(
       error.message ||
@@ -1019,10 +960,6 @@ async function verifyTelegramPersonalPassword() {
       password: telegramPersonalPassword.value.trim(),
     });
     telegramPersonalPassword.value = '';
-    await maybeScheduleTelegramPersonalSetupFullHistorySync({
-      silent: true,
-      markHandled: true,
-    });
   } catch (error) {
     useAlert(
       error.message ||
@@ -1339,19 +1276,6 @@ function maybeCompleteTelegramPersonalSetup() {
     return;
   }
 
-  if (
-    telegramPersonalImportFullHistory.value &&
-    !hasHandledTelegramPersonalSetupFullHistory.value
-  ) {
-    maybeScheduleTelegramPersonalSetupFullHistorySync({
-      silent: true,
-      markHandled: true,
-    }).finally(() => {
-      maybeCompleteTelegramPersonalSetup();
-    });
-    return;
-  }
-
   telegramPersonalRedirectTimeout.value = window.setTimeout(() => {
     router.replace({
       name: getInboxFlowRouteName(route, 'show'),
@@ -1424,8 +1348,6 @@ watch(currentInboxId, async () => {
   telegramPersonalCode.value = '';
   telegramPersonalPassword.value = '';
   telegramPersonalQrCode.value = '';
-  telegramPersonalImportFullHistory.value = false;
-  hasHandledTelegramPersonalSetupFullHistory.value = false;
   weixinQrCode.value = '';
 });
 
@@ -2003,23 +1925,6 @@ onBeforeUnmount(() => {
                   >
                     {{ telegramPersonalStatusMessage }}
                   </p>
-                  <label
-                    v-if="!isTelegramPersonalConnected"
-                    class="inline-flex items-center gap-2.5 cursor-pointer select-none shrink-0"
-                  >
-                    <input
-                      v-model="telegramPersonalImportFullHistory"
-                      type="checkbox"
-                      class="size-4 rounded border-n-strong text-n-brand focus:ring-n-brand"
-                    />
-                    <span class="text-xs font-medium text-n-slate-12">
-                      {{
-                        $t(
-                          'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.FULL_HISTORY_SYNC_LABEL'
-                        )
-                      }}
-                    </span>
-                  </label>
                 </div>
 
                 <div

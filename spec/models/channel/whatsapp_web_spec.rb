@@ -225,13 +225,6 @@ RSpec.describe Channel::WhatsappWeb do
       expect(channel.sync_labels).to be(false)
     end
 
-    it 'treats zero lookback days as unlimited history' do
-      channel = create(:channel_whatsapp_web)
-
-      expect(channel.update(history_lookback_days: 0)).to be(true)
-      expect(channel.reload.history_unlimited?).to be(true)
-      expect(channel.history_lookback_window).to be_nil
-    end
   end
 
   describe 'provider activity' do
@@ -597,6 +590,7 @@ RSpec.describe Channel::WhatsappWeb do
           'history_synced_at' => 1.hour.ago.iso8601,
           'last_local_history_sync_finished_at' => 1.hour.ago.iso8601,
           'last_history_sync_mode' => 'full',
+          'full_history_policy_version' => described_class::FULL_HISTORY_POLICY_VERSION,
           'last_history_message_count' => 1,
           'last_history_contact_count' => 1,
           'provider_history_synced_at' => Time.current.iso8601,
@@ -610,6 +604,29 @@ RSpec.describe Channel::WhatsappWeb do
   end
 
   describe '#preferred_history_sync_mode' do
+    it 'does not accept a previous limited import as a complete current baseline' do
+      channel = create(:channel_whatsapp_web, import_contacts: false, import_messages: false, history_lookback_days: 7)
+      channel.update!(sync_state: channel.sync_state_payload.merge(
+        'history_synced_at' => 1.hour.ago.iso8601,
+        'last_history_message_count' => 10,
+        'last_history_contact_count' => 2
+      ))
+
+      expect(channel.preferred_history_sync_mode).to eq('full')
+      channel.record_history_sync!(message_count: 0, contact_count: 0)
+      expect(channel.reload.preferred_history_sync_mode).to eq('incremental')
+      expect(channel.sync_state_payload['full_history_policy_version']).to eq(described_class::FULL_HISTORY_POLICY_VERSION)
+    end
+
+    it 'does not certify an incremental pass or a failed full import' do
+      channel = create(:channel_whatsapp_web)
+      channel.record_incremental_sync!(message_count: 2)
+      expect(channel.reload.preferred_history_sync_mode).to eq('full')
+      channel.record_history_sync!(message_count: 2, contact_count: 1, error: 'Import interrupted')
+      expect(channel.reload.preferred_history_sync_mode).to eq('full')
+      expect(channel.sync_state_payload['full_history_policy_version']).to be_nil
+    end
+
     it 'uses a full sync until a local full baseline exists' do
       channel = create(:channel_whatsapp_web)
 
@@ -643,6 +660,7 @@ RSpec.describe Channel::WhatsappWeb do
           'history_synced_at' => 1.hour.ago.iso8601,
           'last_local_history_sync_finished_at' => 1.hour.ago.iso8601,
           'last_history_sync_mode' => 'full',
+          'full_history_policy_version' => described_class::FULL_HISTORY_POLICY_VERSION,
           'last_history_message_count' => 1,
           'last_history_contact_count' => 1
         )
@@ -681,6 +699,7 @@ RSpec.describe Channel::WhatsappWeb do
           'history_synced_at' => older_snapshot.iso8601,
           'last_local_history_sync_finished_at' => older_snapshot.iso8601,
           'last_history_sync_mode' => 'full',
+          'full_history_policy_version' => described_class::FULL_HISTORY_POLICY_VERSION,
           'last_history_message_count' => 1,
           'last_history_contact_count' => 1,
           'provider_history_synced_at' => newer_snapshot.iso8601,

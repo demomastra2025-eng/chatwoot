@@ -88,6 +88,13 @@ telegram_personal_sync_channels_job:
   queue: scheduled_jobs
   active_job: true
 
+# Bounded local scan; queues the existing history pipeline without provider RPCs.
+whatsapp_web_reconcile_history_job:
+  cron: '3-58/5 * * * *'
+  class: 'Channels::WhatsappWeb::ReconcileHistoryJob'
+  queue: scheduled_jobs
+  active_job: true
+
 # executed At every minute..
 trigger_imap_email_inboxes_job:
   cron: '*/1 * * * *'
