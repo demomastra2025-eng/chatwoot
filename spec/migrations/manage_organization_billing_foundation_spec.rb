@@ -145,4 +145,110 @@ RSpec.describe ManageOrganizationBillingFoundation do
     expect { migration.up }.to raise_error(ActiveRecord::MigrationError, /partial billing foundation/)
     expect(connection.column_exists?(:billing_accounts, :organization_id)).to be(false)
   end
+
+  it 'accepts the exact 512-row boundary and quarantines every existing payer' do
+    load_legacy
+    connection.execute(<<~SQL.squish)
+      INSERT INTO billing_accounts (id,name,created_at,updated_at)
+      SELECT id, md5(id::text), NOW(), NOW() FROM generate_series(2,512) id
+    SQL
+    before = legacy_rows
+
+    migration.up
+
+    expect(connection.select_value("SELECT count(*) FROM billing_accounts WHERE foundation_state='legacy_pending'")).to eq(512)
+    owners = connection.select_value('SELECT count(*) FROM billing_accounts WHERE organization_id IS NOT NULL OR standalone_account_id IS NOT NULL')
+    expect(owners).to eq(0)
+    after = connection.select_all('SELECT * FROM billing_accounts ORDER BY id').to_a
+    expect(after.map { |row| row.except('foundation_state', 'organization_id', 'standalone_account_id') }).to eq(before.fetch(:billing_accounts))
+  end
+
+  it 'rejects row 513 before any foundation schema edit and preserves all values' do
+    load_legacy
+    connection.execute(<<~SQL.squish)
+      INSERT INTO billing_accounts (id,name,created_at,updated_at)
+      SELECT id, md5(id::text), NOW(), NOW() FROM generate_series(2,513) id
+    SQL
+    before = legacy_rows
+
+    expect { migration.up }.to raise_error(ActiveRecord::MigrationError, /tiny limits: explicit maintenance required/)
+    expect(connection.column_exists?(:billing_accounts, :foundation_state)).to be(false)
+    expect(legacy_rows).to eq(before)
+  end
+
+  it 'counts TOAST storage in the fixed physical limit even with a single legacy row' do
+    load_legacy
+    connection.execute(<<~SQL.squish)
+      UPDATE billing_accounts SET metadata = (
+        SELECT jsonb_build_object('synthetic_noise', string_agg(md5(id::text), '')) FROM generate_series(1,70000) id
+      )
+    SQL
+    table = connection.quote("#{connection.current_schema}.billing_accounts")
+    expect(connection.select_value("SELECT pg_relation_size(#{table}::regclass)")).to be < 1_048_576
+    expect(connection.select_value("SELECT pg_total_relation_size(#{table}::regclass)")).to be > 1_048_576
+    before = legacy_rows
+
+    expect { migration.up }.to raise_error(ActiveRecord::MigrationError, /tiny limits: explicit maintenance required/)
+    expect(connection.column_exists?(:billing_accounts, :foundation_state)).to be(false)
+    expect(legacy_rows).to eq(before)
+  end
+
+  it 'counts index storage in the physical limit rather than only the heap' do
+    load_legacy
+    connection.execute(<<~SQL.squish)
+      INSERT INTO billing_accounts (id,name,created_at,updated_at)
+      SELECT id, md5(id::text), NOW(), NOW() FROM generate_series(2,512) id
+    SQL
+    connection.execute('CREATE INDEX synthetic_size_a ON billing_accounts (repeat(name,32))')
+    connection.execute('CREATE INDEX synthetic_size_b ON billing_accounts (repeat(name,33))')
+    table = connection.quote("#{connection.current_schema}.billing_accounts")
+    expect(connection.select_value("SELECT pg_relation_size(#{table}::regclass)")).to be < 1_048_576
+    expect(connection.select_value("SELECT pg_total_relation_size(#{table}::regclass)")).to be > 1_048_576
+    before = legacy_rows
+
+    expect { migration.up }.to raise_error(ActiveRecord::MigrationError, /tiny limits: explicit maintenance required/)
+    expect(connection.column_exists?(:billing_accounts, :foundation_state)).to be(false)
+    expect(legacy_rows).to eq(before)
+  end
+
+  it 'rejects a foundation parent with inherited descendants before schema edits' do
+    load_legacy
+    connection.execute('CREATE TABLE synthetic_descendant () INHERITS (billing_accounts)')
+    before = legacy_rows
+
+    expect { migration.up }.to raise_error(ActiveRecord::MigrationError, /non-ordinary billing foundation: explicit maintenance required/)
+    expect(connection.column_exists?(:billing_accounts, :foundation_state)).to be(false)
+    expect(legacy_rows).to eq(before)
+  end
+
+  it 'rejects a foundation table inherited from another parent' do
+    load_legacy
+    connection.execute('CREATE TABLE synthetic_parent (name varchar NOT NULL)')
+    connection.execute('ALTER TABLE billing_accounts INHERIT synthetic_parent')
+    before = legacy_rows
+
+    expect { migration.up }.to raise_error(ActiveRecord::MigrationError, /non-ordinary billing foundation: explicit maintenance required/)
+    expect(connection.column_exists?(:billing_accounts, :foundation_state)).to be(false)
+    expect(legacy_rows).to eq(before)
+  end
+
+  it 'rejects a partitioned foundation rather than treating a small parent as a bounded table' do
+    connection.execute('CREATE TABLE billing_accounts (id bigint) PARTITION BY LIST (id)')
+    connection.execute('CREATE TABLE synthetic_partition PARTITION OF billing_accounts FOR VALUES IN (1)')
+    connection.create_table(:billing_account_workspaces)
+    connection.create_table(:billing_subscriptions)
+
+    expect { migration.up }.to raise_error(ActiveRecord::MigrationError, /non-ordinary billing foundation: explicit maintenance required/)
+    expect(connection.column_exists?(:billing_accounts, :foundation_state)).to be(false)
+  end
+
+  it 'leaves every final FK and CHECK validated after fresh creation' do
+    migration.up
+    tables = described_class::TABLES.map { |table| connection.quote("#{connection.current_schema}.#{table}") }
+    unvalidated = connection.select_value(<<~SQL.squish)
+      SELECT count(*) FROM pg_constraint WHERE contype IN ('f','c') AND NOT convalidated
+        AND conrelid IN (#{tables.map { |table| "#{table}::regclass" }.join(',')})
+    SQL
+    expect(unvalidated).to eq(0)
+  end
 end

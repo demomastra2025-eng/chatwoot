@@ -79,7 +79,7 @@ COMPANION_SPECS = {
 }
 DESTRUCTIVE_MIGRATION_PATTERN = re.compile(
     r"\b(remove_column|remove_columns|drop_table|rename_column|change_column|"
-    r"change_column_null|change_column_default|remove_index|rename_table)\b"
+    r"change_column_null|change_column_default|remove_index|remove_foreign_key|rename_table)\b"
 )
 # This one guarded SET DEFAULT only repairs a missing UUID generator on an
 # existing CRM table. Keep the exception bound to this migration and its exact
@@ -186,6 +186,504 @@ SAFE_CRM_TARGET_INDEX_GUARDS = (
     SQL
   end""",
 )
+# The six unpublished migrations have a reviewed invocation/lock contract.
+# These are operation-level safety closures, not file fingerprints: only the
+# specifically listed DDL below is exempted, and the rest is still scanned.
+# Changing a guard, its transitive compatibility checks, or invocation requires
+# renewed review. New unsafe statements beside a protected block remain errors.
+AI_EXPAND_GUARDS = {
+    'db/migrate/20261102013000_create_account_ai_usage_events.rb': (
+        r'''  def up
+    execute "SET LOCAL lock_timeout = '4s'"
+    execute "SET LOCAL statement_timeout = '5s'"
+    create_dialog_states
+    create_usage_events
+    create_rollout
+    add_validated_foreign_keys
+    add_message_columns
+  end''',
+        r'''  def add_validated_foreign_keys
+    add_foreign_key :account_ai_dialog_states, :accounts, column: :account_id, on_delete: :cascade, validate: false
+    validate_foreign_key :account_ai_dialog_states, :accounts, column: :account_id
+    add_foreign_key :account_ai_dialog_states, :contacts, column: :contact_id, on_delete: :cascade, validate: false
+    validate_foreign_key :account_ai_dialog_states, :contacts, column: :contact_id
+    add_foreign_key :account_ai_usage_events, :contacts, column: :contact_id, on_delete: :nullify, validate: false
+    validate_foreign_key :account_ai_usage_events, :contacts, column: :contact_id
+    add_foreign_key :account_ai_usage_events, :accounts, column: :account_id, on_delete: :cascade, validate: false
+    validate_foreign_key :account_ai_usage_events, :accounts, column: :account_id
+  end''',
+    ),
+    'db/migrate/20261102013100_add_pending_ai_usage_index_to_messages.rb': (
+        '  disable_ddl_transaction!',
+        r'''  def up
+    previous_lock_timeout = select_value('SHOW lock_timeout')
+    execute "SET lock_timeout = '4s'"
+    repair_known_invalid_index
+    add_index :messages, [:ai_usage_retry_at, :id], where: 'ai_usage_pending = true', name: 'idx_messages_pending_ai_usage', algorithm: :concurrently,
+                                                    if_not_exists: true
+    definition = pending_index_definition
+    unless known_pending_index?(definition) && definition['indisvalid'] && definition['indisready'] && definition['indislive']
+      raise ActiveRecord::MigrationError, 'pending AI usage index is not ready and valid'
+    end
+  ensure
+    execute "SET lock_timeout = #{connection.quote(previous_lock_timeout)}" if previous_lock_timeout
+  end''',
+        r'''  def repair_known_invalid_index
+    return unless select_value("SELECT to_regclass(quote_ident(current_schema()) || '.idx_messages_pending_ai_usage')")
+
+    definition = pending_index_definition
+    raise ActiveRecord::MigrationError, 'unknown pending AI usage index shape: explicit maintenance required' unless known_pending_index?(definition)
+
+    remove_index :messages, name: 'idx_messages_pending_ai_usage', algorithm: :concurrently unless definition['indisvalid']
+  end''',
+        r'''  def known_pending_index?(definition)
+    definition && definition['known_shape'] && definition['predicate'].to_s.gsub(/[\s()]/, '') == 'ai_usage_pending=true'
+  end''',
+        r'''  def pending_index_definition
+    select_one <<~SQL.squish
+      SELECT idx.indisvalid, idx.indisready, idx.indislive, pg_get_expr(idx.indpred, idx.indrelid) AS predicate,
+        am.amname = 'btree' AND NOT idx.indisunique AND NOT idx.indisexclusion
+        AND idx.indnkeyatts = 2 AND idx.indnatts = 2 AND idx.indexprs IS NULL
+        AND idx.indoption::text = '0 0' AND idx.indcollation::text = '0 0'
+        AND NOT EXISTS (SELECT 1 FROM unnest(idx.indclass) AS opclass(oid)
+          JOIN pg_opclass opc ON opc.oid = opclass.oid WHERE NOT opc.opcdefault)
+        AND ARRAY(SELECT attr.attname::text FROM unnest(idx.indkey) WITH ORDINALITY AS key(attnum, position)
+          JOIN pg_attribute attr ON attr.attrelid = idx.indrelid AND attr.attnum = key.attnum ORDER BY key.position)
+          = ARRAY['ai_usage_retry_at', 'id']::text[] AS known_shape
+      FROM pg_index idx JOIN pg_class index_relation ON index_relation.oid = idx.indexrelid
+      JOIN pg_am am ON am.oid = index_relation.relam
+      WHERE idx.indexrelid = to_regclass(quote_ident(current_schema()) || '.idx_messages_pending_ai_usage')
+        AND idx.indrelid = to_regclass(quote_ident(current_schema()) || '.messages')
+    SQL
+  end''',
+    ),
+    'db/migrate/20261102013200_create_captain_reply_suggestion_identities.rb': (
+        r'''  def up
+    execute "SET LOCAL lock_timeout = '4s'"
+    execute "SET LOCAL statement_timeout = '5s'"
+    create_table :captain_reply_suggestion_identities do |t|
+      t.string :request_id, null: false
+      t.references :account, null: false, index: false
+      t.references :conversation, null: false, index: false
+      t.references :user, null: false, index: false
+      t.datetime :generated_at, null: false
+      t.timestamps
+    end
+    add_index :captain_reply_suggestion_identities, :request_id, unique: true, name: 'idx_reply_suggestion_identity_request'
+    add_index :captain_reply_suggestion_identities, :conversation_id, name: 'idx_reply_suggestion_identity_conversation'
+    add_validated_foreign_keys
+  end''',
+        r'''  def add_validated_foreign_keys
+    add_foreign_key :captain_reply_suggestion_identities, :accounts, column: :account_id, on_delete: :cascade, validate: false
+    validate_foreign_key :captain_reply_suggestion_identities, :accounts, column: :account_id
+    add_foreign_key :captain_reply_suggestion_identities, :conversations, column: :conversation_id, on_delete: :cascade, validate: false
+    validate_foreign_key :captain_reply_suggestion_identities, :conversations, column: :conversation_id
+    add_foreign_key :captain_reply_suggestion_identities, :users, column: :user_id, on_delete: :cascade, validate: false
+    validate_foreign_key :captain_reply_suggestion_identities, :users, column: :user_id
+  end''',
+    ),
+    'db/migrate/20261102093000_manage_organization_billing_foundation.rb': (
+        r'''  TABLES = %i[billing_accounts billing_account_workspaces billing_subscriptions].freeze
+  ENTITLING = "status IN ('trialing', 'active', 'past_due', 'grace_period')"
+  ACCOUNT_STATUS = "status::text = ANY (ARRAY['active'::text,'past_due'::text,'suspended'::text,'closed'::text])"
+  SUBSCRIPTION_STATUS = "status::text = ANY (ARRAY['incomplete'::text,'trialing'::text,'active'::text,'past_due'::text," \
+                        "'grace_period'::text,'suspended'::text,'canceled'::text])"
+  WORKSPACE_STATUS = "status::text = ANY (ARRAY['active'::text,'detached'::text])"
+  DETACHED = "status::text = 'active'::text AND detached_at IS NULL OR status::text = 'detached'::text AND detached_at IS NOT NULL"
+  PERIOD = 'current_period_starts_at IS NULL OR current_period_ends_at IS NULL OR current_period_ends_at > current_period_starts_at'
+'''.rstrip('\n'),
+        r'''  def up
+    execute "SET LOCAL lock_timeout = '4s'"
+    execute "SET LOCAL statement_timeout = '5s'"
+    present = TABLES.select { |table| local_table?(table) }
+    raise ActiveRecord::MigrationError, 'partial billing foundation: explicit structural repair required' if present.any? && present != TABLES
+
+    if present.empty?
+      create_foundation
+    else
+      lock_bounded_legacy_foundation!
+      validate_legacy_foundation!
+    end
+    add_ownership
+    add_history
+    add_subscription_contract
+  end''',
+        r'''  def local_table?(table)
+    connection.select_value("SELECT to_regclass(quote_ident(current_schema()) || '.' || #{connection.quote(table.to_s)})").present?
+  end''',
+        r'''  def lock_bounded_legacy_foundation!
+    validate_legacy_relations!
+    execute 'LOCK TABLE billing_accounts, billing_account_workspaces, billing_subscriptions IN ACCESS EXCLUSIVE MODE'
+    validate_legacy_relations!
+    TABLES.each do |table|
+      size = select_value("SELECT pg_total_relation_size(to_regclass(#{relation_literal(table)}))").to_i
+      rows = select_value("SELECT count(*) FROM (SELECT 1 FROM ONLY #{connection.quote_table_name(table)} LIMIT 513) bounded_rows").to_i
+      next if size <= 1_048_576 && rows <= 512
+
+      raise ActiveRecord::MigrationError, "billing foundation exceeds tiny limits: explicit maintenance required (#{table})"
+    end
+  end''',
+        r'''  def validate_legacy_relations!
+    TABLES.each do |table|
+      ordinary = select_value(<<~SQL.squish)
+        SELECT relkind = 'r' AND relpersistence = 'p' AND NOT relispartition
+          AND NOT EXISTS (SELECT 1 FROM pg_inherits WHERE inhrelid = relation.oid OR inhparent = relation.oid)
+        FROM pg_class relation WHERE oid = to_regclass(#{relation_literal(table)})
+      SQL
+      raise ActiveRecord::MigrationError, "non-ordinary billing foundation: explicit maintenance required (#{table})" unless ordinary
+    end
+  end''',
+        r'''  def validate_legacy_foundation!
+    TABLES.each { |table| validate_columns!(table) }
+    validate_checks!(:billing_accounts, 'chk_billing_accounts_status' => ACCOUNT_STATUS,
+                                        'chk_billing_accounts_currency' => "default_currency::text ~ '^[A-Z]{3}$'::text")
+    validate_checks!(:billing_account_workspaces, 'chk_billing_workspaces_status' => WORKSPACE_STATUS,
+                                                  'chk_billing_workspaces_detached_at' => DETACHED)
+    validate_checks!(:billing_subscriptions, 'chk_billing_subscriptions_status' => SUBSCRIPTION_STATUS,
+                                             'chk_billing_subscriptions_period' => PERIOD)
+    validate_indexes_and_keys!
+  end''',
+        r'''  def validate_columns!(table)
+    required = required_columns.fetch(table).merge('id' => ['bigint', false], 'created_at' => ['timestamp(6) without time zone', false],
+                                                   'updated_at' => ['timestamp(6) without time zone', false])
+    columns = connection.columns(table).index_by(&:name)
+    raise ActiveRecord::MigrationError, "unexpected columns in #{table}" if (columns.keys - required.keys).any?
+
+    required.each do |name, (type, nullable)|
+      column = columns[name]
+      next if column && column.sql_type == type && column.null == nullable
+
+      raise ActiveRecord::MigrationError, "incompatible #{table}.#{name}: expected #{type}, nullable=#{nullable}"
+    end
+    validate_defaults!(table, columns)
+    validate_primary_key!(table)
+  end''',
+        r'''  def validate_defaults!(table, columns)
+    common = { 'metadata' => '{}' }
+    expected = {
+      billing_accounts: common.merge('status' => 'active', 'default_currency' => 'KZT', 'default_locale' => 'ru'),
+      billing_account_workspaces: common.merge('status' => 'active'),
+      billing_subscriptions: common.merge('status' => 'incomplete', 'cancel_at_period_end' => 'false',
+                                          'plan_snapshot' => '{}', 'price_snapshot' => '{}')
+    }.fetch(table)
+    expressions = default_expressions(table)
+    columns.except('id').each do |name, column|
+      next if expressions[name] == literal_default_expression(column, expected[name])
+
+      raise ActiveRecord::MigrationError, "incompatible default #{table}.#{name}"
+    end
+  end''',
+        r'''  def default_expressions(table)
+    connection.select_rows(<<~SQL.squish).to_h
+      SELECT attr.attname, pg_get_expr(def.adbin, def.adrelid)
+      FROM pg_attribute attr LEFT JOIN pg_attrdef def ON def.adrelid = attr.attrelid AND def.adnum = attr.attnum
+      WHERE attr.attrelid = to_regclass(#{relation_literal(table)}) AND attr.attnum > 0 AND NOT attr.attisdropped
+    SQL
+  end''',
+        r'''  def literal_default_expression(column, value)
+    return if value.nil?
+    return value if column.type == :boolean
+
+    type = column.type == :jsonb ? 'jsonb' : 'character varying'
+    "#{connection.quote(value)}::#{type}"
+  end''',
+        r'''  def relation_literal(table)
+    connection.quote("#{connection.quote_table_name(connection.current_schema)}.#{connection.quote_table_name(table)}")
+  end''',
+        r'''  def validate_primary_key!(table)
+    valid = connection.select_value(<<~SQL.squish)
+      SELECT idx.indisvalid AND idx.indisready AND idx.indislive AND idx.indisunique AND idx.indimmediate
+        AND idx.indnkeyatts = 1 AND idx.indnatts = 1 AND attr.attname = 'id'
+        AND con.convalidated AND NOT con.condeferrable
+      FROM pg_index idx
+      JOIN pg_constraint con ON con.conindid = idx.indexrelid AND con.contype = 'p'
+      JOIN pg_attribute attr ON attr.attrelid = idx.indrelid AND attr.attnum = idx.indkey[0]
+      WHERE idx.indrelid = to_regclass(#{relation_literal(table)}) AND idx.indisprimary
+    SQL
+    raise ActiveRecord::MigrationError, "incompatible primary key #{table}: expected valid id PK" unless valid
+
+    validate_id_generator!(table)
+  end''',
+        r'''  def validate_id_generator!(table)
+    generator = connection.select_one(<<~SQL.squish)
+      SELECT attr.attidentity AS identity_kind, pg_get_expr(def.adbin, def.adrelid) AS expression,
+        seq.seqincrement > 0 AND NOT seq.seqcycle AS sequence_ok,
+        EXISTS (SELECT 1 FROM pg_depend dep WHERE dep.classid = 'pg_attrdef'::regclass
+          AND dep.objid = def.oid AND dep.refclassid = 'pg_class'::regclass AND dep.refobjid = seq.seqrelid) AS default_uses_owned_sequence
+      FROM pg_attribute attr
+      LEFT JOIN pg_attrdef def ON def.adrelid = attr.attrelid AND def.adnum = attr.attnum
+      LEFT JOIN pg_sequence seq ON seq.seqrelid = pg_get_serial_sequence(#{relation_literal(table)}, 'id')::regclass
+      WHERE attr.attrelid = to_regclass(#{relation_literal(table)}) AND attr.attname = 'id'
+    SQL
+    direct_serial = generator['expression'].to_s.match?(/\Anextval\('(?:[^']|'')+'::regclass\)\z/) && generator['default_uses_owned_sequence']
+    valid = generator['sequence_ok'] && (%w[a d].include?(generator['identity_kind']) || direct_serial)
+    raise ActiveRecord::MigrationError, "incompatible id generation #{table}.id" unless valid
+  end''',
+        r'''  def required_columns
+    common = { 'status' => ['character varying', false], 'metadata' => ['jsonb', false] }
+    {
+      billing_accounts: common.merge('name' => ['character varying', false], 'default_currency' => ['character varying(3)', false],
+                                     'default_locale' => ['character varying', false]),
+      billing_account_workspaces: common.merge('billing_account_id' => ['bigint', false], 'account_id' => ['integer', false],
+                                               'detached_at' => ['timestamp(6) without time zone', true]),
+      billing_subscriptions: common.merge('billing_account_id' => ['bigint', false], 'billing_plan_id' => ['bigint', false],
+                                          'billing_plan_price_id' => ['bigint', true], 'plan_snapshot' => ['jsonb', false],
+                                          'price_snapshot' => ['jsonb', false], 'cancel_at_period_end' => ['boolean', false],
+                                          'provider' => ['character varying', true], 'external_id' => ['character varying', true],
+                                          'current_period_starts_at' => ['timestamp(6) without time zone', true],
+                                          'current_period_ends_at' => ['timestamp(6) without time zone', true])
+    }
+  end''',
+        r'''  def normalized_sql(value)
+    value.to_s.gsub(/::(?:character varying|text)(?:\[\])?/, '').gsub(/[\s()]/, '')
+  end''',
+        r'''  def validate_checks!(table, expected)
+    actual = connection.check_constraints(table).index_by(&:name)
+    expected.each do |name, expression|
+      constraint = actual[name]
+      next if constraint&.validated? && normalized_sql(constraint.expression) == normalized_sql(expression)
+
+      raise ActiveRecord::MigrationError, "incompatible constraint #{table}.#{name}"
+    end
+  end''',
+        r'''  def validate_index!(table, name, columns, predicate)
+    index = connection.indexes(table).find { |value| value.name == name }
+    return if index&.unique && index.columns == columns && normalized_sql(index.where) == normalized_sql(predicate) && valid_unique_index?(table,
+                                                                                                                                           name)
+
+    raise ActiveRecord::MigrationError, "incompatible unique index #{table}.#{name}"
+  end''',
+        r'''  def valid_unique_index?(table, name)
+    connection.select_value(<<~SQL.squish)
+      SELECT indisvalid AND indisready AND indislive AND indisunique AND indimmediate
+      FROM pg_index WHERE indrelid = to_regclass(#{relation_literal(table)}) AND indexrelid = to_regclass(#{relation_literal(name)})
+    SQL
+  end''',
+        r'''  def validate_indexes_and_keys!
+    validate_index!(:billing_account_workspaces, 'idx_billing_workspaces_one_active_account', ['account_id'], "status = 'active'")
+    validate_index!(:billing_subscriptions, 'idx_billing_subscriptions_one_entitling', ['billing_account_id'],
+                    "status::text = ANY (ARRAY['trialing'::text,'active'::text,'past_due'::text,'grace_period'::text])")
+    validate_index!(:billing_subscriptions, 'idx_billing_subscriptions_provider_external', %w[provider external_id], 'external_id IS NOT NULL')
+    { billing_account_workspaces: { billing_accounts: 'billing_account_id', accounts: 'account_id' },
+      billing_subscriptions: { billing_accounts: 'billing_account_id', billing_plans: 'billing_plan_id',
+                               billing_plan_prices: 'billing_plan_price_id' } }.each do |table, keys|
+      keys.each do |target, column|
+        validate_foreign_key!(table, target, column)
+      end
+    end
+  end''',
+        r'''  def validate_foreign_key!(table, target, column)
+    key = connection.foreign_keys(table).find { |fk| [fk.to_table, fk.column] == [target.to_s, column] }
+    allowed_delete = [table, target] == [:billing_account_workspaces, :accounts] ? [nil, :cascade] : [nil]
+    return if key&.validated? && key.primary_key == 'id' && allowed_delete.include?(key.on_delete)
+
+    raise ActiveRecord::MigrationError, "missing validated FK #{table}.#{column} or incompatible deletion rule"
+  end''',
+        r'''  def add_state(table)
+    add_column table, :foundation_state, :string, null: false, default: 'legacy_pending'
+    change_column_default table, :foundation_state, from: 'legacy_pending', to: 'ready'
+    add_check_constraint table, "foundation_state IN ('ready', 'legacy_pending')", name: "chk_#{table}_foundation_state", validate: false
+    validate_check_constraint table, name: "chk_#{table}_foundation_state"
+  end''',
+        r'''  def add_ownership
+    add_state(:billing_accounts)
+    add_reference :billing_accounts, :organization
+    add_reference :billing_accounts, :standalone_account
+    add_foreign_key :billing_accounts, :organizations, validate: false
+    validate_foreign_key :billing_accounts, :organizations
+    add_foreign_key :billing_accounts, :accounts, column: :standalone_account_id, validate: false
+    validate_foreign_key :billing_accounts, :accounts, column: :standalone_account_id
+    owner_check = "foundation_state = 'legacy_pending' OR " \
+                  "((organization_id IS NULL) <> (standalone_account_id IS NULL) AND default_currency = 'KZT')"
+    add_check_constraint :billing_accounts, owner_check, name: 'chk_billing_accounts_explicit_owner', validate: false
+    validate_check_constraint :billing_accounts, name: 'chk_billing_accounts_explicit_owner'
+    add_index :billing_accounts, :organization_id, unique: true, where: "foundation_state = 'ready'", name: 'idx_billing_accounts_org_owner'
+    add_index :billing_accounts, :standalone_account_id, unique: true, where: "foundation_state = 'ready'",
+                                                         name: 'idx_billing_accounts_standalone_owner'
+  end''',
+        r'''  def add_history
+    add_state(:billing_account_workspaces)
+    add_column :billing_account_workspaces, :starts_at, :datetime
+    add_check_constraint :billing_account_workspaces,
+                         "foundation_state = 'legacy_pending' OR (starts_at IS NOT NULL AND (detached_at IS NULL OR detached_at > starts_at))",
+                         name: 'chk_billing_workspaces_known_interval', validate: false
+    validate_check_constraint :billing_account_workspaces, name: 'chk_billing_workspaces_known_interval'
+    key = connection.foreign_keys(:billing_account_workspaces).find { |fk| fk.to_table == 'accounts' && fk.column == 'account_id' }
+    remove_foreign_key :billing_account_workspaces, name: key.name
+    add_foreign_key :billing_account_workspaces, :accounts, validate: false
+    validate_foreign_key :billing_account_workspaces, :accounts
+    enable_extension 'btree_gist' unless extension_enabled?('btree_gist')
+    add_exclusion_constraint :billing_account_workspaces,
+                             "account_id WITH =, tsrange(starts_at, detached_at, '[)') WITH &&",
+                             using: :gist, where: "foundation_state = 'ready'", name: 'excl_billing_workspace_intervals'
+  end''',
+        r'''  def add_subscription_contract
+    add_state(:billing_subscriptions)
+    change_column_null :billing_subscriptions, :billing_plan_id, true
+    add_check_constraint :billing_subscriptions, <<~SQL.squish, name: 'chk_billing_subscriptions_snapshot_contract', validate: false
+      foundation_state = 'legacy_pending' OR (
+        billing_plan_id IS NULL AND billing_plan_price_id IS NULL
+        AND jsonb_typeof(plan_snapshot) = 'object' AND jsonb_typeof(price_snapshot) = 'object'
+        AND plan_snapshot @> '{"schema_version":1,"source":"account_plans"}'::jsonb
+        AND price_snapshot @> '{"schema_version":1,"source":"account_plans","currency":"KZT"}'::jsonb
+        AND plan_snapshot ?& ARRAY['catalog_version','tariff','modules','features','limits','limit_sources']
+        AND price_snapshot ?& ARRAY['catalog_version','tariff','pricing']
+        AND plan_snapshot->'catalog_version' = price_snapshot->'catalog_version'
+        AND plan_snapshot->'tariff' = price_snapshot->'tariff'
+        AND jsonb_typeof(plan_snapshot->'limits') = 'object'
+        AND jsonb_typeof(plan_snapshot->'limit_sources') = 'object'
+        AND jsonb_typeof(price_snapshot->'pricing') = 'object'
+      )
+    SQL
+    validate_check_constraint :billing_subscriptions, name: 'chk_billing_subscriptions_snapshot_contract'
+  end''',
+    ),
+    'db/migrate/20261102103000_create_billing_unit_ledger.rb': (
+        r'''  def up
+    execute "SET LOCAL lock_timeout = '4s'"
+    execute "SET LOCAL statement_timeout = '5s'"
+    raise ActiveRecord::MigrationError, 'unit ledger tables already exist: review their origin' if TABLES.any? { |table| local_table?(table) }
+
+    create_periods
+    create_projections
+    create_revisions
+    add_validated_foreign_keys
+  end''',
+        r'''  def add_validated_foreign_keys
+    add_foreign_key :billing_usage_periods, :billing_accounts, column: :billing_account_id, validate: false
+    validate_foreign_key :billing_usage_periods, :billing_accounts, column: :billing_account_id
+    add_foreign_key :billing_usage_periods, :billing_subscriptions, column: :billing_subscription_id, validate: false
+    validate_foreign_key :billing_usage_periods, :billing_subscriptions, column: :billing_subscription_id
+    add_foreign_key :billing_usage_projections, :accounts, column: :account_id, validate: false
+    validate_foreign_key :billing_usage_projections, :accounts, column: :account_id
+    add_foreign_key :billing_usage_projections, :billing_usage_projections, column: :retired_into_id, validate: false
+    validate_foreign_key :billing_usage_projections, :billing_usage_projections, column: :retired_into_id
+    add_foreign_key :billing_usage_revisions, :billing_usage_periods, column: :billing_usage_period_id, validate: false
+    validate_foreign_key :billing_usage_revisions, :billing_usage_periods, column: :billing_usage_period_id
+    add_foreign_key :billing_usage_revisions, :billing_usage_projections, column: :billing_usage_projection_id, validate: false
+    validate_foreign_key :billing_usage_revisions, :billing_usage_projections, column: :billing_usage_projection_id
+  end''',
+    ),
+    'db/migrate/20261103010000_create_captain_shadow_training.rb': (
+        r'''  def up
+    execute "SET LOCAL lock_timeout = '4s'"
+    execute "SET LOCAL statement_timeout = '5s'"
+    create_runs
+    create_candidates
+    add_validated_foreign_keys
+  end''',
+        r'''  def add_validated_foreign_keys
+    add_foreign_key :captain_shadow_training_runs, :accounts, column: :account_id, on_delete: :cascade, validate: false
+    validate_foreign_key :captain_shadow_training_runs, :accounts, column: :account_id
+    add_foreign_key :captain_shadow_training_runs, :conversations, column: :conversation_id, on_delete: :cascade, validate: false
+    validate_foreign_key :captain_shadow_training_runs, :conversations, column: :conversation_id
+    add_foreign_key :captain_shadow_training_runs, :captain_assistants, column: :assistant_id, on_delete: :cascade, validate: false
+    validate_foreign_key :captain_shadow_training_runs, :captain_assistants, column: :assistant_id
+    add_foreign_key :captain_shadow_training_runs, :users, column: :user_id, on_delete: :cascade, validate: false
+    validate_foreign_key :captain_shadow_training_runs, :users, column: :user_id
+    add_foreign_key :captain_shadow_training_runs, :messages, column: :inbound_message_id, on_delete: :cascade, validate: false
+    validate_foreign_key :captain_shadow_training_runs, :messages, column: :inbound_message_id
+    add_foreign_key :captain_shadow_training_runs, :messages, column: :human_message_id, on_delete: :cascade, validate: false
+    validate_foreign_key :captain_shadow_training_runs, :messages, column: :human_message_id
+    add_foreign_key :captain_shadow_training_candidates, :accounts, column: :account_id, on_delete: :cascade, validate: false
+    validate_foreign_key :captain_shadow_training_candidates, :accounts, column: :account_id
+    add_foreign_key :captain_shadow_training_candidates, :captain_shadow_training_runs, column: :run_id, on_delete: :cascade, validate: false
+    validate_foreign_key :captain_shadow_training_candidates, :captain_shadow_training_runs, column: :run_id
+  end''',
+    ),
+}
+
+AI_PROTECTED_OPERATIONS = {
+    'db/migrate/20261102013100_add_pending_ai_usage_index_to_messages.rb': (
+        r'''    remove_index :messages, name: 'idx_messages_pending_ai_usage', algorithm: :concurrently unless definition['indisvalid']''',
+    ),
+    'db/migrate/20261102093000_manage_organization_billing_foundation.rb': (
+        r'''    change_column_default table, :foundation_state, from: 'legacy_pending', to: 'ready'
+'''.rstrip('\n'),
+        r'''    change_column_null :billing_subscriptions, :billing_plan_id, true''',
+        r'''    remove_foreign_key :billing_account_workspaces, name: key.name''',
+        r'''    add_exclusion_constraint :billing_account_workspaces,
+                             "account_id WITH =, tsrange(starts_at, detached_at, '[)') WITH &&",
+                             using: :gist, where: "foundation_state = 'ready'", name: 'excl_billing_workspace_intervals'
+'''.rstrip('\n'),
+    ),
+}
+
+# Required final validated constraints are checked separately from admission of
+# lock-heavy statements. NOT VALID without the matching validation is unfinished.
+AI_FINAL_CHECKS = {
+    "db/migrate/20261102093000_manage_organization_billing_foundation.rb": (
+        (":billing_accounts", "'chk_billing_accounts_status'"),
+        (":billing_accounts", "'chk_billing_accounts_currency'"),
+        (":billing_account_workspaces", "'chk_billing_workspaces_status'"),
+        (":billing_account_workspaces", "'chk_billing_workspaces_detached_at'"),
+        (":billing_subscriptions", "'chk_billing_subscriptions_status'"),
+        (":billing_subscriptions", "'chk_billing_subscriptions_period'"),
+        ("table", '"chk_#{table}_foundation_state"'),
+        (":billing_accounts", "'chk_billing_accounts_explicit_owner'"),
+        (":billing_account_workspaces", "'chk_billing_workspaces_known_interval'"),
+        (":billing_subscriptions", "'chk_billing_subscriptions_snapshot_contract'"),
+    ),
+    "db/migrate/20261102103000_create_billing_unit_ledger.rb": (
+        (":billing_usage_periods", "'chk_billing_usage_period_month'"),
+        (":billing_usage_periods", "'chk_billing_usage_period_units'"),
+        (":billing_usage_periods", "'chk_billing_usage_period_anchor'"),
+        (":billing_usage_periods", "'chk_billing_usage_period_terms'"),
+        (":billing_usage_projections", "'chk_billing_usage_projection_identity'"),
+        (":billing_usage_projections", "'chk_billing_usage_projection_retirement'"),
+        (":billing_usage_projections", "'chk_billing_usage_projection_payload'"),
+        (":billing_usage_revisions", "'chk_billing_usage_revision_nonzero'"),
+    ),
+}
+
+
+def ai_expand_contract_intact(path: str, content: str) -> bool:
+    guards = AI_EXPAND_GUARDS[path]
+    if not all(content.count(block) == 1 for block in guards):
+        return False
+    definitions = re.findall(r"^\s*def\s+([^\s(]+)", strip_ruby_comments(content), re.MULTILINE)
+    if len(definitions) != len(set(definitions)):
+        return False
+    if path == "db/migrate/20261102103000_create_billing_unit_ledger.rb":
+        invocations = (
+            "    add_index :billing_usage_periods, %i[billing_account_id month], unique: true, name: 'idx_billing_usage_period_owner_month'\n    period_constraints\n  end",
+            "    add_index :billing_usage_projections, %i[account_id kind subject_id], unique: true, name: 'idx_billing_usage_projection_subject'\n    projection_constraints\n  end",
+        )
+        if not all(content.count(block) == 1 for block in invocations):
+            return False
+    # An appended Ruby method override must not bypass the exact earlier guard.
+    for block in guards:
+        match = re.match(r"  def ([^\s(]+)", block)
+        if match and len(re.findall(r"\bdef\s+" + re.escape(match[1]) + r"(?=[\s(;])", content)) != 1:
+            return False
+    if path == "db/migrate/20261102093000_manage_organization_billing_foundation.rb":
+        expected_foreign_keys = [
+            ":billing_account_workspaces, :billing_accounts, validate: false",
+            ":billing_subscriptions, :billing_accounts, validate: false",
+            ":billing_account_workspaces, :accounts, validate: false",
+            ":billing_accounts, :organizations, validate: false",
+            ":billing_accounts, :accounts, column: :standalone_account_id, validate: false",
+            ":billing_account_workspaces, :accounts, validate: false",
+        ]
+        actual = [" ".join(args.split()) for args in calls(content, "add_foreign_key")]
+        if actual != expected_foreign_keys:
+            return False
+        for args in expected_foreign_keys:
+            validation = "validate_foreign_key " + args.replace(", validate: false", "")
+            expected_count = expected_foreign_keys.count(args)
+            if content.count(validation + "\n") != expected_count:
+                return False
+    for table, name in AI_FINAL_CHECKS.get(path, ()):
+        add = [args for args in calls(content, "add_check_constraint")
+               if re.match(r"\s*" + re.escape(table) + r"\s*,", args) and "name: " + name in args]
+        validation = f"    validate_check_constraint {table}, name: {name}"
+        if len(add) != 1 or not NOT_VALID_PATTERN.search(add[0]) or content.count(validation) != 1:
+            return False
+        if content.index(validation) < content.index("add_check_constraint" + add[0]):
+            return False
+    return True
+
+
 # Production runs migrations while the previous release is still serving, so an
 # "expand" migration must also be cheap and short-locked, not only additive.
 # These rules flag the statements that hold a strong lock for as long as the
@@ -275,6 +773,8 @@ def unsafe_migration_rules(content: str) -> list[str]:
     table_references = calls(code, "t.references") + calls(code, "t.belongs_to")
     if any(ENFORCED_FOREIGN_KEY_PATTERN.search(arguments) for arguments in table_references):
         rules.append("create_table references with an enforced foreign key")
+    if calls(code, "add_exclusion_constraint"):
+        rules.append("add_exclusion_constraint requires a bounded maintenance guard")
     if UNSAFE_UPDATE_PATTERN.search(code) and not BATCHING_MARKER_PATTERN.search(code):
         rules.append("UPDATE of existing rows without batches")
     return rules
@@ -377,6 +877,12 @@ def frontend_files(paths: Iterable[str]) -> list[str]:
 
 def protected_expand_content(raw_path: str, content: str) -> str:
     """Exclude only an exact, migration-specific safe operation from the ban."""
+    if raw_path in AI_EXPAND_GUARDS:
+        required = AI_EXPAND_GUARDS[raw_path]
+        if ai_expand_contract_intact(raw_path, content):
+            for block in AI_PROTECTED_OPERATIONS.get(raw_path, ()):
+                content = content.replace(block, "", 1)
+        return content
     if raw_path == SAFE_SCENARIO_HISTORY_MIGRATION:
         protected = SAFE_SCENARIO_HISTORY_BLOCK
         required = (SAFE_SHORT_LOCK_SETTINGS, SAFE_SHORT_LOCK_BLOCK, protected)
@@ -402,6 +908,8 @@ def migration_violations(paths: Iterable[str]) -> list[tuple[str, str]]:
         content = path.read_text(encoding="utf-8")
         if raw_path == SAFE_STAGE_VISIT_UUID_DEFAULT_MIGRATION:
             content = SAFE_STAGE_VISIT_UUID_DEFAULT_BLOCK.sub("", content)
+        if raw_path in AI_EXPAND_GUARDS and not ai_expand_contract_intact(raw_path, content):
+            violations.append((raw_path, "reviewed AI expand safety contract changed"))
         content = protected_expand_content(raw_path, content)
         if DESTRUCTIVE_MIGRATION_PATTERN.search(content):
             violations.append((raw_path, "destructive or contracting schema change"))

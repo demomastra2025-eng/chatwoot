@@ -1,20 +1,16 @@
 class CreateAccountAiUsageEvents < ActiveRecord::Migration[7.1]
   def up
-    execute "SET LOCAL lock_timeout = '5s'"
-    add_message_columns
+    execute "SET LOCAL lock_timeout = '4s'"
+    execute "SET LOCAL statement_timeout = '5s'"
     create_dialog_states
     create_usage_events
     create_rollout
+    add_validated_foreign_keys
+    add_message_columns
   end
 
   def down
-    drop_table :account_ai_usage_rollouts, if_exists: true
-    drop_table :account_ai_usage_events
-    drop_table :account_ai_dialog_states, if_exists: true
-    remove_column :messages, :ai_usage_pending, if_exists: true
-    remove_column :messages, :ai_usage_version, if_exists: true
-    remove_column :messages, :ai_usage_retry_at, if_exists: true
-    remove_column :messages, :ai_usage_sent_at
+    raise ActiveRecord::IrreversibleMigration, 'Retain AI usage and financial history; rollback application source only.'
   end
 
   private
@@ -30,8 +26,8 @@ class CreateAccountAiUsageEvents < ActiveRecord::Migration[7.1]
 
   def create_dialog_states
     create_table :account_ai_dialog_states do |t|
-      t.references :account, null: false, foreign_key: { on_delete: :cascade }, index: false
-      t.references :contact, null: false, foreign_key: { on_delete: :cascade }, index: false
+      t.references :account, null: false, index: false
+      t.references :contact, null: false, index: false
       t.jsonb :state, null: false, default: {}
       t.timestamps
     end
@@ -40,8 +36,8 @@ class CreateAccountAiUsageEvents < ActiveRecord::Migration[7.1]
 
   def create_usage_events
     create_table :account_ai_usage_events do |t|
-      t.references :contact, foreign_key: { on_delete: :nullify }, index: false
-      t.references :account, null: false, foreign_key: { on_delete: :cascade }, index: false
+      t.references :contact, index: false
+      t.references :account, null: false, index: false
       t.string :event_key, null: false
       t.string :bucket, null: false
       t.datetime :occurred_at, null: false
@@ -62,5 +58,16 @@ class CreateAccountAiUsageEvents < ActiveRecord::Migration[7.1]
       t.timestamps
     end
     add_index :account_ai_usage_rollouts, :name, unique: true
+  end
+
+  def add_validated_foreign_keys
+    add_foreign_key :account_ai_dialog_states, :accounts, column: :account_id, on_delete: :cascade, validate: false
+    validate_foreign_key :account_ai_dialog_states, :accounts, column: :account_id
+    add_foreign_key :account_ai_dialog_states, :contacts, column: :contact_id, on_delete: :cascade, validate: false
+    validate_foreign_key :account_ai_dialog_states, :contacts, column: :contact_id
+    add_foreign_key :account_ai_usage_events, :contacts, column: :contact_id, on_delete: :nullify, validate: false
+    validate_foreign_key :account_ai_usage_events, :contacts, column: :contact_id
+    add_foreign_key :account_ai_usage_events, :accounts, column: :account_id, on_delete: :cascade, validate: false
+    validate_foreign_key :account_ai_usage_events, :accounts, column: :account_id
   end
 end

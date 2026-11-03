@@ -27,6 +27,12 @@ RSpec.describe CreateBillingUnitLedger do
     expect(connection.foreign_keys(:billing_usage_projections).find { |key| key.to_table == 'accounts' }.on_delete).to be_nil
     expect(connection.indexes(:billing_usage_revisions).select(&:unique).map(&:name)).to include('idx_billing_usage_revision_order',
                                                                                                  'idx_billing_usage_revision_operation')
+    local_tables = described_class::TABLES.map { |table| connection.quote("#{connection.current_schema}.#{table}") }
+    unvalidated = connection.select_value(<<~SQL.squish)
+      SELECT count(*) FROM pg_constraint WHERE contype IN ('f','c') AND NOT convalidated
+        AND conrelid IN (#{local_tables.map { |table| "#{table}::regclass" }.join(',')})
+    SQL
+    expect(unvalidated).to eq(0)
     expect { migration.down }.to raise_error(ActiveRecord::IrreversibleMigration)
   end
 

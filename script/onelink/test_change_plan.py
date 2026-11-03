@@ -1,5 +1,6 @@
 from contextlib import chdir
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -205,6 +206,102 @@ class ChangePlanTest(unittest.TestCase):
             ("additional index removal", lambda text: text + "\nremove_index :crm_pipelines, :name\n"),
         ]
         self.assert_protected_migration_cases(migration, changes)
+
+    def test_bounded_foundation_operations_require_the_complete_safety_closure(self):
+        migration = "db/migrate/20261102093000_manage_organization_billing_foundation.rb"
+        changes = [
+            ("larger byte cap", lambda s: s.replace("size <= 1_048_576", "size <= 2_097_152")),
+            ("larger row cap", lambda s: s.replace("rows <= 512", "rows <= 513")),
+            ("unbounded count", lambda s: s.replace(" LIMIT 513", "")),
+            ("heap size ignores toast and indexes", lambda s: s.replace("pg_total_relation_size", "pg_relation_size")),
+            ("no locks", lambda s: s.replace("    execute 'LOCK TABLE billing_accounts, billing_account_workspaces, billing_subscriptions IN ACCESS EXCLUSIVE MODE'\n", "")),
+            ("different lock order", lambda s: s.replace("LOCK TABLE billing_accounts, billing_account_workspaces", "LOCK TABLE billing_account_workspaces, billing_accounts")),
+            ("weak lock", lambda s: s.replace("ACCESS EXCLUSIVE MODE", "ACCESS SHARE MODE")),
+            ("partition accepted", lambda s: s.replace("AND NOT relispartition", "")),
+            ("inheritance accepted", lambda s: s.replace("inhrelid = relation.oid OR inhparent = relation.oid", "false")),
+            ("wrong table kind", lambda s: s.replace("relkind = 'r'", "relkind IN ('r','p')")),
+            ("no locked topology recheck", lambda s: s.replace("    validate_legacy_relations!\n    TABLES.each", "    TABLES.each")),
+            ("guard not invoked", lambda s: s.replace("      lock_bounded_legacy_foundation!\n", "")),
+            ("DDL before guard", lambda s: s.replace("      lock_bounded_legacy_foundation!\n", "      add_ownership\n      lock_bounded_legacy_foundation!\n")),
+            ("validation before locks", lambda s: s.replace("      lock_bounded_legacy_foundation!\n      validate_legacy_foundation!", "      validate_legacy_foundation!\n      lock_bounded_legacy_foundation!")),
+            ("partial accepted", lambda s: s.replace("present.any? && present != TABLES", "false")),
+            ("missing lock budget", lambda s: s.replace("SET LOCAL lock_timeout = '4s'", "SET LOCAL lock_timeout = '0'")),
+            ("missing statement budget", lambda s: s.replace("SET LOCAL statement_timeout = '5s'", "SET LOCAL statement_timeout = '0'")),
+            ("default drift accepted", lambda s: s.replace("expressions[name] == literal_default_expression(column, expected[name])", "true")),
+            ("shape drift accepted", lambda s: s.replace("column.sql_type == type", "true")),
+            ("check drift accepted", lambda s: s.replace("constraint&.validated?", "constraint")),
+            ("FK drift accepted", lambda s: s.replace("key&.validated?", "key")),
+            ("quarantine guessed owner", lambda s: s.replace("default: 'legacy_pending'", "default: 'ready'")),
+            ("different state transition", lambda s: s.replace("to: 'ready'", "to: 'active'")),
+            ("contracting nullability", lambda s: s.replace(":billing_plan_id, true", ":billing_plan_id, false")),
+            ("history cascade", lambda s: s.replace("add_foreign_key :billing_account_workspaces, :accounts, validate: false", "add_foreign_key :billing_account_workspaces, :accounts, on_delete: :cascade, validate: false")),
+            ("missing final FK validation", lambda s: s.replace("    validate_foreign_key :billing_accounts, :organizations\n", "")),
+            ("missing final CHECK validation", lambda s: s.replace("    validate_check_constraint :billing_accounts, name: 'chk_billing_accounts_status'\n", "")),
+            ("unprotected exclusion", lambda s: s + "\nadd_exclusion_constraint :accounts, 'id WITH ='\n"),
+            ("unprotected default", lambda s: s + "\nchange_column_default :accounts, :name, 'invented'\n"),
+            ("unprotected FK removal", lambda s: s + "\nremove_foreign_key :accounts, :organizations\n"),
+            ("override guard", lambda s: s + "\ndef lock_bounded_legacy_foundation!\nend\n"),
+        ]
+        self.assert_protected_migration_cases(migration, changes)
+
+    def test_pending_usage_index_repair_requires_exact_catalog_shape_and_concurrency(self):
+        migration = "db/migrate/20261102013100_add_pending_ai_usage_index_to_messages.rb"
+        changes = [
+            ("wrong relation", lambda s: s.replace("|| '.messages'", "|| '.accounts'")),
+            ("different columns", lambda s: s.replace("ARRAY['ai_usage_retry_at', 'id']", "ARRAY['id', 'ai_usage_retry_at']")),
+            ("unique accepted", lambda s: s.replace("NOT idx.indisunique", "idx.indisunique")),
+            ("wrong method", lambda s: s.replace("am.amname = 'btree'", "am.amname = 'hash'")),
+            ("included columns accepted", lambda s: s.replace("idx.indnatts = 2", "idx.indnatts >= 2")),
+            ("expressions accepted", lambda s: s.replace("AND idx.indexprs IS NULL", "")),
+            ("unknown predicate", lambda s: s.replace("== 'ai_usage_pending=true'", "!= ''")),
+            ("missing shape guard", lambda s: s.replace("unless known_pending_index?(definition)", "if false")),
+            ("drop valid index", lambda s: s.replace("unless definition['indisvalid']", "if definition['indisvalid']")),
+            ("nonconcurrent removal", lambda s: s.replace("algorithm: :concurrently unless", "algorithm: :default unless")),
+            ("nonconcurrent build", lambda s: s.replace("name: 'idx_messages_pending_ai_usage', algorithm: :concurrently,", "name: 'idx_messages_pending_ai_usage', algorithm: :default,")),
+            ("no guard invocation", lambda s: s.replace("    repair_known_invalid_index\n", "")),
+            ("missing post validation", lambda s: s.replace("&& definition['indisvalid'] && definition['indisready']", "&& definition['indisready']")),
+            ("SET LOCAL outside transaction", lambda s: s.replace("SET lock_timeout", "SET LOCAL lock_timeout")),
+            ("no restore", lambda s: s.replace("    execute \"SET lock_timeout = #{connection.quote(previous_lock_timeout)}\" if previous_lock_timeout\n", "")),
+            ("unprotected removal", lambda s: s + "\nremove_index :messages, :created_at\n"),
+        ]
+        self.assert_protected_migration_cases(migration, changes)
+
+    def test_ai_expand_lock_invocations_and_final_validation_are_required(self):
+        root = Path(__file__).resolve().parents[2]
+        migrations = [
+            "db/migrate/20261102013000_create_account_ai_usage_events.rb",
+            "db/migrate/20261102013200_create_captain_reply_suggestion_identities.rb",
+            "db/migrate/20261102103000_create_billing_unit_ledger.rb",
+            "db/migrate/20261103010000_create_captain_shadow_training.rb",
+        ]
+        for migration in migrations:
+            original = (root / migration).read_text()
+            with chdir(root):
+                self.assertEqual(migration_violations([migration]), [])
+            changes = [
+                lambda s: s.replace("SET LOCAL lock_timeout = '4s'", "SET LOCAL lock_timeout = '0'"),
+                lambda s: s.replace("SET LOCAL statement_timeout = '5s'", "SET LOCAL statement_timeout = '0'"),
+                lambda s: s.replace("    add_validated_foreign_keys\n", ""),
+                lambda s: s.replace("    validate_foreign_key ", "    # validate_foreign_key ", 1),
+                lambda s: s.replace("validate: false", "validate: true", 1),
+                lambda s: re.sub(r"(add_foreign_key[^\n]+?)(?:, on_delete: :\w+)?(, validate: false)", r"\1, on_delete: :restrict\2", s, count=1),
+                lambda s: s + "\ndrop_table :accounts\n",
+            ]
+            if "13000_" in migration:
+                changes.append(lambda s: s.replace("    create_dialog_states\n", "    add_message_columns\n    create_dialog_states\n"))
+            if "103000_" in migration:
+                changes.append(lambda s: s.replace("    period_constraints\n", ""))
+                changes.append(lambda s: s.replace("    projection_constraints\n", ""))
+                changes.append(lambda s: s.replace("    validate_check_constraint :billing_usage_periods, name: 'chk_billing_usage_period_month'\n", ""))
+            for change in changes:
+                with self.subTest(migration=migration, change=change), tempfile.TemporaryDirectory() as directory:
+                    changed = change(original)
+                    self.assertNotEqual(changed, original)
+                    target = Path(directory) / migration
+                    target.parent.mkdir(parents=True)
+                    target.write_text(changed)
+                    with chdir(directory):
+                        self.assertEqual(validate_migrations([migration]), [migration])
 
     def test_empty_cli_file_list_has_no_output(self):
         root = Path(__file__).resolve().parents[2]

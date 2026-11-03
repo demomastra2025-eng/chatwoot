@@ -14,10 +14,17 @@ class ManageOrganizationBillingFoundation < ActiveRecord::Migration[7.1]
   PERIOD = 'current_period_starts_at IS NULL OR current_period_ends_at IS NULL OR current_period_ends_at > current_period_starts_at'
 
   def up
+    execute "SET LOCAL lock_timeout = '4s'"
+    execute "SET LOCAL statement_timeout = '5s'"
     present = TABLES.select { |table| local_table?(table) }
     raise ActiveRecord::MigrationError, 'partial billing foundation: explicit structural repair required' if present.any? && present != TABLES
 
-    present.empty? ? create_foundation : validate_legacy_foundation!
+    if present.empty?
+      create_foundation
+    else
+      lock_bounded_legacy_foundation!
+      validate_legacy_foundation!
+    end
     add_ownership
     add_history
     add_subscription_contract
@@ -44,31 +51,42 @@ class ManageOrganizationBillingFoundation < ActiveRecord::Migration[7.1]
       t.timestamps
     end
     add_index :billing_accounts, :status
-    add_check_constraint :billing_accounts, ACCOUNT_STATUS, name: 'chk_billing_accounts_status'
-    add_check_constraint :billing_accounts, "default_currency::text ~ '^[A-Z]{3}$'::text", name: 'chk_billing_accounts_currency'
+    add_check_constraint :billing_accounts, ACCOUNT_STATUS, name: 'chk_billing_accounts_status', validate: false
+    validate_check_constraint :billing_accounts, name: 'chk_billing_accounts_status'
+    add_check_constraint :billing_accounts, "default_currency::text ~ '^[A-Z]{3}$'::text", name: 'chk_billing_accounts_currency', validate: false
+    validate_check_constraint :billing_accounts, name: 'chk_billing_accounts_currency'
     create_workspaces
     create_subscriptions
+    add_foreign_key :billing_account_workspaces, :billing_accounts, validate: false
+    validate_foreign_key :billing_account_workspaces, :billing_accounts
+    add_foreign_key :billing_subscriptions, :billing_accounts, validate: false
+    validate_foreign_key :billing_subscriptions, :billing_accounts
   end
 
   def create_workspaces
     create_table(:billing_account_workspaces) do |t|
-      t.references :billing_account, null: false, foreign_key: true
+      t.references :billing_account, null: false
       t.integer :account_id, null: false
       t.string :status, null: false, default: 'active'
       t.datetime :detached_at
       t.jsonb :metadata, null: false, default: {}
       t.timestamps
     end
-    add_foreign_key :billing_account_workspaces, :accounts
+    add_foreign_key :billing_account_workspaces, :accounts, validate: false
+    validate_foreign_key :billing_account_workspaces, :accounts
     add_index :billing_account_workspaces, :account_id
     add_index :billing_account_workspaces, :account_id, unique: true, where: "status = 'active'", name: 'idx_billing_workspaces_one_active_account'
-    add_check_constraint :billing_account_workspaces, WORKSPACE_STATUS, name: 'chk_billing_workspaces_status'
-    add_check_constraint :billing_account_workspaces, DETACHED, name: 'chk_billing_workspaces_detached_at'
+    add_check_constraint :billing_account_workspaces, WORKSPACE_STATUS, name: 'chk_billing_workspaces_status', validate: false
+    validate_check_constraint :billing_account_workspaces, name: 'chk_billing_workspaces_status'
+    add_check_constraint :billing_account_workspaces, DETACHED, name: 'chk_billing_workspaces_detached_at', validate: false
+    validate_check_constraint :billing_account_workspaces, name: 'chk_billing_workspaces_detached_at'
   end
 
+  # Explicit NOT VALID / VALIDATE pairs keep the final historical schema validated.
+  # rubocop:disable Metrics/MethodLength
   def create_subscriptions
     create_table(:billing_subscriptions) do |t|
-      t.references :billing_account, null: false, foreign_key: true
+      t.references :billing_account, null: false
       subscription_contract_fields(t)
       t.string :status, null: false, default: 'incomplete'
       t.datetime :current_period_starts_at
@@ -83,9 +101,13 @@ class ManageOrganizationBillingFoundation < ActiveRecord::Migration[7.1]
     add_index :billing_subscriptions, :billing_account_id, unique: true, where: ENTITLING, name: 'idx_billing_subscriptions_one_entitling'
     add_index :billing_subscriptions, %i[provider external_id], unique: true,
                                                                 where: 'external_id IS NOT NULL', name: 'idx_billing_subscriptions_provider_external'
-    add_check_constraint :billing_subscriptions, SUBSCRIPTION_STATUS, name: 'chk_billing_subscriptions_status'
-    add_check_constraint :billing_subscriptions, PERIOD, name: 'chk_billing_subscriptions_period'
+    add_check_constraint :billing_subscriptions, SUBSCRIPTION_STATUS, name: 'chk_billing_subscriptions_status', validate: false
+    validate_check_constraint :billing_subscriptions, name: 'chk_billing_subscriptions_status'
+    add_check_constraint :billing_subscriptions, PERIOD, name: 'chk_billing_subscriptions_period', validate: false
+    validate_check_constraint :billing_subscriptions, name: 'chk_billing_subscriptions_period'
   end
+
+  # rubocop:enable Metrics/MethodLength
 
   def subscription_contract_fields(table)
     table.bigint :billing_plan_id
@@ -93,6 +115,32 @@ class ManageOrganizationBillingFoundation < ActiveRecord::Migration[7.1]
     table.jsonb :plan_snapshot, null: false, default: {}
     table.jsonb :price_snapshot, null: false, default: {}
     table.jsonb :metadata, null: false, default: {}
+  end
+
+  # Locks close the cap-check/DDL race. The 5s statement budget is per statement, not
+  # a promise about total transaction duration. Larger legacy needs maintenance.
+  def lock_bounded_legacy_foundation!
+    validate_legacy_relations!
+    execute 'LOCK TABLE billing_accounts, billing_account_workspaces, billing_subscriptions IN ACCESS EXCLUSIVE MODE'
+    validate_legacy_relations!
+    TABLES.each do |table|
+      size = select_value("SELECT pg_total_relation_size(to_regclass(#{relation_literal(table)}))").to_i
+      rows = select_value("SELECT count(*) FROM (SELECT 1 FROM ONLY #{connection.quote_table_name(table)} LIMIT 513) bounded_rows").to_i
+      next if size <= 1_048_576 && rows <= 512
+
+      raise ActiveRecord::MigrationError, "billing foundation exceeds tiny limits: explicit maintenance required (#{table})"
+    end
+  end
+
+  def validate_legacy_relations!
+    TABLES.each do |table|
+      ordinary = select_value(<<~SQL.squish)
+        SELECT relkind = 'r' AND relpersistence = 'p' AND NOT relispartition
+          AND NOT EXISTS (SELECT 1 FROM pg_inherits WHERE inhrelid = relation.oid OR inhparent = relation.oid)
+        FROM pg_class relation WHERE oid = to_regclass(#{relation_literal(table)})
+      SQL
+      raise ActiveRecord::MigrationError, "non-ordinary billing foundation: explicit maintenance required (#{table})" unless ordinary
+    end
   end
 
   def validate_legacy_foundation!
@@ -261,16 +309,22 @@ class ManageOrganizationBillingFoundation < ActiveRecord::Migration[7.1]
   def add_state(table)
     add_column table, :foundation_state, :string, null: false, default: 'legacy_pending'
     change_column_default table, :foundation_state, from: 'legacy_pending', to: 'ready'
-    add_check_constraint table, "foundation_state IN ('ready', 'legacy_pending')", name: "chk_#{table}_foundation_state"
+    add_check_constraint table, "foundation_state IN ('ready', 'legacy_pending')", name: "chk_#{table}_foundation_state", validate: false
+    validate_check_constraint table, name: "chk_#{table}_foundation_state"
   end
 
   def add_ownership
     add_state(:billing_accounts)
-    add_reference :billing_accounts, :organization, foreign_key: true
-    add_reference :billing_accounts, :standalone_account, foreign_key: { to_table: :accounts }
+    add_reference :billing_accounts, :organization
+    add_reference :billing_accounts, :standalone_account
+    add_foreign_key :billing_accounts, :organizations, validate: false
+    validate_foreign_key :billing_accounts, :organizations
+    add_foreign_key :billing_accounts, :accounts, column: :standalone_account_id, validate: false
+    validate_foreign_key :billing_accounts, :accounts, column: :standalone_account_id
     owner_check = "foundation_state = 'legacy_pending' OR " \
                   "((organization_id IS NULL) <> (standalone_account_id IS NULL) AND default_currency = 'KZT')"
-    add_check_constraint :billing_accounts, owner_check, name: 'chk_billing_accounts_explicit_owner'
+    add_check_constraint :billing_accounts, owner_check, name: 'chk_billing_accounts_explicit_owner', validate: false
+    validate_check_constraint :billing_accounts, name: 'chk_billing_accounts_explicit_owner'
     add_index :billing_accounts, :organization_id, unique: true, where: "foundation_state = 'ready'", name: 'idx_billing_accounts_org_owner'
     add_index :billing_accounts, :standalone_account_id, unique: true, where: "foundation_state = 'ready'",
                                                          name: 'idx_billing_accounts_standalone_owner'
@@ -281,10 +335,12 @@ class ManageOrganizationBillingFoundation < ActiveRecord::Migration[7.1]
     add_column :billing_account_workspaces, :starts_at, :datetime
     add_check_constraint :billing_account_workspaces,
                          "foundation_state = 'legacy_pending' OR (starts_at IS NOT NULL AND (detached_at IS NULL OR detached_at > starts_at))",
-                         name: 'chk_billing_workspaces_known_interval'
+                         name: 'chk_billing_workspaces_known_interval', validate: false
+    validate_check_constraint :billing_account_workspaces, name: 'chk_billing_workspaces_known_interval'
     key = connection.foreign_keys(:billing_account_workspaces).find { |fk| fk.to_table == 'accounts' && fk.column == 'account_id' }
     remove_foreign_key :billing_account_workspaces, name: key.name
-    add_foreign_key :billing_account_workspaces, :accounts
+    add_foreign_key :billing_account_workspaces, :accounts, validate: false
+    validate_foreign_key :billing_account_workspaces, :accounts
     enable_extension 'btree_gist' unless extension_enabled?('btree_gist')
     add_exclusion_constraint :billing_account_workspaces,
                              "account_id WITH =, tsrange(starts_at, detached_at, '[)') WITH &&",
@@ -294,7 +350,7 @@ class ManageOrganizationBillingFoundation < ActiveRecord::Migration[7.1]
   def add_subscription_contract
     add_state(:billing_subscriptions)
     change_column_null :billing_subscriptions, :billing_plan_id, true
-    add_check_constraint :billing_subscriptions, <<~SQL.squish, name: 'chk_billing_subscriptions_snapshot_contract'
+    add_check_constraint :billing_subscriptions, <<~SQL.squish, name: 'chk_billing_subscriptions_snapshot_contract', validate: false
       foundation_state = 'legacy_pending' OR (
         billing_plan_id IS NULL AND billing_plan_price_id IS NULL
         AND jsonb_typeof(plan_snapshot) = 'object' AND jsonb_typeof(price_snapshot) = 'object'
@@ -309,6 +365,7 @@ class ManageOrganizationBillingFoundation < ActiveRecord::Migration[7.1]
         AND jsonb_typeof(price_snapshot->'pricing') = 'object'
       )
     SQL
+    validate_check_constraint :billing_subscriptions, name: 'chk_billing_subscriptions_snapshot_contract'
   end
 end
 # rubocop:enable Metrics/ClassLength

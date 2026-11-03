@@ -84,6 +84,50 @@ runtime из разных SHA.
 «ещё не заполнено» (образец: `20260928110000`–`110200` и `20261004120000`–`193200`).
 Откат таких миграций: `MIGRATION_ROLLBACK_20261004.md`.
 
+### Неприменённые миграции AI и финансовой истории `20261102`–`20261103`
+
+Шесть version-файлов сохраняют итоговые типы, defaults, ключи, индексы и финансовую
+семантику. FK/CHECK создаются `NOT VALID` и явно валидируются до завершения миграции.
+Транзакционные миграции используют `SET LOCAL lock_timeout = '4s'` и
+`statement_timeout = '5s'`: прежние настройки возвращаются с транзакцией. Разные
+сроки позволяют отдельно проверить native `55P03` примерно через 4 секунды;
+`57014` не считается доказательством lock timeout. Это предел отдельного statement,
+а не общего времени удержания блокировок. `messages` получает четыре колонки
+после остальных DDL в `20261102013000`, чтобы не держать его AX-lock при ожидании FK.
+
+Existing foundation допускается только при наличии всех трёх обычных permanent
+таблиц без partition/inheritance. Миграция блокирует их в фиксированном порядке
+`billing_accounts` → `billing_account_workspaces` → `billing_subscriptions` в
+`ACCESS EXCLUSIVE`, повторяет проверку топологии и **до DDL** проверяет каждую:
+`pg_total_relation_size <= 1_048_576` (включая индексы и TOAST), не больше 512 строк
+по `ONLY ... LIMIT 513`. Так закрывается гонка между проверкой caps и DDL.
+Partial/schema/default/check/FK drift, oversized и необычная топология означают
+HOLD с rollback и отдельным reviewed maintenance-планом. Автоматического adoption
+и увеличиваемых оператором caps нет. Старые строки остаются `legacy_pending`;
+owner, starts_at, тарифы и даты не выдумываются. PostgreSQL 16 exclusion constraint
+не допускает `NOT VALID`; реальная GiST-операция остаётся под этими ограничениями.
+
+`20261102013100` использует session `lock_timeout = '4s'` с `ensure` восстановления,
+поскольку concurrent DDL идёт без транзакции. Общий бюджет
+построения задаётся конкретным планом релиза: локального 5s statement cap здесь нет.
+Перед удалением invalid index проверяются точные schema/table OID, btree, nonunique,
+упорядоченные колонки, default opclasses/sort, отсутствие expression/INCLUDE и
+predicate. Неизвестный valid/invalid index вызывает HOLD без DROP. После concurrent
+ремонта/построения проверяются shape, valid/ready/live; повторный запуск сохраняет OID.
+
+CI исключает из общего запрета только пять конкретных операций: concurrent removal
+известного invalid index и bounded foundation default/null/FK/exclusion. Их exact
+safety closure и порядок вызовов обязательны; остальной файл проходит обычный guard.
+Новые destructive/FK-removal/exclusion операции без допуска отклоняются. Все шесть
+`down` необратимы: откатывается код приложения, история и схема сохраняются.
+
+Проверки: `python3 -m unittest script.onelink.test_change_plan`; Rails foundation/ledger
+specs и standalone `bundle exec ruby spec/migrations/ai_expand_native_safety_test.rb`
+на явно выделенной пустой БД `POSTGRES_TEST_DATABASE`, `RAILS_ENV=test`. Последний
+тест создаёт только собственные схемы и не запускает Rails prepare/global truncator.
+Для release нужны отдельные actual PG16 schema equality/legacy/native-lock/held-time
+proofs и два Rails prepare; прохождение текстового guard их не заменяет.
+
 ## Поведение DEV
 
 ### Изоляция Beeline
