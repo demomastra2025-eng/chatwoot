@@ -279,8 +279,11 @@ RSpec.describe ActiveRecord::Migration do
                ManageOrganizationBillingFoundation, CreateBillingUnitLedger, CreateCaptainShadowTraining]
     classes.each do |migration_class|
       migration = migration_class.new
-      expect(migration).not_to receive(:execute)
-      expect { migration.down }.to raise_error(ActiveRecord::IrreversibleMigration)
+      adapter = migration.connection
+      RSpec::Mocks.with_temporary_scope do
+        expect(adapter).not_to receive(:execute)
+        expect { migration.down }.to raise_error(ActiveRecord::IrreversibleMigration)
+      end
     end
   end
 end

@@ -197,10 +197,11 @@ RSpec.describe ManageOrganizationBillingFoundation do
     load_legacy
     connection.execute(<<~SQL.squish)
       INSERT INTO billing_accounts (id,name,created_at,updated_at)
-      SELECT id, md5(id::text), NOW(), NOW() FROM generate_series(2,512) id
+      SELECT id, (SELECT string_agg(md5(id::text || ':' || part::text), '' ORDER BY part)
+                  FROM generate_series(1,32) part), NOW(), NOW() FROM generate_series(2,512) id
     SQL
-    connection.execute('CREATE INDEX synthetic_size_a ON billing_accounts (repeat(name,32))')
-    connection.execute('CREATE INDEX synthetic_size_b ON billing_accounts (repeat(name,33))')
+    connection.execute('CREATE INDEX synthetic_size_a ON billing_accounts (name)')
+    connection.execute('CREATE INDEX synthetic_size_b ON billing_accounts (reverse(name))')
     table = connection.quote("#{connection.current_schema}.billing_accounts")
     expect(connection.select_value("SELECT pg_relation_size(#{table}::regclass)")).to be < 1_048_576
     expect(connection.select_value("SELECT pg_total_relation_size(#{table}::regclass)")).to be > 1_048_576
