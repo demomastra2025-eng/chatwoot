@@ -178,6 +178,13 @@ RSpec.describe Captain::AgentRunContext do
 
     it 'gives an agent of a multi-agent channel its own tools and prompt only: no plan, no transfer, no colleagues' do
       create(:captain_assistant_response, assistant: entry, account: entry.account)
+      restricted = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation)
+      restricted.prepare(context)
+      restricted.activate(entry, context)
+      expect(tool_names(restricted, Captain::Runtime::RunContext.new(context))).to eq(['handoff'])
+
+      # Canonical capabilities grant selected IDs only; visible FAQ content alone never grants its lookup tool.
+      entry.update!(config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => %w[handoff faq_lookup] } } })
       runtime = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation)
       runtime.prepare(context)
       runtime.activate(entry, context)
@@ -189,7 +196,8 @@ RSpec.describe Captain::AgentRunContext do
       expect(names.grep(/\Atransfer_to_|\Ahandoff_to_/)).to be_empty
       prompt = prompt_of(runtime, run_context)
       expect(prompt).to include('ENTRY PRIVATE PROMPT')
-      expect(prompt).not_to match(/plan_request|Colleagues|colleague|transfer|#{Regexp.escape(specialist.name)}/)
+      expect(prompt).not_to match(/plan_request|transfer|(?:\A|\n)\s*(?:\#+\s*)?[Cc]olleagues\b/)
+      expect(prompt).not_to include(specialist.name, "assistant_#{specialist.id}", 'SPECIALIST OWN PROMPT')
     end
   end
 

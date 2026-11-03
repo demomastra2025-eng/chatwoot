@@ -199,10 +199,10 @@ RSpec.describe Captain::Runtime::DecisionRouter do
                                             recent_messages: [{ role: 'clinic', text: 'УЗИ — 8 000 ₸, приём — 10 000 ₸.' }])
     end
 
-    it 'routes to an agent when no one leads, even if no_reply_needed wins, and never makes a council' do
+    it 'keeps a safe closing courtesy ownerless when no_reply_needed wins, without choosing an agent or council' do
       answer_chain(chain_answer('no_reply_needed', confidence: 0.6))
 
-      expect(router.decide).to have_attributes(key: 'route_agent_84', kind: 'agent', agent_ids: [84], agent_id: 84,
+      expect(router.decide).to have_attributes(key: 'no_reply_needed', kind: 'no_reply', agent_ids: [], agent_id: nil,
                                                confidence: 0.6)
       expect(calls.sole[:question][:questions]['route_mode'][:criteria]).to have_key('no_reply_needed')
     end

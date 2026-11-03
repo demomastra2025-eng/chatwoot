@@ -53,9 +53,11 @@ RSpec.describe Captain::Tools::UpdateContactTool, type: :model do
     end
 
     it 'writes the iin of the custom attributes when it is an IIN, and other custom fields as before' do
-      payload = JSON.parse(tool.perform(tool_context, custom_attributes: { iin: '900101300027', vip: true }))
+      payload = JSON.parse(tool.perform(tool_context, name: 'New Name', custom_attributes: { iin: '900101300027', vip: true }))
 
-      expect(payload['contact']['custom_attributes']).to include('iin' => '900101300027', 'vip' => true)
+      expect(contact.reload).to have_attributes(name: 'New Name', custom_attributes: { 'iin' => '900101300027', 'vip' => true })
+      expect(payload['contact']).to include('name' => 'New Name', 'custom_attributes' => { 'vip' => true })
+      expect(payload.to_json).not_to include('900101300027')
     end
 
     it 'takes the identifier as it is given in an account whose contact attributes hold no IIN' do
@@ -68,10 +70,23 @@ RSpec.describe Captain::Tools::UpdateContactTool, type: :model do
     end
 
     it 'writes an IIN of 12 digits with the check digit, as the digits only' do
-      payload = JSON.parse(tool.perform(tool_context, identifier: '900101 300027'))
+      payload = JSON.parse(tool.perform(tool_context, name: 'New Name', identifier: '900101 300027', custom_attributes: { vip: true }))
 
-      expect(payload['contact']).to include('identifier' => '900101300027')
-      expect(contact.reload.identifier).to eq('900101300027')
+      expect(contact.reload).to have_attributes(name: 'New Name', identifier: '900101300027', custom_attributes: { 'vip' => true })
+      expect(payload['contact']).to include('identifier' => nil, 'name' => 'New Name', 'custom_attributes' => { 'vip' => true })
+      expect(payload.to_json).not_to include('900101300027')
+    end
+
+    it 'returns a scoped token for a persisted IIN inside the real vault, while preserving ordinary fields' do
+      Llm::IinTokenVault.with_scope(account_id: account.id, scope_id: Llm::IinTokenVault.conversation_scope_id(conversation)) do
+        token = Llm::IinTokenVault.tokenize('900101300027')
+        payload = JSON.parse(tool.perform(tool_context, identifier: '900101 300027', custom_attributes: { iin: '900101300027', vip: true }))
+
+        expect(contact.reload).to have_attributes(identifier: '900101300027', custom_attributes: { 'iin' => '900101300027', 'vip' => true })
+        expect(token).to match(Llm::IinTokenVault::TOKEN_PATTERN)
+        expect(payload['contact']).to include('identifier' => token, 'custom_attributes' => { 'iin' => token, 'vip' => true })
+        expect(payload.to_json).not_to include('900101300027')
+      end
     end
 
     it 'refuses a phone number or any other text as the IIN and leaves the contact unchanged' do

@@ -98,6 +98,21 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(reply.additional_attributes.to_h['captain_ai_reply'].to_h).not_to have_key('assistant_id')
       end
 
+      it 'records an ownerless router suppression by response mode alone without sending or handing off' do
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          'response' => '', 'response_mode' => 'suppress', 'routing_no_reply' => true,
+          'operator_note' => I18n.t('captain.reply_suggestion.reasons.router_no_reply')
+        )
+        allow(Llm::EventBus).to receive(:publish).and_call_original
+
+        expect { described_class.perform_now(conversation) }.not_to(change { conversation.messages.count })
+
+        expect(conversation.reload.status).to eq('pending')
+        expect(Captain::Conversation::AgentSession.new(conversation: conversation).read['current_assistant_id']).to be_nil
+        expect(account.reload.usage_limits[:captain][:responses][:consumed]).to eq(0)
+        expect(Llm::EventBus).to have_received(:publish).with('captain.response.suppressed', hash_including(assistant_id: nil))
+      end
+
       it 'tells the customer about the handoff as the AI itself, with no agent named, when the router failed and nobody holds the conversation' do
         save_account_handoff_message(mode: 'fixed', text: 'Staff will answer you soon')
         allow(agent_runner_service).to receive(:generate_response)

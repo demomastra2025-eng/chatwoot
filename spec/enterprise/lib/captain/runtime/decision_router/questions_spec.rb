@@ -242,12 +242,29 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
       end
     end
 
-    it 'needs no answer for a bare thanks only while an agent leads the dialog; with none the most probable agent takes it' do
+    it 'needs no answer for a bare closing thanks, with or without an agent leading the dialog' do
       expect(questions.resolve(answered('no_reply_needed', yes: [20])))
         .to have_attributes(kind: 'no_reply', agent_ids: [20], key: 'no_reply_needed', confidence: 0.9)
       expect(build(3, current: 20, message: 'Рахмет, сау болыңыз 🙏').resolve(answered('no_reply_needed')).kind).to eq('no_reply')
-      expect(build(3).resolve(answered('no_reply_needed'))).to have_attributes(kind: 'agent', agent_ids: [10], key: 'route_agent_10')
-      expect(build(3, message: 'Рахмет, сау болыңыз 🙏').resolve(answered('no_reply_needed')).kind).to eq('agent')
+      expect(build(3).resolve(answered('no_reply_needed'))).to have_attributes(kind: 'no_reply', agent_ids: [], key: 'no_reply_needed')
+      expect(build(3, message: 'Рахмет, сау болыңыз 🙏').resolve(answered('no_reply_needed')).kind).to eq('no_reply')
+    end
+
+    it 'keeps an ownerless opening, unanswered question, booking change or service request out of no_reply' do
+      offer = [{ role: 'clinic', text: 'Есть окно завтра в 14:00.' }]
+      asking = [{ role: 'clinic', text: 'Записать вас на 14:00?' }]
+      cases = [
+        { message: 'Спасибо', history: [] }, { message: 'Здравствуйте!', history: [] },
+        { message: 'Здравствуйте!', history: dialog }, { message: 'Ок', history: asking },
+        { message: 'Да, подходит', history: offer, visit: Captain::Runtime::AgreedVisit::NONE },
+        { message: 'Спасибо, не буду', history: dialog }, { message: 'Спасибо, можно позже', history: dialog }
+      ]
+      cases.each do |attributes|
+        expect(build(3, **attributes).resolve(answered('no_reply_needed')))
+          .to have_attributes(kind: 'agent', agent_ids: [10]), attributes[:message]
+      end
+      expect(build(3).resolve(answered('no_reply_needed', yes: [20])))
+        .to have_attributes(kind: 'agent', agent_ids: [20], key: 'route_agent_20')
     end
 
     # Suggestion eval 27.10 (c78-1214235, c78-1244961): the operator's voice note had no text, so the last clinic message asks nothing, and a
@@ -263,7 +280,10 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
         expect(build(3, current: 20, message: text, history: voice).resolve(answered('no_reply_needed')))
           .to have_attributes(kind: 'stay', key: 'stay_current'), text
       end
-      expect(build(3, message: 'Спасибо, буду', history: voice).resolve(answered('no_reply_needed', include_probabilities: { 10 => 0.1, 20 => 0.4 })))
+      includes = answered('no_reply_needed', include_probabilities: { 10 => 0.1, 20 => 0.4 })
+      expect(build(3, message: 'Спасибо, буду', history: voice, visit: booked).resolve(includes))
+        .to have_attributes(kind: 'no_reply', agent_ids: [], key: 'no_reply_needed')
+      expect(build(3, message: 'Спасибо, буду', history: voice, visit: Captain::Runtime::AgreedVisit::NONE).resolve(includes))
         .to have_attributes(kind: 'agent', agent_ids: [20], key: 'route_agent_20')
     end
 

@@ -32,6 +32,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     allow(Llm::ApiClient).to receive(:moderate).and_return(instance_double(RubyLLM::Moderation, flagged?: false))
     detector = instance_double(Captain::PatientLanguageDetector, call: 'kk', safe_saved_language: 'kk')
     allow(Captain::PatientLanguageDetector).to receive(:new).and_return(detector)
+    allow(Llm::DecisionChain).to receive(:decide).with(hash_including(feature: :reply_claim_check)).and_return(safe_draft_claim_check)
     allow(Captain::Runtime::Runner).to receive(:new).and_return(runtime_runner)
     allow(runtime_runner).to receive(:run) do |agent, input, **options|
       runs << { agent: agent.name, input: input }
@@ -44,9 +45,15 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
   end
 
-  # The answers of the decision model for the turn: route_mode and the agents that are yes.
+  def safe_draft_claim_check
+    choices = { 'completed_action' => 'not_done', 'no_appointment' => 'other' }
+    answers = choices.transform_values { |choice| Llm::OpenRouterDecisionClient::Answer.new(choice: choice, confidence: 1.0) }
+    Llm::DecisionChain::Result.new(answers: answers, model: 'perplexity/pplx-decider-v1.2', position: 1)
+  end
+
+  # The answers of the decision model for the turn: route_mode and the agents that are yes; never the independent draft check.
   def decide(mode, yes: [], confidence: 0.92)
-    allow(Llm::DecisionChain).to receive(:decide) do |question:, **|
+    allow(Llm::DecisionChain).to receive(:decide).with(hash_including(feature: :agent_routing)) do |question:, **|
       yes_names = yes.map { |id| "include_agent_#{id}" }
       choices = question[:questions].keys.index_with { |name| yes_names.include?(name) ? 'yes' : 'no' }.merge('route_mode' => mode)
       answers = choices.transform_values { |choice| Llm::OpenRouterDecisionClient::Answer.new(choice: choice, confidence: confidence) }
@@ -109,7 +116,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   end
 
   it 'ends the turn through the technical-failure path when every decision model fails' do
-    allow(Llm::DecisionChain).to receive(:decide).and_raise(
+    allow(Llm::DecisionChain).to receive(:decide).with(hash_including(feature: :agent_routing)).and_raise(
       Llm::DecisionChain::ExhaustedError.new(feature: :agent_routing, attempts: [{ model: 'inception/mercury-decide', error_class: 'Timeout' }])
     )
 
@@ -124,7 +131,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
   it 'names the agent that holds the conversation on the technical failure of a routed turn' do
     session.update_routing(actor_id: procedures.id)
-    allow(Llm::DecisionChain).to receive(:decide).and_raise(
+    allow(Llm::DecisionChain).to receive(:decide).with(hash_including(feature: :agent_routing)).and_raise(
       Llm::DecisionChain::ExhaustedError.new(feature: :agent_routing, attempts: [{ model: 'inception/mercury-decide', error_class: 'Timeout' }])
     )
 
@@ -231,6 +238,34 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(routed_event).to include('decision_key' => 'no_reply_needed', 'kind' => 'no_reply')
     end
 
+    it 'suppresses an ownerless live closing courtesy before dispatch, runner construction or actions' do
+      decide('no_reply_needed', confidence: 0.97)
+      expect(Captain::Runtime::TurnDispatcher).not_to receive(:new)
+      expect(Captain::Runtime::Runner).not_to receive(:new)
+
+      response = service.generate_response(message_history: history)
+
+      expect(response).to include('response' => '', 'response_mode' => 'suppress', 'routing_no_reply' => true)
+      expect([runs, councils]).to all(be_empty)
+      expect(response['agent_id']).to be_nil
+      expect(conversation.reload.additional_attributes.to_h).not_to have_key(Captain::Conversation::AgentSession::ATTRIBUTE)
+      expect(routed_event).to include('decision_key' => 'no_reply_needed', 'kind' => 'no_reply', 'target_ids' => [])
+    end
+
+    it 'suppresses a closing courtesy after releasing a disabled stored holder, without running another agent' do
+      disabled = create(:captain_assistant, account: account, name: 'Disabled', routing_description: 'Archived service', config: tools)
+      session.update_routing(actor_id: disabled.id)
+      disabled.update!(active: false)
+      decide('no_reply_needed', confidence: 0.97)
+
+      response = service.generate_response(message_history: history)
+
+      expect(response).to include('response' => '', 'response_mode' => 'suppress', 'routing_no_reply' => true)
+      expect(response['agent_id']).to be_nil
+      expect([runs, councils]).to all(be_empty)
+      expect(session.read).to include('current_assistant_id' => nil, 'routing_revision' => 2)
+    end
+
     # The suggestion is made when the operator asks for it. The patient answered the reminder of a visit at 14:00 («буду») at 12:00, the
     # operator asked for the suggestion at 16:00: the visit had ended by then, but it was the visit of the patient when they wrote (the
     # eval of 27.10, c76-1222650). The history writes the send time before the reminder; that time is no time the clinic offered either.
@@ -290,11 +325,37 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(session.read).to include('current_assistant_id' => procedures.id)
       expect(events.map(&:first)).not_to include('captain.agent.transfer')
     end
+
+    it 'registers the eligible holder without a routing card for a courtesy, using the actual AgentRunner and the ACK guard' do
+      create(:captain_assistant, account: account, name: 'Other', routing_description: 'Other service', config: tools)
+      session.update_routing(actor_id: procedures.id)
+      procedures.update!(routing_description: '')
+      decide('no_reply_needed', confidence: 0.97)
+      contexts = []
+      allow(runtime_runner).to receive(:run) do |agent, _input, **options|
+        runs << { agent: agent.name }
+        contexts << options[:context]
+        Captain::Runtime::Result.new(output: { 'response' => 'Пожалуйста!' }, messages: [], usage: nil, error: nil, context: options[:context])
+      end
+      allow(Captain::Runtime::AgentRunner).to receive(:new).and_call_original
+
+      response = service.generate_response(message_history: history)
+
+      expect(response).to include('response' => 'Пожалуйста!', 'agent_id' => procedures.id)
+      expect(Captain::Runtime::AgentRunner).to have_received(:new).with(satisfy do |agents|
+        agents.map(&:name).count("assistant_#{procedures.id}") == 1 && agents.size == 3
+      end)
+      expect(runs.pluck(:agent)).to eq(["assistant_#{procedures.id}"])
+      expect(contexts.sole).to include(Captain::Runtime::ToolWrapper::ACKNOWLEDGEMENT_TURN_KEY => true)
+      expect(councils).to be_empty
+      expect(session.read['current_assistant_id']).to eq(procedures.id)
+      expect(events.map(&:first)).not_to include('captain.agent.transfer')
+    end
   end
 
   # The owner's decision of 26.10: the decision models' most probable answer decides, with no threshold and no escalation (in the
   # suggestion eval of 26.10 the escalation was all of the latency the router added, and two escalations left no draft).
-  it 'runs the agent the decision models named at a low confidence, with no other model call' do
+  it 'runs the agent chosen at low confidence without escalation and checks its draft independently' do
     decide('route_agent', yes: [procedures.id], confidence: 0.5)
     allow(Llm::Runtime).to receive(:build_chat).and_call_original
     suggestion = described_class.new(scope: Captain::ChannelScope.for_conversation(conversation), conversation: conversation,
@@ -303,17 +364,17 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     response = suggestion.generate_response(message_history: history)
 
     expect(runs.pluck(:agent)).to eq(["assistant_#{procedures.id}"])
-    expect(response['response']).to eq("Ответ assistant_#{procedures.id}")
+    expect(response).to include('response' => "Ответ assistant_#{procedures.id}", 'reply_claim_check' => 'allowed')
     expect(routed_event).to include('decided_by' => 'perplexity/pplx-decider-v1.2', 'confidence' => 0.5)
     expect(routed_event.keys).not_to include('escalated', 'escalation_fallback')
-    expect(Llm::DecisionChain).to have_received(:decide).once
+    expect(Llm::DecisionChain).to have_received(:decide).with(hash_including(feature: :agent_routing)).once
     expect(Llm::Runtime).not_to have_received(:build_chat).with(hash_including(feature: :agent_routing_escalation))
     expect(events.map(&:first)).not_to include('captain.agent.routing_failed')
   end
 
   it 'does not wait for the router when the safety check blocked the input' do
     # The decision takes 5 s: a turn that waited for it would take at least that long.
-    allow(Llm::DecisionChain).to receive(:decide) do
+    allow(Llm::DecisionChain).to receive(:decide).with(hash_including(feature: :agent_routing)) do
       sleep 5
       raise Llm::DecisionChain::ExhaustedError.new(feature: :agent_routing, attempts: [])
     end
@@ -345,7 +406,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       response = suggestion.generate_response(message_history: history)
 
-      expect(Llm::DecisionChain).to have_received(:decide) do |question:, **|
+      expect(Llm::DecisionChain).to have_received(:decide).with(hash_including(feature: :agent_routing)).once do |question:, **|
         expect(question[:state]).to include(current_agent_id: procedures.id)
         expect(question[:questions]['route_mode'][:criteria].keys).to include('stay_current')
       end

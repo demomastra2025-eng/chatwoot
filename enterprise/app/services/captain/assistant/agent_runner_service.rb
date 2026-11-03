@@ -254,7 +254,7 @@ class Captain::Assistant::AgentRunnerService
     # Before the patient language is decided and an agent is called: a cancelled or out-of-time suggestion stops here.
     Captain::ReplySuggestion::RunControl.checkpoint!(:moderation)
     return routed_human_response(context) if @turn_decision&.human?
-    return routed_no_reply_suggestion if @turn_decision&.no_reply? && suggestion_run?
+    return routed_no_reply_response if no_reply_without_runner?
 
     time_phase('dispatch') { turn_dispatcher.prepare!(context) } if graph_run?
     # The chosen agent (or the acting agent of a council) holds the conversation now: a failure of its run answers as it.
@@ -385,11 +385,15 @@ class Captain::Assistant::AgentRunnerService
     { 'response' => '', 'response_mode' => 'human', 'response_human_needed' => true, 'operator_note' => note, 'routing_human' => true }
   end
 
-  # The router found that the message needs no answer (a plain thanks, ok, goodbye or emoji, see DecisionRouter::Questions): no agent
-  # runs, so nothing is drafted or proposed (in the eval of 26.10 agents booked visits on a closing «Спасибо»). The manager sees why
-  # there is no draft; routing_no_reply tells the outcome that the router decided it (no agent is named as its author, and the agent
-  # that leads the dialog stays the sticky one).
-  def routed_no_reply_suggestion
+  # A suggestion never drafts a courtesy. A live courtesy with no eligible actor or holder also ends here, before dispatch or tools.
+  # A live turn with a holder keeps the dispatcher's courtesy path and its action-tool prohibition.
+  def no_reply_without_runner?
+    @turn_decision&.no_reply? && (suggestion_run? || (@turn_decision.agent_id.nil? && conversation_holder.nil?))
+  end
+
+  # Nothing is drafted, sent or proposed (in the eval of 26.10 agents booked visits on a closing «Спасибо»). The manager sees why
+  # there is no draft; routing_no_reply identifies the router's outcome, while any existing sticky agent stays the same.
+  def routed_no_reply_response
     @acting_assistant_id = conversation_holder&.id
     note = I18n.t('captain.reply_suggestion.reasons.router_no_reply')
     { 'response' => '', 'response_mode' => 'suppress', 'operator_note' => note, 'routing_no_reply' => true }
@@ -1348,7 +1352,14 @@ class Captain::Assistant::AgentRunnerService
     }.compact
     return [@assistant.agent(**agent_options)] unless graph_run?
 
-    agent_run_context.runtime_agents(overrides: agent_options)
+    agents = agent_run_context.runtime_agents(overrides: agent_options)
+    return agents unless @turn_decision&.no_reply? && @turn_decision.agent_id.nil?
+
+    holder = conversation_holder
+    return agents if holder.nil? || agents.any? { |agent| agent.name == holder.agent_name }
+
+    # A holder without a routing card is still an eligible channel member. Dispatch selected it for this courtesy and set ACK.
+    agents + [holder.agent(**agent_options)]
   end
 
   def agent_run_context

@@ -174,11 +174,10 @@ class Captain::Runtime::DecisionRouter::Questions
 
     other = top_agent(yes, except: current_id)
     return agent_outcome(other) if other && yes[other] >= YES_PROBABILITY
-    # No agent leads the dialog (a new one, or its agent was switched off): nobody is there to hold back a reply, so the most probable
-    # agent takes the message. There is no default agent that would stand in for a missing one.
-    return stay_outcome(yes) unless courtesy_only? && current_id
+    # A safe closing message needs no agent, including when nobody currently leads the dialog.
+    return stay_outcome(yes) unless courtesy_only?
 
-    Outcome.new(kind: 'no_reply', agent_ids: [current_id], key: NO_REPLY)
+    Outcome.new(kind: 'no_reply', agent_ids: Array(current_id), key: NO_REPLY)
   end
 
   # A bare thanks, ok, goodbye or emoji in a dialog: no question mark, digit or question word, NO_REPLY_MAX_WORDS words at most, no
