@@ -10,6 +10,15 @@ kk:
         status:
           clear_model: "Модельді алып тастау"
       fields:
+        CAPTAIN_CUSTOM_GUARDRAIL_MODEL:
+          title: "Агенттің арнайы тексерулері"
+          hint: "Агент профиліндегі шарттарды тексереді. Кірістірілген реті: Perplexity Decider → Liquid D1 → TypeSafe JEV. Барлық тексеру сәтсіз болса, агент бұл тексерусіз жауап береді."
+        CAPTAIN_OUTCOME_CLASSIFIER_MODEL:
+          title: "Диалог қорытындысы"
+          hint: "Қызметкерге беру немесе аяқтау себебін анықтайды. Кірістірілген реті: Perplexity Decider → Liquid D1 → TypeSafe JEV. Клиентке жауап бермейді, мәртебені өзгертпейді."
+        CAPTAIN_LANGUAGE_DETECTION_MODEL:
+          title: "Клиенттің тілі"
+          hint: "Агент жауап бергенше клиенттің тілін анықтайды. Кірістірілген реті: Perplexity Decider → Liquid D1 → Respan Span 02."
         CAPTAIN_COUNCIL_EDITOR_MODEL:
           title: "Консилиум жауаптарын біріктіру"
           hint: "Дайын жауаптарды құралдар мен пайымдауды қолданбай, бір хабарламаға біріктіреді. Платформаның бөлек моделін қолданады."

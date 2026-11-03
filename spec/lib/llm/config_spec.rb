@@ -250,7 +250,7 @@ RSpec.describe Llm::Config do
         .to eq('openai/gpt-4o-mini-transcribe')
     end
 
-    it 'uses Mercury Decide for outcome classification independently of account and general agent defaults' do
+    it 'uses Perplexity Decider for outcome classification independently of account and general agent defaults' do
       account = create(:account)
       allow(account).to receive(:captain_models).and_return('outcome_classification' => 'openai/gpt-5.4-mini')
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
@@ -260,7 +260,7 @@ RSpec.describe Llm::Config do
                                               'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[structured_output]
                                             })
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(catalog)
-      expect(described_class.model_for(feature: 'outcome_classification', account: account)).to eq('inception/mercury-decide')
+      expect(described_class.model_for(feature: 'outcome_classification', account: account)).to eq('perplexity/pplx-decider-v1.2')
 
       upsert_installation_config('CAPTAIN_OUTCOME_CLASSIFIER_MODEL', 'openai/gpt-6-luna')
       expect(described_class.model_for(feature: 'outcome_classification', account: account)).to eq('openai/gpt-6-luna')
@@ -274,7 +274,7 @@ RSpec.describe Llm::Config do
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
 
-      expect(described_class.model_for(feature: 'outcome_classification')).to eq('inception/mercury-decide')
+      expect(described_class.model_for(feature: 'outcome_classification')).to eq('perplexity/pplx-decider-v1.2')
     end
 
     it 'uses the installation language decision model and its built-in default' do
@@ -282,7 +282,7 @@ RSpec.describe Llm::Config do
       upsert_installation_config('CAPTAIN_LANGUAGE_DETECTION_MODEL', '')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
 
-      expect(described_class.model_for(feature: 'language_detection')).to eq('openai/gpt-6-luna-decisions')
+      expect(described_class.model_for(feature: 'language_detection')).to eq('perplexity/pplx-decider-v1.2')
 
       upsert_installation_config('CAPTAIN_LANGUAGE_DETECTION_MODEL', 'openai/gpt-6-luna-decisions')
       expect(described_class.model_for(feature: 'language_detection')).to eq('openai/gpt-6-luna-decisions')
@@ -295,7 +295,7 @@ RSpec.describe Llm::Config do
 
       expect(described_class.model_for(feature: 'agent_routing')).to eq('perplexity/pplx-decider-v1.2')
       %w[fact_check_gate inbound_triage].each do |feature|
-        expect(described_class.model_for(feature: feature)).to eq('inception/mercury-decide')
+        expect(described_class.model_for(feature: feature)).to eq('perplexity/pplx-decider-v1.2')
       end
     end
 

@@ -309,7 +309,7 @@
   locked: false
 - name: CAPTAIN_CUSTOM_GUARDRAIL_MODEL
   display_title: 'Модель пользовательских проверок входящих сообщений и ответов'
-  description: 'Проверяет условия, заданные в профиле агента. Подходит модель решений или чата со структурированным ответом. Пусто — Perplexity Decider 1.2; если модель решений не ответила, спрашивается OpenAI GPT-6 Luna Decisions. При ошибке проверки агент продолжает ответ без этой проверки.'
+  description: 'Проверяет условия, заданные в профиле агента. Подходит модель решений или чата со структурированным ответом. Пусто — Perplexity Decider 1.2; при ошибке модели решений — Liquid D1, затем TypeSafe JEV 1.14. При ошибке всех проверок агент продолжает ответ без этой проверки.'
   value: 'perplexity/pplx-decider-v1.2'
   locked: false
 - name: CAPTAIN_CUSTOMER_NOTICE_MODEL
@@ -339,30 +339,30 @@
   locked: false
 - name: CAPTAIN_OUTCOME_CLASSIFIER_MODEL
   display_title: 'Модель классификации итогов диалога'
-  description: 'Выбирает причину после передачи сотруднику или завершения. Получает факты и короткий фрагмент диалога, при необходимости — один расширенный. Не меняет статус и не отвечает клиенту. Пусто — Mercury Decide; если модель решений не ответила, спрашивается Microsoft Decision 1. Также можно выбрать модель со структурированным ответом.'
-  value: 'inception/mercury-decide'
+  description: 'Выбирает причину после передачи сотруднику или завершения. Получает факты и короткий фрагмент диалога, при необходимости — один расширенный. Не меняет статус и не отвечает клиенту. Пусто — Perplexity Decider 1.2; при ошибке модели решений — Liquid D1, затем TypeSafe JEV 1.14. Также можно выбрать модель чата со структурированным ответом.'
+  value: 'perplexity/pplx-decider-v1.2'
   locked: false
 - name: CAPTAIN_LANGUAGE_DETECTION_MODEL
   display_title: 'Модель определения языка клиента'
-  description: 'Определяет основной язык последних 20 сообщений клиента перед ответом агента. Пусто — openai/gpt-6-luna-decisions; если модель решений не ответила, спрашивается respan/span-02.'
-  value: 'openai/gpt-6-luna-decisions'
+  description: 'Определяет основной язык последних 20 сообщений клиента перед ответом агента. Пусто — Perplexity Decider 1.2; при ошибке — Liquid D1, затем Respan Span 02. Для моделей с поддержкой ZDR применяется фильтр ZDR; при обязательном ZDR фильтр не отключается.'
+  value: 'perplexity/pplx-decider-v1.2'
   locked: false
 - name: CAPTAIN_DECISION_MODEL_CHAIN
   display_title: 'Цепочка моделей решений внутри хода'
-  description: 'JSON-список моделей решений по порядку (не больше 3) для проверки фактов и разбора входящих (у выбора агента своя цепочка). Сначала спрашивается первая модель; при ошибке или таймауте (около 2 секунд на модель) — следующая. Если не ответила ни одна, ход завершается технической ошибкой и диалог передаётся сотрудникам. Пусто — inception/mercury-decide, затем microsoft/microsoft-decision-1, затем openai/gpt-6-luna-decisions.'
-  value: '["inception/mercury-decide", "microsoft/microsoft-decision-1", "openai/gpt-6-luna-decisions"]'
+  description: 'JSON-список моделей решений по порядку (не больше 3) для проверки фактов и разбора входящих (у выбора агента и проверки записи свои цепочки). При ошибке или таймауте (около 2 секунд на модель) — следующая. Если не ответила ни одна, ход завершается технической ошибкой и диалог передаётся сотрудникам. Пусто — perplexity/pplx-decider-v1.2, затем liquid/d1, затем typesafe/jev-1.14.'
+  value: '["perplexity/pplx-decider-v1.2", "liquid/d1", "typesafe/jev-1.14"]'
   locked: false
   type: code
 - name: CAPTAIN_AGENT_ROUTING_MODELS
   display_title: 'Цепочка моделей выбора агента'
-  description: 'JSON-список моделей решений по порядку (не больше 3), которые решают, кто отвечает пациенту: агент, консилиум или сотрудник. Сначала спрашивается первая модель; при ошибке или таймауте (около 2 секунд на модель) — следующая. Если не ответила ни одна, ход завершается технической ошибкой и диалог передаётся сотрудникам. Пусто — perplexity/pplx-decider-v1.2, затем inception/mercury-decide, затем microsoft/microsoft-decision-1.'
-  value: '["perplexity/pplx-decider-v1.2", "inception/mercury-decide", "microsoft/microsoft-decision-1"]'
+  description: 'JSON-список моделей решений по порядку (не больше 3), которые решают, кто отвечает клиенту: агент, консилиум или сотрудник. При ошибке или таймауте (около 2 секунд на модель) — следующая. Если не ответила ни одна, ход завершается технической ошибкой и диалог передаётся сотрудникам. Пусто — perplexity/pplx-decider-v1.2, затем liquid/d1, затем typesafe/jev-1.14.'
+  value: '["perplexity/pplx-decider-v1.2", "liquid/d1", "typesafe/jev-1.14"]'
   locked: false
   type: code
 - name: CAPTAIN_REPLY_CLAIM_CHECK_MODELS
   display_title: 'Цепочка проверки заявления о выполненной записи'
-  description: 'Модели решений для проверки черновика по порядку. Пусто — microsoft/microsoft-decision-1, затем perplexity/pplx-decider-v1.2. На каждую модель отводится около 1,5 секунды; если обе недоступны, черновик передаётся сотруднику.'
-  value: '["microsoft/microsoft-decision-1", "perplexity/pplx-decider-v1.2"]'
+  description: 'Модели решений для проверки черновика по порядку. Пусто — perplexity/pplx-decider-v1.2, затем liquid/d1, затем typesafe/jev-1.14. На каждую модель отводится около 1,5 секунды; если все три недоступны, черновик передаётся сотруднику.'
+  value: '["perplexity/pplx-decider-v1.2", "liquid/d1", "typesafe/jev-1.14"]'
   locked: false
   type: code
 - name: CAPTAIN_AGENT_ROUTING_ESCALATION_MODEL

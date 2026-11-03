@@ -6,17 +6,16 @@
 # position in the chain). When no model answers, ExhaustedError is raised: the caller ends the turn through its
 # technical-failure path, the same as when OpenRouter is down for generation.
 #
-# The chain of a feature: agent_routing has its own (installation config CAPTAIN_AGENT_ROUTING_MODELS, built in Perplexity
-# Decider, then Mercury Decide, then Microsoft Decision 1: the owner's choice of 25.10 after the router benchmark); every other
-# turn decision feature uses the shared chain CAPTAIN_DECISION_MODEL_CHAIN.
+# Agent routing and reply claim checks have their own installation settings; the other turn decisions use
+# CAPTAIN_DECISION_MODEL_CHAIN. Their built-in order is Perplexity Decider, Liquid D1, then TypeSafe JEV 1.14.
 class Llm::DecisionChain
   CONFIG_NAME = 'CAPTAIN_DECISION_MODEL_CHAIN'
-  DEFAULT_MODELS = %w[inception/mercury-decide microsoft/microsoft-decision-1 openai/gpt-6-luna-decisions].freeze
+  DEFAULT_MODELS = %w[perplexity/pplx-decider-v1.2 liquid/d1 typesafe/jev-1.14].freeze
   FEATURE_CHAINS = {
     'agent_routing' => { config: 'CAPTAIN_AGENT_ROUTING_MODELS',
-                         default: %w[perplexity/pplx-decider-v1.2 inception/mercury-decide microsoft/microsoft-decision-1].freeze },
+                         default: %w[perplexity/pplx-decider-v1.2 liquid/d1 typesafe/jev-1.14].freeze },
     'reply_claim_check' => { config: 'CAPTAIN_REPLY_CLAIM_CHECK_MODELS',
-                             default: %w[microsoft/microsoft-decision-1 perplexity/pplx-decider-v1.2].freeze }
+                             default: %w[perplexity/pplx-decider-v1.2 liquid/d1 typesafe/jev-1.14].freeze }
   }.freeze
   MAX_MODELS = 3
   # Below this a call cannot finish, so the chain stops instead of starting it.

@@ -83,10 +83,10 @@ RSpec.describe Llm::FeatureProfile do
     expect(described_class.for(:custom_guardrail)).not_to be_strict_timeout
   end
 
-  it 'gives the background decision features one fallback decision model each, and the turn decisions none (their chain falls back)' do
-    expect(described_class.for(:custom_guardrail).decision_fallback_models).to eq(%w[openai/gpt-6-luna-decisions])
-    expect(described_class.for(:language_detection).decision_fallback_models).to eq(%w[respan/span-02])
-    expect(described_class.for(:outcome_classification).decision_fallback_models).to eq(%w[microsoft/microsoft-decision-1])
+  it 'gives the background decision features ordered fallback decision models, and the turn decisions none (their chain falls back)' do
+    expect(described_class.for(:custom_guardrail).decision_fallback_models).to eq(%w[liquid/d1 typesafe/jev-1.14])
+    expect(described_class.for(:language_detection).decision_fallback_models).to eq(%w[liquid/d1 respan/span-02])
+    expect(described_class.for(:outcome_classification).decision_fallback_models).to eq(%w[liquid/d1 typesafe/jev-1.14])
     %i[agent_routing fact_check_gate inbound_triage assistant].each do |feature|
       expect(described_class.for(feature).decision_fallback_models).to eq([])
     end

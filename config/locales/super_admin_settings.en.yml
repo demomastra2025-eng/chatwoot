@@ -10,6 +10,15 @@ en:
         status:
           clear_model: "Clear model"
       fields:
+        CAPTAIN_CUSTOM_GUARDRAIL_MODEL:
+          title: "Custom agent checks"
+          hint: "Checks conditions in the agent profile. Built-in order: Perplexity Decider → Liquid D1 → TypeSafe JEV. If all checks fail, the agent replies without this check."
+        CAPTAIN_OUTCOME_CLASSIFIER_MODEL:
+          title: "Conversation outcomes"
+          hint: "Identifies the reason for handoff or completion. Built-in order: Perplexity Decider → Liquid D1 → TypeSafe JEV. Does not reply to the customer or change the status."
+        CAPTAIN_LANGUAGE_DETECTION_MODEL:
+          title: "Customer language"
+          hint: "Detects the customer language before the agent replies. Built-in order: Perplexity Decider → Liquid D1 → Respan Span 02."
         CAPTAIN_COUNCIL_EDITOR_MODEL:
           title: "Council reply editor"
           hint: "Combines completed replies into one message without tools or reasoning. Uses its own platform model."

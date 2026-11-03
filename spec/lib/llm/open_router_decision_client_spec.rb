@@ -146,7 +146,8 @@ RSpec.describe Llm::OpenRouterDecisionClient do
   it 'supports exactly the verified decision models: the existing ones and the models of the benchmark of the owner' do
     expect(described_class::SUPPORTED_MODELS).to contain_exactly(
       'inception/mercury-decide', 'microsoft/microsoft-decision-1', 'microsoft/microsoft-decision-1-20261009', 'openai/gpt-6-luna-decisions',
-      'perplexity/pplx-decider-v1.2', 'perplexity/pplx-decider-flash-v1.2', 'typesafe/jev-1.14', 'liquid/d1-ultra', 'respan/span-02',
+      'perplexity/pplx-decider-v1.2', 'perplexity/pplx-decider-flash-v1.2', 'typesafe/jev-1.14', 'liquid/d1', 'liquid/d1-ultra',
+      'cloudflare/clef', 'respan/span-02',
       'nace-ai/drex-max'
     )
     described_class::SUPPORTED_MODELS.each do |name|

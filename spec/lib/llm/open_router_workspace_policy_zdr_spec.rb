@@ -25,12 +25,12 @@ RSpec.describe Llm::OpenRouterWorkspacePolicy do
     expect(zdr_decision_routing.provider_preferences).to include(zdr: true, data_collection: 'deny')
   end
 
-  it 'preserves original high-accuracy decision model defaults and fallback chains' do
-    expect(Llm::Models.configured_default_model_for('language_detection')).to eq('openai/gpt-6-luna-decisions')
-    expect(Llm::FeatureProfile.for(:language_detection).decision_fallback_models).to eq(%w[respan/span-02])
-    expect(Llm::FeatureProfile.for(:custom_guardrail).decision_fallback_models).to eq(%w[openai/gpt-6-luna-decisions])
+  it 'uses the approved decision defaults and fallback chains' do
+    expect(Llm::Models.configured_default_model_for('language_detection')).to eq('perplexity/pplx-decider-v1.2')
+    expect(Llm::FeatureProfile.for(:language_detection).decision_fallback_models).to eq(%w[liquid/d1 respan/span-02])
+    expect(Llm::FeatureProfile.for(:custom_guardrail).decision_fallback_models).to eq(%w[liquid/d1 typesafe/jev-1.14])
     expect(Llm::DecisionChain::DEFAULT_MODELS).to eq(
-      %w[inception/mercury-decide microsoft/microsoft-decision-1 openai/gpt-6-luna-decisions]
+      %w[perplexity/pplx-decider-v1.2 liquid/d1 typesafe/jev-1.14]
     )
   end
 

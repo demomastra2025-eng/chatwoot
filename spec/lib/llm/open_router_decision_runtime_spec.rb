@@ -133,9 +133,9 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
     end
 
     {
-      custom_guardrail: %w[perplexity/pplx-decider-v1.2 openai/gpt-6-luna-decisions],
-      language_detection: %w[openai/gpt-6-luna-decisions respan/span-02],
-      outcome_classification: %w[inception/mercury-decide microsoft/microsoft-decision-1]
+      custom_guardrail: %w[perplexity/pplx-decider-v1.2 liquid/d1],
+      language_detection: %w[perplexity/pplx-decider-v1.2 liquid/d1],
+      outcome_classification: %w[perplexity/pplx-decider-v1.2 liquid/d1]
     }.each do |feature, (primary, fallback)|
       it "asks #{fallback} for #{feature} when #{primary} fails, and records both attempts" do
         stub_decider(primary, { status: 503, body: 'SYNTHETIC_PRIVATE_PROVIDER_TEXT' })
@@ -148,7 +148,7 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
         events = LlmEvent.where(account_id: account.id, event_name: 'llm.decision.complete').order(:id)
         expect(events.map { |event| [event.payload['requested_model'], event.status, event.payload['decision_chain_position']] })
           .to eq([[primary, 'error', 1], [fallback, 'success', 2]])
-        expect(Llm::FeatureProfile.for(feature).decision_fallback_models).to eq([fallback])
+        expect(Llm::FeatureProfile.for(feature).decision_fallback_models.first).to eq(fallback)
       end
     end
 
@@ -389,11 +389,12 @@ RSpec.describe Llm::OpenRouterRuntime, '#decide' do
       expect(error.message).to eq('OpenRouter decision request failed (HTTP 503).')
     end
 
-    event = LlmEvent.find_by!(account_id: account.id, event_name: 'llm.decision.complete')
-    usage = LlmUsageEvent.find_by!(llm_event_id: event.id)
-    expect(stub).to have_been_requested.once
-    expect(usage).to have_attributes(status: 'error', requested_model: model, actual_model: nil)
-    expect(event).to have_attributes(status: 'error', error: true)
-    expect([event.attributes, usage.attributes].to_json).not_to include(*private_values)
+    events = LlmEvent.where(account_id: account.id, event_name: 'llm.decision.complete').order(:id)
+    usages = LlmUsageEvent.where(llm_event_id: events.pluck(:id)).order(:id)
+    expect(stub).to have_been_requested.times(3)
+    expect(usages.map(&:requested_model)).to eq([model, 'liquid/d1', 'typesafe/jev-1.14'])
+    expect(usages).to all(have_attributes(status: 'error', actual_model: nil))
+    expect(events).to all(have_attributes(status: 'error', error: true))
+    expect((events.map(&:attributes) + usages.map(&:attributes)).to_json).not_to include(*private_values)
   end
 end

@@ -12,9 +12,9 @@ require_relative 'egress_guard'
 # the served model, the provider, the generation id and the usage; never prose, never the request.
 class Llm::OpenRouterDecisionClient
   SUPPORTED_MODELS = %w[
+    perplexity/pplx-decider-v1.2 liquid/d1 liquid/d1-ultra typesafe/jev-1.14 cloudflare/clef
+    respan/span-02 perplexity/pplx-decider-flash-v1.2 openai/gpt-6-luna-decisions
     inception/mercury-decide microsoft/microsoft-decision-1 microsoft/microsoft-decision-1-20261009
-    openai/gpt-6-luna-decisions
-    perplexity/pplx-decider-v1.2 perplexity/pplx-decider-flash-v1.2 typesafe/jev-1.14 liquid/d1-ultra respan/span-02
     nace-ai/drex-max
   ].freeze
   NON_ZDR_MODELS = %w[openai/gpt-6-luna-decisions respan/span-02].freeze
