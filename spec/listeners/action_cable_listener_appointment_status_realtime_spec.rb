@@ -103,6 +103,14 @@ RSpec.describe ActionCableListener do
     outsider = create(:user, account: account, role: :agent)
     foreign = create(:conversation)
     foreign_admin = create(:user, account: foreign.account, role: :administrator)
+    # AccountUser creation joins every active inbox. Build an actually hidden
+    # legacy membership fixture before asserting that this operator is excluded.
+    InboxMember.where(user: outsider, inbox: [first_inbox, second_inbox]).delete_all
+    membership = account.account_users.find_by!(user_id: outsider.id)
+    expect(membership).to be_agent
+    policy_context = { user: outsider, account: account, account_user: membership }
+    expect([first_conversation, second_conversation].map { |conversation| ConversationPolicy.new(policy_context, conversation.reload).show? })
+      .to eq([false, false])
     broadcasts.clear
     clear_enqueued_jobs
 
