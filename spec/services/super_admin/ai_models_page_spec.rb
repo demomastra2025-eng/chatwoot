@@ -60,6 +60,26 @@ RSpec.describe SuperAdmin::AiModelsPage do
   end
 
   describe 'a card' do
+    it 'shows the independent council editor in the existing model-card group with its own platform default' do
+      card = slot('CAPTAIN_COUNCIL_EDITOR_MODEL')
+
+      expect(card).to be_model
+      expect(card.default).to eq('google/gemini-2.5-flash-lite')
+      expect(card.default_note).to be_nil
+      expect(page.groups_of('models').flat_map(&:slots)).to include(card)
+    end
+
+    %i[ru kk en].each do |locale|
+      it "has actual #{locale} labels for the council editor card and diagnostic feature" do
+        keys = %w[super_admin.app_config.fields.CAPTAIN_COUNCIL_EDITOR_MODEL.title
+                  super_admin.app_config.fields.CAPTAIN_COUNCIL_EDITOR_MODEL.hint
+                  super_admin.app_config.captain.diagnostics.feature_names.council_edit
+                  super_admin.ai_analytics.feature_names.council_edit]
+
+        expect(keys.map { |key| I18n.exists?(key, locale, fallback: false) }).to all(be(true))
+      end
+    end
+
     it 'has the Russian title and description of installation_config.yml for a model slot' do
       card = slot('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')
 

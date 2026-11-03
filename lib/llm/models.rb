@@ -29,6 +29,7 @@ module Llm::Models
     'inbound_triage' => %w[decision_classification],
     'agent_routing_escalation' => %w[structured_output],
     'council_split' => %w[structured_output],
+    'council_edit' => %w[structured_output],
     'customer_notice' => [],
     'assistant' => %w[structured_output tool_calling tool_choice],
     'copilot' => %w[structured_output tool_calling tool_choice],
@@ -270,6 +271,9 @@ module Llm::Models
       return configured_config if configured_config.present? && decision_model?(canonical_name)
 
       dynamic_config = dynamic_model_configs(account: account)[canonical_name]
+      if dynamic_config.to_h['source'] == Llm::OpenRouterModelCatalog::FALLBACK_SOURCE
+        dynamic_config = configured_config.to_h.slice('supported_parameters', 'reasoning').merge(dynamic_config)
+      end
       return dynamic_config if dynamic_config.to_h['provider'] == OPENROUTER_PROVIDER
 
       configured_config || dynamic_config

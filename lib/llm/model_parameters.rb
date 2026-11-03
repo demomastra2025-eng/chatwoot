@@ -25,7 +25,8 @@ class Llm::ModelParameters
 
   def reasoning_efforts
     reasoning = @config['reasoning']
-    return [] unless reasoning.is_a?(Hash) && reasoning.key?('supported_efforts')
+    return [] unless reasoning.is_a?(Hash)
+    return disabled_reasoning_uses_flag? ? ['none'] : [] unless reasoning.key?('supported_efforts')
     return [] unless supported_parameters.intersect?(%w[reasoning reasoning_effort]) ||
                      Array(@config['capabilities']).include?('reasoning')
 
@@ -46,8 +47,8 @@ class Llm::ModelParameters
   def disabled_reasoning_uses_flag?
     reasoning = @config['reasoning']
     @config['provider'] == 'openrouter' && supported_parameters.include?('reasoning') && reasoning.is_a?(Hash) &&
-      reasoning['mandatory'] == false && reasoning['supported_efforts'].is_a?(Array) &&
-      reasoning['supported_efforts'].any? && !reasoning['supported_efforts'].include?('none')
+      reasoning['mandatory'] == false && (!reasoning.key?('supported_efforts') ||
+        (reasoning['supported_efforts'].is_a?(Array) && reasoning['supported_efforts'].exclude?('none')))
   end
 
   def metadata

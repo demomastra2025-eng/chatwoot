@@ -110,6 +110,20 @@ RSpec.describe 'Super admin AI models page', type: :request do
     end
   end
 
+  it 'renders and saves the dedicated council editor through the existing global model select' do
+    upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.6-luna')
+    open_page
+    editor = card('CAPTAIN_COUNCIL_EDITOR_MODEL')
+
+    expect(editor.at_css('select[name="app_config[CAPTAIN_COUNCIL_EDITOR_MODEL]"]')).to be_present
+    expect(text(editor)).to include('Объединение ответов консилиума')
+    submit_form('app_config[CAPTAIN_COUNCIL_EDITOR_MODEL]' => 'openai/gpt-6-luna')
+
+    expect(response).to have_http_status(:redirect)
+    expect(stored('CAPTAIN_COUNCIL_EDITOR_MODEL')).to eq('openai/gpt-6-luna')
+    expect(stored('CAPTAIN_DEFAULT_MODEL')).to eq('openai/gpt-5.6-luna')
+  end
+
   describe 'with the key of OpenRouter and a loaded catalog' do
     let(:capabilities) { %w[text_input text_output structured_output tool_calling tool_choice image_input streaming reasoning] }
 

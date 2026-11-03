@@ -153,6 +153,20 @@ class Llm::FeatureProfile
       cost_policy: 'latency_first',
       fallback_strategy: 'whole_message'
     },
+    'council_edit' => {
+      config_feature_key: 'council_edit',
+      required_capabilities: %w[text_input text_output structured_output],
+      timeout_seconds: 15,
+      max_retries: 0,
+      streaming: false,
+      native_endpoint: nil,
+      structured_output: true,
+      response_healing: false,
+      reasoning_policy: 'disabled',
+      privacy_policy: 'standard',
+      cost_policy: 'latency_first',
+      fallback_strategy: 'part_texts'
+    },
     'customer_notice' => {
       config_feature_key: 'customer_notice',
       required_capabilities: %w[text_input text_output],

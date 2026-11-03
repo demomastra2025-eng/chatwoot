@@ -266,14 +266,16 @@ RSpec.describe Captain::Runtime::Council do
   end
 
   describe 'where the parts run' do
-    it 'runs every mutating part on the calling thread and a read-only part on a thread of its own' do
+    self.use_transactional_tests = false
+
+    it 'runs independent writer-capable and read-only parts on separate threads' do
       results.merge!('part-0' => ran(booked, acted: true), 'part-1' => ran('Цена'))
 
       run_council(parts)
 
-      expect(runs.find { |run| run[:id] == 'part-0' }[:thread]).to be(Thread.current)
+      expect(runs.find { |run| run[:id] == 'part-0' }[:thread]).not_to be(Thread.current)
       expect(runs.find { |run| run[:id] == 'part-1' }[:thread]).not_to be(Thread.current)
-      expect(Captain::Runtime::CoordinationEvents).to have_received(:part_started).with(hash_including(lane: 'writer', inline: true))
+      expect(Captain::Runtime::CoordinationEvents).to have_received(:part_started).with(hash_including(lane: 'writer', inline: false))
       expect(Captain::Runtime::CoordinationEvents).to have_received(:part_started).with(hash_including(lane: 'reader', inline: false))
     end
 
@@ -330,22 +332,25 @@ RSpec.describe Captain::Runtime::Council do
       worker&.join(1)
     end
 
-    it 'runs the parts of mutating owners one after another in plan order, also for different people' do
-      order = []
-      results.merge!('part-0' => lambda {
-        order << :first_start
-        sleep 0.05
-        order << :first_end
-        ran(booked, acted: true)
-      }, 'part-1' => lambda {
-        order << :second_start
-        ran('Борис записан на 15 октября в 11:00.', acted: true)
-      })
+    it 'overlaps independent model work even when both owners have action tools' do
+      started = Queue.new
+      release = Queue.new
+      %w[part-0 part-1].each do |id|
+        results[id] = lambda do
+          started << id
+          release.pop
+          ran("Answer #{id}")
+        end
+      end
+      worker = Thread.new { run_council(parts(%w[Анна Борис], owners: [1, 3])) }
 
-      run_council(parts(%w[Анна Борис], owners: [1, 3]))
-
-      expect(order).to eq(%i[first_start first_end second_start])
-      expect(runs.pluck(:thread).uniq).to eq([Thread.current])
+      expect(Array.new(2) { Timeout.timeout(5) { started.pop } }).to contain_exactly('part-0', 'part-1')
+      2.times { release << true }
+      expect(worker.value).to be_present
+      expect(runs.pluck(:thread).uniq.size).to eq(2)
+    ensure
+      2.times { release << true } if release
+      worker&.join(1)
     end
 
     it 'runs a read-only dependent part in the lane of its prerequisite, after it' do
@@ -364,7 +369,7 @@ RSpec.describe Captain::Runtime::Council do
       run_council(items)
 
       expect(order).to eq(%i[prerequisite dependent])
-      expect(runs.pluck(:thread).uniq).to eq([Thread.current])
+      expect(runs.pluck(:thread).uniq.size).to eq(1)
     end
 
     it 'runs everything on the calling thread, in plan order, when the threads are switched off' do
@@ -402,6 +407,17 @@ RSpec.describe Captain::Runtime::Council do
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:fetch).with('CAPTAIN_COUNCIL_PARALLEL', nil).and_return(value)
         expect(described_class.parallel?).to be(false)
+      end
+    end
+  end
+
+  describe 'the worker connection budget' do
+    { 1 => 0, 2 => 1, 5 => 4, 20 => 8 }.each do |pool_size, workers|
+      it "permits #{workers} worker threads with a #{pool_size}-connection pool and an eight-thread cap" do
+        stub_const('Captain::Runtime::Council::THREAD_LIMIT', 8)
+        allow(ActiveRecord::Base.connection_pool).to receive(:size).and_return(pool_size)
+
+        expect(council.send(:worker_thread_budget)).to eq(workers)
       end
     end
   end
@@ -650,18 +666,19 @@ RSpec.describe Captain::Runtime::Council do
       expect(Captain::Runtime::CoordinationEvents).to have_received(:council_editor_fallback).with(hash_including(reason: 'error'))
     end
 
-    it 'edits with the model of the acting agent unless the runner passes its own' do
+    it 'uses the platform council editor model regardless of the acting agent and runner models' do
+      allow(Llm::Config).to receive(:model_for).with(feature: :council_edit, account: nil).and_return('synthetic/structured-editor')
       results.merge!('part-0' => ran('Баға'), 'part-1' => ran('Мекенжай'))
 
       run_council(parts(%w[Анна Борис], owners: [2, 2]))
       expect(Captain::Runtime::CouncilEditor).to have_received(:new).with(
-        context: context, account: nil, llm_context: :llm_context, model: 'openai/gpt-6-luna'
+        context: context, account: nil, llm_context: :llm_context, model: 'synthetic/structured-editor'
       )
 
       runner_model = described_class.new(context: context, graph: graph, account: nil, model: 'openai/gpt-6-sol')
       allow(runner_model).to receive(:fresh_actor) { |id| actors[id] }
       runner_model.run(parts(%w[Анна Борис], owners: [2, 2]))
-      expect(Captain::Runtime::CouncilEditor).to have_received(:new).with(hash_including(model: 'openai/gpt-6-sol'))
+      expect(Captain::Runtime::CouncilEditor).to have_received(:new).with(hash_including(model: 'synthetic/structured-editor')).twice
     end
   end
 
@@ -861,6 +878,7 @@ RSpec.describe Captain::Runtime::Council do
   end
 
   describe 'a run that turns stale' do
+    self.use_transactional_tests = false
     let(:stale) { Captain::Conversation::ControlGenerationStaleError.new('newer message') }
 
     it 'stops, starts no later part and raises the error after every thread was joined' do
@@ -876,7 +894,9 @@ RSpec.describe Captain::Runtime::Council do
         ran('Цена')
       }, 'part-2' => ran(booked, acted: true))
 
-      expect { run_council(parts(%w[Анна Анна Анна], owners: [1, 2, 3])) }.to raise_error(stale)
+      items = parts(%w[Анна Анна Анна], owners: [1, 2, 3])
+      items.last.merge!('relation' => 'depends_on', 'depends_on_part_id' => 'part-0')
+      expect { run_council(items) }.to raise_error(stale)
 
       expect(runs.pluck(:id)).not_to include('part-2')
       expect(done.size).to eq(1)
@@ -884,7 +904,14 @@ RSpec.describe Captain::Runtime::Council do
     end
 
     it 'raises the error of a thread after the writer lane finished' do
-      results.merge!('part-0' => ran(booked, acted: true), 'part-1' => -> { raise stale })
+      finished = Queue.new
+      results.merge!('part-0' => lambda {
+        finished << true
+        ran(booked, acted: true)
+      }, 'part-1' => lambda {
+        Timeout.timeout(5) { finished.pop }
+        raise stale
+      })
 
       expect { run_council(parts) }.to raise_error(stale)
 

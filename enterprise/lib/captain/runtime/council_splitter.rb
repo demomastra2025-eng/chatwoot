@@ -31,8 +31,11 @@ class Captain::Runtime::CouncilSplitter
   def split
     return fallback('no_model') if @model.blank?
 
-    content = Timeout.timeout(@timeout) { ask }
-    parts = valid_parts(parse(content))
+    parts = Timeout.timeout(@timeout) do
+      Llm::CouncilModelChain.new(feature: FEATURE, model: @model, account: @account).call do |model|
+        valid_parts(parse(ask(model)))
+      end
+    end
     parts ? Result.new(parts: parts, fallback: false) : fallback('invalid')
   rescue Captain::Conversation::ControlGenerationStaleError
     raise
@@ -47,16 +50,16 @@ class Captain::Runtime::CouncilSplitter
 
   def participant_ids = @participants.map(&:id)
 
-  def ask
+  def ask(model)
     chat = Llm::Runtime.build_chat(
-      feature: FEATURE, account: @account, model: @model, models: [@model], server_tools: [], transform_policy: 'disabled',
-      options: Llm::ModelParameters.for(@model, account: @account).compile(
-        temperature: 0, thinking: Llm::RuntimePolicy.no_thinking_options(model: @model, account: @account)
+      feature: FEATURE, account: @account, model: model, models: [model], server_tools: [], transform_policy: 'disabled',
+      options: Llm::ModelParameters.for(model, account: @account).compile(
+        temperature: 0, thinking: Llm::RuntimePolicy.no_thinking_options(model: model, account: @account)
       )
     )
     chat = chat.with_instructions(INSTRUCTIONS)
     chat = Llm::StructuredOutputPolicy.bind!(chat: chat, schema: schema)
-    response = Llm::Runtime.ask(chat, payload.to_json, account: @account, model: @model,
+    response = Llm::Runtime.ask(chat, payload.to_json, account: @account, model: model,
                                                        observability: @observability.merge(operation: 'captain.council_split'))
     response.respond_to?(:content) ? response.content : response
   end
@@ -74,7 +77,7 @@ class Captain::Runtime::CouncilSplitter
       name: 'captain_council_split', strict: true,
       schema: {
         type: 'object', additionalProperties: false, required: ['parts'],
-        properties: { parts: { type: 'array', items: part_schema } }
+        properties: { parts: { type: 'array', minItems: @participants.size, maxItems: @participants.size, items: part_schema } }
       }
     }
   end

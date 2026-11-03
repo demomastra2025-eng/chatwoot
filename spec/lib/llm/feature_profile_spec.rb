@@ -104,14 +104,17 @@ RSpec.describe Llm::FeatureProfile do
     expect(described_class.for(:language_detection).max_request_bytes).to be_nil
   end
 
-  it 'registers the escalation of the router and the council split as structured chat features, not decision features' do
+  it 'registers router escalation and council split/edit as structured chat without tool requirements' do
     escalation = described_class.for(:agent_routing_escalation)
     split = described_class.for(:council_split)
+    edit = described_class.for(:council_edit)
 
     expect(escalation).to have_attributes(timeout_seconds: 15, max_retries: 0, reasoning_policy: 'platform')
     expect(split).to have_attributes(timeout_seconds: 4, max_retries: 0, reasoning_policy: 'disabled')
-    expect([escalation, split]).to all(be_structured_output)
-    expect([escalation, split].map(&:decisions?)).to eq([false, false])
+    expect(edit).to have_attributes(timeout_seconds: 15, max_retries: 0, reasoning_policy: 'disabled')
+    expect([escalation, split, edit]).to all(be_structured_output)
+    expect([escalation, split, edit].map(&:decisions?)).to eq([false, false, false])
+    expect([split, edit].map(&:required_capabilities)).to all(eq(%w[text_input text_output structured_output]))
   end
 
   it 'rejects unsupported feature keys' do

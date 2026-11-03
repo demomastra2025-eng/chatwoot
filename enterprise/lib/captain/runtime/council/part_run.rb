@@ -72,13 +72,14 @@ class Captain::Runtime::Council::PartRun
 
   # agent: built on the calling thread from the owner's runtime with the tools of PartTools. snapshot: the part's own context.
   # callbacks: the callbacks of the run (already safe to call from several threads).
-  def initialize(agent:, snapshot:, account:, llm_context:, callbacks:, max_turns:)
+  def initialize(agent:, snapshot:, account:, llm_context:, callbacks:, max_turns:, mutation_guard: nil) # rubocop:disable Metrics/ParameterLists
     @agent = agent
     @snapshot = snapshot
     @account = account
     @llm_context = llm_context
     @callbacks = callbacks
     @max_turns = max_turns
+    @mutation_guard = mutation_guard
     @tracker = Tracker.new(@agent.tools.select { |tool| Llm::ToolRiskPolicy.mutating?(tool) }.map { |tool| tool.name.to_s })
   end
 
@@ -145,9 +146,18 @@ class Captain::Runtime::Council::PartRun
 
   def tracked_callbacks
     merged = @callbacks.to_h.transform_values { |list| Array(list).dup }
+    add_runtime_callbacks(merged)
     (merged[:tool_complete] ||= []) << ->(tool_name, result, *) { @tracker.tool_complete(tool_name, result) }
+    merged[:tool_complete] << ->(*) { Captain::Runtime::Council::ThreadScope.release_idle_connections! }
     (merged[:llm_call_complete] ||= []) << ->(*) { @tracker.llm_call }
     merged
+  end
+
+  def add_runtime_callbacks(merged)
+    (merged[:run_start] ||= []).unshift(->(_name, _input, wrapper) { wrapper.council_mutation_guard = @mutation_guard })
+    # Runner emits agent_thinking immediately BEFORE ask/complete, after chat construction. Put cleanup after the external
+    # callbacks too, since tracing or a tool may have used .connection and left it leased.
+    (merged[:agent_thinking] ||= []) << ->(*) { Captain::Runtime::Council::ThreadScope.release_idle_connections! }
   end
 
   def outcome(result, duration_ms)

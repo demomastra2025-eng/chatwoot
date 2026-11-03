@@ -235,7 +235,8 @@ RSpec.describe Llm::Config do
         'language_detection' => 'CAPTAIN_LANGUAGE_DETECTION_MODEL',
         'outcome_classification' => 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL',
         'agent_routing_escalation' => 'CAPTAIN_AGENT_ROUTING_ESCALATION_MODEL',
-        'council_split' => 'CAPTAIN_COUNCIL_SPLIT_MODEL'
+        'council_split' => 'CAPTAIN_COUNCIL_SPLIT_MODEL',
+        'council_edit' => 'CAPTAIN_COUNCIL_EDITOR_MODEL'
       )
     end
 
@@ -371,12 +372,44 @@ RSpec.describe Llm::Config do
       expect(described_class.model_for(feature: 'image_recognition')).to eq('google/gemini-3.1-flash-lite')
     end
 
-    it 'defaults every chat-completion feature to Luna 6 before any catalog refresh when the platform chose nothing' do
+    it 'defaults the main chat features to Luna 6 before any catalog refresh when the platform chose nothing' do
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
 
       %w[assistant editor copilot label_suggestion].each do |feature|
         expect(described_class.model_for(feature: feature)).to eq('openai/gpt-6-luna')
+      end
+    end
+
+    describe 'council platform model slots' do
+      before do
+        upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+        upsert_installation_config('CAPTAIN_COUNCIL_SPLIT_MODEL', '')
+        upsert_installation_config('CAPTAIN_COUNCIL_EDITOR_MODEL', '')
+      end
+
+      it 'keeps both role defaults independent of the global agent default and account model choices' do
+        upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.6-luna')
+        account = create(:account)
+        # These platform-only keys are rejected by the account schema; even unsaved input must not affect resolution.
+        account.captain_models = { 'council_edit' => 'openai/gpt-5.6-luna', 'council_split' => 'openai/gpt-5.6-luna' }
+        allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
+
+        { 'council_split' => 'deepseek/deepseek-v4.1-flash', 'council_edit' => 'google/gemini-2.5-flash-lite' }.each do |feature, model|
+          expect(described_class.model_for(feature: feature, account: account)).to eq(model)
+        end
+      end
+
+      it 'uses the global editor selection for structured chat without requiring tools' do
+        upsert_installation_config('CAPTAIN_COUNCIL_EDITOR_MODEL', 'synthetic/structured-only')
+        allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+          'synthetic/structured-only' => {
+            'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[text_input text_output structured_output]
+          }
+        )
+        allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoint_metadata).and_return({})
+
+        expect(described_class.model_for(feature: :council_edit)).to eq('synthetic/structured-only')
       end
     end
 

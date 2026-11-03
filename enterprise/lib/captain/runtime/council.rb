@@ -1,16 +1,16 @@
 # frozen_string_literal: true
 
-# A council: one customer message that holds requests for two or three different agents at once. The router chose exactly these
+# A council: one customer message that holds requests for up to eight different agents at once. The router chose exactly these
 # participants (see Captain::Runtime::DecisionRouter) and the message was cut into one part per participant (CouncilSplitter).
 # Every part is a normal run of the agent that OWNS it (see Council::PartRun), with that agent's own tools, mutating tools
 # included: the owner books, moves or cancels as soon as it has what it needs, otherwise it asks for everything still missing in one message, and it
 # writes the final text of its part from what its tools returned. The editor (CouncilEditor) only merges the part texts into one
 # message; a council of one part sends that text as it is. The conversation never changes hands.
 #
-# Threads. Every mutating tool runs on the thread of the job (it carries the user, the delivery policy of a Playground run, the
-# locale and the durable session). The parts whose owners can write form ONE lane that runs there in plan order; read-only
-# parts run on threads of their own, side by side with it (see Council::Lanes). Only the calling thread touches the shared
-# context and the registry: threads return plain data that the calling thread records after the join.
+# Threads. Independent parts run side by side, including owners with action tools. ThreadScope carries the caller's identity,
+# delivery policy, privacy vaults and locale. Actual mutating calls share one guard through reserve, execute and receipt;
+# model/read work stays outside it. Dependencies and shared business objects keep their order (see Council::Lanes).
+# Threads return plain data; the caller records it after the join. Interrupted writes are recorded under the shared guard.
 #
 # The runtime writes no sentence to the customer. A part tells the customer only what its owner wrote: a part without a text of
 # its own is left out of the reply, also when it acted (staff get a private note, see #staff_note) and also when it could not be
@@ -47,8 +47,8 @@ class Captain::Runtime::Council
   SUGGESTION_AFTER_PARTS_SECONDS = Captain::Runtime::CouncilEditor::TIMEOUT_SECONDS + 3
   # A suggestion decides a part again (and runs it once more) only while the router and a run of this length still fit.
   SUGGESTION_REASSIGN_RUN_SECONDS = 15
-  THREAD_LIMIT = [ENV.fetch('CAPTAIN_COUNCIL_THREADS', 4).to_i, 1].max
-  # Read-only lanes on threads, process-wide. A lane that gets no slot runs on the calling thread.
+  THREAD_LIMIT = ENV.fetch('CAPTAIN_COUNCIL_THREADS', 8).to_i.clamp(1, 8)
+  # Lanes on threads, process-wide. Pool capacity also bounds each council; excess lanes run on the calling thread.
   SLOTS = Concurrent::Semaphore.new(THREAD_LIMIT)
   # Turns the threads off at once (ENV or an InstallationConfig row set to off, 0, false, disabled or no): every part runs
   # in plan order on the calling thread. The routing benchmark and the specs that share one database connection run like this.
@@ -96,22 +96,22 @@ class Captain::Runtime::Council
     end
   end
 
-  # model: the acting agent's runtime model, used by the editor that writes the single customer reply.
+  # model: accepted for caller compatibility; the editor has its own platform feature slot.
   # callbacks: the callbacks of the run, so that the tool calls of the parts are traced like those of any other run.
   # reassigner: called with (fragment:, without:) for a part that was not its owner's; returns the router's decision for it
   # (Captain::Runtime::DecisionRouter::Decision) or nil. Without it such a part stays unresolved.
-  def initialize(context:, graph:, account:, llm_context: nil, model: nil, callbacks: nil, reassigner: nil) # rubocop:disable Metrics/ParameterLists
+  def initialize(context:, graph:, account:, llm_context: nil, model: nil, callbacks: nil, reassigner: nil) # rubocop:disable Metrics/ParameterLists, Lint/UnusedMethodArgument
     @context = context
     @graph = graph
     @account = account
     @llm_context = llm_context
-    @model = model
     @reassigner = reassigner
     @callbacks = callbacks || {}
     @entries = {}
     @results = []
     @participants = []
     @monitor = Monitor.new
+    @mutation_guard = Monitor.new
     @aborted = Concurrent::AtomicBoolean.new(false)
     @calling_thread = Thread.current
   end
@@ -313,22 +313,26 @@ class Captain::Runtime::Council
     reassign_pass(plans)
   end
 
-  # [lanes that run on the calling thread, [lane, thread] pairs]. The writer lane stays on the calling thread; every read-only
-  # lane gets a thread while there are slots. With the threads switched off everything is one lane in plan order.
+  # [inline lanes, [lane, thread] pairs]. A parent transaction must retain execution on its own connection: a worker could
+  # otherwise wait on the parent's row lock while the parent joins it. Reserve one pool slot for the caller/inline work.
   def schedule(runnable)
-    return [[runnable], []] unless self.class.parallel?
+    return [[runnable], []] unless self.class.parallel? && !Captain::Runtime::Council::ThreadScope.transaction_open?
 
     lanes = Captain::Runtime::Council::Lanes.build(runnable.map { |plan| lane_plan(plan) })
     by_id = runnable.index_by { |plan| plan.part['id'] }
     inline = []
-    inline << lanes[:writer].map { |item| by_id.fetch(item.id) } if lanes[:writer].any?
     threads = []
-    lanes[:readers].each do |readers|
-      lane = readers.map { |item| by_id.fetch(item.id) }
-      thread = start_thread(lane)
+    budget = worker_thread_budget
+    lanes.each do |items|
+      lane = items.map { |item| by_id.fetch(item.id) }
+      thread = threads.size < budget ? start_thread(lane) : nil
       thread ? threads << [lane, thread] : inline << lane
     end
     [inline, threads]
+  end
+
+  def worker_thread_budget
+    (ActiveRecord::Base.connection_pool.size - 1).clamp(0, THREAD_LIMIT)
   end
 
   def lane_plan(plan)
@@ -343,7 +347,7 @@ class Captain::Runtime::Council
 
     begin
       scope = (@thread_scope ||= Captain::Runtime::Council::ThreadScope.capture)
-      lane.each { |plan| publish_part_started(plan, lane: 'reader', inline: false) }
+      lane.each { |plan| publish_part_started(plan, lane: plan.writer ? 'writer' : 'reader', inline: false) }
     rescue StandardError
       SLOTS.release
       return
@@ -370,6 +374,7 @@ class Captain::Runtime::Council
   def join(threads)
     return [] if threads.empty?
 
+    Captain::Runtime::Council::ThreadScope.release_idle_connections!
     ActiveSupport::Dependencies.interlock.permit_concurrent_loads { threads.map { |lane, thread| [lane, thread.value] } }
   end
 
@@ -414,7 +419,7 @@ class Captain::Runtime::Council
     plan.snapshot[:part_prior] = prior.map { |entry| entry.slice(:text, :status, :acted) }
     part_run = Captain::Runtime::Council::PartRun.new(
       agent: plan.agent, snapshot: plan.snapshot, account: @account, llm_context: @llm_context, callbacks: @shared_callbacks,
-      max_turns: part_max_turns
+      max_turns: part_max_turns, mutation_guard: @mutation_guard
     )
     begin
       result = part_run.call(plan.part['fragment'])
@@ -463,7 +468,9 @@ class Captain::Runtime::Council
     # A suggestion part wrote nothing (its cards go with the stopped run): there is nothing to keep.
     return if suggestion? || !part_run.tracker.acted?
 
-    registry.record_result!(plan.part['id'], state: 'done', summary: part_run.tracker.summary, acted: true)
+    @mutation_guard.synchronize do
+      registry.record_result!(plan.part['id'], state: 'done', summary: part_run.tracker.summary, acted: true)
+    end
   rescue StandardError => e
     Rails.logger.warn("[CAPTAIN][Council] could not store an interrupted part error_class=#{e.class.name}")
   end
@@ -631,18 +638,20 @@ class Captain::Runtime::Council
   # --- Recording (calling thread only) --------------------------------------------------------------------------------------
 
   def record_outcome(plan, entry, result)
-    @entries[plan.part['id']] = entry
-    @results << result if result.is_a?(Hash) && result.key?(:tracking)
-    return if entry[:settled]
+    @mutation_guard.synchronize do
+      @entries[plan.part['id']] = entry
+      @results << result if result.is_a?(Hash) && result.key?(:tracking)
+      next if entry[:settled]
 
-    unless entry[:not_started]
-      # reply_text is what the customer is told for this part, kept apart from the summary (which holds what the tools returned,
-      # for the model and for staff), so that a retried job replays the sentence and never a tool dump.
-      registry.record_result!(plan.part['id'], state: entry[:state], summary: entry[:stored], missing_fields: entry[:questions],
-                                               executor_agent_id: plan.part['executor_agent_id'], acted: entry[:acted],
-                                               reply_text: entry[:text].to_s, technical: entry[:technical])
+      unless entry[:not_started]
+        # Inline fallback parts finish while workers can still act. Their registry write shares the same session guard.
+        # reply_text stays apart from the tool summary, so a retry replays the sentence, never a tool dump.
+        registry.record_result!(plan.part['id'], state: entry[:state], summary: entry[:stored], missing_fields: entry[:questions],
+                                                 executor_agent_id: plan.part['executor_agent_id'], acted: entry[:acted],
+                                                 reply_text: entry[:text].to_s, technical: entry[:technical])
+      end
+      publish_part_finished(plan, entry, result)
     end
-    publish_part_finished(plan, entry, result)
   end
 
   def registry
@@ -841,7 +850,7 @@ class Captain::Runtime::Council
   end
 
   def editor_model
-    @model.presence || acting_actor&.resolved_agent_model
+    Llm::Config.model_for(feature: :council_edit, account: @account)
   end
 
   # The same conditions the response builder checks before it hands the conversation to staff.

@@ -93,4 +93,55 @@ RSpec.describe Captain::Runtime::Council::ThreadScope do
 
     expect(Rails.application.executor).to have_received(:wrap)
   end
+
+  describe 'connection lease cleanup' do
+    self.use_transactional_tests = false
+
+    it 'releases an idle lease on a worker before model latency, while retaining a real open transaction' do
+      scope = capture_in
+
+      seen = on_a_thread(scope) do
+        ActiveRecord::Base.connection.select_value('SELECT 1')
+        described_class.release_idle_connections!
+        idle = ActiveRecord::Base.connection_pool.active_connection?.present?
+        transaction = ActiveRecord::Base.transaction do
+          described_class.release_idle_connections!
+          described_class.transaction_open?
+        end
+        [idle, transaction]
+      end
+
+      expect(seen).to eq([false, true])
+    end
+  end
+
+  it 'gives sibling workers independent policy and privacy maps while retaining the run scopes' do
+    privacy = { account_id: account.id, scope_id: 'synthetic-council', memory: {}, whitelist: {}, seeded_names: [], seeded_phones: [] }
+    scope = Llm::PiiSessionPseudonymizer.adopt_scope(privacy) do
+      Llm::IinTokenVault.with_scope(account_id: account.id, scope_id: 'synthetic-council') { capture_in }
+    end
+    ready = Queue.new
+    release = Queue.new
+    workers = %w[first second].map do |id|
+      Thread.new do
+        scope.run do
+          Current.playground_run_policy['worker'] = id
+          Llm::PiiSessionPseudonymizer.current_scope[:memory]['worker'] = id
+          ready << true
+          release.pop
+          [Current.playground_run_policy['worker'], Llm::PiiSessionPseudonymizer.current_scope[:memory]['worker'],
+           Llm::IinTokenVault.current_scope[:scope_id]]
+        end
+      end
+    end
+    2.times { Timeout.timeout(5) { ready.pop } }
+    2.times { release << true }
+
+    expect(workers.map(&:value)).to eq([%w[first first synthetic-council], %w[second second synthetic-council]])
+    expect(Current.playground_run_policy).to eq('token' => 'synthetic-playground-token')
+    expect(privacy[:memory]).to eq({})
+  ensure
+    2.times { release << true } if release
+    workers&.each { |worker| worker.join(5) }
+  end
 end
