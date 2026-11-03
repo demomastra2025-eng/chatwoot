@@ -58,6 +58,28 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
     end.new
   end
 
+  it 'rejects a retired explicit primary model' do
+    expect { compile(feature: :editor, model: 'openai/gpt-oss-safeguard-20b') }.to raise_error(RubyLLM::ConfigurationError, /retired/)
+  end
+
+  it 'rejects a retired explicit fallback model' do
+    expect { compile(feature: :editor, models: ['openai/gpt-6-luna', 'openai/gpt-oss-20b']) }
+      .to raise_error(RubyLLM::ConfigurationError, /retired/)
+  end
+
+  it 'rejects a retired fallback from the routing profile' do
+    profile = Llm::OpenRouterRoutingProfile.for(feature: :editor, model: 'openai/gpt-6-luna')
+    allow(profile).to receive(:models).and_return(['openai/gpt-6-luna', 'openai.gpt-oss-20b-1:0'])
+    allow(Llm::OpenRouterRoutingProfile).to receive(:for).and_return(profile)
+
+    expect { compile(feature: :editor, model: 'openai/gpt-6-luna') }.to raise_error(RubyLLM::ConfigurationError, /retired/)
+  end
+
+  it 'rejects a retired model smuggled through raw string-keyed parameters' do
+    expect { compile(feature: :editor, base_params: { 'models' => ['openai/gpt-oss-20b'] }) }
+      .to raise_error(RubyLLM::ConfigurationError, /retired/)
+  end
+
   it 'deep merges Captain agent provider params and de-duplicates response healing plugins' do
     compiled = compile(
       feature: :captain_agent,

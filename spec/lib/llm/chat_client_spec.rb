@@ -7,6 +7,11 @@ RSpec.describe Llm::ChatClient do
   let(:context) { instance_double(RubyLLM::Context, chat: chat) }
   let(:chat_model) { instance_double('RubyLLM::Model::Info', id: 'gpt-4.1-mini') }
 
+  before do
+    allow(chat).to receive(:model).and_return(chat_model)
+    allow(chat).to receive(:params).and_return({})
+  end
+
   describe '.build' do
     before do
       allow(chat).to receive(:with_temperature).and_return(chat)
@@ -14,6 +19,29 @@ RSpec.describe Llm::ChatClient do
       allow(chat).to receive(:with_headers).and_return(chat)
       allow(chat).to receive(:with_thinking).and_return(chat)
       allow(RubyLLM).to receive(:chat).and_return(chat)
+    end
+
+    ['openai/gpt-oss-20b', 'openai.gpt-oss-20b-1:0', 'openai.gpt-oss-safeguard-20b', ' openai/gpt-oss-20b '].each do |retired|
+      it "rejects retired explicit model #{retired} before creating a provider chat" do
+        expect(RubyLLM).not_to receive(:chat)
+        expect(context).not_to receive(:chat)
+
+        expect { described_class.build(context: context, model: retired) }.to raise_error(RubyLLM::ConfigurationError, /retired/)
+      end
+    end
+
+    it 'rejects a retired model on a supplied chat even when the explicit model is supported' do
+      allow(chat_model).to receive(:id).and_return('openai/gpt-oss-20b')
+      expect(chat).not_to receive(:with_params)
+
+      expect { described_class.build(chat: chat, model: 'openai/gpt-6-luna') }.to raise_error(RubyLLM::ConfigurationError, /retired/)
+    end
+
+    it 'rejects a retired fallback stored on a supplied chat' do
+      allow(chat).to receive(:params).and_return(models: ['openai/gpt-6-luna', 'openai/gpt-oss-safeguard-20b'])
+      expect(chat).not_to receive(:with_params)
+
+      expect { described_class.build(chat: chat, model: 'openai/gpt-6-luna') }.to raise_error(RubyLLM::ConfigurationError, /retired/)
     end
 
     it 'builds a global chat and applies temperature' do
@@ -220,6 +248,26 @@ RSpec.describe Llm::ChatClient do
           thinking: { effort: 'high' }
         )
       end.to raise_error(Llm::CapabilityPolicy::UnsupportedCapabilityError, /thinking/)
+    end
+  end
+
+  %i[ask complete].each do |method|
+    it "rejects a retired supplied chat before #{method}, even when an explicit model masks it" do
+      allow(chat_model).to receive(:id).and_return('openai.gpt-oss-20b-1:0')
+      expect(chat).not_to receive(method)
+      arguments = method == :ask ? [chat, 'Synthetic text'] : [chat]
+
+      expect { described_class.public_send(method, *arguments, model: 'openai/gpt-6-luna') }
+        .to raise_error(RubyLLM::ConfigurationError, /retired/)
+    end
+
+    it "rejects a retired fallback stored on a supplied chat before #{method}" do
+      allow(chat).to receive(:params).and_return('models' => ['openai/gpt-oss-safeguard-20b'])
+      expect(chat).not_to receive(method)
+      arguments = method == :ask ? [chat, 'Synthetic text'] : [chat]
+
+      expect { described_class.public_send(method, *arguments, model: 'openai/gpt-6-luna') }
+        .to raise_error(RubyLLM::ConfigurationError, /retired/)
     end
   end
 

@@ -5,6 +5,10 @@ kk:
         diagnostics:
           feature_names:
             council_edit: "Консилиум жауаптарын біріктіру"
+        models:
+          not_configured: "Бапталмаған"
+        status:
+          clear_model: "Модельді алып тастау"
       fields:
         CAPTAIN_COUNCIL_EDITOR_MODEL:
           title: "Консилиум жауаптарын біріктіру"

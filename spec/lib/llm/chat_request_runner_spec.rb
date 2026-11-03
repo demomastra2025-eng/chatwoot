@@ -21,6 +21,7 @@ RSpec.describe Llm::ChatRequestRunner do
     allow(chat).to receive(:add_message)
     allow(chat).to receive(:ask).and_return(response)
     allow(chat).to receive(:model).and_return(chat_model)
+    allow(chat).to receive(:params).and_return({})
   end
 
   it 'applies system instructions, restores history, and asks with the latest message' do

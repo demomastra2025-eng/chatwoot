@@ -102,7 +102,7 @@ RSpec.describe Llm::Models do
       expect(described_class.features.dig('image_handwriting', 'default')).to eq('openai/gpt-6.1-terra')
       expect(described_class.features.dig('image_routing', 'default')).to eq('perplexity/pplx-decider-v1.2')
       expect(described_class.features.dig('audio_transcription', 'default')).to eq('openai/gpt-4o-mini-transcribe')
-      expect(described_class.features.dig('moderation', 'default')).to eq('openai/gpt-oss-safeguard-20b')
+      expect(described_class.features.dig('moderation', 'default')).to be_nil
       expect(described_class.features.dig('outcome_classification', 'default')).to eq('inception/mercury-decide')
       expect(described_class.features.dig('custom_guardrail', 'default')).to eq('perplexity/pplx-decider-v1.2')
     end
@@ -778,10 +778,8 @@ RSpec.describe Llm::Models do
       expect(image_config[:models]).to include(
         hash_including(id: 'openai/gpt-5.4-mini', provider: 'openrouter', capabilities: include('image_input'))
       )
-      expect(moderation_config[:default]).to eq('openai/gpt-oss-safeguard-20b')
-      expect(moderation_config[:models]).to include(
-        hash_including(id: 'openai/gpt-oss-safeguard-20b', provider: 'openrouter', capabilities: include('structured_output', 'moderation'))
-      )
+      expect(moderation_config[:default]).to be_blank
+      expect(moderation_config[:models]).to be_empty
     end
 
     it 'filters OpenRouter audio recognition models to transcription-capable chat or STT models' do

@@ -8,7 +8,7 @@
 #
 # * All or nothing: one wrong value saves nothing, so the page never half applies what the admin sent.
 # * Only what was changed is checked and written. A model that is saved but is not in the catalog any more stays as it
-#   is (and does not stop the other settings from being saved); it is replaced only when the admin picks another one.
+#   is (and does not stop the other settings from being saved). Valid canonical replacements from the normalizer are applied.
 # * The short list and the default model are checked together, against each other's NEW values, in one save: adding a
 #   model and making it the default is one step, and a default that is not on the list can not be built.
 # * The checklist never saves an empty list: a list with nothing ticked is refused («Отметьте хотя бы одну модель»), and the
@@ -109,9 +109,9 @@ class SuperAdmin::AiModelsForm
     return check_embedding_model(value) if key == EMBEDDING_MODEL
 
     wanted = Llm::Models.canonical_model_name(value.to_s.strip)
-    return if wanted == Llm::Models.canonical_model_name(@stored[key].to_s.strip)
-
+    stored = Llm::Models.canonical_model_name(@stored[key].to_s.strip)
     result = Llm::InstallationModelConfig.normalize(key, value)
+    return if wanted == stored && (!result.valid? || result.value == stored)
     return add_error(key, result.error) unless result.valid?
 
     change(key, result.value)

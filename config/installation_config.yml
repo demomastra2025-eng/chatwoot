@@ -300,8 +300,8 @@
   locked: false
 - name: CAPTAIN_MODERATION_MODEL
   display_title: 'Модель проверки безопасности (guardrail)'
-  description: 'Модель для проверки сообщений ИИ-агентов; клиенты только включают или выключают проверку и не выбирают модель. Пусто — openai/gpt-oss-safeguard-20b.'
-  value: 'openai/gpt-oss-safeguard-20b'
+  description: 'Модель для проверки сообщений ИИ-агентов; клиенты только включают или выключают проверку и не выбирают модель. Пусто — модель не настроена; включённая проверка требует подходящей модели.'
+  value: ''
   locked: false
 - name: CAPTAIN_EMBEDDING_MODEL
   display_title: 'Модель индексации базы знаний (эмбеддинги)'

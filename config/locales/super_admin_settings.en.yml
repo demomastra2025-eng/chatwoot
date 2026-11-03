@@ -5,6 +5,10 @@ en:
         diagnostics:
           feature_names:
             council_edit: "Council reply editing"
+        models:
+          not_configured: "Not configured"
+        status:
+          clear_model: "Clear model"
       fields:
         CAPTAIN_COUNCIL_EDITOR_MODEL:
           title: "Council reply editor"

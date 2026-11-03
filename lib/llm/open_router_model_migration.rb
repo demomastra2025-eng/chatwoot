@@ -19,14 +19,15 @@ class Llm::OpenRouterModelMigration
   EXACT_MAPPINGS = {
     'whisper-1' => %w[openai/whisper-large-v3 openai/gpt-4o-mini-transcribe openai/gpt-4o-transcribe],
     'gpt-4o-transcribe' => %w[openai/gpt-4o-transcribe openai/gpt-4o-mini-transcribe],
-    'omni-moderation-latest' => %w[openai/gpt-oss-safeguard-20b meta-llama/llama-guard-4-12b meta-llama/llama-guard-3-8b],
+    # Historical OpenAI ID for reports; no active migration target.
+    'omni-moderation-latest' => [],
     'text-embedding-3-small' => %w[openai/text-embedding-3-small text-embedding-3-small]
   }.freeze
 
   class << self
     def resolve(model_name, feature:, account: nil)
       canonical_model = Llm::Models.canonical_model_name(model_name)
-      return if canonical_model.blank?
+      return if canonical_model.blank? || Llm::Models.retired_model?(canonical_model)
       return canonical_model if voice_feature?(feature)
       return canonical_model unless openrouter_required_for?(feature, account: account)
 
@@ -47,7 +48,7 @@ class Llm::OpenRouterModelMigration
       candidates << "anthropic/#{canonical_model}" if anthropic_model_id?(canonical_model)
       candidates << "google/#{canonical_model}" if gemini_model_id?(canonical_model)
       candidates << canonical_model
-      candidates.compact_blank.uniq
+      candidates.compact_blank.uniq.reject { |candidate| Llm::Models.retired_model?(candidate) }
     end
 
     def migrate_models_hash(models_hash, account: nil)

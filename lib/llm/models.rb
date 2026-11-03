@@ -61,11 +61,6 @@ module Llm::Models
       openai/gpt-audio-mini
       openai/gpt-audio
       mistralai/voxtral-small-24b-2507
-    ],
-    'moderation' => %w[
-      openai/gpt-oss-safeguard-20b
-      meta-llama/llama-guard-4-12b
-      meta-llama/llama-guard-3-8b
     ]
   }.freeze
   DIAGNOSTIC_MODEL_LIMIT = 120
@@ -100,6 +95,17 @@ module Llm::Models
       LEGACY_MODEL_ALIASES.fetch(model_name.to_s, model_name.to_s)
     end
 
+    # Retained in the catalog for history, but never selected for active requests.
+    def retired_model?(model_name)
+      canonical_model_name(model_name.to_s.strip).match?(%r{(?:\A|[/.])gpt-oss(?:-|:|\z)}i)
+    end
+
+    def ensure_active_model!(model_name)
+      raise RubyLLM::ConfigurationError, 'The configured model is retired and unavailable' if retired_model?(model_name)
+
+      model_name
+    end
+
     def decision_model?(model_name)
       Llm::OpenRouterDecisionClient.supported_model?(canonical_model_name(model_name))
     end
@@ -110,7 +116,10 @@ module Llm::Models
 
     def default_model_for(feature, account: nil)
       feature_key = feature.to_s
+      return if feature_key == 'moderation'
+
       configured_default = configured_default_model_for(feature_key)
+      return if retired_model?(configured_default)
 
       if openrouter_only_feature?(feature_key)
         openrouter_default = openrouter_default_model_for(feature_key, configured_default, account: account)
@@ -171,7 +180,9 @@ module Llm::Models
 
     def models_for(feature, account: nil, runtime_filtered: true)
       feature_key = feature.to_s
-      static_models = Array(CONFIG.dig('features', feature_key, 'models')).map { |model_name| canonical_model_name(model_name) }
+      static_models = Array(CONFIG.dig('features', feature_key, 'models')).filter_map do |model_name|
+        canonical_model_name(model_name) unless retired_model?(model_name)
+      end
       dynamic_models = dynamic_models_for_feature(feature_key, account: account, runtime_filtered: runtime_filtered)
 
       if openrouter_no_fallback_active_for?(feature_key, account: account)
@@ -229,7 +240,7 @@ module Llm::Models
     def model_allowed_for_feature?(feature, model_name, account: nil, runtime_filtered: true)
       feature_key = feature.to_s
       canonical_name = canonical_model_name(model_name)
-      return false if feature_key.blank? || canonical_name.blank?
+      return false if feature_key.blank? || canonical_name.blank? || retired_model?(canonical_name)
 
       model_config = model_config(canonical_name, account: account)
       return false if model_config.blank?
@@ -265,12 +276,13 @@ module Llm::Models
         model_config_allowed_for_feature?(feature.to_s, model_config(model_name, account: account), account: account)
     end
 
-    def model_config(model_name, account: nil)
+    def model_config(model_name, account: nil) # rubocop:disable Lint/UnusedMethodArgument -- metadata is independent of credentials
       canonical_name = canonical_model_name(model_name)
       configured_config = configured_models[canonical_name]
       return configured_config if configured_config.present? && decision_model?(canonical_name)
 
-      dynamic_config = dynamic_model_configs(account: account)[canonical_name]
+      # Metadata remains readable when a credential is removed; active selection checks credentials separately.
+      dynamic_config = Llm::OpenRouterModelCatalog.model_configs[canonical_name]
       if dynamic_config.to_h['source'] == Llm::OpenRouterModelCatalog::FALLBACK_SOURCE
         dynamic_config = configured_config.to_h.slice('supported_parameters', 'reasoning').merge(dynamic_config)
       end
@@ -397,6 +409,8 @@ module Llm::Models
     end
 
     def runtime_supported?(model_name, account: nil)
+      return false if retired_model?(model_name)
+
       known = account.present? ? registry_known?(model_name, account: account) : registry_known?(model_name)
       known || assume_exists_supported?(model_name, account: account)
     end
@@ -553,6 +567,8 @@ module Llm::Models
             ].compact_blank.uniq
 
             matched = priority.find do |candidate|
+              next if retired_model?(candidate)
+
               candidate_config = model_config(candidate, account: account)
               dynamic_model_allowed_for_feature?(
                 feature_key,
@@ -698,10 +714,13 @@ module Llm::Models
     def dynamic_model_allowed_for_feature?(feature_key, model_config, _required_capabilities, account: nil, runtime_preferences: nil,
                                            runtime_filtered: true, model_id: nil)
       return false if model_config.blank?
+
+      model_id = model_id.presence || dynamic_model_id_for_config(model_config, account: account)
+      return false if retired_model?(model_id)
       return false unless model_config['provider'] == OPENROUTER_PROVIDER
 
       diagnostics = Llm::OpenRouterCapabilityResolver.call(
-        model_id: model_id.presence || model_config['id'].presence || dynamic_model_id_for_config(model_config, account: account),
+        model_id: model_id,
         feature: feature_key,
         account: account,
         runtime_preferences: runtime_preferences,
@@ -721,6 +740,8 @@ module Llm::Models
     end
 
     def dynamic_model_id_for_config(model_config, account: nil)
+      return model_config['id'] if model_config['id'].present?
+
       dynamic_model_configs(account: account).find { |_model_id, config| config.equal?(model_config) || config == model_config }&.first
     end
 

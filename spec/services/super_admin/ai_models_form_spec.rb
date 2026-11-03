@@ -52,6 +52,31 @@ RSpec.describe SuperAdmin::AiModelsForm do
     end
   end
 
+  describe 'legacy moderation with unrelated global settings' do
+    %w[omni-moderation-latest openai/gpt-oss-safeguard-20b openai/gpt-oss-20b].each do |legacy|
+      it "clears #{legacy} while saving another setting" do
+        upsert_installation_config('CAPTAIN_MODERATION_MODEL', legacy)
+        stored_values = { 'CAPTAIN_MODERATION_MODEL' => legacy, 'ACCOUNT_CAPTAIN_TOKENS_LIMIT' => '100' }
+        result = form({ 'CAPTAIN_MODERATION_MODEL' => legacy, 'ACCOUNT_CAPTAIN_TOKENS_LIMIT' => '500' }, stored_values: stored_values)
+
+        expect(result).to be_valid
+        expect(changed(result)).to eq('CAPTAIN_MODERATION_MODEL' => '', 'ACCOUNT_CAPTAIN_TOKENS_LIMIT' => '500')
+        expect(result.save(actor: super_admin)).to eq({})
+        expect(InstallationConfig.find_by(name: 'CAPTAIN_MODERATION_MODEL').value).to eq('')
+        expect(InstallationConfig.find_by(name: 'ACCOUNT_CAPTAIN_TOKENS_LIMIT').value).to eq('500')
+        expect(Llm::Config.moderation_model).to be_nil
+      end
+    end
+
+    it 'rejects a newly entered invalid moderator without saving unrelated settings' do
+      result = form('CAPTAIN_MODERATION_MODEL' => 'vendor/unknown', 'ACCOUNT_CAPTAIN_TOKENS_LIMIT' => '500')
+
+      expect(result).not_to be_valid
+      expect(result.save(actor: super_admin)).to include('CAPTAIN_MODERATION_MODEL')
+      expect(InstallationConfig.find_by(name: 'ACCOUNT_CAPTAIN_TOKENS_LIMIT')).to be_nil
+    end
+  end
+
   describe 'the short list and the default model, together' do
     let(:stored) do
       { 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST' => '["openai/gpt-6-luna"]', 'CAPTAIN_DEFAULT_MODEL' => 'openai/gpt-6-luna' }

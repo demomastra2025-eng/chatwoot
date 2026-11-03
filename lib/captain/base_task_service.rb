@@ -226,8 +226,7 @@ class Captain::BaseTaskService
   end
 
   def task_moderation_preferences
-    runtime_preferences = account.respond_to?(:captain_preferences) ? account.captain_preferences[:runtime].to_h.stringify_keys : {}
-    runtime_preferences.merge("#{safety_feature}_moderation" => true)
+    account.respond_to?(:captain_preferences) ? account.captain_preferences[:runtime].to_h.stringify_keys : {}
   end
 
   def instrumentation_metadata

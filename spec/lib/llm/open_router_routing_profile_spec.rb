@@ -3,6 +3,12 @@
 require 'rails_helper'
 
 RSpec.describe Llm::OpenRouterRoutingProfile do
+  it 'does not invent another model for a configured moderation validator' do
+    profile = described_class.for(feature: :moderation, model: 'test/synthetic-moderator')
+
+    expect(profile.fallback_models).to be_empty
+  end
+
   describe '.for' do
     it 'builds a tool-safe low-latency Captain agent routing profile' do
       profile = described_class.for(feature: :captain_agent, model: 'moonshotai/kimi-k2.6')

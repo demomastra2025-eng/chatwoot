@@ -81,13 +81,14 @@ module SuperAdmin::AppConfigHelper
   # The option «Встроенная: GPT-6 Luna» (an empty value: the platform decides)
   def ai_builtin_option(choices, selected)
     scope = 'super_admin.app_config.captain.models'
-    label = choices.builtin_id ? t("#{scope}.builtin_option", name: choices.builtin_name) : t("#{scope}.builtin_unknown")
+    label = choices.builtin_id.present? ? t("#{scope}.builtin_option", name: choices.builtin_name) : t("#{scope}.not_configured")
     content_tag(:option, label, value: '', selected: selected.blank?, data: { name: label, kind: 'builtin' })
   end
 
-  # The readable name of a model id, «встроенная» for none
-  def ai_model_name(model_id)
-    SuperAdmin::AiModelOptions.name_of(model_id) || t('super_admin.app_config.captain.status.was_builtin')
+  # The readable model name, or the actual blank setting state
+  def ai_model_name(model_id, builtin: true)
+    key = builtin ? 'status.was_builtin' : 'models.not_configured'
+    SuperAdmin::AiModelOptions.name_of(model_id) || t("super_admin.app_config.captain.#{key}")
   end
 
   # The Russian name of a status of the OpenRouter diagnostics (`scope` is key, credits, refresh or source); a status the

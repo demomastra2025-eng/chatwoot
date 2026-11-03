@@ -667,5 +667,5 @@ features:
     models: []
     default:
   moderation:
-    models: [omni-moderation-latest, openai/gpt-oss-safeguard-20b]
-    default: openai/gpt-oss-safeguard-20b
+    models: []
+    default:

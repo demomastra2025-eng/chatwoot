@@ -37,16 +37,16 @@ technical name of the setting shows only under «Показать техниче
 
   <p class="admin-slot__status" data-testid="slot-status">
     <% if stored.blank? %>
-      <%= t("#{scope}.status.builtin", name: choices.builtin_name || t("#{scope}.models.builtin_unknown")) %>
+      <%= choices.builtin_id.present? ? t("#{scope}.status.builtin", name: choices.builtin_name) : t("#{scope}.models.not_configured") %>
     <% else %>
       <%= t("#{scope}.status.chosen", name: ai_model_name(stored)) %>
-      <button type="button" class="admin-link-button reset-base" data-revert="<%= slot.key %>" data-revert-value="" hidden><%= t("#{scope}.status.revert_builtin") %></button>
+      <button type="button" class="admin-link-button reset-base" data-revert="<%= slot.key %>" data-revert-value="" hidden><%= t("#{scope}.status.#{choices.builtin_id.present? ? 'revert_builtin' : 'clear_model'}") %></button>
     <% end %>
   </p>
 
   <% if previous %>
     <p class="admin-slot__history" data-testid="slot-history">
-      <% name = previous.value.blank? ? t("#{scope}.status.was_builtin") : ai_model_name(previous.value) %>
+      <% name = ai_model_name(previous.value, builtin: choices.builtin_id.present?) %>
       <% when_text = SuperAdmin::DisplayHelper.format_time(previous.at) %>
       <%= previous.actor.present? ? t("#{scope}.status.was", name: name, who: previous.actor, when: when_text) : t("#{scope}.status.was_no_actor", name: name, when: when_text) %>
       <button type="button" class="admin-link-button reset-base" data-revert="<%= slot.key %>" data-revert-value="<%= previous.value %>" hidden><%= t("#{scope}.status.revert") %></button>

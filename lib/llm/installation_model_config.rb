@@ -49,6 +49,8 @@ module Llm::InstallationModelConfig
 
     def normalize_slot(name, value)
       model_name = Llm::Models.canonical_model_name(value.to_s.strip)
+      return Result.new('') if name == 'CAPTAIN_MODERATION_MODEL' &&
+                               (model_name == 'omni-moderation-latest' || Llm::Models.retired_model?(model_name))
       return Result.new(model_name) if model_name.blank?
 
       feature = SLOT_FEATURES[name]

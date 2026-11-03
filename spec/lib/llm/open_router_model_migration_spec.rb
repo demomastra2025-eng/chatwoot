@@ -42,7 +42,7 @@ RSpec.describe Llm::OpenRouterModelMigration do
       )
 
       expect(described_class.resolve('gpt-4o-transcribe', feature: :audio_transcription)).to eq('openai/gpt-4o-transcribe')
-      expect(described_class.resolve('omni-moderation-latest', feature: :moderation)).to eq('openai/gpt-oss-safeguard-20b')
+      expect(described_class.resolve('omni-moderation-latest', feature: :moderation)).to be_nil
       expect(described_class.resolve('text-embedding-3-small', feature: :help_center_search)).to eq('openai/text-embedding-3-small')
     end
 
@@ -89,8 +89,8 @@ RSpec.describe Llm::OpenRouterModelMigration do
         accounts_scanned: 2,
         accounts_with_captain_models: 2,
         accounts_with_changes: 1,
-        model_changes: 6,
-        unmapped_models: 1,
+        model_changes: 5,
+        unmapped_models: 2,
         voice_models_unchanged: 1,
         direct_openai_models: 4,
         direct_anthropic_models: 1,
@@ -102,6 +102,7 @@ RSpec.describe Llm::OpenRouterModelMigration do
         include(feature: 'assistant', from: 'gpt-5.4', to: 'openai/gpt-5.4', status: 'mapped'),
         include(feature: 'copilot', from: 'claude-sonnet-4.6', to: 'anthropic/claude-sonnet-4-6', status: 'mapped'),
         include(feature: 'image_recognition', from: 'gemini-2.5-pro', to: 'google/gemini-2.5-pro', status: 'mapped'),
+        include(feature: 'moderation', from: 'omni-moderation-latest', to: nil, status: 'unmapped'),
         include(feature: 'telephony_ai_voice', from: 'gemini-3.1-flash-live-preview', to: 'gemini-3.1-flash-live-preview', status: 'voice_skipped')
       )
       expect(report_for(report, account)[:rollback]).to include(
@@ -111,7 +112,8 @@ RSpec.describe Llm::OpenRouterModelMigration do
       expect(report_for(report, unmapped_account)[:changes]).to include(
         include(feature: 'assistant', from: 'legacy-direct-only', to: nil, status: 'unmapped')
       )
-      expect(account.reload.captain_models['assistant']).to eq('gpt-5.4')
+      expect(account.reload.captain_models).to include('assistant' => 'gpt-5.4', 'moderation' => 'omni-moderation-latest')
+      expect(described_class.resolve('omni-moderation-latest', feature: :moderation, account: account)).to be_nil
     end
   end
 

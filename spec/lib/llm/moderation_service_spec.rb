@@ -5,7 +5,7 @@ require 'rails_helper'
 RSpec.describe Llm::ModerationService do
   describe '.check!' do
     let(:chat) { instance_double(RubyLLM::Chat) }
-    let(:model) { 'openai/gpt-oss-safeguard-20b' }
+    let(:model) { 'test/synthetic-moderator' }
     let(:response_payload) { { 'flagged' => false, 'categories' => [], 'reason' => 'safe' } }
     let(:response) { instance_double(RubyLLM::Message, content: response_payload) }
     let(:events) { [] }
@@ -24,7 +24,6 @@ RSpec.describe Llm::ModerationService do
       allow(Llm::RuntimePolicy).to receive(:no_thinking_options).and_return(nil)
       allow(Llm::Config).to receive(:moderation_model).and_return(model)
       allow(Llm::Config).to receive(:provider_for_model).with(model, account: nil).and_return('openrouter')
-      allow(Llm::OpenRouterModelMigration).to receive(:resolve).and_return(model)
       allow(Llm::Models).to receive(:supports_structured_output?).with(model).and_return(true)
       allow(Llm::Runtime).to receive(:build_chat).with(
         feature: :moderation,
@@ -38,6 +37,19 @@ RSpec.describe Llm::ModerationService do
 
     after do
       ActiveSupport::Notifications.unsubscribe(subscriber)
+    end
+
+    [nil, 'openai/gpt-oss-safeguard-20b', 'openai/gpt-oss-20b'].each do |missing_model|
+      it "fails closed before transport when the model is unavailable: #{missing_model.inspect}" do
+        allow(Llm::Config).to receive(:moderation_model).and_return(missing_model)
+        allow(Llm::Config).to receive(:provider_for_model).and_return(nil)
+        expect(Llm::Config).not_to receive(:api_key)
+        expect(Llm::Runtime).not_to receive(:build_chat)
+        expect(Llm::Runtime).not_to receive(:ask)
+
+        expect { described_class.check!(feature: :editor, stage: :input, content: 'Synthetic text') }
+          .to raise_error(described_class::UnavailableError) { |error| expect(error.reason).to eq(:model_not_configured) }
+      end
     end
 
     it 'returns an allowed result when moderation passes' do
