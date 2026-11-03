@@ -57,7 +57,7 @@ class Llm::OpenRouterRoutingProfile
     'editor' => %w[openai/gpt-5.4-mini openai/gpt-4.1-mini],
     'label_suggestion' => %w[openai/gpt-5.4-mini openai/gpt-4.1-mini],
     'audio_transcription' => [],
-    'moderation' => %w[openai/gpt-oss-safeguard-20b],
+    'moderation' => [],
     # Vectors of two models cannot be compared: the embedding client sends one model and never a list of fallbacks.
     'embedding' => [],
     'knowledge_rerank' => []

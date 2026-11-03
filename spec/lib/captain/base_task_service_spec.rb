@@ -235,7 +235,48 @@ RSpec.describe Captain::BaseTaskService do
       expect(Llm::SafetyPolicy).not_to have_received(:check!)
     end
 
+    [nil, false].each do |enabled|
+      it "does not force provider moderation when workspace moderation is #{enabled.inspect}" do
+        if enabled.nil?
+          account.update!(captain_runtime: {})
+        else
+          allow(account).to receive(:captain_preferences).and_return(runtime: { 'editor_moderation' => enabled })
+        end
+        expect(Llm::Runtime).not_to receive(:build_chat)
+        expect(Llm::Runtime).not_to receive(:ask)
+
+        result = moderated_service.send(:make_api_call, model: model, messages: messages)
+
+        expect(result[:error]).to be_nil
+        preferences = moderated_service.send(:task_moderation_preferences)
+        expect(Llm::RuntimePolicy.moderation_enabled?(feature: :editor, account: account, preferences: preferences)).to be(false)
+      end
+    end
+
+    it 'retains the custom blocklist when provider moderation is disabled' do
+      allow(account).to receive(:captain_preferences).and_return(
+        runtime: { 'editor_moderation' => false, 'editor_safety_blocklist' => ['Hello'] }
+      )
+      expect(Llm::Runtime).not_to receive(:build_chat)
+
+      result = moderated_service.send(:make_api_call, model: model, messages: messages)
+
+      expect(result).to include(error: 'Task input blocked by moderation policy', error_code: 422)
+    end
+
+    it 'blocks the task before generation when moderation is enabled with a retired saved model' do
+      allow(account).to receive(:captain_preferences).and_return(runtime: { 'editor_moderation' => true })
+      upsert_installation_config('CAPTAIN_MODERATION_MODEL', 'openai/gpt-oss-safeguard-20b')
+      expect(mock_runner).not_to receive(:call)
+      expect(Llm::Runtime).not_to receive(:build_chat)
+
+      result = moderated_service.send(:make_api_call, model: model, messages: messages)
+
+      expect(result).to include(error: 'Task input blocked because moderation policy is unavailable', error_code: 422)
+    end
+
     it 'checks task input and output through the safety policy when the task opts in' do
+      allow(account).to receive(:captain_preferences).and_return(runtime: { 'editor_moderation' => true })
       allow(Llm::SafetyPolicy).to receive(:check!).and_return(true)
 
       moderated_service.send(:make_api_call, model: model, messages: messages)

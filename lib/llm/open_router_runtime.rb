@@ -268,10 +268,10 @@ class Llm::OpenRouterRuntime
   end
 
   def resolve_model(request)
-    return request.model if request.model.present?
-
-    profile = request.profile
-    Llm::Config.model_for(feature: profile.config_feature_key, account: request_account(request), fallback: nil)
+    model = request.model.presence || Llm::Config.model_for(
+      feature: request.profile.config_feature_key, account: request_account(request), fallback: nil
+    )
+    Llm::Models.ensure_active_model!(model)
   end
 
   def compiled_chat_request(request, model)

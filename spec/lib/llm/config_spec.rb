@@ -528,48 +528,38 @@ RSpec.describe Llm::Config do
   end
 
   describe '.moderation_model' do
-    it 'ignores an account moderation model override: the guard model is chosen by the platform' do
-      account = create(:account, captain_models: { 'moderation' => 'omni-moderation-latest' })
-      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
-      upsert_installation_config('CAPTAIN_MODERATION_MODEL', 'openai/gpt-oss-safeguard-20b')
-      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
-        'openai/gpt-oss-safeguard-20b' => {
-          'provider' => 'openrouter',
-          'type' => 'chat',
-          'capabilities' => %w[text_input text_output structured_output moderation streaming]
-        }
-      )
+    let(:model) { 'test/synthetic-moderator' }
 
-      expect(described_class.moderation_model(account: account)).to eq('openai/gpt-oss-safeguard-20b')
+    before do
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'synthetic-key')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        model => { 'provider' => 'openrouter', 'type' => 'chat',
+                   'capabilities' => %w[text_input text_output structured_output moderation] }
+      )
     end
 
-    it 'defaults moderation to an OpenRouter guard model when OpenRouter is primary' do
-      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
-      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
-        'openai/gpt-oss-safeguard-20b' => {
-          'provider' => 'openrouter',
-          'type' => 'chat',
-          'capabilities' => %w[text_input text_output structured_output moderation streaming]
-        }
-      )
+    it 'uses only the explicit platform moderator and ignores an account override' do
+      account = create(:account)
+      account.captain_models = { 'moderation' => 'omni-moderation-latest' }
+      upsert_installation_config('CAPTAIN_MODERATION_MODEL', model)
 
-      expect(described_class.moderation_model).to eq('openai/gpt-oss-safeguard-20b')
-      expect(described_class.moderation_provider).to eq('openrouter')
+      expect(described_class.moderation_model(account: account)).to eq(model)
+      expect(described_class.model_for(feature: :moderation, account: account)).to eq(model)
     end
 
-    it 'overrides an OpenAI moderation config with an OpenRouter guard when OpenRouter is primary' do
-      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
-      upsert_installation_config('CAPTAIN_MODERATION_MODEL', 'omni-moderation-latest')
-      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
-        'openai/gpt-oss-safeguard-20b' => {
-          'provider' => 'openrouter',
-          'type' => 'chat',
-          'capabilities' => %w[text_input text_output structured_output moderation streaming]
-        }
-      )
+    [nil, '', 'omni-moderation-latest', 'openai/gpt-oss-safeguard-20b', 'openai/gpt-oss-20b', 'vendor/unknown'].each do |retired|
+      it "does not replace an unavailable moderator with another model: #{retired.inspect}" do
+        upsert_installation_config('CAPTAIN_MODERATION_MODEL', retired)
 
-      expect(described_class.moderation_model).to eq('openai/gpt-oss-safeguard-20b')
-      expect(described_class.moderation_provider).to eq('openrouter')
+        expect(described_class.moderation_model).to be_nil
+        expect(described_class.model_for(feature: :moderation)).to be_nil
+      end
+    end
+
+    it 'rejects an explicitly configured chat model without moderation capabilities' do
+      upsert_installation_config('CAPTAIN_MODERATION_MODEL', 'openai/gpt-6-luna')
+
+      expect(described_class.moderation_model).to be_nil
     end
   end
 end

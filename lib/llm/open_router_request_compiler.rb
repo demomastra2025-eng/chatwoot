@@ -74,6 +74,7 @@ class Llm::OpenRouterRequestCompiler
     params[:provider] = provider_params if provider_params.present?
     params[:plugins] = plugins if plugins.present?
     apply_server_tools!(params, server_tools)
+    ensure_active_models!(models, params)
     metadata = compiled_metadata(
       profile: profile,
       feature_policy: feature_policy,
@@ -145,6 +146,12 @@ class Llm::OpenRouterRequestCompiler
     return profile.models if feature_key == 'captain_agent' && @model == Llm::OpenRouterRoutingProfile::LUNA_PRIMARY_MODEL
 
     request_models.presence || profile.models
+  end
+
+  def ensure_active_models!(models, params)
+    [@model, *models, params[:model], params['model'], *Array(params[:models]), *Array(params['models'])].each do |model|
+      Llm::Models.ensure_active_model!(model)
+    end
   end
 
   def request_models

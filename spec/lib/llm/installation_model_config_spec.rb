@@ -34,6 +34,19 @@ RSpec.describe Llm::InstallationModelConfig do
     end
   end
 
+  describe 'retired moderation settings submitted with unrelated global settings' do
+    %w[omni-moderation-latest openai/gpt-oss-safeguard-20b openai/gpt-oss-20b].each do |legacy|
+      it "accepts #{legacy} as an unset moderator without blocking another model slot" do
+        upsert_installation_config('CAPTAIN_MODERATION_MODEL', legacy)
+        result = described_class.normalize('CAPTAIN_MODERATION_MODEL', legacy)
+
+        expect(result).to have_attributes(value: '', error: nil)
+        expect(described_class.normalize('CAPTAIN_IMAGE_HANDWRITING_MODEL', '')).to be_valid
+        expect(Llm::Config.moderation_model).to be_nil
+      end
+    end
+  end
+
   describe '.manages?' do
     it 'covers every platform-managed model slot and the short list' do
       Llm::Config::INSTALLATION_MANAGED_MODEL_CONFIGS.each_value do |config_name|

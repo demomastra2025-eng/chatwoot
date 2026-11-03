@@ -76,7 +76,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
     before { open_page }
 
     it 'is a plain select with «Встроенная» first, never a field to type a model into' do
-      %w[CAPTAIN_MODERATION_MODEL CAPTAIN_CUSTOM_GUARDRAIL_MODEL CAPTAIN_AUDIO_TRANSCRIPTION_MODEL CAPTAIN_IMAGE_RECOGNITION_MODEL
+      %w[CAPTAIN_CUSTOM_GUARDRAIL_MODEL CAPTAIN_AUDIO_TRANSCRIPTION_MODEL CAPTAIN_IMAGE_RECOGNITION_MODEL
          CAPTAIN_OUTCOME_CLASSIFIER_MODEL CAPTAIN_LANGUAGE_DETECTION_MODEL CAPTAIN_LABEL_SUGGESTION_MODEL CAPTAIN_CUSTOMER_NOTICE_MODEL].each do |key|
         select = page.at_css(%(select[name="app_config[#{key}]"]))
 
@@ -107,6 +107,48 @@ RSpec.describe 'Super admin AI models page', type: :request do
 
     it 'offers the model of the platform as the first choice of the default model of the agents' do
       expect(text(card('CAPTAIN_DEFAULT_MODEL').at_css('[data-row-platform]'))).to include('Как у платформы: GPT-6 Luna')
+    end
+  end
+
+  describe 'unconfigured moderation' do
+    it 'shows no built-in model for the blank moderation setting' do
+      open_page
+      slot = card('CAPTAIN_MODERATION_MODEL')
+
+      expect(text(slot.at_css('option[value=""]'))).to eq('Не настроено')
+      expect(text(slot.at_css('[data-testid="slot-status"]'))).to eq('Не настроено')
+    end
+
+    it 'clears a retired stored moderator during an unrelated full-form save' do
+      upsert_installation_config('CAPTAIN_MODERATION_MODEL', 'openai/gpt-oss-safeguard-20b')
+      open_page
+      submit_form('app_config[ACCOUNT_CAPTAIN_TOKENS_LIMIT]' => '500')
+
+      expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
+      expect(stored('CAPTAIN_MODERATION_MODEL')).to eq('')
+      expect(stored('ACCOUNT_CAPTAIN_TOKENS_LIMIT')).to eq('500')
+      expect(Llm::Config.moderation_model).to be_nil
+    end
+
+    it 'keeps select, status, save message and history consistent when a moderator is set and cleared' do
+      model = 'test/synthetic-moderator'
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'synthetic-key')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        model => { 'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[text_input text_output structured_output moderation] }
+      )
+      open_page
+      submit_form('app_config[CAPTAIN_MODERATION_MODEL]' => model)
+      follow_redirect!
+      expect(stored('CAPTAIN_MODERATION_MODEL')).to eq(model)
+      expect(text(card('CAPTAIN_MODERATION_MODEL').at_css('[data-testid="slot-history"]'))).to include('Не настроено')
+      expect(text(card('CAPTAIN_MODERATION_MODEL').at_css('[data-revert-value=""]'))).to eq('Убрать модель')
+
+      submit_form('app_config[CAPTAIN_MODERATION_MODEL]' => '')
+      expect(flash[:notice]).to include('→ Не настроено')
+      follow_redirect!
+
+      expect(stored('CAPTAIN_MODERATION_MODEL')).to eq('')
+      expect(text(card('CAPTAIN_MODERATION_MODEL').at_css('[data-testid="slot-status"]'))).to eq('Не настроено')
     end
   end
 
@@ -154,7 +196,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
     it 'keeps what is saved and saves another setting without touching it' do
       upsert_installation_config('CAPTAIN_IMAGE_RECOGNITION_MODEL', 'vendor/gone')
       open_page
-      submit_form('app_config[CAPTAIN_MODERATION_MODEL]' => 'openai/gpt-oss-safeguard-20b')
+      submit_form('app_config[CAPTAIN_AUDIO_TRANSCRIPTION_MODEL]' => 'openai/gpt-audio-mini')
 
       expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
       expect(stored('CAPTAIN_IMAGE_RECOGNITION_MODEL')).to eq('vendor/gone')
@@ -210,11 +252,11 @@ RSpec.describe 'Super admin AI models page', type: :request do
     end
 
     it 'is not replaced when the form is saved for another setting' do
-      submit_form('app_config[CAPTAIN_MODERATION_MODEL]' => 'openai/gpt-oss-safeguard-20b')
+      submit_form('app_config[CAPTAIN_AUDIO_TRANSCRIPTION_MODEL]' => 'openai/gpt-audio-mini')
 
       expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
       expect(stored('CAPTAIN_IMAGE_RECOGNITION_MODEL')).to eq('vendor/gone')
-      expect(stored('CAPTAIN_MODERATION_MODEL')).to eq('openai/gpt-oss-safeguard-20b')
+      expect(stored('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')).to eq('openai/gpt-audio-mini')
     end
 
     it 'is replaced only when the admin picks another model' do
@@ -245,7 +287,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
     end
 
     it 'does not stop another change, and keeps the model while it stays ticked' do
-      submit_form('app_config[CAPTAIN_MODERATION_MODEL]' => 'openai/gpt-oss-safeguard-20b')
+      submit_form('app_config[CAPTAIN_AUDIO_TRANSCRIPTION_MODEL]' => 'openai/gpt-audio-mini')
 
       expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
       expect(stored('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to eq('["openai/gpt-6-luna","vendor/gone"]')
@@ -276,22 +318,25 @@ RSpec.describe 'Super admin AI models page', type: :request do
     end
 
     it 'writes one entry of the audit log for each setting that changed, with the name of the admin' do
-      submit_form('app_config[CAPTAIN_MODERATION_MODEL]' => 'openai/gpt-oss-safeguard-20b', 'app_config[ACCOUNT_CAPTAIN_TOKENS_LIMIT]' => '1 000')
+      submit_form('app_config[CAPTAIN_AUDIO_TRANSCRIPTION_MODEL]' => 'openai/gpt-audio-mini',
+                  'app_config[ACCOUNT_CAPTAIN_TOKENS_LIMIT]' => '1 000')
 
       audits = Audited::Audit.where(action: SuperAdmin::AppConfigSaver::AUDIT_ACTION)
-      expect(audits.map { |audit| audit.audited_changes['name'] }).to contain_exactly('CAPTAIN_MODERATION_MODEL', 'ACCOUNT_CAPTAIN_TOKENS_LIMIT')
+      expect(audits.map { |audit| audit.audited_changes['name'] }).to contain_exactly(
+        'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL', 'ACCOUNT_CAPTAIN_TOKENS_LIMIT'
+      )
       expect(audits).to all(have_attributes(user_id: super_admin.id, comment: 'super_admin'))
     end
 
     context 'when one value is refused' do
       before do
-        submit_form('app_config[CAPTAIN_MODERATION_MODEL]' => 'openai/gpt-oss-safeguard-20b',
+        submit_form('app_config[CAPTAIN_AUDIO_TRANSCRIPTION_MODEL]' => 'openai/gpt-audio-mini',
                     'app_config[CAPTAIN_IMAGE_RECOGNITION_MODEL]' => 'vendor/typo', 'app_config[ACCOUNT_CAPTAIN_TOKENS_LIMIT]' => '2 млн')
       end
 
       it 'saves nothing at all, not even the valid values sent with it' do
         expect(response).to have_http_status(:unprocessable_content)
-        expect(stored('CAPTAIN_MODERATION_MODEL')).not_to eq('openai/gpt-oss-safeguard-20b')
+        expect(stored('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')).not_to eq('openai/gpt-audio-mini')
         expect(Audited::Audit.where(action: SuperAdmin::AppConfigSaver::AUDIT_ACTION)).to be_empty
       end
 
@@ -303,7 +348,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
 
       it 'shows the page again with every value as it was sent' do
         expect(card('CAPTAIN_IMAGE_RECOGNITION_MODEL').at_css('select option[selected]')['value']).to eq('vendor/typo')
-        expect(card('CAPTAIN_MODERATION_MODEL').at_css('select option[selected]')['value']).to eq('openai/gpt-oss-safeguard-20b')
+        expect(card('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL').at_css('select option[selected]')['value']).to eq('openai/gpt-audio-mini')
         expect(card('ACCOUNT_CAPTAIN_TOKENS_LIMIT').at_css('input')['value']).to eq('2 млн')
       end
     end
@@ -362,11 +407,11 @@ RSpec.describe 'Super admin AI models page', type: :request do
     end
 
     it 'is not replaced by «Встроенная» when the form is saved for another setting' do
-      submit_form('app_config[CAPTAIN_MODERATION_MODEL]' => 'openai/gpt-oss-safeguard-20b')
+      submit_form('app_config[CAPTAIN_AUDIO_TRANSCRIPTION_MODEL]' => 'openai/gpt-audio-mini')
 
       expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
       expect(stored('CAPTAIN_LABEL_SUGGESTION_MODEL')).to eq('claude-sonnet-4.6')
-      # one setting changed (the moderation model), not two
+      # one setting changed (the transcription model), not two
       expect(flash[:notice].scan('→').size).to eq(1)
     end
 
@@ -507,7 +552,7 @@ RSpec.describe 'Super admin AI models page', type: :request do
     end
 
     it 'is left as it is when another setting is saved' do
-      submit_form('app_config[CAPTAIN_MODERATION_MODEL]' => 'openai/gpt-oss-safeguard-20b')
+      submit_form('app_config[CAPTAIN_AUDIO_TRANSCRIPTION_MODEL]' => 'openai/gpt-audio-mini')
 
       expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
       expect(stored('CAPTAIN_EMBEDDING_MODEL')).to eq('vendor/old-embedding')

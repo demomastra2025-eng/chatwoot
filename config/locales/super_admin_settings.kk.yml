@@ -1,0 +1,8 @@
+kk:
+  super_admin:
+    app_config:
+      captain:
+        models:
+          not_configured: "Бапталмаған"
+        status:
+          clear_model: "Модельді алып тастау"

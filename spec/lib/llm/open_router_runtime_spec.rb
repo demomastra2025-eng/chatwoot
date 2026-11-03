@@ -13,6 +13,21 @@ RSpec.describe Llm::OpenRouterRuntime do
     allow(Llm::Config).to receive(:api_base).with('openrouter', account: account).and_return('https://openrouter.example/api/v1')
   end
 
+  it 'rejects a retired explicit chat model before constructing a provider runner' do
+    request = Llm::FeatureRequest.new(feature: :editor, account: account, model: 'openai/gpt-oss-20b', messages: [])
+    expect(Llm::ChatRequestRunner).not_to receive(:new)
+    expect(Llm::ChatClient).not_to receive(:build)
+
+    expect { runtime.chat(request) }.to raise_error(RubyLLM::ConfigurationError, /retired/)
+  end
+
+  it 'rejects a retired explicit model before a native request' do
+    request = Llm::FeatureRequest.new(feature: :embedding, account: account, model: 'openai.gpt-oss-20b-1:0', input: 'Synthetic text')
+    expect(Llm::OpenRouterEmbeddingClient).not_to receive(:embed)
+
+    expect { runtime.embed(request) }.to raise_error(RubyLLM::ConfigurationError, /retired/)
+  end
+
   it 'runs chat requests through ChatRequestRunner with feature observability preserved' do
     events = []
     subscriber = ActiveSupport::Notifications.subscribe('llm.request.compile') do |*args|

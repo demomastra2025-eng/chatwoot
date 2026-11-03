@@ -4,7 +4,7 @@ require 'ruby_llm'
 module Llm::Config
   DEFAULT_MODEL = 'openai/gpt-6-luna'.freeze
   DEFAULT_TRANSCRIPTION_MODEL = 'openai/gpt-4o-mini-transcribe'.freeze
-  DEFAULT_MODERATION_MODEL = 'openai/gpt-oss-safeguard-20b'.freeze
+  DEFAULT_MODERATION_MODEL = nil
   DEFAULT_OPENROUTER_MODERATION_MODEL_FEATURE = 'moderation'.freeze
   # Models of these features are chosen by the platform (Super Admin -> AI Agents), never by an account: the
   # recognition models (voice, images, guardrail), the knowledge embedding and the AI hints (label suggestions).
@@ -91,6 +91,12 @@ module Llm::Config
     end
 
     def model_for(feature: nil, account: nil, fallback: DEFAULT_MODEL)
+      return moderation_model(account: account) if feature.to_s == 'moderation'
+
+      feature_model_for(feature: feature, account: account, fallback: fallback)
+    end
+
+    def feature_model_for(feature: nil, account: nil, fallback: DEFAULT_MODEL)
       feature_key = feature.to_s.presence
 
       explicit_model = explicit_model_for(feature_key, account: account)
@@ -107,6 +113,8 @@ module Llm::Config
 
       default_model_available?(fallback, account: account) ? Llm::Models.canonical_model_name(fallback) : nil
     end
+
+    private :feature_model_for
 
     # Function slots belong to the installation. Saved account/agent efforts are
     # retained in storage only and never participate in runtime selection.
@@ -148,16 +156,15 @@ module Llm::Config
     end
 
     def moderation_model(account: nil)
-      configured_model = installation_config_value('CAPTAIN_MODERATION_MODEL').presence
+      model = Llm::Models.canonical_model_name(installation_config_value('CAPTAIN_MODERATION_MODEL').to_s.strip)
+      return if model.blank? || Llm::Models.retired_model?(model)
+      return unless provider_for_model(model, account: account) == 'openrouter'
 
-      if openrouter_primary?(account: account)
-        return configured_model if configured_model.present? && provider_for_model(configured_model, account: account) == 'openrouter'
+      diagnostics = Llm::Models.capability_diagnostics_for(:moderation, model, account: account)
+      return if diagnostics.model_config.blank?
+      return unless diagnostics.reasons.all? { |reason| reason[:code] == 'provider_not_configured' }
 
-        openrouter_model = Llm::Models.default_model_for(DEFAULT_OPENROUTER_MODERATION_MODEL_FEATURE, account: account)
-        return openrouter_model if openrouter_model.present? && provider_for_model(openrouter_model, account: account) == 'openrouter'
-      end
-
-      configured_model.presence || DEFAULT_MODERATION_MODEL
+      model
     end
 
     def moderation_provider(account: nil)

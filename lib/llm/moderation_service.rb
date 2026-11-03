@@ -44,7 +44,7 @@ class Llm::ModerationService
         preferences: preferences
       )
 
-      model = moderation_model_for(account)
+      model = configured_moderation_model!(feature: feature, stage: stage, account: account, preferences: preferences)
       provider = moderation_provider_for(account, model: model)
 
       if api_key_for(provider, account).blank?
@@ -206,7 +206,11 @@ class Llm::ModerationService
       log_message = "[Llm::ModerationService] Moderation unavailable for #{feature}/#{stage}: #{reason}"
       log_message += " error_class=#{error.class.name}" if error
       Rails.logger.warn(log_message)
-      failure_mode = Llm::RuntimePolicy.moderation_failure_mode(feature: feature, account: account, preferences: preferences)
+      failure_mode = if reason == :model_not_configured
+                       'fail_closed'
+                     else
+                       Llm::RuntimePolicy.moderation_failure_mode(feature: feature, account: account, preferences: preferences)
+                     end
       model = moderation_model_for(account)
       provider = moderation_provider_for(account, model: model)
 
@@ -250,10 +254,16 @@ class Llm::ModerationService
       Llm::Config.provider_for_model(model, account: account).presence || OPENROUTER_PROVIDER
     end
 
-    def moderation_model_for(account)
-      configured_model = account.present? ? Llm::Config.moderation_model(account: account) : Llm::Config.moderation_model
+    def configured_moderation_model!(feature:, stage:, account:, preferences:)
+      model = moderation_model_for(account)
+      return model if model.present?
 
-      Llm::OpenRouterModelMigration.resolve(configured_model, feature: :moderation, account: account) || configured_model
+      handle_unavailable!(feature: feature, stage: stage, reason: :model_not_configured, account: account, preferences: preferences)
+    end
+
+    def moderation_model_for(account)
+      model = account.present? ? Llm::Config.moderation_model(account: account) : Llm::Config.moderation_model
+      model unless Llm::Models.retired_model?(model)
     end
 
     def api_key_for(provider, account)

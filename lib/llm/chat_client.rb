@@ -5,12 +5,14 @@ class Llm::ChatClient
 
   class << self
     def build(**options)
+      Llm::Models.ensure_active_model!(options[:model])
       account = options[:account]
       if options[:thinking].present?
         Llm::CapabilityPolicy.ensure_thinking_supported!(model: resolved_model_name(options[:chat], options[:model]), account: account)
       end
 
       llm_chat = options[:chat] || build_chat(context: options[:context], model: options[:model], account: account)
+      ensure_active_chat_models!(llm_chat, options)
       tag_openrouter_routing_metadata(llm_chat, options, account: account)
       apply_chat_options(llm_chat, options, account: account).tap do |chat|
         tag_openrouter_routing_metadata(chat, options, account: account)
@@ -20,12 +22,14 @@ class Llm::ChatClient
     # A block makes the call stream: RubyLLM gives it each chunk as the provider sends it, and the call still returns the complete
     # message (with the tool loop of the chat run to its end), checked and normalized like the message of a call without a block.
     def ask(chat, content, model: nil, observability: nil, account: nil, &)
+      ensure_active_chat_models!(chat, chat: chat, model: model)
       observe_chat_request(chat, model: model, observability: observability) do
         perform_ask(chat, content, model: model, account: account, &)
       end
     end
 
     def complete(chat, model: nil, observability: nil, &)
+      ensure_active_chat_models!(chat, chat: chat, model: model)
       observe_chat_request(chat, model: model, observability: observability) do
         Llm::StructuredOutputPolicy.execute(chat: chat) do
           chat.complete(&)
@@ -150,6 +154,20 @@ class Llm::ChatClient
         stripped = true
       end
       stripped
+    end
+
+    def ensure_active_chat_models!(chat, options)
+      models = [options[:model]]
+      models << resolved_model_name(chat, nil) if options[:chat].present? || options[:model].blank?
+      sources = [options[:params]]
+      sources << chat.params if options[:chat].present? && chat.respond_to?(:params)
+      sources.compact.each { |source| models.concat(parameter_models(source)) }
+      models.each { |model| Llm::Models.ensure_active_model!(model) }
+    end
+
+    def parameter_models(source)
+      params = source.to_h
+      [params[:model], params['model'], *Array(params[:models]), *Array(params['models'])]
     end
 
     def build_chat(context:, model:, account: nil)

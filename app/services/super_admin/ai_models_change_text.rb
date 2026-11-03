@@ -49,6 +49,12 @@ class SuperAdmin::AiModelsChangeText
   end
 
   def model_text(model_id)
-    SuperAdmin::AiModelOptions.name_of(model_id) || I18n.t("#{SCOPE}.changed.builtin")
+    name = SuperAdmin::AiModelOptions.name_of(model_id)
+    return name if name.present?
+
+    defaults = SuperAdmin::AiModelsPage.new(keys: [], values: {}, definitions: {}, masked_keys: [])
+    return I18n.t('super_admin.app_config.captain.models.not_configured') if defaults.default_for(@change.key).blank?
+
+    I18n.t("#{SCOPE}.changed.builtin")
   end
 end

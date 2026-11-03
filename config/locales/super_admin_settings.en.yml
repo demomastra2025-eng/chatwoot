@@ -1,0 +1,8 @@
+en:
+  super_admin:
+    app_config:
+      captain:
+        models:
+          not_configured: "Not configured"
+        status:
+          clear_model: "Clear model"
