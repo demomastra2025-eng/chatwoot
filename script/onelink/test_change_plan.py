@@ -214,8 +214,15 @@ class ChangePlanTest(unittest.TestCase):
             ("larger row cap", lambda s: s.replace("rows <= 512", "rows <= 513")),
             ("unbounded count", lambda s: s.replace(" LIMIT 513", "")),
             ("heap size ignores toast and indexes", lambda s: s.replace("pg_total_relation_size", "pg_relation_size")),
-            ("no locks", lambda s: s.replace("    execute 'LOCK TABLE billing_accounts, billing_account_workspaces, billing_subscriptions IN ACCESS EXCLUSIVE MODE'\n", "")),
-            ("different lock order", lambda s: s.replace("LOCK TABLE billing_accounts, billing_account_workspaces", "LOCK TABLE billing_account_workspaces, billing_accounts")),
+            ("no locks", lambda s: re.sub(r'    execute "LOCK TABLE ONLY.*?IN ACCESS EXCLUSIVE MODE"\n', '', s, count=1, flags=re.DOTALL)),
+            ("different lock order", lambda s: s.replace("ONLY #{relation_name(:billing_accounts)}, ONLY #{relation_name(:billing_account_workspaces)}", "ONLY #{relation_name(:billing_account_workspaces)}, ONLY #{relation_name(:billing_accounts)}")),
+            ("recursive descendant locks", lambda s: s.replace("LOCK TABLE ONLY", "LOCK TABLE")),
+            ("unqualified count", lambda s: s.replace("ONLY #{relation_name(table)} LIMIT 513", "ONLY #{connection.quote_table_name(table)} LIMIT 513")),
+            ("schema not captured", lambda s: s.replace("    capture_foundation_identity!\n", "")),
+            ("identity postcheck removed", lambda s: s.replace("    validate_foundation_identity!\n    validate_legacy_relations!\n    TABLES.each", "    validate_legacy_relations!\n    TABLES.each")),
+            ("temp resolution accepted", lambda s: s.replace("&& resolved == actual", "")),
+            ("OID replacement accepted", lambda s: s.replace("actual == @foundation_oids.fetch(table)", "true")),
+            ("current schema allowed to change", lambda s: s.replace("connection.current_schema == @foundation_schema", "true")),
             ("weak lock", lambda s: s.replace("ACCESS EXCLUSIVE MODE", "ACCESS SHARE MODE")),
             ("partition accepted", lambda s: s.replace("AND NOT relispartition", "")),
             ("inheritance accepted", lambda s: s.replace("inhrelid = relation.oid OR inhparent = relation.oid", "false")),
@@ -302,6 +309,64 @@ class ChangePlanTest(unittest.TestCase):
                     target.write_text(changed)
                     with chdir(directory):
                         self.assertEqual(validate_migrations([migration]), [migration])
+
+    def test_ai_transaction_mode_and_unexpected_executable_controls_fail_closed(self):
+        root = Path(__file__).resolve().parents[2]
+        migrations = [
+            "db/migrate/20261102013000_create_account_ai_usage_events.rb",
+            "db/migrate/20261102013100_add_pending_ai_usage_index_to_messages.rb",
+            "db/migrate/20261102013200_create_captain_reply_suggestion_identities.rb",
+            "db/migrate/20261102093000_manage_organization_billing_foundation.rb",
+            "db/migrate/20261102103000_create_billing_unit_ledger.rb",
+            "db/migrate/20261103010000_create_captain_shadow_training.rb",
+        ]
+        for migration in migrations:
+            original = (root / migration).read_text()
+            up = re.search(r"^  def up\n.*?^  end$", original, re.MULTILINE | re.DOTALL)[0]
+            changes = [
+                ("transaction disabled", lambda s: re.sub(r"(class \w+ < ActiveRecord::Migration\[7.1\]\n)", r"\1  disable_ddl_transaction!\n", s, count=1)),
+                ("reflection override", lambda s: s + "\nclass_eval { define_method(:up) {} }\n"),
+                ("send override", lambda s: s + "\nself.send(:define_method, :up) {}\n"),
+                ("guard in heredoc", lambda s: s.replace(up, "  HIDDEN = <<~'RUBY'\n" + up + "\nRUBY")),
+                ("guard in block comment", lambda s: s.replace(up, "=begin\n" + up + "\n=end")),
+                ("guard in percent literal", lambda s: s.replace(up, "  HIDDEN = %q{\n" + up + "\n  }")),
+            ]
+            if "013100_" in migration:
+                changes.extend([
+                    ("transaction mode removed", lambda s: s.replace("  disable_ddl_transaction!\n", "")),
+                    ("conditional transaction mode", lambda s: s.replace("  disable_ddl_transaction!", "  disable_ddl_transaction! if false")),
+                ])
+            for label, change in changes:
+                with self.subTest(migration=migration, case=label), tempfile.TemporaryDirectory() as directory:
+                    changed = change(original)
+                    self.assertNotEqual(changed, original)
+                    target = Path(directory) / migration
+                    target.parent.mkdir(parents=True)
+                    target.write_text(changed)
+                    with chdir(directory):
+                        self.assertEqual(validate_migrations([migration]), [migration])
+
+    def test_ai_helpers_cannot_add_sql_or_reset_native_timer_budgets(self):
+        migration = "db/migrate/20261102013000_create_account_ai_usage_events.rb"
+        root = Path(__file__).resolve().parents[2]
+        original = (root / migration).read_text()
+        for operation in [
+            'execute "SET LOCAL lock_timeout = 0"',
+            'execute "SET LOCAL statement_timeout = 0"',
+            'execute "ALTER TABLE messages ALTER COLUMN content SET NOT NULL"',
+            'connection.execute "SET LOCAL lock_timeout = 0"',
+            'select_value("ALTER TABLE messages ALTER COLUMN content SET NOT NULL")',
+            'select_value("SELECT set_config(\'lock_timeout\',\'0\',true)")',
+            'connection.raw_connection.exec("RESET statement_timeout")',
+            'class_eval { define_method(:add_validated_foreign_keys) {} }',
+        ]:
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as directory:
+                changed = original.replace("  def create_rollout\n", "  def create_rollout\n    " + operation + "\n")
+                target = Path(directory) / migration
+                target.parent.mkdir(parents=True)
+                target.write_text(changed)
+                with chdir(directory):
+                    self.assertEqual(validate_migrations([migration]), [migration])
 
     def test_empty_cli_file_list_has_no_output(self):
         root = Path(__file__).resolve().parents[2]

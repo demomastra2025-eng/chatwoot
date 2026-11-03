@@ -98,7 +98,11 @@ runtime из разных SHA.
 Existing foundation допускается только при наличии всех трёх обычных permanent
 таблиц без partition/inheritance. Миграция блокирует их в фиксированном порядке
 `billing_accounts` → `billing_account_workspaces` → `billing_subscriptions` в
-`ACCESS EXCLUSIVE`, повторяет проверку топологии и **до DDL** проверяет каждую:
+`ACCESS EXCLUSIVE` с `ONLY` для каждого элемента: потомки не получают рекурсивных
+блокировок. До работы фиксируются schema/OID; после захвата проверяются прежние
+schema/OID и отсутствие pg_temp-shadowing для исторических unqualified Rails-вызовов.
+LOCK, row-count и size используют ту же сохранённую квалифицированную схему.
+Затем повторяется проверка топологии и **до DDL** проверяется каждая таблица:
 `pg_total_relation_size <= 1_048_576` (включая индексы и TOAST), не больше 512 строк
 по `ONLY ... LIMIT 513`. Так закрывается гонка между проверкой caps и DDL.
 Partial/schema/default/check/FK drift, oversized и необычная топология означают
@@ -118,7 +122,10 @@ predicate. Неизвестный valid/invalid index вызывает HOLD бе
 CI исключает из общего запрета только пять конкретных операций: concurrent removal
 известного invalid index и bounded foundation default/null/FK/exclusion. Их exact
 safety closure и порядок вызовов обязательны; остальной файл проходит обычный guard.
-Новые destructive/FK-removal/exclusion операции без допуска отклоняются. Все шесть
+Новые destructive/FK-removal/exclusion операции без допуска отклоняются. Для этих
+шести версий CI также фиксирует transactional mode, разрешает только известные
+`execute` SET/LOCK statements и отклоняет dynamic overrides/eval/неизвестный raw DDL.
+Текст guard в комментарии или строке не считается исполняемым guard. Все шесть
 `down` необратимы: откатывается код приложения, история и схема сохраняются.
 
 Проверки: `python3 -m unittest script.onelink.test_change_plan`; Rails foundation/ledger

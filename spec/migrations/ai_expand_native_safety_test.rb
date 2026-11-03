@@ -35,7 +35,7 @@ RSpec.describe ActiveRecord::Migration do
     previous_lock = connection.select_value('SHOW lock_timeout')
     previous_statement = connection.select_value('SHOW statement_timeout')
     connection.execute("CREATE SCHEMA #{schema}")
-    connection.schema_search_path = "#{schema},public"
+    connection.schema_search_path = schema
     connection.execute("SET lock_timeout = '9s'")
     connection.execute("SET statement_timeout = '8s'")
     described_class.suppress_messages { example.run }
@@ -173,6 +173,70 @@ RSpec.describe ActiveRecord::Migration do
 
     expect { AddPendingAiUsageIndexToMessages.new.up }.to raise_error(ActiveRecord::MigrationError, /unknown pending AI usage index shape/)
     expect(connection.select_value("SELECT '#{schema}.idx_messages_pending_ai_usage'::regclass::oid")).to eq(oid)
+  end
+
+  def create_legacy_foundation
+    connection.create_table(:accounts, id: :integer)
+    connection.create_table(:organizations)
+    load File.expand_path('../fixtures/billing/legacy_foundation_schema.rb', __dir__)
+  end
+
+  it 'refuses pg_temp shadowing before altering the permanent foundation' do
+    create_legacy_foundation
+    connection.execute('CREATE TEMP TABLE billing_accounts (id bigint)')
+
+    expect do
+      connection.transaction(requires_new: true) { ManageOrganizationBillingFoundation.new.up }
+    end.to raise_error(ActiveRecord::MigrationError, /relation changed or shadowed/)
+    expect(connection.column_exists?("#{schema}.billing_accounts", :foundation_state)).to be(false)
+  ensure
+    connection.execute('DROP TABLE IF EXISTS pg_temp.billing_accounts')
+  end
+
+  it 'uses ONLY parent locks and refuses a descendant attached after the topology precheck' do
+    create_legacy_foundation
+    migration = ManageOrganizationBillingFoundation.new
+    ready = Queue.new
+    release = Queue.new
+    worker = nil
+    parent = connection.quote_table_name("#{schema}.billing_accounts")
+    child = connection.quote_table_name("#{schema}.synthetic_descendant")
+    allow(migration).to receive(:validate_legacy_relations!).and_wrap_original do |original|
+      result = original.call
+      unless worker
+        worker = start_inherited_child_blocker(parent, child, ready, release)
+        error = Timeout.timeout(10) { ready.pop }
+        raise error if error
+      end
+      result
+    end
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+    expect do
+      connection.transaction(requires_new: true) { migration.up }
+    end.to raise_error(ActiveRecord::MigrationError, /non-ordinary billing foundation/)
+    # Recursive LOCK would wait for the child's AX lock and raise 55P03 at 4s.
+    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 3.5
+    expect(connection.column_exists?("#{schema}.billing_accounts", :foundation_state)).to be(false)
+  ensure
+    release << true
+    raise 'child lock holder did not release' if worker && !worker.join(10)
+  end
+
+  def start_inherited_child_blocker(parent, child, ready, release)
+    Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do |blocker|
+        blocker.execute("CREATE TABLE #{child} () INHERITS (#{parent})")
+        blocker.transaction do
+          blocker.execute("LOCK TABLE ONLY #{child} IN ACCESS EXCLUSIVE MODE")
+          ready << nil
+          release.pop
+          raise ActiveRecord::Rollback
+        end
+      end
+    rescue StandardError => e
+      ready << e
+    end
   end
 
   it 'retains all six migration histories on rollback before issuing any DDL' do

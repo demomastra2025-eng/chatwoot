@@ -12,7 +12,7 @@ RSpec.describe ManageOrganizationBillingFoundation do
     schema = "foundation_spec_#{SecureRandom.hex(5)}"
     previous = connection.schema_search_path
     connection.execute("CREATE SCHEMA #{schema}")
-    connection.schema_search_path = "#{schema},public"
+    connection.schema_search_path = schema
     connection.create_table(:accounts, id: :integer) { |table| table.string :name }
     connection.create_table(:organizations) { |table| table.string :name }
     ActiveRecord::Migration.suppress_messages { example.run }

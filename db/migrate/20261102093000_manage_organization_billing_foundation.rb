@@ -16,6 +16,7 @@ class ManageOrganizationBillingFoundation < ActiveRecord::Migration[7.1]
   def up
     execute "SET LOCAL lock_timeout = '4s'"
     execute "SET LOCAL statement_timeout = '5s'"
+    capture_foundation_identity!
     present = TABLES.select { |table| local_table?(table) }
     raise ActiveRecord::MigrationError, 'partial billing foundation: explicit structural repair required' if present.any? && present != TABLES
 
@@ -37,8 +38,40 @@ class ManageOrganizationBillingFoundation < ActiveRecord::Migration[7.1]
 
   private
 
+  def capture_foundation_identity!
+    @foundation_schema = connection.current_schema
+    if @foundation_schema.start_with?('pg_temp_')
+      raise ActiveRecord::MigrationError, 'temporary billing foundation schema: explicit maintenance required'
+    end
+
+    @foundation_oids = TABLES.index_with { |table| relation_oid(table) }
+    validate_foundation_identity!
+  end
+
+  def validate_foundation_identity!
+    unless connection.current_schema == @foundation_schema
+      raise ActiveRecord::MigrationError, 'billing foundation schema changed: explicit maintenance required'
+    end
+
+    TABLES.each do |table|
+      actual = relation_oid(table)
+      resolved = select_value("SELECT to_regclass(#{connection.quote(table.to_s)})::oid")
+      next if actual == @foundation_oids.fetch(table) && resolved == actual
+
+      raise ActiveRecord::MigrationError, "billing foundation relation changed or shadowed: explicit maintenance required (#{table})"
+    end
+  end
+
+  def relation_oid(table)
+    select_value("SELECT to_regclass(#{relation_literal(table)})::oid")
+  end
+
+  def relation_name(table)
+    "#{connection.quote_column_name(@foundation_schema)}.#{connection.quote_column_name(table)}"
+  end
+
   def local_table?(table)
-    connection.select_value("SELECT to_regclass(quote_ident(current_schema()) || '.' || #{connection.quote(table.to_s)})").present?
+    @foundation_oids.fetch(table).present?
   end
 
   def create_foundation
@@ -120,12 +153,15 @@ class ManageOrganizationBillingFoundation < ActiveRecord::Migration[7.1]
   # Locks close the cap-check/DDL race. The 5s statement budget is per statement, not
   # a promise about total transaction duration. Larger legacy needs maintenance.
   def lock_bounded_legacy_foundation!
+    validate_foundation_identity!
     validate_legacy_relations!
-    execute 'LOCK TABLE billing_accounts, billing_account_workspaces, billing_subscriptions IN ACCESS EXCLUSIVE MODE'
+    execute "LOCK TABLE ONLY #{relation_name(:billing_accounts)}, ONLY #{relation_name(:billing_account_workspaces)}, " \
+            "ONLY #{relation_name(:billing_subscriptions)} IN ACCESS EXCLUSIVE MODE"
+    validate_foundation_identity!
     validate_legacy_relations!
     TABLES.each do |table|
       size = select_value("SELECT pg_total_relation_size(to_regclass(#{relation_literal(table)}))").to_i
-      rows = select_value("SELECT count(*) FROM (SELECT 1 FROM ONLY #{connection.quote_table_name(table)} LIMIT 513) bounded_rows").to_i
+      rows = select_value("SELECT count(*) FROM (SELECT 1 FROM ONLY #{relation_name(table)} LIMIT 513) bounded_rows").to_i
       next if size <= 1_048_576 && rows <= 512
 
       raise ActiveRecord::MigrationError, "billing foundation exceeds tiny limits: explicit maintenance required (#{table})"
@@ -205,7 +241,7 @@ class ManageOrganizationBillingFoundation < ActiveRecord::Migration[7.1]
   end
 
   def relation_literal(table)
-    connection.quote("#{connection.quote_table_name(connection.current_schema)}.#{connection.quote_table_name(table)}")
+    connection.quote(relation_name(table))
   end
 
   def validate_primary_key!(table)

@@ -295,6 +295,7 @@ AI_EXPAND_GUARDS = {
         r'''  def up
     execute "SET LOCAL lock_timeout = '4s'"
     execute "SET LOCAL statement_timeout = '5s'"
+    capture_foundation_identity!
     present = TABLES.select { |table| local_table?(table) }
     raise ActiveRecord::MigrationError, 'partial billing foundation: explicit structural repair required' if present.any? && present != TABLES
 
@@ -308,16 +309,47 @@ AI_EXPAND_GUARDS = {
     add_history
     add_subscription_contract
   end''',
+        r'''  def capture_foundation_identity!
+    @foundation_schema = connection.current_schema
+    if @foundation_schema.start_with?('pg_temp_')
+      raise ActiveRecord::MigrationError, 'temporary billing foundation schema: explicit maintenance required'
+    end
+
+    @foundation_oids = TABLES.index_with { |table| relation_oid(table) }
+    validate_foundation_identity!
+  end''',
+        r'''  def validate_foundation_identity!
+    unless connection.current_schema == @foundation_schema
+      raise ActiveRecord::MigrationError, 'billing foundation schema changed: explicit maintenance required'
+    end
+
+    TABLES.each do |table|
+      actual = relation_oid(table)
+      resolved = select_value("SELECT to_regclass(#{connection.quote(table.to_s)})::oid")
+      next if actual == @foundation_oids.fetch(table) && resolved == actual
+
+      raise ActiveRecord::MigrationError, "billing foundation relation changed or shadowed: explicit maintenance required (#{table})"
+    end
+  end''',
+        r'''  def relation_oid(table)
+    select_value("SELECT to_regclass(#{relation_literal(table)})::oid")
+  end''',
+        r'''  def relation_name(table)
+    "#{connection.quote_column_name(@foundation_schema)}.#{connection.quote_column_name(table)}"
+  end''',
         r'''  def local_table?(table)
-    connection.select_value("SELECT to_regclass(quote_ident(current_schema()) || '.' || #{connection.quote(table.to_s)})").present?
+    @foundation_oids.fetch(table).present?
   end''',
         r'''  def lock_bounded_legacy_foundation!
+    validate_foundation_identity!
     validate_legacy_relations!
-    execute 'LOCK TABLE billing_accounts, billing_account_workspaces, billing_subscriptions IN ACCESS EXCLUSIVE MODE'
+    execute "LOCK TABLE ONLY #{relation_name(:billing_accounts)}, ONLY #{relation_name(:billing_account_workspaces)}, " \
+            "ONLY #{relation_name(:billing_subscriptions)} IN ACCESS EXCLUSIVE MODE"
+    validate_foundation_identity!
     validate_legacy_relations!
     TABLES.each do |table|
       size = select_value("SELECT pg_total_relation_size(to_regclass(#{relation_literal(table)}))").to_i
-      rows = select_value("SELECT count(*) FROM (SELECT 1 FROM ONLY #{connection.quote_table_name(table)} LIMIT 513) bounded_rows").to_i
+      rows = select_value("SELECT count(*) FROM (SELECT 1 FROM ONLY #{relation_name(table)} LIMIT 513) bounded_rows").to_i
       next if size <= 1_048_576 && rows <= 512
 
       raise ActiveRecord::MigrationError, "billing foundation exceeds tiny limits: explicit maintenance required (#{table})"
@@ -388,7 +420,7 @@ AI_EXPAND_GUARDS = {
     "#{connection.quote(value)}::#{type}"
   end''',
         r'''  def relation_literal(table)
-    connection.quote("#{connection.quote_table_name(connection.current_schema)}.#{connection.quote_table_name(table)}")
+    connection.quote(relation_name(table))
   end''',
         r'''  def validate_primary_key!(table)
     valid = connection.select_value(<<~SQL.squish)
@@ -637,9 +669,119 @@ AI_FINAL_CHECKS = {
 }
 
 
+def ruby_code_mask(content: str) -> str:
+    """Keep code offsets, hiding ordinary literals/comments and heredoc bodies.
+
+    This is a lexical context check for our controlled migration templates, not
+    an evaluator or a parser for arbitrary Ruby programs.
+    """
+    masked = list(content)
+    heredocs: dict[int, int] = {}
+
+    def hide(start: int, end: int) -> None:
+        masked[start:end] = ["\n" if char == "\n" else " " for char in content[start:end]]
+
+    index = 0
+    while index < len(content):
+        if index in heredocs:
+            end = heredocs[index]
+        elif (index == 0 or content[index - 1] == "\n") and content.startswith("=begin", index):
+            closing = re.search(r"^=end\b[^\n]*(?:\n|$)", content[index:], re.MULTILINE)
+            end = index + closing.end() if closing else len(content)
+        elif (index == 0 or content[index - 1] == "\n") and content.startswith("__END__", index):
+            end = len(content)
+        elif content[index] == "#":
+            end = content.find("\n", index)
+            if end < 0:
+                end = len(content)
+        elif content[index] in "'\"`/":
+            delimiter = content[index]
+            end = index + 1
+            bracket = False
+            while end < len(content):
+                char = content[end]
+                if char == "\\":
+                    end += 2
+                    continue
+                if delimiter == "/" and char in "[]":
+                    bracket = char == "["
+                if char == delimiter and not bracket:
+                    end += 1
+                    break
+                end += 1
+        else:
+            here = re.match(r"<<[-~]?['\"]?([A-Za-z_]\w*)['\"]?", content[index:])
+            percent = re.match(r"%[qQwWiIxrs]?([^\w\s])", content[index:])
+            if here:
+                body = content.find("\n", index) + 1
+                closing = re.search(r"^[ \t]*" + re.escape(here[1]) + r"[ \t]*(?:\n|$)", content[body:], re.MULTILINE)
+                if body and closing:
+                    heredocs[body] = body + closing.end()
+                index += here.end()
+                continue
+            if not percent:
+                index += 1
+                continue
+            opening = percent[1]
+            closing = {"(": ")", "[": "]", "{": "}", "<": ">"}.get(opening, opening)
+            end = index + percent.end()
+            depth = 1
+            while end < len(content) and depth:
+                char = content[end]
+                if char == "\\":
+                    end += 2
+                    continue
+                if char == closing:
+                    depth -= 1
+                elif opening != closing and char == opening:
+                    depth += 1
+                end += 1
+        hide(index, end)
+        index = end
+    return "".join(masked)
+
+
+def ai_execution_controls_intact(path: str, content: str) -> bool:
+    code = ruby_code_mask(content)
+    concurrent = path == "db/migrate/20261102013100_add_pending_ai_usage_index_to_messages.rb"
+    modes = re.findall(r"\bdisable_ddl_transaction\b", code)
+    if len(modes) != int(concurrent):
+        return False
+    if concurrent and not re.search(r"^  disable_ddl_transaction!$", code, re.MULTILINE):
+        return False
+    # No reflection/eval/method substitution in these self-contained templates.
+    reflection = r"\b(?:class_eval|module_eval|instance_eval|eval|define_method|define_singleton_method|alias_method|remove_method|undef_method|send|public_send|__send__|prepend|singleton_class)\b|^\s*(?:alias|undef)\b|\bclass\s*<<"
+    if re.search(reflection, strip_ruby_comments(content), re.MULTILINE):
+        return False
+    for block in AI_EXPAND_GUARDS[path]:
+        position = content.find(block)
+        start = position + len(block) - len(block.lstrip())
+        word = re.match(r"\w+", content[start:])
+        if not word or code[start:start + len(word[0])] != word[0]:
+            return False
+    expected = ['"SET LOCAL lock_timeout = \'4s\'"', '"SET LOCAL statement_timeout = \'5s\'"']
+    if concurrent:
+        expected = ['"SET lock_timeout = \'4s\'"', '"SET lock_timeout = #{connection.quote(previous_lock_timeout)}" if previous_lock_timeout']
+    elif path == "db/migrate/20261102093000_manage_organization_billing_foundation.rb":
+        expected.append('"LOCK TABLE ONLY #{relation_name(:billing_accounts)}, ONLY #{relation_name(:billing_account_workspaces)}, " \\\n            "ONLY #{relation_name(:billing_subscriptions)} IN ACCESS EXCLUSIVE MODE"')
+    # Scan raw arguments too: an execute hidden in string interpolation is extra
+    # executable behavior, and literals cannot impersonate required guards.
+    actual = [args.strip() for args in calls(strip_ruby_comments(content), "execute")]
+    if actual != expected:
+        return False
+    # Raw DDL through another adapter method is equally outside this contract.
+    remaining = content
+    for args in expected:
+        remaining = remaining.replace("execute " + args, "", 1)
+    unknown_sql = r"\b(?:ALTER\s+TABLE|DROP\s+(?:TABLE|INDEX|SCHEMA)|TRUNCATE\s|SET\s+(?:LOCAL\s+|SESSION\s+)?(?:lock_timeout|statement_timeout)|RESET\s+(?:lock_timeout|statement_timeout|ALL)|set_config\s*\()"
+    return not re.search(unknown_sql, strip_ruby_comments(remaining), re.IGNORECASE)
+
+
 def ai_expand_contract_intact(path: str, content: str) -> bool:
     guards = AI_EXPAND_GUARDS[path]
     if not all(content.count(block) == 1 for block in guards):
+        return False
+    if not ai_execution_controls_intact(path, content):
         return False
     definitions = re.findall(r"^\s*def\s+([^\s(]+)", strip_ruby_comments(content), re.MULTILINE)
     if len(definitions) != len(set(definitions)):
