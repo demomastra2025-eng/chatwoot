@@ -21,9 +21,16 @@ class CaptainListener < BaseListener
     message = event.data[:message]
     Captain::ReplySuggestion::StickyAgent::ManualReply.mark!(message)
     track_dismissal(message)
+    capture_shadow_training(message)
   end
 
   private
+
+  def capture_shadow_training(message)
+    Captain::ShadowTraining::CaptureService.call(message)
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][CaptainListener] shadow capture skipped: #{e.class}")
+  end
 
   def track_dismissal(message)
     Captain::ReplySuggestion::DismissalTracker.message_created(message)
