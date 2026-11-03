@@ -3,7 +3,9 @@ module Captain::Playground::SchedulingTools
 
   def create_appointment
     slot = appointment_slot
-    return { success: false, reason: 'time_taken' } unless slot_available?(slot[:resource], slot[:start], slot[:ending])
+    unless slot_available?(slot[:resource], slot[:start], slot[:ending], service_id: slot[:service_id])
+      return { success: false, reason: 'time_taken' }
+    end
 
     patient = resolve_patient
     appointment = appointment_identity_attributes(patient).merge(slot_attributes(slot)).merge(
@@ -56,7 +58,9 @@ module Captain::Playground::SchedulingTools
     raise ArgumentError, 'Cancelled appointments cannot be changed' if record['status'] == 'cancelled'
 
     slot = appointment_slot(record)
-    return { success: false, reason: 'time_taken' } unless slot_available?(slot[:resource], slot[:start], slot[:ending], exclude_id: record['id'])
+    unless slot_available?(slot[:resource], slot[:start], slot[:ending], exclude_id: record['id'], service_id: slot[:service_id])
+      return { success: false, reason: 'time_taken' }
+    end
 
     record.merge!(slot_attributes(slot))
     apply_appointment_extras!(record)

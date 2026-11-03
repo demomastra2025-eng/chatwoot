@@ -32,7 +32,7 @@ class Captain::Playground::RealToolExecutor
   def synthetic?(tool_id, arguments)
     return true if @session.namespace.synthetic?(arguments)
     return true if CONTEXT_TOOLS.include?(tool_id) && !explicit_target?(arguments)
-    return true if tool_id == 'create_appointment' && arguments.to_h.with_indifferent_access[:patient].blank?
+    return true if synthetic_appointment?(tool_id, arguments)
 
     !@session.read_enabled? && !explicit_target?(arguments)
   end
@@ -114,7 +114,7 @@ class Captain::Playground::RealToolExecutor
     if read?(tool_id)
       raise ArgumentError, 'Reading real data is disabled' unless @session.read_enabled?
 
-      return ActiveRecord::Base.connected_to(role: :writing, prevent_writes: true) { execute_prepared(tool_id, prepared) }
+      return execute_read(tool_id, prepared, arguments)
     end
 
     ActiveRecord::Base.transaction do
@@ -132,6 +132,22 @@ class Captain::Playground::RealToolExecutor
   end
 
   private
+
+  def synthetic_appointment?(tool_id, arguments)
+    return false unless tool_id == 'create_appointment'
+
+    arguments.to_h.with_indifferent_access[:patient].blank? || (@session.read_enabled? && !@session.write_enabled?)
+  end
+
+  def execute_read(tool_id, prepared, arguments)
+    ActiveRecord::Base.connected_to(role: :writing, prevent_writes: true) do
+      offers = Captain::Playground::SchedulingOffers.new(@session)
+      provenance = offers.begin_read(tool_id, arguments)
+      result = execute_prepared(tool_id, prepared)
+      offers.record(tool_id, result, arguments, provenance: provenance)
+      result
+    end
+  end
 
   def execute_prepared(tool_id, prepared)
     result = if tool_id == 'create_appointment'

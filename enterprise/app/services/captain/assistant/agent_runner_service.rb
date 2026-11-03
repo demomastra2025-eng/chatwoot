@@ -916,6 +916,10 @@ class Captain::Assistant::AgentRunnerService
 
   def semantic_output_error_response(error, response, context, handoff_tool_called: false)
     publish_semantic_invalid_event(error, response, context)
+    # A transfer promise is never repaired by another paid model step or by a
+    # regex-triggered action. The existing failed-turn outcome safely withholds it.
+    return provider_error_response(error, context, handoff_tool_called: handoff_tool_called) if error.code == 'unverified_handoff_claim'
+
     final_error_response(error, context, handoff_tool_called: handoff_tool_called)
   end
 
@@ -924,10 +928,31 @@ class Captain::Assistant::AgentRunnerService
     return invalid_public_response_error(response) if invalid_public_response?(response)
     return reserved_runtime_action_error(response) if reserved_runtime_action?(response)
     return provider_error_literal_error if provider_error_literal?(response)
-    return invalid_handoff_output_error if invalid_handoff_output?(response)
+
+    handoff_error = handoff_output_error(response, context, handoff_tool_called)
+    return handoff_error if handoff_error
     return unsafe_suppressed_response_error if unsafe_suppressed_response?(response, context, handoff_tool_called: handoff_tool_called)
 
     nil
+  end
+
+  def handoff_output_error(response, context, handoff_tool_called)
+    return invalid_handoff_output_error if invalid_handoff_output?(response)
+
+    unverified_handoff_claim_error if unverified_handoff_claim?(response, context, handoff_tool_called)
+  end
+
+  def unverified_handoff_claim?(response, context, handoff_tool_called)
+    return false unless response_mode(response) == 'reply'
+    # These facts are server-owned and belong to this run's result context. Never
+    # infer a transfer from the model output, a task/note, or conversation history.
+    return false if authorized_handoff_pending?(context, handoff_tool_called) || context&.dig(:council_handoff).present?
+
+    Captain::Assistant::HandoffClaim.asserted?(response['response'])
+  end
+
+  def unverified_handoff_claim_error
+    SemanticOutputError.new('unverified_handoff_claim', 'Model output claimed staff transfer without current-turn handoff evidence')
   end
 
   def unsafe_suppressed_response?(response, context, handoff_tool_called: false)

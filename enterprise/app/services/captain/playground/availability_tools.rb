@@ -19,7 +19,13 @@ module Captain::Playground::AvailabilityTools
     duration
   end
 
-  def slot_available?(resource, starts_at, ends_at, exclude_id: nil)
+  def slot_available?(resource, starts_at, ends_at, exclude_id: nil, service_id: nil)
+    real_catalog = Captain::Playground::SimulationCatalog.new(@session).available?(
+      local_resource_id: resource['id'], local_service_id: service_id,
+      starts_at: starts_at, ends_at: ends_at, exclude_id: exclude_id
+    )
+    return real_catalog unless real_catalog.nil?
+
     availability_service(resource, from: starts_at, to: ends_at, exclude_id: exclude_id).available?(starts_at: starts_at, ends_at: ends_at)
   end
 

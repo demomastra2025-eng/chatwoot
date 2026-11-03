@@ -59,14 +59,13 @@ class Captain::Playground::ToolExecutor
 
   def execute(tool_id, arguments, context:)
     @original_data = nil
+    @original_bindings = @session.data['catalog_bindings']&.deep_dup
     @session.assert_context!(context.state)
     @context = Struct.new(:state, :context).new(@session.namespace.decode(context.state), context.context)
     @tool_id = tool_id.to_s
-    @args = Llm::PiiSessionPseudonymizer.unmask_deep(
-      Llm::IinTokenVault.detokenize_deep(@session.namespace.decode(arguments.to_h))
-    ).deep_stringify_keys.compact
     authorize_tool!
     @original_data = @data.deep_dup
+    @args = decoded_arguments(arguments)
     result = dispatch
     @scenario.validate
     context.state.merge!(@session.state)
@@ -81,7 +80,7 @@ class Captain::Playground::ToolExecutor
 
     sanitized
   rescue ArgumentError, KeyError, TypeError, Crm::Error, Scheduling::Error, ActiveRecord::RecordNotFound => e
-    @data.replace(@original_data) if @original_data
+    restore_data!
     if APPOINTMENT_TOOLS.include?(tool_id.to_s)
       return JSON.generate(success: false, reason: e.message == 'Record is not available' ? 'not_found' : 'validation_error')
     end
@@ -90,6 +89,22 @@ class Captain::Playground::ToolExecutor
   end
 
   private
+
+  def decoded_arguments(arguments)
+    if %w[create_appointment update_appointment].include?(@tool_id)
+      arguments = Captain::Playground::SimulationCatalog.new(@session).arguments(arguments, tool_id: @tool_id)
+    end
+    Llm::PiiSessionPseudonymizer.unmask_deep(
+      Llm::IinTokenVault.detokenize_deep(@session.namespace.decode(arguments.to_h))
+    ).deep_stringify_keys.compact
+  end
+
+  def restore_data!
+    return unless @original_data
+
+    @data.replace(@original_data)
+    @session.data['catalog_bindings'] = @original_bindings
+  end
 
   def authorize_tool!
     definition = Captain::ToolRegistry.definition_for(@tool_id)

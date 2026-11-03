@@ -1,4 +1,5 @@
 require 'digest'
+require 'monitor'
 
 class Captain::Playground::Session
   MAX_HISTORY = 40
@@ -14,6 +15,7 @@ class Captain::Playground::Session
 
     @account = account
     @user = user
+    @state_monitor = Monitor.new
     @fresh_isolated = isolated && session_id.blank?
     @initial_id = "#{Captain::Playground::SessionStore::ISOLATED_PREFIX}#{SecureRandom.uuid}" if @fresh_isolated
     @requested_id = session_id.presence
@@ -27,6 +29,12 @@ class Captain::Playground::Session
   def live? = false
   def conversation = nil
   def deep_dup = self
+
+  # Council views share the same data and this in-memory monitor through #dup.
+  # Keep provider/DB/Redis work outside it; only commit or copy session state here.
+  def synchronize_state(&)
+    @state_monitor.synchronize(&)
+  end
 
   # Choosing a channel gives the agents of that channel (a text channel: every enabled agent; a voice number: its voice agent alone).
   # Without a channel the enabled agents of the workspace work as in a text channel.
