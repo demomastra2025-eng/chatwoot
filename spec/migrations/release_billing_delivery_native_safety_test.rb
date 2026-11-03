@@ -127,7 +127,7 @@ RSpec.describe ActiveRecord::Migration do
     expect { CreateBillingAutobillingTables.new.down }.to raise_error(ActiveRecord::IrreversibleMigration)
     expect { AddWaHistoricalDeliveryIndexToMessages.new.down }.to raise_error(ActiveRecord::IrreversibleMigration)
     expect(connection.select_value('SELECT account_id FROM billing_account_profiles')).to eq(41)
-    expect(connection.index_exists?(:messages, name: index_name)).to be(true)
+    expect(connection.indexes(:messages).map(&:name)).to include(index_name)
   end
 
   it 'creates a valid concurrent delivery index and keeps its OID on a repeat' do
