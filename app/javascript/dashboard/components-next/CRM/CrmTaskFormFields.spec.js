@@ -20,6 +20,23 @@ const form = {
 };
 
 describe('shared task creation fields', () => {
+  it('uses the resolved conversation display ID for the source action', () => {
+    const wrapper = shallowMount(CrmTaskFormFields, {
+      props: {
+        accountId: 74,
+        conversation: { id: 42, displayId: 12 },
+        form: { ...form },
+        updateFormActivityType: vi.fn(),
+        updateAllDay: vi.fn(),
+      },
+      global: { mocks: { $t: key => key } },
+    });
+    expect(
+      wrapper.findComponent({ name: 'CrmConversationLink' }).props()
+    ).toMatchObject({ accountId: 74, displayId: 12 });
+    expect(wrapper.text()).toContain('CRM.GENERAL.CONVERSATION_SOURCE');
+  });
+
   it('shows the complete form and the linked conversation', () => {
     const wrapper = shallowMount(CrmTaskFormFields, {
       props: {
@@ -52,6 +69,9 @@ describe('shared task creation fields', () => {
       ])
     );
     expect(wrapper.text()).toContain('CRM.GENERAL.LINKED_CONVERSATION');
+    expect(
+      wrapper.findComponent({ name: 'CrmConversationLink' }).props()
+    ).toMatchObject({ accountId: null, displayId: '12' });
     expect(
       wrapper.findComponent({ name: 'CrmCustomFieldsSection' }).exists()
     ).toBe(true);

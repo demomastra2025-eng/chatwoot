@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
@@ -6,9 +7,12 @@ import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomField
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
+import CrmConversationLink from './CrmConversationLink.vue';
 
-defineProps({
+const props = defineProps({
   form: { type: Object, required: true },
+  conversation: { type: Object, default: null },
+  accountId: { type: [Number, String], default: null },
   activityTypeOptions: { type: Array, default: () => [] },
   assigneeOptions: { type: Array, default: () => [] },
   taskPriorityOptions: { type: Array, default: () => [] },
@@ -21,6 +25,12 @@ defineProps({
   updateAllDay: { type: Function, required: true },
 });
 const emit = defineEmits(['update:field']);
+const sourceSeparator = ' · ';
+const sourceDisplayId = computed(
+  () =>
+    props.conversation?.displayId ||
+    String(props.form.originatingConversationDisplayId || '').replace(/^#/, '')
+);
 </script>
 
 <template>
@@ -30,16 +40,13 @@ const emit = defineEmits(['update:field']);
         {{ $t('CRM.GENERAL.LINKED_CONVERSATION') }}
       </p>
       <p class="mb-0 text-body-main text-n-slate-11">
-        {{
-          [
-            $t('CRM.TIMELINE.CONVERSATION', {
-              id:
-                form.originatingConversationDisplayId ||
-                form.originatingConversationId,
-            }),
-            $t('CRM.GENERAL.CONVERSATION_SOURCE'),
-          ].join(' · ')
-        }}
+        <CrmConversationLink
+          v-if="sourceDisplayId"
+          :account-id="conversation ? accountId : null"
+          :display-id="sourceDisplayId"
+        />
+        {{ sourceDisplayId ? sourceSeparator : '' }}
+        {{ $t('CRM.GENERAL.CONVERSATION_SOURCE') }}
       </p>
     </div>
 

@@ -7,8 +7,10 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
+import CrmConversationLink from './CrmConversationLink.vue';
 
 const props = defineProps({
+  accountId: { type: [Number, String], default: null },
   canManageComments: {
     type: Boolean,
     default: false,
@@ -180,12 +182,6 @@ const itemTitle = item => {
     return item.payload.user?.name || t('CRM.TIMELINE.COMMENT');
   }
 
-  if (item.itemType === 'conversation') {
-    return t('CRM.TIMELINE.CONVERSATION', {
-      id: item.payload.displayId || item.payload.id,
-    });
-  }
-
   return eventLabel(item.payload?.eventType);
 };
 
@@ -333,7 +329,12 @@ const submitComment = () => {
                 <h4
                   class="mb-0 truncate text-sm font-medium leading-5 text-n-slate-12"
                 >
-                  {{ itemTitle(item) }}
+                  <CrmConversationLink
+                    v-if="item.itemType === 'conversation'"
+                    :account-id="accountId"
+                    :display-id="item.payload.displayId"
+                  />
+                  <template v-else>{{ itemTitle(item) }}</template>
                 </h4>
                 <p class="mb-0 text-xs leading-4 text-n-slate-10">
                   {{ formatRelativeTime(item.occurredAt) }}

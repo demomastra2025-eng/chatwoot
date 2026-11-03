@@ -5176,6 +5176,7 @@ watch(
                     role="tabpanel"
                   >
                     <CrmTimelineFeed
+                      :account-id="accountId"
                       :items="timelineItems"
                       :error="ui.timelineError"
                       :is-loading="ui.isTimelineLoading"

@@ -1044,6 +1044,17 @@ const resetTimeline = () => {
   ui.timelineError = null;
 };
 
+// The task's origin is a database ID; navigation requires the display ID from
+// the account-scoped, permission-filtered conversation timeline payload.
+const originatingConversation = computed(
+  () =>
+    timelineItems.value.find(
+      item =>
+        item.itemType === 'conversation' &&
+        item.payload?.id === selectedTask.value?.originatingConversationId
+    )?.payload
+);
+
 const loadDealOptions = async () => {
   if (isComponentUnmounted) return;
   dealOptionsLoadGeneration += 1;
@@ -1205,9 +1216,7 @@ const openEditDrawer = async task => {
     description: task.description || '',
     dueAt: taskDueInputValue(task),
     externalRef: task.externalRef || '',
-    originatingConversationDisplayId: task.originatingConversationId
-      ? `#${task.originatingConversationId}`
-      : '',
+    originatingConversationDisplayId: '',
     originatingConversationId: task.originatingConversationId ?? '',
     outcome: task.outcome || '',
     outcomeNote: task.outcomeNote || '',
@@ -3188,6 +3197,8 @@ watch(
 
         <CrmTaskFormFields
           :form="form"
+          :account-id="accountId"
+          :conversation="originatingConversation"
           :is-editing="Boolean(selectedTask)"
           :activity-type-options="activityTypeOptions"
           :assignee-options="assigneeOptions"
@@ -3206,6 +3217,7 @@ watch(
           class="crm-task-drawer-activity-panel border-t border-n-weak pt-6"
         >
           <CrmTimelineFeed
+            :account-id="accountId"
             :items="timelineItems"
             :error="ui.timelineError"
             :is-loading="ui.isTimelineLoading"

@@ -1769,6 +1769,35 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
 });
 
 describe('page async drawer scope', () => {
+  it('resolves the source display ID only from the matching conversation history', async () => {
+    const { state } = await mountEditor('page');
+    CrmTasksAPI.timeline.mockResolvedValueOnce(
+      response([
+        {
+          item_type: 'conversation',
+          payload: { id: 98765, display_id: 12 },
+        },
+        {
+          item_type: 'conversation',
+          payload: { id: 98766, display_id: 13 },
+        },
+      ])
+    );
+    await state.openEditDrawer({
+      ...initialTask,
+      originatingConversationId: 98765,
+    });
+
+    expect(state.originatingConversation).toEqual({ id: 98765, displayId: 12 });
+    expect(state.form.originatingConversationDisplayId).toBe('');
+    await state.openEditDrawer({
+      ...initialTask,
+      id: 8,
+      originatingConversationId: 98766,
+    });
+    expect(state.originatingConversation).toBeUndefined();
+  });
+
   it('does not invent a noon deadline when switching an all-day task to timed mode', async () => {
     const { state } = await mountEditor('page');
     await open('page', state);
