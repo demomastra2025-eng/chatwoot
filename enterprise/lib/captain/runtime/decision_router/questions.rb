@@ -9,7 +9,7 @@
 #   route_mode       the key with the highest probability decides what kind of answer the turn gets
 #   stay_current     the current agent (with no current agent: the agent with the highest include probability)
 #   route_agent      the agent with the highest include probability other than the current agent
-#   council          the agents whose include probability is 0.5 or more (the three most probable at most); fewer than two: the
+#   council          the agents whose include probability is 0.5 or more (up to MAX_COUNCIL_AGENTS); fewer than two: the
 #                    agent with the highest include probability (the current one: a stay)
 #   human_handoff    staff, whatever the include answers say, only when the latest message asks for a person, an operator or a
 #                    call-back or is a complaint, a refund or a legal matter (Captain::PatientIntent.human_request?), or when there is
@@ -301,7 +301,8 @@ class Captain::Runtime::DecisionRouter::Questions
   end
 
   def council_description
-    'The patient asks now for services of two or three DIFFERENT agents at once; exactly their include_agent questions are yes. ' \
+    "The patient asks now for services of two to #{MAX_COUNCIL_AGENTS} DIFFERENT agents at once; " \
+      'exactly their include_agent questions are yes. ' \
       'Never a council for several services of one agent.'
   end
 

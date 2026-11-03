@@ -108,6 +108,7 @@ ru:
         inbound_triage: "Разбор входящих сообщений"
         agent_routing_escalation: "Трудный выбор агента"
         council_split: "Разделение сообщения для консилиума"
+        council_edit: "Объединение ответов консилиума"
         customer_notice: "Сообщения при передаче и завершении"
         label_suggestion: "Подсказки меток"
         image_recognition: "Распознавание изображений"

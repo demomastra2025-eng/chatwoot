@@ -151,6 +151,27 @@ RSpec.describe Llm::OpenRouterRuntime do
     expect(runtime.ask(chat, 'hello', model: 'openai/gpt-5.4-mini', observability: { trace_id: 'trace-1' })).to eq(response)
   end
 
+  it 'compiles council editing as structured chat without the acting agent tool contract' do
+    context = instance_double(RubyLLM::Context)
+    chat = instance_double(RubyLLM::Chat)
+    allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+      'synthetic/structured-editor' => {
+        'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[text_input text_output structured_output]
+      }
+    )
+    schema = Class.new(RubyLLM::Schema) { string :reply }
+    request = Llm::FeatureRequest.new(
+      feature: :council_edit, account: account, model: 'synthetic/structured-editor', schema: schema, options: { context: context }
+    )
+    expect(Llm::ChatClient).to receive(:build).with(
+      hash_including(feature: 'council_edit', model: 'synthetic/structured-editor',
+                     params: hash_excluding(:tools, :parallel_tool_calls), observability: hash_including(feature: 'council_edit'))
+    ).and_return(chat)
+
+    expect(runtime.build_chat(request)).to eq(chat)
+    expect(request.profile.required_capabilities).not_to include('tool_calling', 'tool_choice')
+  end
+
   it 'falls back to the assistant budget profile for non-profile instrumentation names' do
     chat = instance_double(RubyLLM::Chat)
     response = instance_double(RubyLLM::Message)

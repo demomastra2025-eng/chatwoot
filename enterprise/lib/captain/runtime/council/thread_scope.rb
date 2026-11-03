@@ -1,11 +1,10 @@
 # frozen_string_literal: true
 
-# The state of the calling thread that a read-only lane needs on its own thread. A new thread starts empty: Current, the locale,
+# The state of the calling thread that a council lane needs on its own thread. A new thread starts empty: Current, the locale,
 # the time zone and the event-bus context are all thread-local, and the query cache that the executor switches on would hide
 # the writes of other processes from the fence checks (RunFenceService) and from the durable session.
 #
-# Only READ-ONLY lanes run on threads (see Council::Lanes); every mutating tool runs on the thread of the job, so none of
-# this is needed for a write. Agents and tools are built on the calling thread, never here.
+# Agents and tools are built on the calling thread. Actual writes share a council guard; model/read work uses these snapshots.
 class Captain::Runtime::Council::ThreadScope
   # executed_by is set per part. Everything else is what the run was started with, among it the delivery policy of a
   # Playground run: a part must never deliver anything outside it.
@@ -25,6 +24,19 @@ class Captain::Runtime::Council::ThreadScope
 
   def self.copy(value)
     value.respond_to?(:deep_dup) && !value.is_a?(ActiveRecord::Base) ? value.deep_dup : value
+  end
+
+  def self.transaction_open?
+    ActiveRecord::Base.connection_handler.each_connection_pool.any? { |pool| pool.active_connection?&.transaction_open? }
+  end
+
+  # Explicit .connection users may leave a sticky lease. Give it back before the model waits or a writer waits for its guard,
+  # and after callbacks/tools, so a council does not need one permanently leased connection for every model in flight.
+  def self.release_idle_connections!
+    ActiveRecord::Base.connection_handler.each_connection_pool do |pool|
+      connection = pool.active_connection?
+      pool.release_connection if connection && !connection.transaction_open?
+    end
   end
 
   def initialize(current:, locale:, time_zone:, event_context:, run_control: nil, iin_vault_scope: nil, pii_vault_snapshot: nil) # rubocop:disable Metrics/ParameterLists
@@ -63,7 +75,7 @@ class Captain::Runtime::Council::ThreadScope
   end
 
   def restore(executed_by)
-    @current.each { |name, value| Current.public_send("#{name}=", value) }
+    @current.each { |name, value| Current.public_send("#{name}=", self.class.copy(value)) }
     Current.executed_by = executed_by
     I18n.locale = @locale
     Time.zone = @time_zone

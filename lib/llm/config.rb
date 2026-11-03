@@ -21,16 +21,17 @@ module Llm::Config
     'outcome_classification' => 'CAPTAIN_OUTCOME_CLASSIFIER_MODEL',
     'language_detection' => 'CAPTAIN_LANGUAGE_DETECTION_MODEL',
     'agent_routing_escalation' => 'CAPTAIN_AGENT_ROUTING_ESCALATION_MODEL',
-    'council_split' => 'CAPTAIN_COUNCIL_SPLIT_MODEL'
+    'council_split' => 'CAPTAIN_COUNCIL_SPLIT_MODEL',
+    'council_edit' => 'CAPTAIN_COUNCIL_EDITOR_MODEL'
   }.freeze
   INSTALLATION_DEFAULT_MODEL_FEATURES = %w[assistant editor copilot].freeze
   INSTALLATION_MANAGED_MODEL_FEATURES = (
     INSTALLATION_MANAGED_MODEL_CONFIGS.keys + INSTALLATION_DEFAULT_MODEL_FEATURES +
     %w[agent_routing fact_check_gate inbound_triage knowledge_rerank]
   ).freeze
-  # The image readers have a platform default of their own (config/llm.yml): a blank slot is that default, never the installation default
-  # model (CAPTAIN_DEFAULT_MODEL), so moving the agent to another model never moves the reading of images with it.
-  OWN_DEFAULT_MODEL_FEATURES = %w[image_recognition image_handwriting].freeze
+  # Image readers and council transforms have their own defaults (config/llm.yml): a blank slot never follows CAPTAIN_DEFAULT_MODEL,
+  # so moving the main agent does not move image reading, message splitting or reply editing with it.
+  OWN_DEFAULT_MODEL_FEATURES = %w[image_recognition image_handwriting council_split council_edit].freeze
   OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1'.freeze
   OPENROUTER_DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'.freeze
   THINKING_EFFORT_CONFIGS = {
@@ -389,7 +390,7 @@ module Llm::Config
       canonical_model
     end
 
-    # A decision feature picks among decision models, and an image reader has its own platform default: neither follows the
+    # A decision feature picks among decision models; image readers and council transforms have their own defaults. None follows the
     # installation default model.
     def follows_no_installation_default?(feature_key)
       Llm::FeatureProfile.decision_feature?(feature_key) || OWN_DEFAULT_MODEL_FEATURES.include?(feature_key.to_s)

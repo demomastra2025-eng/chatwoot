@@ -62,14 +62,22 @@ RSpec.describe Captain::Runtime::PartRegistry do
       expect(context[:part_plan][:mode]).to eq('council')
     end
 
-    it 'refuses another mode, no part, more than three parts and an agent that is not an agent of the turn' do
+    it 'refuses another mode, no part, more than eight parts and an agent that is not an agent of the turn' do
       expect { described_class.new(context).accept!(mode: 'clarify', parts: []) }.to raise_error(ArgumentError, 'Invalid plan mode')
-      expect { plan([]) }.to raise_error(ArgumentError, /one to three parts/)
-      expect { plan((1..4).map { |id| { 'executor_agent_id' => (id % 3) + 1, 'fragment' => 'x' } }) }.to raise_error(ArgumentError)
+      expect { plan([]) }.to raise_error(ArgumentError, /one to 8 parts/)
+      expect { plan((1..9).map { |id| { 'executor_agent_id' => (id % 3) + 1, 'fragment' => 'x' } }) }.to raise_error(ArgumentError)
       expect { plan([{ 'executor_agent_id' => 1, 'fragment' => 'x' }, { 'executor_agent_id' => 9, 'fragment' => 'y' }]) }
         .to raise_error(ArgumentError, /not an agent of this turn/)
       expect { plan([{ 'executor_agent_id' => 1, 'fragment' => ' ' }, { 'executor_agent_id' => 2, 'fragment' => 'y' }]) }
         .to raise_error(ArgumentError, /fragment/)
+    end
+
+    [5, 8].each do |count|
+      it "stores all #{count} selected parts among fifteen candidate agents" do
+        context[:agent_graph] = (1..15).map { |id| { id: id } }
+        selected = (1..count).map { |id| { 'executor_agent_id' => id, 'fragment' => "Request #{id}" } }
+        expect(plan(selected)[:parts].pluck('executor_agent_id')).to eq((1..count).to_a)
+      end
     end
 
     it 'continues an open part of the same agent as its next version, and takes a link to another agent\'s part as a new part' do

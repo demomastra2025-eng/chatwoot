@@ -79,26 +79,22 @@ class Captain::Runtime::ToolWrapper
   end
 
   def call(args)
-    Captain::ReplySuggestion::RunControl.checkpoint!(:tool)
-    ensure_response_run_current!
-    if context_wrapper_context[:pending_human_handoff] || context_wrapper_context[:pending_response_cancellation] ||
-       context_wrapper_context[:technical_failure]
-      return RubyLLM::Tool::Halt.new('Control has been transferred; remaining calls in this batch were not executed.')
-    end
+    return call_tool(args) unless mutating_tool?
 
-    @operation_scope = Captain::Runtime::OperationScope.operation(context_wrapper_context) if context_wrapper_context[:agent_session]
-    @operation_target = nil
-    normalized_args = normalize_args(args)
-    @operation_target = Captain::Runtime::OperationTarget.of(@tool.name, normalized_args)
+    @context_wrapper.with_mutating_tool_execution { call_tool(args) }
+  end
 
+  def call_tool(args)
+    stop = stopped_tool_call
+    return stop if stop
+
+    normalized_args = prepare_tool_call(args)
     repeated_read = repeated_read_entry(normalized_args)
     request_stop = requested_tool_stop_result(normalized_args, count: counted_request?(repeated_read))
     return refuse_or_halt(request_stop) if request_stop
 
-    early_result = early_tool_result(normalized_args)
-    return complete_and_halt(early_result) if terminal_early_result?(early_result)
-    return complete_and_render(early_result) if early_result
-    return complete_repeated_read(repeated_read) if repeated_read
+    early_result = completed_early_call(normalized_args, repeated_read)
+    return early_result if early_result
 
     attempt_error = register_tool_execution_attempt(normalized_args)
     return refuse_or_halt(attempt_error) if attempt_error
@@ -111,6 +107,7 @@ class Captain::Runtime::ToolWrapper
   rescue StandardError => e
     handle_execution_error(e)
   end
+  private :call_tool
 
   def name
     @name || @tool.name
@@ -153,6 +150,31 @@ class Captain::Runtime::ToolWrapper
   end
 
   private
+
+  def stopped_tool_call
+    Captain::ReplySuggestion::RunControl.checkpoint!(:tool)
+    ensure_response_run_current!
+    return unless context_wrapper_context[:pending_human_handoff] || context_wrapper_context[:pending_response_cancellation] ||
+                  context_wrapper_context[:technical_failure]
+
+    RubyLLM::Tool::Halt.new('Control has been transferred; remaining calls in this batch were not executed.')
+  end
+
+  def prepare_tool_call(args)
+    @operation_scope = Captain::Runtime::OperationScope.operation(context_wrapper_context) if context_wrapper_context[:agent_session]
+    @operation_target = nil
+    normalized_args = normalize_args(args)
+    @operation_target = Captain::Runtime::OperationTarget.of(@tool.name, normalized_args)
+    normalized_args
+  end
+
+  def completed_early_call(normalized_args, repeated_read)
+    early_result = early_tool_result(normalized_args)
+    return complete_and_halt(early_result) if terminal_early_result?(early_result)
+    return complete_and_render(early_result) if early_result
+
+    complete_repeated_read(repeated_read) if repeated_read
+  end
 
   def ensure_response_run_current!
     state = @context_wrapper.context[:state] || {}

@@ -3,6 +3,7 @@
 module Captain::Runtime
   class RunContext
     attr_reader :context, :usage, :callbacks, :callback_manager
+    attr_accessor :council_mutation_guard
 
     def initialize(context, callbacks: {})
       @context = context
@@ -17,6 +18,17 @@ module Captain::Runtime
 
     def tool_loop_guard_mutex
       @tool_loop_guard_mutex ||= Mutex.new
+    end
+
+    # A council shares this guard across its parts, outside the serializable context.
+    # The per-model-batch reservation mutex above remains local to each part.
+    def with_mutating_tool_execution(&)
+      return yield unless council_mutation_guard
+
+      Captain::Runtime::Council::ThreadScope.release_idle_connections!
+      council_mutation_guard.synchronize(&)
+    ensure
+      Captain::Runtime::Council::ThreadScope.release_idle_connections! if council_mutation_guard
     end
 
     class Usage

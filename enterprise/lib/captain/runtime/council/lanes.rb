@@ -2,18 +2,16 @@
 
 # Which parts of a council run one after another and which run side by side. A pure function over plain data.
 #
-# Every part whose owner can WRITE (it has a mutating tool) belongs to ONE lane that runs in plan order on the thread of the
-# job, even for different patients: the provider allows one unfinished new-patient command per chat contact, a booking can
-# create or attach the same CRM deal, and all writes then stay on the thread that carries the user, the delivery policy and
-# the durable session. Every read-only part is a lane of its own that can run on a thread, with these exceptions, which are
-# joined into one lane (and into the writer lane when either side is a writer), always in plan order:
+# Independent parts have separate lanes, including owners that have action tools: actual writes share the council's guard
+# in ToolWrapper, without blocking another part's model or reads. These exceptions share a lane, in plan order:
 #   * a part that depends on another part (relation depends_on or conditional) follows its prerequisite;
-#   * parts that name the same object (type and id) share a lane.
+#   * parts that name the same business object (type and id) share a lane. The common patient/contact is not such a dependency.
 # The merge is transitive.
 class Captain::Runtime::Council::Lanes
+  IDENTITY_REFS = %w[patient contact].freeze
   Plan = Struct.new(:id, :writer, :prerequisite_id, :object_refs, keyword_init: true)
 
-  # plans: in the order of the request. Returns { writer: [plan, ...], readers: [[plan, ...], ...] }; every lane is in plan order.
+  # plans: in the order of the request. Returns [[plan, ...], ...]; every lane is in plan order.
   def self.build(plans)
     new(plans).build
   end
@@ -27,11 +25,7 @@ class Captain::Runtime::Council::Lanes
     join_prerequisites
     join_shared_objects
     groups = @plans.each_index.group_by { |index| find(index) }.values
-    writer_groups, reader_groups = groups.partition { |group| group.any? { |index| @plans[index].writer } }
-    {
-      writer: writer_groups.flatten.sort.map { |index| @plans[index] },
-      readers: reader_groups.sort_by(&:min).map { |group| group.sort.map { |index| @plans[index] } }
-    }
+    groups.sort_by(&:min).map { |group| group.sort.map { |index| @plans[index] } }
   end
 
   private
@@ -49,6 +43,8 @@ class Captain::Runtime::Council::Lanes
     @plans.each_with_index do |plan, index|
       Array(plan.object_refs).each do |ref|
         ref = ref.to_h.stringify_keys
+        next if IDENTITY_REFS.include?(ref['type'].to_s)
+
         key = [ref['type'].to_s, ref['id'].to_s]
         union(owners[key], index) if owners.key?(key)
         owners[key] ||= index

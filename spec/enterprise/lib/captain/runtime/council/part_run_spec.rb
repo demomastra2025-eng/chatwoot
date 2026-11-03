@@ -17,8 +17,9 @@ RSpec.describe Captain::Runtime::Council::PartRun do
   end
   let(:created) { Captain::ToolResult.success(data: { appointment_id: 7, local_date: '14.10.2026', local_time: '10:00' }) }
 
-  def part_run(callbacks: {})
-    described_class.new(agent: agent, snapshot: snapshot, account: nil, llm_context: nil, callbacks: callbacks, max_turns: 14)
+  def part_run(callbacks: {}, mutation_guard: nil)
+    described_class.new(agent: agent, snapshot: snapshot, account: nil, llm_context: nil, callbacks: callbacks, max_turns: 14,
+                        mutation_guard: mutation_guard)
   end
 
   # What the runner does with the callbacks of a run: it reports each tool result and each model call to them.
@@ -186,16 +187,21 @@ RSpec.describe Captain::Runtime::Council::PartRun do
     expect(part_run.call('x')[:output]).to include('customer_text' => 'Вы записаны на 14 октября в 10:00.', 'patient_language' => '')
   end
 
-  it 'keeps the callbacks of the run and adds its own, without changing the lists it was given' do
+  it 'keeps external callback lists and binds the shared guard before external run-start callbacks' do
     seen = []
-    callbacks = { tool_complete: [->(name, *) { seen << name }], run_start: [-> {}] }
+    guard = Monitor.new
+    callbacks = { tool_complete: [->(name, *) { seen << name }],
+                  run_start: [->(_name, _input, wrapper) { seen << wrapper.council_mutation_guard }] }
+    original_callbacks = callbacks.transform_values(&:dup)
     stub_run(tools: [['faq_lookup', Captain::ToolResult.success(message: 'ok')]])
 
-    part_run(callbacks: callbacks).call('x')
+    part_run(callbacks: callbacks, mutation_guard: guard).call('x')
+    wrapper = Captain::Runtime::RunContext.new({})
+    run_callbacks.sole[:callbacks][:run_start].each { |callback| callback.call('assistant_2', 'x', wrapper) }
 
-    expect(seen).to eq(['faq_lookup'])
-    expect(callbacks[:tool_complete].size).to eq(1)
-    expect(run_callbacks.sole[:callbacks][:run_start].size).to eq(1)
+    expect(seen).to eq(['faq_lookup', guard])
+    expect(callbacks).to eq(original_callbacks)
+    expect(wrapper.context).to eq({})
   end
 
   it 'returns the tool tracking without the appointment evidence, and nothing but plain data' do

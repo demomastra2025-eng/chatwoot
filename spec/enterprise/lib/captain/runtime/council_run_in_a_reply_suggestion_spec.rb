@@ -8,7 +8,9 @@ require 'rails_helper'
 # is a real Captain::Runtime::Agent.
 # rubocop:disable RSpec/VerifiedDoubles
 RSpec.describe Captain::Runtime::Council, '#run in a reply suggestion' do
+  self.use_transactional_tests = false
   let(:part_seconds) { 0.4 }
+  let(:part_gate) { nil }
   let(:built) { [] }
   let(:actors) { { 1 => actor(1), 2 => actor(2), 3 => actor(3) } }
   let(:graph) do
@@ -25,7 +27,7 @@ RSpec.describe Captain::Runtime::Council, '#run in a reply suggestion' do
   let(:council) { described_class.new(context: context, graph: graph, account: nil, llm_context: :llm_context, reassigner: reassigner) }
   let(:part_outputs) { {} }
 
-  # Every owner has an action tool: in a live run each would be a writer of the one writer lane.
+  # Every owner has an action tool; model work can overlap, and actual invocations share the council guard.
   def actor(id)
     tool = double("write tool #{id}", name: 'create_appointment', metadata: { risk_level: 'high', idempotent: false })
     runtime = Captain::Runtime::Agent.new(name: "assistant_#{id}", instructions: 'Owner', tools: [tool])
@@ -73,7 +75,7 @@ RSpec.describe Captain::Runtime::Council, '#run in a reply suggestion' do
         allow(run).to receive(:call) do |fragment|
           built.find { |item| item[:part] == snapshot[:active_part_id] }[:control_seen] = Captain::ReplySuggestion::RunControl.current
           Captain::ReplySuggestion::RunControl.checkpoint!(:turn)
-          sleep part_seconds
+          part_gate ? part_gate.call(snapshot[:active_part_id]) : sleep(part_seconds)
           Captain::ReplySuggestion::RunControl.checkpoint!(:turn)
           part_outputs.fetch(snapshot[:active_part_id]) { answered("Ответ на #{fragment}") }
         end
@@ -107,17 +109,31 @@ RSpec.describe Captain::Runtime::Council, '#run in a reply suggestion' do
     expect(built.map { |item| item[:control_seen].request_id }).to all(eq(control.request_id))
   end
 
-  it 'keeps the live turn cap and the one writer lane outside a suggestion' do
-    context[:state][:source] = 'incoming_message'
-    live = described_class.new(context: context, graph: graph, account: nil, llm_context: :llm_context)
-    allow(live).to receive(:fresh_actor) { |id| actors[id] }
-    allow(live).to receive(:staff_handoff_available?).and_return(false)
+  context 'when running outside a suggestion' do
+    let(:part_started) { Queue.new }
+    let(:part_release) { Queue.new }
+    let(:part_gate) do
+      lambda do |id|
+        part_started << id
+        part_release.pop
+      end
+    end
 
-    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    live.run(parts)
+    it 'overlaps live model work of action-capable owners while keeping the live turn cap' do
+      context[:state][:source] = 'incoming_message'
+      live = described_class.new(context: context, graph: graph, account: nil, llm_context: :llm_context)
+      allow(live).to receive(:fresh_actor) { |id| actors[id] }
+      allow(live).to receive(:staff_handoff_available?).and_return(false)
+      worker = Thread.new { live.run(parts) }
 
-    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be >= part_seconds * 3
-    expect(built.pluck(:max_turns)).to all(eq(described_class::PART_MAX_TURNS))
+      expect(Array.new(3) { Timeout.timeout(5) { part_started.pop } }).to contain_exactly('part-1', 'part-2', 'part-3')
+      3.times { part_release << true }
+      expect(worker.value).to eq('Единый ответ.')
+      expect(built.pluck(:max_turns)).to all(eq(described_class::PART_MAX_TURNS))
+    ensure
+      3.times { part_release << true }
+      worker&.join(1)
+    end
   end
 
   describe 'the deadline of the parts (real timings, the run keeps the time of the editor)' do

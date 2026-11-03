@@ -168,7 +168,7 @@ RSpec.describe Captain::Runtime::CouncilEditor do
     let(:asked) { [] }
 
     before do
-      allow(Llm::ModelParameters).to receive(:for).with(model, account: nil).and_return(parameters)
+      allow(Llm::ModelParameters).to receive(:for).and_return(parameters)
       allow(parameters).to receive(:thinking).with('none').and_return({ effort: 'none' })
       allow(parameters).to receive(:compile).and_return(params: {}, temperature: 0.3, thinking: { effort: 'none' })
       allow(Llm::Runtime).to receive(:build_chat) do |**kwargs|
@@ -189,18 +189,20 @@ RSpec.describe Captain::Runtime::CouncilEditor do
       end
     end
 
-    it 'uses the acting agent model without reasoning, low temperature, no tools and a reply-only structured output' do
+    it 'uses the dedicated structured editor feature without reasoning, tools or acting-agent capability requirements' do
       outcome = edit_parts
 
       expect(outcome.reply).to eq('Приём стоит 5000 тенге.')
       expect(parameters).to have_received(:compile).with(temperature: 0.3, thinking: { effort: 'none' })
-      expect(built.sole).to include(feature: :captain_agent, account: nil, model: model,
+      expect(built.sole).to include(feature: :council_edit, account: nil, model: model,
                                     runtime_preferences: { 'sensitive_info_guardrail' => 'block' })
       expect(built.sole[:options]).to include(thinking: { effort: 'none' }, temperature: 0.3)
       expect(built.sole).not_to include(:tools)
       expect(bound.sole[:chat]).to eq(chat)
-      expect(bound.sole[:schema]).to include(name: 'captain_council_reply', strict: true)
-      expect(bound.sole[:schema][:schema]).to include(required: ['reply'], properties: { reply: { type: 'string' } })
+      expect(bound.sole[:schema]).to include(
+        name: 'captain_council_reply', strict: true,
+        schema: include(required: ['reply'], properties: { reply: { type: 'string' } })
+      )
     end
 
     it 'states "no reasoning" with the no-thinking policy of the runtime, for the model it edits with' do

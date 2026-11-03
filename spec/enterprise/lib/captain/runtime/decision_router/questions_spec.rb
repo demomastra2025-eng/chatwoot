@@ -129,12 +129,31 @@ RSpec.describe Captain::Runtime::DecisionRouter::Questions do
         .to have_attributes(kind: 'agent', key: 'route_agent_30')
     end
 
-    it 'holds a council of the agents at 0.5 or more, ids ascending, the three most probable at most' do
+    it 'holds a council of the agents at 0.5 or more, ids ascending' do
       expect(questions.resolve(answered('council', yes: [30, 10]))).to have_attributes(kind: 'council', agent_ids: [10, 30], key: 'council_10_30')
       expect(questions.resolve(answered('council', yes: [10, 20, 30])).key).to eq('council_10_20_30')
       four = build(4).resolve(answered('council', all: [10, 20, 30, 40],
                                                   include_probabilities: { 10 => 0.55, 20 => 0.9, 30 => 0.5, 40 => 0.8 }))
-      expect(four.key).to eq('council_10_20_40')
+      expect(four.key).to eq('council_10_20_30_40')
+    end
+
+    it 'selects all five qualifying agents among fifteen candidates, including the exact 0.5 boundary' do
+      ids = (1..15).map { |index| index * 10 }
+      chosen = [10, 40, 70, 100, 150]
+      probabilities = ids.index_with { |id| chosen.include?(id) ? 0.5 : 0.49 }
+      router = build(15)
+
+      expect(router.to_h.size).to eq(16)
+      expect(router.resolve(answered('council', all: ids, include_probabilities: probabilities)).agent_ids).to eq(chosen)
+      expect(router.to_h['route_mode'][:criteria]['council']).to include('two to 8 DIFFERENT agents')
+    end
+
+    it 'keeps the eight most probable qualifying agents among fifteen, with stable ties and ascending output' do
+      ids = (1..15).map { |index| index * 10 }
+      probabilities = ids.index_with { |id| id >= 100 ? 0.9 : 0.6 }
+      result = build(15).resolve(answered('council', all: ids, include_probabilities: probabilities))
+
+      expect(result.agent_ids).to eq([10, 20, 100, 110, 120, 130, 140, 150])
     end
 
     it 'routes a council of fewer than two agents to the most probable agent, a stay when that is the current one' do

@@ -4,7 +4,7 @@
 # it. The parts belong to the conversation, not to its current agent. A council is accepted here once per patient request, with
 # exactly the participants the router chose (see Captain::Runtime::TurnDispatcher and Captain::Runtime::CouncilPlan).
 class Captain::Runtime::PartRegistry
-  MAX_COUNCIL_PARTS = 3
+  MAX_COUNCIL_PARTS = 8
   SUMMARY_LIMIT = 600
   # The sentence told to the customer for a part stays whole up to the length of one message.
   REPLY_TEXT_LIMIT = 3000
@@ -123,8 +123,10 @@ class Captain::Runtime::PartRegistry
 
   def validate_council!(mode, parts)
     raise ArgumentError, 'Invalid plan mode' unless MODES.include?(mode)
-    # The participants (two or three different agents) are checked against the decision (CouncilPlan); a stored part can be continued alone.
-    raise ArgumentError, 'A council has one to three parts' unless parts.is_a?(Array) && parts.size.between?(1, MAX_COUNCIL_PARTS)
+    # CouncilPlan checks the selected participants; a stored part can be continued alone.
+    return if parts.is_a?(Array) && parts.size.between?(1, MAX_COUNCIL_PARTS)
+
+    raise ArgumentError, "A council has one to #{MAX_COUNCIL_PARTS} parts"
   end
 
   def replay(saved)

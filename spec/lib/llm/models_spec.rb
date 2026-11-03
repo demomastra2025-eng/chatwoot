@@ -3,6 +3,32 @@
 require 'rails_helper'
 
 RSpec.describe Llm::Models do
+  describe '.model_config parameter provenance' do
+    let(:model) { 'google/gemini-2.5-flash-lite' }
+
+    before { allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' } }
+
+    it 'fills only the approved parameter fields missing from the shipped catalog snapshot' do
+      shipped = Llm::OpenRouterModelCatalog.send(:fallback_model_configs)
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(shipped)
+      original = shipped.fetch(model).deep_dup
+
+      config = described_class.model_config(model)
+
+      expect(config.except('supported_parameters', 'reasoning')).to eq(original)
+      expect(config.slice('supported_parameters', 'reasoning')).to eq(described_class.configured_models.fetch(model)
+        .slice('supported_parameters', 'reasoning'))
+      expect(shipped.fetch(model)).to eq(original)
+    end
+
+    it 'keeps a fresh API catalog authoritative even when it omits reasoning controls' do
+      api = { 'provider' => 'openrouter', 'source' => 'openrouter_api', 'capabilities' => %w[text_input text_output] }
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(model => api)
+
+      expect(described_class.model_config(model)).to eq(api)
+    end
+  end
+
   describe '.capabilities_for' do
     it 'normalizes upstream registry capabilities to onelink capability names' do
       registry_info = instance_double(RubyLLM::Model::Info, capabilities: %w[function_calling vision], type: 'chat')
@@ -46,6 +72,27 @@ RSpec.describe Llm::Models do
   end
 
   describe '.features' do
+    %w[council_split council_edit].each do |feature|
+      it "offers catalog structured-chat models for #{feature} without inventing tool capabilities" do
+        # Synthetic catalog capabilities prove filtering, not these models' live support or quality.
+        eligible = %w[inception/mercury-2.5 qwen/qwen3.7-flash openai/gpt-5-nano google/gemini-3.1-flash-lite
+                      deepseek/deepseek-v4.1-flash openai/gpt-6-luna]
+        catalog = eligible.index_with do
+          { 'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[text_input text_output structured_output] }
+        end
+        catalog['synthetic/plain'] = { 'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[text_input text_output] }
+        allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
+        allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(catalog)
+        allow(Llm::OpenRouterEndpointCatalog).to receive(:endpoint_metadata).and_return({})
+
+        offered = described_class.models_for(feature)
+
+        expect(offered).to include(*eligible)
+        expect(offered).not_to include('synthetic/plain')
+        expect(described_class.required_capabilities_for(feature)).to eq(%w[structured_output])
+      end
+    end
+
     it 'uses OpenRouter model ids as normal Captain feature defaults', :aggregate_failures do
       expect(described_class.features.dig('editor', 'default')).to eq('openai/gpt-6-luna')
       expect(described_class.features.dig('assistant', 'default')).to eq('openai/gpt-6-luna')

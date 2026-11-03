@@ -1,0 +1,14 @@
+kk:
+  super_admin:
+    app_config:
+      captain:
+        diagnostics:
+          feature_names:
+            council_edit: "Консилиум жауаптарын біріктіру"
+      fields:
+        CAPTAIN_COUNCIL_EDITOR_MODEL:
+          title: "Консилиум жауаптарын біріктіру"
+          hint: "Дайын жауаптарды құралдар мен пайымдауды қолданбай, бір хабарламаға біріктіреді. Платформаның бөлек моделін қолданады."
+    ai_analytics:
+      feature_names:
+        council_edit: "Консилиум жауаптарын біріктіру"

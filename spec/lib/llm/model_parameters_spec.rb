@@ -35,6 +35,25 @@ RSpec.describe Llm::ModelParameters do
     expect(contract.reasoning_efforts).to eq([])
   end
 
+  it 'only offers off when installed OpenRouter metadata permits disabling but has no effort selector' do
+    allow(Llm::Models).to receive(:model_config).and_return(
+      'provider' => 'openrouter', 'supported_parameters' => ['reasoning'], 'reasoning' => { 'mandatory' => false }
+    )
+    expect(contract.reasoning_efforts).to eq(['none'])
+    expect(contract.disabled_reasoning_uses_flag?).to be true
+    expect(contract.thinking('high')).to be_nil
+    expect(contract.compile(thinking: { effort: 'none' })).to include(thinking: { effort: 'none' })
+  end
+
+  it 'does not infer disabling from absent or mandatory reasoning metadata without an effort selector' do
+    [nil, {}, { 'mandatory' => true }].each do |reasoning|
+      allow(Llm::Models).to receive(:model_config).and_return(
+        'provider' => 'openrouter', 'supported_parameters' => ['reasoning'], 'reasoning' => reasoning
+      )
+      expect(described_class.for('provider/test').reasoning_efforts).to eq([])
+    end
+  end
+
   it 'accepts the documented null effort contract but omits unsupported disabling for mandatory reasoning' do
     allow(Llm::Models).to receive(:model_config).and_return(
       'provider' => 'openrouter', 'source' => 'openrouter_api', 'supported_parameters' => ['reasoning'],

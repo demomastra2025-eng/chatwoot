@@ -412,8 +412,13 @@
   locked: false
 - name: CAPTAIN_COUNCIL_SPLIT_MODEL
   display_title: 'Модель разделения сообщения для консилиума'
-  description: 'Делит сообщение пациента на части для участников консилиума, которых выбрал маршрутизатор. Без рассуждения. При ошибке каждый участник получает всё сообщение. Пусто — openai/gpt-6-luna.'
-  value: 'openai/gpt-6-luna'
+  description: 'Делит сообщение пациента на части для участников консилиума, которых выбрал маршрутизатор. Без рассуждения. При ошибке каждый участник получает всё сообщение. Пусто — deepseek/deepseek-v4.1-flash.'
+  value: 'deepseek/deepseek-v4.1-flash'
+  locked: false
+- name: CAPTAIN_COUNCIL_EDITOR_MODEL
+  display_title: 'Модель объединения ответов консилиума'
+  description: 'Объединяет готовые ответы участников в одно сообщение. Без инструментов и рассуждения. Пусто — google/gemini-2.5-flash-lite, независимо от основной модели агентов.'
+  value: 'google/gemini-2.5-flash-lite'
   locked: false
 - name: CAPTAIN_LABEL_SUGGESTION_MODEL
   display_title: 'Модель подсказок меток'

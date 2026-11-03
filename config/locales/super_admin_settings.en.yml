@@ -1,0 +1,14 @@
+en:
+  super_admin:
+    app_config:
+      captain:
+        diagnostics:
+          feature_names:
+            council_edit: "Council reply editing"
+      fields:
+        CAPTAIN_COUNCIL_EDITOR_MODEL:
+          title: "Council reply editor"
+          hint: "Combines completed replies into one message without tools or reasoning. Uses its own platform model."
+    ai_analytics:
+      feature_names:
+        council_edit: "Council reply editing"

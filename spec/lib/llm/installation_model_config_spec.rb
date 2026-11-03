@@ -34,6 +34,15 @@ RSpec.describe Llm::InstallationModelConfig do
     end
   end
 
+  it 'validates the editor slot using its own structured-only feature contract' do
+    expect(Llm::Models).to receive(:model_allowed_for_feature?).with('council_edit', 'synthetic/structured-editor').and_return(true)
+
+    result = described_class.normalize('CAPTAIN_COUNCIL_EDITOR_MODEL', 'synthetic/structured-editor')
+
+    expect(result).to be_valid
+    expect(result.value).to eq('synthetic/structured-editor')
+  end
+
   describe '.manages?' do
     it 'covers every platform-managed model slot and the short list' do
       Llm::Config::INSTALLATION_MANAGED_MODEL_CONFIGS.each_value do |config_name|

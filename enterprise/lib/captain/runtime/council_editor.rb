@@ -105,25 +105,32 @@ class Captain::Runtime::CouncilEditor
   end
 
   def request_reply(payload)
-    chat = Llm::Runtime.build_chat(**chat_kwargs)
+    Llm::CouncilModelChain.new(feature: :council_edit, model: @model, account: @account,
+                               runtime_preferences: @context.dig(:state, :captain_runtime)).call do |model|
+      request_reply_with(payload, model)
+    end
+  end
+
+  def request_reply_with(payload, model)
+    chat = Llm::Runtime.build_chat(**chat_kwargs(model))
     instructions = [SYSTEM_PROMPT, Captain::PatientLanguage.line(@context[:patient_language])].compact.join("\n")
     chat = chat.with_instructions(instructions)
     chat = Llm::StructuredOutputPolicy.bind!(chat: chat, schema: reply_schema)
-    response = Llm::Runtime.ask(chat, payload.to_json, account: @account, model: @model, observability: observability)
+    response = Llm::Runtime.ask(chat, payload.to_json, account: @account, model: model, observability: observability)
     reply_from(response)
   end
 
-  # Same model and credentials as the acting agent, no tools and no reasoning: the editor only edits the texts that the
-  # owners of the parts (who do reason) already wrote. The request states "no reasoning" with the helper of the chat path, the same
+  # Its own platform model slot, no tools and no reasoning: the editor only edits the texts that the
+  # owners of the parts already wrote. The request states "no reasoning" with the helper of the chat path, the same
   # policy the notices apply to their own request (Llm::RuntimePolicy.no_reasoning_params for the feature runtime).
-  def chat_kwargs
-    parameters = Llm::ModelParameters.for(@model, account: @account).compile(
-      temperature: TEMPERATURE, thinking: Llm::RuntimePolicy.no_thinking_options(model: @model, account: @account)
+  def chat_kwargs(model)
+    parameters = Llm::ModelParameters.for(model, account: @account).compile(
+      temperature: TEMPERATURE, thinking: Llm::RuntimePolicy.no_thinking_options(model: model, account: @account)
     )
     {
-      feature: :captain_agent, account: @account, model: @model,
+      feature: :council_edit, account: @account, model: model, models: [model],
       runtime_preferences: (@context.dig(:state, :captain_runtime) || {}).deep_dup,
-      options: { context: @llm_context, headers: {} }.merge(parameters)
+      options: { context: @llm_context, headers: {} }.compact.merge(parameters)
     }
   end
 
