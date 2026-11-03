@@ -1352,7 +1352,10 @@ class Captain::Assistant::AgentRunnerService
     }.compact
     return [@assistant.agent(**agent_options)] unless graph_run?
 
-    agents = agent_run_context.runtime_agents(overrides: agent_options)
+    with_courtesy_holder(agent_run_context.runtime_agents(overrides: agent_options), agent_options)
+  end
+
+  def with_courtesy_holder(agents, agent_options)
     return agents unless @turn_decision&.no_reply? && @turn_decision.agent_id.nil?
 
     holder = conversation_holder
