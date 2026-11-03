@@ -101,6 +101,9 @@ Existing foundation допускается только при наличии в
 `ACCESS EXCLUSIVE` с `ONLY` для каждого элемента: потомки не получают рекурсивных
 блокировок. До работы фиксируются schema/OID; после захвата проверяются прежние
 schema/OID и отсутствие pg_temp-shadowing для исторических unqualified Rails-вызовов.
+В свежей all-local-absent ветке посторонний permanent fallback допустим: CREATE
+пишет в текущую схему. Сразу после CREATE проверяются новые local OID до additive
+ownership/history DDL; actual temp shadowing отклоняется и в свежей ветке.
 LOCK, row-count и size используют ту же сохранённую квалифицированную схему.
 Затем повторяется проверка топологии и **до DDL** проверяется каждая таблица:
 `pg_total_relation_size <= 1_048_576` (включая индексы и TOAST), не больше 512 строк

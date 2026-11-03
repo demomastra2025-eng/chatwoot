@@ -301,6 +301,7 @@ AI_EXPAND_GUARDS = {
 
     if present.empty?
       create_foundation
+      record_created_foundation!
     else
       lock_bounded_legacy_foundation!
       validate_legacy_foundation!
@@ -325,11 +326,24 @@ AI_EXPAND_GUARDS = {
 
     TABLES.each do |table|
       actual = relation_oid(table)
-      resolved = select_value("SELECT to_regclass(#{connection.quote(table.to_s)})::oid")
-      next if actual == @foundation_oids.fetch(table) && resolved == actual
+      next if actual == @foundation_oids.fetch(table) && resolution_matches?(table, actual)
 
       raise ActiveRecord::MigrationError, "billing foundation relation changed or shadowed: explicit maintenance required (#{table})"
     end
+  end''',
+        r'''  def record_created_foundation!
+    @foundation_oids = TABLES.index_with { |table| relation_oid(table) }
+    raise ActiveRecord::MigrationError, 'created billing foundation missing: explicit maintenance required' if @foundation_oids.values.any?(&:nil?)
+
+    validate_foundation_identity!
+  end''',
+        r'''  def resolution_matches?(table, actual)
+    resolved = select_one("SELECT oid, relpersistence FROM pg_class WHERE oid = to_regclass(#{connection.quote(table.to_s)})")
+    return resolved && resolved['oid'] == actual if actual
+
+    # Fresh CREATE targets the current schema even when another permanent table
+    # is visible through a fallback schema. Session temporary shadowing is unsafe.
+    resolved.nil? || resolved['relpersistence'] != 't'
   end''',
         r'''  def relation_oid(table)
     select_value("SELECT to_regclass(#{relation_literal(table)})::oid")

@@ -35,7 +35,7 @@ RSpec.describe ActiveRecord::Migration do
     previous_lock = connection.select_value('SHOW lock_timeout')
     previous_statement = connection.select_value('SHOW statement_timeout')
     connection.execute("CREATE SCHEMA #{schema}")
-    connection.schema_search_path = schema
+    connection.schema_search_path = "#{schema},public"
     connection.execute("SET lock_timeout = '9s'")
     connection.execute("SET statement_timeout = '8s'")
     described_class.suppress_messages { example.run }
@@ -191,6 +191,41 @@ RSpec.describe ActiveRecord::Migration do
     expect(connection.column_exists?("#{schema}.billing_accounts", :foundation_state)).to be(false)
   ensure
     connection.execute('DROP TABLE IF EXISTS pg_temp.billing_accounts')
+  end
+
+  it 'rejects a temporary shadow even when all local foundation tables are absent' do
+    connection.create_table(:accounts, id: :integer)
+    connection.create_table(:organizations)
+    connection.execute('CREATE TEMP TABLE billing_accounts (id bigint)')
+
+    expect do
+      connection.transaction(requires_new: true) { ManageOrganizationBillingFoundation.new.up }
+    end.to raise_error(ActiveRecord::MigrationError, /relation changed or shadowed/)
+    local = connection.select_values("SELECT tablename FROM pg_tables WHERE schemaname=current_schema() AND tablename LIKE 'billing_%'")
+    expect(local).to be_empty
+  ensure
+    connection.execute('DROP TABLE IF EXISTS pg_temp.billing_accounts')
+  end
+
+  it 'creates a fresh local foundation when unrelated permanent names exist in a fallback schema' do
+    connection.create_table(:accounts, id: :integer)
+    connection.create_table(:organizations)
+    fallback = "#{schema}_fallback"
+    connection.execute("CREATE SCHEMA #{fallback}")
+    ManageOrganizationBillingFoundation::TABLES.each do |table|
+      relation = connection.quote_table_name("#{fallback}.#{table}")
+      connection.execute("CREATE TABLE #{relation} (unrelated integer)")
+    end
+    connection.schema_search_path = "#{schema},#{fallback},public"
+
+    connection.transaction(requires_new: true) { ManageOrganizationBillingFoundation.new.up }
+
+    expect(connection.column_exists?("#{schema}.billing_accounts", :foundation_state)).to be(true)
+    expect(connection.column_exists?("#{fallback}.billing_accounts", :foundation_state)).to be(false)
+    expect(connection.columns("#{fallback}.billing_accounts").map(&:name)).to eq(['unrelated'])
+  ensure
+    connection.schema_search_path = "#{schema},public"
+    connection.execute("DROP SCHEMA IF EXISTS #{fallback} CASCADE") if fallback
   end
 
   it 'uses ONLY parent locks and refuses a descendant attached after the topology precheck' do
