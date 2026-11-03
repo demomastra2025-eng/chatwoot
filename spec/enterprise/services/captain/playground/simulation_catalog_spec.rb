@@ -59,6 +59,21 @@ RSpec.describe Captain::Playground::SimulationCatalog do
     expect(Integrations::Medelement::ResourceAvailabilityService).not_to receive(:new)
   end
 
+  def interleave_availability_read
+    klass = Captain::Tools::Account::GetSchedulingResourceAvailabilityService
+    allow(klass).to receive(:new).and_wrap_original do |constructor, *args, **kwargs|
+      delegate = constructor.call(*args, **kwargs)
+      execute = delegate.method(:execute)
+      execute = execute.super_method if execute.owner == Captain::Tools::Instrumentation
+      allow(delegate).to receive(:execute) do |**arguments|
+        result = execute.call(**arguments)
+        yield
+        result
+      end
+      delegate
+    end
+  end
+
   it 'reads the real catalogue then creates, moves and cancels only a session-owned appointment', :aggregate_failures do
     session.with_lock do |workspace|
       workspace.activate_agent!(assistant)
@@ -152,9 +167,11 @@ RSpec.describe Captain::Playground::SimulationCatalog do
       workspace.activate_agent!(assistant)
       workspace.set_permissions!(read: true, write: false)
       expect(call(workspace, 'create_appointment', booking_arguments)['success']).to be(false)
-      Captain::Playground::SchedulingOffers.new(workspace).record(
+      offers = Captain::Playground::SchedulingOffers.new(workspace)
+      provenance = offers.begin_read('search_available_slots', booking_arguments)
+      offers.record(
         'search_available_slots',
-        { slots: [booking_arguments.merge(ends_at: (starts_at + 30.minutes).iso8601)] }.deep_stringify_keys, {}
+        { slots: [booking_arguments.merge(ends_at: (starts_at + 30.minutes).iso8601)] }.deep_stringify_keys, {}, provenance: provenance
       )
       created = call(workspace, 'create_appointment', booking_arguments)
       expect(created['success']).to be(true)
@@ -162,6 +179,51 @@ RSpec.describe Captain::Playground::SimulationCatalog do
       expect(call(workspace, 'update_appointment', appointment_id: created['appointment_id'])['success']).to be(false)
       resource.service_prices.find_each { |price| price.update!(active: false) }
       expect(call(workspace, 'create_appointment', booking_arguments)['success']).to be(false)
+    end
+  end
+
+  %w[mapping permissions].each do |change|
+    it "rejects an actual delegate result whose #{change} changed while the real read was in flight" do
+      resource.update!(custom_attributes: { medelement_specialist_code: 'mapping-A' })
+      stub_provider_slots
+      session.with_lock do |workspace|
+        workspace.activate_agent!(assistant)
+        workspace.set_permissions!(read: true, write: false)
+        interleave_availability_read do
+          if change == 'mapping'
+            # An external editor is outside the delegate's read-only connection.
+            ActiveRecord::Base.connected_to(role: :writing, prevent_writes: false) do
+              resource.update!(custom_attributes: { medelement_specialist_code: 'mapping-B' })
+            end
+          else
+            workspace.set_permissions!(read: false, write: false)
+            workspace.set_permissions!(read: true, write: false)
+          end
+        end
+        range = { resource_id: resource.id, service_id: service.id, from: (starts_at - 1.hour).iso8601, to: (starts_at + 1.hour).iso8601 }
+        expect(call(workspace, 'get_scheduling_resource_availability', range).fetch('slots')).to be_present
+        expect(Array(workspace.data['catalog_slots'])).to be_empty
+        expect(call(workspace, 'create_appointment', booking_arguments)['success']).to be(false)
+      end
+    end
+  end
+
+  it 'keeps a delegate offer valid after unrelated sync metadata and timestamp updates during the read' do
+    resource.update!(custom_attributes: { medelement_specialist_code: 'mapping-A' })
+    stub_provider_slots
+    interleave_availability_read do
+      ActiveRecord::Base.connected_to(role: :writing, prevent_writes: false) do
+        resource.update!(custom_attributes: resource.custom_attributes.merge('last_sync_at' => Time.current.iso8601))
+        service.update!(description: 'Synthetic sync metadata')
+      end
+    end
+    session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
+      workspace.set_permissions!(read: true, write: false)
+      range = { resource_id: resource.id, service_id: service.id, from: (starts_at - 1.hour).iso8601, to: (starts_at + 1.hour).iso8601 }
+      call(workspace, 'get_scheduling_resource_availability', range)
+      expect(workspace.data['catalog_slots']).to be_present
+      expect(call(workspace, 'create_appointment', booking_arguments)['success']).to be(true)
     end
   end
 

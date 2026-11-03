@@ -14,14 +14,15 @@ RSpec.describe Captain::Playground::SchedulingOffers do
       workspace.activate_agent!(assistant)
       view = workspace.acting_as(assistant.id)
       [workspace, view].each do |owner|
-        allow(owner).to receive_messages(read_enabled?: true, permissions: { 'generation' => 1 })
+        allow(owner).to receive_messages(read_enabled?: true, permissions: { 'read' => true, 'generation' => 1 })
       end
+      provenance = Captain::Playground::SchedulingReadSnapshot.for_arguments(workspace, resource_ids: resource_ids)
       offers = [described_class.new(workspace), described_class.new(view)]
-      offers.each { |offer| allow(offer).to receive(:binding_for).and_return('synthetic-binding') }
+      offers.each { |offer| allow(offer).to receive(:current_snapshot).and_return(provenance) }
       first_paused, release_first = pause_first_catalog_read(workspace.data)
-      first = Thread.new { record(offers.first, resource_ids.first) }
+      first = Thread.new { record(offers.first, resource_ids.first, provenance) }
       Timeout.timeout(5) { first_paused.pop }
-      second = Thread.new { record(offers.last, resource_ids.last) }
+      second = Thread.new { record(offers.last, resource_ids.last, provenance) }
       # With the monitor the second reader sleeps at commit; without it the
       # second commit completes, then the paused first commit loses its result.
       Timeout.timeout(5) { Thread.pass while second.alive? && second.status != 'sleep' }
@@ -53,9 +54,10 @@ RSpec.describe Captain::Playground::SchedulingOffers do
     [first_paused, release_first]
   end
 
-  def record(offers, resource_id)
+  def record(offers, resource_id, provenance)
     starts_at = 1.day.from_now.change(hour: 10, min: 0, sec: 0)
-    offers.record('search_available_slots', { slots: [{ resource_id: resource_id, starts_at: starts_at.iso8601,
-                                                        ends_at: (starts_at + 30.minutes).iso8601, status: 'available' }] }, {})
+    payload = { slots: [{ resource_id: resource_id, starts_at: starts_at.iso8601,
+                          ends_at: (starts_at + 30.minutes).iso8601, status: 'available' }] }
+    offers.record('search_available_slots', payload, {}, provenance: provenance)
   end
 end

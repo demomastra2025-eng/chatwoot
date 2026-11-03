@@ -141,8 +141,10 @@ class Captain::Playground::RealToolExecutor
 
   def execute_read(tool_id, prepared, arguments)
     ActiveRecord::Base.connected_to(role: :writing, prevent_writes: true) do
+      offers = Captain::Playground::SchedulingOffers.new(@session)
+      provenance = offers.begin_read(tool_id, arguments)
       result = execute_prepared(tool_id, prepared)
-      Captain::Playground::SchedulingOffers.new(@session).record(tool_id, result, arguments)
+      offers.record(tool_id, result, arguments, provenance: provenance)
       result
     end
   end

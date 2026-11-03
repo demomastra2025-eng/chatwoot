@@ -7,7 +7,9 @@ module Captain::Assistant::HandoffClaim
             'соединил[аи]?|соединяю|подключил[аи]?|подключаю)'.freeze
   RU_FUTURE = '(?:передам|переведу|перенаправлю|переключу|соединю|подключу)'.freeze
   CLAUSE_START = "(?:я|мы|i|we|#{RU_DONE}|#{RU_FUTURE})".freeze
-  CLAUSE_BOUNDARY = /;|(?:,|\s+(?:и|and))\s*(?=#{CLAUSE_START}(?!\p{L}))|\s+(?:но|однако|but|however)\s+/i
+  INDEPENDENT_BOUNDARY = /;|\s+(?:но|однако|but|however)\s+/i
+  COMPOUND_BOUNDARY = /(?:,|\s+(?:и|and))\s*(?=#{CLAUSE_START}(?!\p{L}))/i
+  LEADING_CONDITION = /\A\s*(?:if\b|once\b|when\b|after\b|если|когда|после|с вашего разрешения|егер|растаган|растау|руксат)/i
   RU_CLAIM = /(?<!\p{L})(#{RU_DONE}|#{RU_FUTURE})(?!\p{L}).{0,100}?#{STAFF}/i
   EN_SUBJECT = "(?:(?:i|we)(?:\\s+(?:have|will|am|are))?|(?:i|we)['’](?:ve|ll|m|re))".freeze
   EN_CLAIM = Regexp.new(
@@ -41,8 +43,13 @@ module Captain::Assistant::HandoffClaim
     # Quoted words belong to their author, not to the assistant's current action.
     public_text = text.to_s.gsub(/«[^»]*»|“[^”]*”|"[^"]*"/m, ' ')
     Captain::PatientIntent.folded(public_text).scan(/[^.!?]+[.!?]?/).any? do |sentence|
-      !sentence.end_with?('?') && sentence.split(CLAUSE_BOUNDARY).any? { |clause| affirmative_claim?(clause) }
+      !sentence.end_with?('?') && sentence.split(INDEPENDENT_BOUNDARY).any? { |clause| clause_claim?(clause) }
     end
+  end
+
+  def clause_claim?(clause)
+    clauses = clause.match?(LEADING_CONDITION) ? [clause] : clause.split(COMPOUND_BOUNDARY)
+    clauses.any? { |part| affirmative_claim?(part) }
   end
 
   def affirmative_claim?(sentence)

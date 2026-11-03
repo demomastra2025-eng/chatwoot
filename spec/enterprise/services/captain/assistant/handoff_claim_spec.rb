@@ -27,6 +27,8 @@ RSpec.describe Captain::Assistant::HandoffClaim do
     "I'll transfer your request to staff.",
     'Your request has been transferred to an operator.',
     'I have not transferred the request to staff; I will connect you to a human.',
+    'If you approve, I will transfer your request to staff; I have transferred your request to an operator.',
+    'Если вы подтвердите, я передам запрос сотруднику; я уже передала запрос оператору.',
     'Я не передала запрос сотруднику; передам оператору.',
     'Я не передала запрос сотруднику, но я передам оператору.',
     'После вашего подтверждения я уже передала запрос сотруднику.',
@@ -66,6 +68,13 @@ RSpec.describe Captain::Assistant::HandoffClaim do
     'I will forward your request to staff after your approval.',
     "I'll transfer your request to staff after your approval.",
     'If your request has been transferred to an operator, please wait.',
+    'If you approve, I will transfer your request to staff.',
+    'Once you confirm, I will forward your request to staff.',
+    'When you confirm, I will transfer your request to staff.',
+    'After your approval, I will transfer your request to staff.',
+    'Если вы подтвердите, я передам запрос сотруднику.',
+    'Когда вы подтвердите, я передам запрос сотруднику.',
+    'После вашего подтверждения, я передам запрос сотруднику.',
     'I have not transferred your request to staff.'
   ].each do |text|
     it "preserves a request, conditional proposal or quotation: #{text}" do

@@ -1,7 +1,5 @@
 # Server-owned coordinates of slots actually offered by real scheduling reads.
 # No patient, credential, cabinet or provider command data enters the session.
-require 'digest'
-
 class Captain::Playground::SchedulingOffers
   READS = %w[search_available_slots get_scheduling_resource_availability search_booking_options].freeze
   CHILDREN = %w[slots days next_available results specialists data].freeze
@@ -11,13 +9,23 @@ class Captain::Playground::SchedulingOffers
     @session = session
   end
 
-  def record(tool_id, result, arguments)
+  def begin_read(tool_id, arguments)
     return unless READS.include?(tool_id) && @session.read_enabled?
+
+    Captain::Playground::SchedulingReadSnapshot.for_arguments(@session, arguments)
+  rescue Scheduling::Error, ArgumentError, TypeError
+    nil # The production delegate still owns validation and its error contract.
+  end
+
+  def record(tool_id, result, arguments, provenance:)
+    return unless valid_origin?(tool_id, provenance)
     return if Captain::ToolResult.error?(result)
 
     payload = result.is_a?(String) ? JSON.parse(result) : result
-    generation = @session.permissions['generation']
-    store(extract(payload, arguments.to_h.deep_stringify_keys), generation)
+    slots = extract(payload, arguments.to_h.deep_stringify_keys, provenance)
+    return if slots.empty?
+
+    commit_unchanged(slots, provenance)
   rescue JSON::ParserError, TypeError, ArgumentError, Scheduling::Error
     nil
   end
@@ -35,9 +43,18 @@ class Captain::Playground::SchedulingOffers
 
   private
 
-  def store(slots, generation)
-    bindings = {}
-    stamped = slots.filter_map { |slot| stamp(slot, generation, bindings) }
+  def valid_origin?(tool_id, provenance)
+    READS.include?(tool_id) && provenance&.valid?
+  end
+
+  def commit_unchanged(slots, provenance)
+    current = current_snapshot(slots)
+    return unless current.valid? && provenance.generation == current.generation
+
+    store(slots.filter_map { |slot| stamp(slot, provenance, current) })
+  end
+
+  def store(stamped)
     @session.synchronize_state do
       current = Array(@session.data['catalog_slots']).select { |slot| slot['expires_at'] > Time.current.to_i }
       @session.data['catalog_slots'] = (stamped + current).uniq { |slot| slot.except('expires_at', 'generation') }.first(100)
@@ -45,11 +62,11 @@ class Captain::Playground::SchedulingOffers
   end
 
   def matching(resource_id, service_id, starts_at)
-    generation = @session.permissions['generation']
-    binding = binding_for(resource_id, service_id)
+    current = current_snapshot([{ 'resource_id' => resource_id, 'service_id' => service_id }])
+    binding = current.binding_for(resource_id, service_id)
     return [] unless binding
 
-    identity = [resource_id, service_id, generation, binding]
+    identity = [resource_id, service_id, current.generation, binding]
     snapshot = @session.synchronize_state { Array(@session.data['catalog_slots']).map(&:dup) }
     snapshot.select do |slot|
       slot['expires_at'] > Time.current.to_i && slot.values_at('resource_id', 'service_id', 'generation', 'binding') == identity &&
@@ -57,41 +74,27 @@ class Captain::Playground::SchedulingOffers
     end
   end
 
-  def stamp(slot, generation, bindings)
+  def stamp(slot, provenance, current)
     key = slot.values_at('resource_id', 'service_id')
-    binding = bindings[key] ||= binding_for(*key)
-    slot.merge('expires_at' => TTL.from_now.to_i, 'generation' => generation, 'binding' => binding) if binding
+    original_binding = provenance.binding_for(*key)
+    return unless original_binding && original_binding == current.binding_for(*key)
+
+    slot.merge('expires_at' => TTL.from_now.to_i, 'generation' => provenance.generation, 'binding' => original_binding)
   end
 
-  def binding_for(resource_id, service_id)
-    resource = @session.account.scheduling_resources.available_for_scheduling.find_by(id: resource_id)
-    return unless resource
-
-    service = @session.account.scheduling_services.active.find_by(id: service_id) if service_id
-    hook = @session.account.hooks.enabled.find_by(app_id: 'medelement')
-    Digest::SHA256.hexdigest(JSON.generate([
-      @session.account.id, resource.attributes.slice('id', 'updated_at', 'timezone', 'custom_attributes'),
-      service&.attributes&.slice('id', 'updated_at', 'duration_min', 'custom_attributes'),
-      hook_identity(hook)
-    ].as_json))
+  def current_snapshot(slots)
+    Captain::Playground::SchedulingReadSnapshot.for_slots(@session, slots)
   end
 
-  def hook_identity(hook)
-    return unless hook
-
-    configuration = Integrations::Medelement::Configuration.new(hook: hook)
-    [hook.id, hook.status, hook.updated_at, configuration.organization_id, configuration.company_login, configuration.time_zone]
-  end
-
-  def extract(value, inherited, depth = 0)
+  def extract(value, inherited, provenance, depth = 0)
     return [] if depth > 12
-    return value.first(100).flat_map { |child| extract(child, inherited, depth + 1) } if value.is_a?(Array)
+    return value.first(100).flat_map { |child| extract(child, inherited, provenance, depth + 1) } if value.is_a?(Array)
     return [] unless value.is_a?(Hash)
 
     value = value.deep_stringify_keys
     context = coordinates(value, inherited)
-    own = raw_slot(value, context) + compact_slots(value, context)
-    own + value.slice(*CHILDREN).values.flat_map { |child| extract(child, context, depth + 1) }
+    own = raw_slot(value, context) + compact_slots(value, context, provenance)
+    own + value.slice(*CHILDREN).values.flat_map { |child| extract(child, context, provenance, depth + 1) }
   end
 
   def coordinates(value, inherited)
@@ -109,15 +112,15 @@ class Captain::Playground::SchedulingOffers
     slot_entry(context, Time.iso8601(value['starts_at']), Time.iso8601(value['ends_at']))
   end
 
-  def compact_slots(value, context)
+  def compact_slots(value, context, provenance)
     duration = Integer(context['duration_min'], exception: false)
     return [] unless compact_day?(value, duration)
 
-    resource = @session.account.scheduling_resources.available_for_scheduling.find_by(id: context['resource_id'])
-    return [] unless resource
+    timezone = provenance.timezone(context['resource_id'])
+    return [] unless timezone
 
     date = Date.iso8601(value['date'])
-    value['times'].first(10).flat_map { |clock| compact_slot(context, resource, date, clock, duration) }
+    value['times'].first(10).flat_map { |clock| compact_slot(context, timezone, date, clock, duration) }
   end
 
   def compact_day?(value, duration)
@@ -125,11 +128,11 @@ class Captain::Playground::SchedulingOffers
       duration&.between?(Scheduling::Constants::MIN_DURATION_MINUTES, Scheduling::Constants::MAX_DURATION_MINUTES)
   end
 
-  def compact_slot(context, resource, date, clock, duration)
+  def compact_slot(context, timezone, date, clock, duration)
     return [] unless clock.is_a?(String) && clock.match?(/\A(?:[01]\d|2[0-3]):[0-5]\d\z/)
 
     parser = Captain::Tools::Agent::AppointmentTimeInput
-    zone = parser.timezone(resource_timezone: resource.timezone, account_timezone: @session.account.reporting_timezone)
+    zone = parser.timezone(resource_timezone: timezone, account_timezone: @session.account.reporting_timezone)
     starts_at = parser.parse("#{date.iso8601}T#{clock}", timezone: zone, field_name: 'starts_at')
     slot_entry(context, starts_at, starts_at + duration.minutes)
   end
