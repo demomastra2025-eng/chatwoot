@@ -3237,7 +3237,7 @@ watch(
             :label="$t('SCHEDULING.GENERAL.CANCEL')"
             @click="closeDrawer"
           />
-          <div class="flex min-w-0 flex-wrap items-center gap-2">
+          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <Button
               v-if="
                 doneStatus &&
