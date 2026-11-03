@@ -3227,7 +3227,9 @@ watch(
       </div>
 
       <template v-if="selectedTask && canManageTasks" #footer>
-        <div class="flex items-center justify-between gap-3">
+        <div
+          class="flex w-full min-w-0 flex-wrap items-center justify-between gap-3"
+        >
           <Button
             size="sm"
             color="slate"
@@ -3235,7 +3237,7 @@ watch(
             :label="$t('SCHEDULING.GENERAL.CANCEL')"
             @click="closeDrawer"
           />
-          <div class="flex items-center gap-2">
+          <div class="flex min-w-0 flex-wrap items-center gap-2">
             <Button
               v-if="
                 doneStatus &&
