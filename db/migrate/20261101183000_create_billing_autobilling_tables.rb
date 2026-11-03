@@ -2,22 +2,23 @@
 
 class CreateBillingAutobillingTables < ActiveRecord::Migration[7.1]
   def up
+    execute "SET LOCAL lock_timeout = '4s'"
+    execute "SET LOCAL statement_timeout = '5s'"
     create_account_profiles_table
     create_invoices_table
     create_payment_events_table
+    add_billing_foreign_keys
   end
 
   def down
-    drop_table :billing_payment_events, if_exists: true
-    drop_table :billing_invoices, if_exists: true
-    drop_table :billing_account_profiles, if_exists: true
+    raise ActiveRecord::IrreversibleMigration, 'Retain additive billing data; rollback application source only.'
   end
 
   private
 
   def create_account_profiles_table
     create_table :billing_account_profiles do |t|
-      t.references :account, null: false, foreign_key: true, index: { unique: true }
+      t.references :account, null: false, index: { unique: true }
       add_profile_subscription_columns(t)
       add_profile_payment_columns(t)
       t.jsonb :metadata, null: false, default: {}
@@ -55,7 +56,7 @@ class CreateBillingAutobillingTables < ActiveRecord::Migration[7.1]
 
   def create_invoices_table
     create_table :billing_invoices do |t|
-      t.references :account, null: false, foreign_key: true
+      t.references :account, null: false
       add_invoice_core_columns(t)
       add_invoice_amount_columns(t)
       add_invoice_settlement_columns(t)
@@ -125,8 +126,8 @@ class CreateBillingAutobillingTables < ActiveRecord::Migration[7.1]
       t.string :bank_reference_id, null: false
       t.string :source, null: false
       t.string :status, null: false
-      t.references :billing_invoice, foreign_key: { to_table: :billing_invoices, on_delete: :nullify }
-      t.references :account, foreign_key: { on_delete: :nullify }
+      t.references :billing_invoice
+      t.references :account
       add_payment_event_detail_columns(t)
       t.timestamps
     end
@@ -144,5 +145,16 @@ class CreateBillingAutobillingTables < ActiveRecord::Migration[7.1]
     table.string :review_reason
     table.jsonb :metadata, null: false, default: {}
     table.jsonb :raw_payload, null: false, default: {}
+  end
+
+  def add_billing_foreign_keys
+    add_foreign_key :billing_account_profiles, :accounts, validate: false
+    validate_foreign_key :billing_account_profiles, :accounts
+    add_foreign_key :billing_invoices, :accounts, validate: false
+    validate_foreign_key :billing_invoices, :accounts
+    add_foreign_key :billing_payment_events, :billing_invoices, on_delete: :nullify, validate: false
+    validate_foreign_key :billing_payment_events, :billing_invoices
+    add_foreign_key :billing_payment_events, :accounts, on_delete: :nullify, validate: false
+    validate_foreign_key :billing_payment_events, :accounts
   end
 end
