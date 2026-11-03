@@ -1769,33 +1769,60 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
 });
 
 describe('page async drawer scope', () => {
-  it('resolves the source display ID only from the matching conversation history', async () => {
+  it('keeps the source display ID with 50 newer history entries and clears it on task switch', async () => {
     const { state } = await mountEditor('page');
+    const conversation = { id: 98765, display_id: 12, account_id: 1 };
+    CrmTasksAPI.show.mockResolvedValueOnce(
+      response({
+        ...initialTask,
+        originating_conversation_id: 98765,
+        originating_conversation: conversation,
+      })
+    );
     CrmTasksAPI.timeline.mockResolvedValueOnce(
-      response([
-        {
-          item_type: 'conversation',
-          payload: { id: 98765, display_id: 12 },
-        },
-        {
-          item_type: 'conversation',
-          payload: { id: 98766, display_id: 13 },
-        },
-      ])
+      response(
+        Array.from({ length: 50 }, (_, id) => ({
+          item_type: 'event',
+          payload: { id, event_type: 'task_updated' },
+        }))
+      )
     );
     await state.openEditDrawer({
       ...initialTask,
       originatingConversationId: 98765,
     });
 
-    expect(state.originatingConversation).toEqual({ id: 98765, displayId: 12 });
+    expect(state.timelineItems).toHaveLength(50);
+    expect(state.originatingConversation).toEqual({
+      id: 98765,
+      displayId: 12,
+      accountId: 1,
+    });
     expect(state.form.originatingConversationDisplayId).toBe('');
     await state.openEditDrawer({
       ...initialTask,
       id: 8,
       originatingConversationId: 98766,
     });
-    expect(state.originatingConversation).toBeUndefined();
+    expect(state.originatingConversation).toBeNull();
+  });
+
+  it('resolves the same source in the deal task editor', async () => {
+    const { state } = await mountEditor('panel');
+    CrmTasksAPI.show.mockResolvedValueOnce(
+      response({
+        ...initialTask,
+        originating_conversation_id: 98765,
+        originating_conversation: { id: 98765, display_id: 12, account_id: 1 },
+      })
+    );
+    state.openTaskDialog({ ...initialTask, originatingConversationId: 98765 });
+    await flushPromises();
+    expect(state.originatingConversation).toEqual({
+      id: 98765,
+      displayId: 12,
+      accountId: 1,
+    });
   });
 
   it('does not invent a noon deadline when switching an all-day task to timed mode', async () => {

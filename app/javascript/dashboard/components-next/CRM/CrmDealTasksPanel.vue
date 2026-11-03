@@ -14,6 +14,7 @@ import CrmTasksAPI from 'dashboard/api/crm/tasks';
 import CrmDealsAPI from 'dashboard/api/crm/deals';
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter } from 'dashboard/composables/store';
+import { useCrmTaskConversation } from 'dashboard/composables/useCrmTaskConversation';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
@@ -21,6 +22,7 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CrmConflictNotice from 'dashboard/components-next/CRM/CrmConflictNotice.vue';
+import CrmConversationLink from 'dashboard/components-next/CRM/CrmConversationLink.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmTaskCompletionDialog from 'dashboard/components-next/CRM/CrmTaskCompletionDialog.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
@@ -101,6 +103,10 @@ const taskDialogRef = ref(null);
 const resultDialogRef = ref(null);
 const waitingDialogRef = ref(null);
 const selectedTask = ref(null);
+const { conversation: originatingConversation } = useCrmTaskConversation({
+  accountId,
+  task: selectedTask,
+});
 const taskEditSnapshot = ref(null);
 const {
   markStale: markTaskConflictStale,
@@ -1229,6 +1235,11 @@ defineExpose({ openCreateTaskDialog, loadTasks });
     @confirm="saveTask"
   >
     <div class="crm-task-dialog-form">
+      <CrmConversationLink
+        v-if="originatingConversation"
+        :account-id="accountId"
+        :display-id="originatingConversation.displayId"
+      />
       <CrmConflictNotice
         v-if="taskConflict.active"
         :is-reloading="taskConflict.isReloading"

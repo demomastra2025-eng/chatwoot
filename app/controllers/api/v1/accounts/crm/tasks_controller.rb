@@ -30,7 +30,8 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
 
   def show
     authorize @task
-    render_payload(::Crm::PayloadBuilder.task(@task))
+    conversation_reference = ::Crm::Tasks::ConversationReference.new(task: @task, user_context: pundit_user).perform
+    render_payload(::Crm::PayloadBuilder.task(@task).merge(originating_conversation: conversation_reference))
   end
 
   def create

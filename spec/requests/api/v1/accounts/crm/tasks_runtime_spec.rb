@@ -12,6 +12,40 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     Crm::Bootstrap::AccountService.new(account: account).perform
   end
 
+  it 'returns the authorized origin in detail when 50 newer events fill the timeline window' do
+    conversation = create(:conversation, account: account, last_activity_at: 1.day.ago)
+    conversation.update!(display_id: conversation.id + 100_000)
+    task = create(:crm_task, account: account, originating_conversation: conversation)
+    create_list(:crm_event, 50, account: account, actor: administrator, eventable: task, event_type: 'task_updated')
+
+    get "#{path}/#{task.id}/timeline", params: { limit: 50 }, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('payload')).not_to include(hash_including('item_type' => 'conversation'))
+
+    get "#{path}/#{task.id}", headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'originating_conversation')).to eq(
+      'id' => conversation.id, 'display_id' => conversation.display_id, 'account_id' => account.id
+    )
+  end
+
+  it 'does not resolve per-card conversation references for the task index' do
+    conversation = create(:conversation, account: account)
+    create_list(:crm_task, 5, account: account, originating_conversation: conversation)
+    origin_queries = []
+    subscriber = lambda do |_name, _start, _finish, _id, payload|
+      origin_queries << payload[:sql] if payload[:sql].to_s.match?(/SELECT .* FROM "conversations"/)
+    end
+
+    ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
+      get path, headers: headers, as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(origin_queries).to be_empty
+    expect(response.parsed_body.fetch('payload').pluck('originating_conversation')).to all(be_nil)
+  end
+
   it 'lists only tasks linked to the requested contact through a dialog or deal' do
     contact = create(:contact, :with_email, account: account)
     other_contact = create(:contact, :with_email, account: account)

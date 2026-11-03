@@ -44,6 +44,7 @@ import CrmTaskCancelDialog from 'dashboard/components-next/CRM/CrmTaskCancelDial
 import CrmTaskCompletionDialog from 'dashboard/components-next/CRM/CrmTaskCompletionDialog.vue';
 import { taskMatchesStateFilter } from 'dashboard/components-next/CRM/taskCompletion';
 import CrmTimelineFeed from 'dashboard/components-next/CRM/CrmTimelineFeed.vue';
+import { useCrmTaskConversation } from 'dashboard/composables/useCrmTaskConversation';
 import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDrawer.vue';
@@ -1044,16 +1045,10 @@ const resetTimeline = () => {
   ui.timelineError = null;
 };
 
-// The task's origin is a database ID; navigation requires the display ID from
-// the account-scoped, permission-filtered conversation timeline payload.
-const originatingConversation = computed(
-  () =>
-    timelineItems.value.find(
-      item =>
-        item.itemType === 'conversation' &&
-        item.payload?.id === selectedTask.value?.originatingConversationId
-    )?.payload
-);
+const { conversation: originatingConversation } = useCrmTaskConversation({
+  accountId,
+  task: selectedTask,
+});
 
 const loadDealOptions = async () => {
   if (isComponentUnmounted) return;
