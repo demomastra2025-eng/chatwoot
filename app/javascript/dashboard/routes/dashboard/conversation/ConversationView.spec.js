@@ -1,4 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { nextTick, reactive, watch } from 'vue';
+import { flushPromises } from '@vue/test-utils';
+import conversations from 'dashboard/store/modules/conversations';
+import types from 'dashboard/store/mutation-types';
 
 import ConversationView from './ConversationView.vue';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
@@ -36,6 +40,133 @@ describe('ConversationView', () => {
       expect(emitter.emit).toHaveBeenCalledWith(BUS_EVENTS.SCROLL_TO_MESSAGE, {
         messageId: undefined,
       });
+    });
+  });
+
+  describe('route selection after the first list completes', () => {
+    it.each([2, 1])(
+      'opens thread 1 when it replaces cached channel conversation %s without changing list length',
+      async cachedConversationId => {
+        // The wide Deal panel preloads a channel conversation. Its cleanup
+        // releases selection but retains that row in the shared store.
+        const state = reactive({
+          ...conversations.state,
+          allConversations: [{ id: cachedConversationId, messages: [] }],
+          selectedChatId: null,
+          selectedChatType: null,
+        });
+        const routeState = reactive({ route: { fullPath: '/threads/1' } });
+        const commit = (type, payload) =>
+          conversations.mutations[type](state, payload);
+        const dispatch = vi.fn((action, payload) => {
+          if (action === 'setActiveChat') {
+            return conversations.actions.setActiveChat(
+              { commit, dispatch, rootState: routeState },
+              payload
+            );
+          }
+          return Promise.resolve();
+        });
+        const stopWatches = [];
+        const context = {
+          conversationId: '1',
+          communicationThreadMode: true,
+          isLeavingConversationRoute: false,
+          get chatList() {
+            return state.allConversations;
+          },
+          get currentChat() {
+            return conversations.getters.getSelectedChat(state);
+          },
+          $route: { query: {} },
+          $store: {
+            state: routeState,
+            getters: { 'agents/getAgents': [{}] },
+            dispatch,
+          },
+          $watch(source, callback) {
+            stopWatches.push(
+              watch(
+                () =>
+                  source.split('.').reduce((value, key) => value[key], context),
+                callback
+              )
+            );
+          },
+        };
+        [
+          'initialize',
+          'setActiveChat',
+          'findConversation',
+          'isThreadMode',
+          'fetchConversationIfUnavailable',
+          'normalizeConversationRoute',
+        ].forEach(method => {
+          context[method] = ConversationView.methods[method].bind(context);
+        });
+
+        try {
+          ConversationView.mounted.call(context);
+          expect(context.currentChat.id).toBeUndefined();
+
+          // The real first-page mutation changes entity type/identity, but 1
+          // row remains 1 row: the chatList.length watcher cannot select it.
+          commit(types.REPLACE_ALL_CONVERSATION, [
+            { id: 1, is_communication_thread: true, messages: [] },
+          ]);
+          await nextTick();
+          expect(context.chatList).toHaveLength(1);
+          ConversationView.methods.onConversationLoad.call(context);
+          await flushPromises();
+
+          expect(context.currentChat.id).toBe(1);
+          expect(context.currentChat.is_communication_thread).toBe(true);
+          expect(dispatch).not.toHaveBeenCalledWith(
+            'getCommunicationThread',
+            expect.anything()
+          );
+          expect(dispatch).toHaveBeenCalledWith('setActiveChat', {
+            data: expect.objectContaining({
+              id: 1,
+              is_communication_thread: true,
+            }),
+            after: undefined,
+          });
+        } finally {
+          stopWatches.forEach(stop => stop());
+        }
+      }
+    );
+
+    it('keeps list completion from reopening the separate person-dialog route', () => {
+      const context = {
+        conversationId: null,
+        personContactId: 42,
+        isLeavingConversationRoute: false,
+        $store: { dispatch: vi.fn() },
+        setActiveChat: vi.fn(),
+      };
+      context.fetchConversationIfUnavailable =
+        ConversationView.methods.fetchConversationIfUnavailable.bind(context);
+
+      ConversationView.methods.onConversationLoad.call(context);
+
+      expect(context.$store.dispatch).not.toHaveBeenCalled();
+      expect(context.setActiveChat).not.toHaveBeenCalled();
+    });
+
+    it('ignores list completion from a view whose route is leaving', () => {
+      const context = {
+        isLeavingConversationRoute: true,
+        conversationId: '1',
+        fetchConversationIfUnavailable: vi.fn(),
+        setActiveChat: vi.fn(),
+      };
+
+      ConversationView.methods.onConversationLoad.call(context);
+
+      expect(context.fetchConversationIfUnavailable).not.toHaveBeenCalled();
+      expect(context.setActiveChat).not.toHaveBeenCalled();
     });
   });
 

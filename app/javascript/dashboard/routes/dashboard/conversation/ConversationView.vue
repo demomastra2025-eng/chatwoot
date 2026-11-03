@@ -208,7 +208,11 @@ export default {
 
   methods: {
     onConversationLoad() {
+      if (this.isLeavingConversationRoute || !this.conversationId) return;
       this.fetchConversationIfUnavailable();
+      // A first page can replace a cached channel with its thread without
+      // changing the list length. Reconcile the route's selected dialog too.
+      this.setActiveChat();
     },
     initialize() {
       this.$store.dispatch('setActiveInbox', this.inboxId);
