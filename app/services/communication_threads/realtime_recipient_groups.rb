@@ -38,9 +38,13 @@ class CommunicationThreads::RealtimeRecipientGroups
       conversation = link.conversation
       conversation&.account_id == account.id && ConversationPolicy.new(user_context, conversation).show?
     end
-    return unless visible_links.any? { |link| link.conversation_id == source_conversation.id }
+    return unless source_visible?(visible_links)
 
     visible_links
+  end
+
+  def source_visible?(visible_links)
+    source_conversation.nil? || visible_links.any? { |link| link.conversation_id == source_conversation.id }
   end
 
   def visible_links_by_user

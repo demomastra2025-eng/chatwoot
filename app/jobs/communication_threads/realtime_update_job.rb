@@ -14,7 +14,7 @@ class CommunicationThreads::RealtimeUpdateJob < ApplicationJob
     "comm_thread_rt:done:#{communication_thread_id}:#{source_conversation_id}:#{source_event}"
   end
 
-  def perform(communication_thread_id:, source_conversation_id:, source_event:, message_id: nil, performer_id: nil)
+  def perform(communication_thread_id:, source_event:, source_conversation_id: nil, message_id: nil, performer_id: nil)
     return if message_id.nil? && coalesced_burst_already_rendered?(communication_thread_id, source_conversation_id, source_event)
 
     CommunicationThreads::RealtimeUpdateService.new(

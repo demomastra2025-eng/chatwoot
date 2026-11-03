@@ -4,7 +4,11 @@ class CommunicationThreads::RealtimeUpdateService # rubocop:disable Metrics/Clas
   EVENT_NAME = 'communication_thread.updated'
   FEATURE_NAME = 'communication_threads'
 
-  def initialize(communication_thread_id:, source_conversation_id:, source_event:, message_id: nil, performer_id: nil)
+  def initialize(communication_thread_id:, source_event:, source_conversation_id: nil, message_id: nil, performer_id: nil)
+    if source_conversation_id.nil? && (source_event != Events::Types::APPOINTMENT_UPDATED || message_id.present?)
+      raise ArgumentError, 'Only appointment status refreshes may omit a source conversation'
+    end
+
     @communication_thread_id = communication_thread_id
     @source_conversation_id = source_conversation_id
     @source_event = source_event
@@ -47,6 +51,8 @@ class CommunicationThreads::RealtimeUpdateService # rubocop:disable Metrics/Clas
   end
 
   def find_source_conversation(communication_thread, links)
+    return if source_conversation_id.nil?
+
     links.find { |l| l.conversation_id == source_conversation_id }&.conversation ||
       communication_thread.conversations.find(source_conversation_id)
   end
@@ -66,12 +72,19 @@ class CommunicationThreads::RealtimeUpdateService # rubocop:disable Metrics/Clas
     preload_meta_ad_referrals(account, links)
     preload_call_conversation_ids(account, links)
     groups.each_value do |group|
-      shared_payload = shared_realtime_payload(communication_thread, group[:links], source_conversation, message)
-      payload = realtime_payload(communication_thread, group[:links], shared_payload, read_states)
+      payload = recipient_payload(communication_thread, group[:links], source_conversation, message, read_states)
       group[:users].each { |user| members_by_payload[payload] << user.pubsub_token }
     end
 
     members_by_payload.each { |payload, members| broadcast(account, members, payload) }
+  end
+
+  def recipient_payload(communication_thread, links, source_conversation, message, read_states)
+    # A status refresh belongs to the dialog. Use a visible channel for each group,
+    # never the identity of another inbox the recipient cannot see.
+    visible_source = source_conversation || links.first.conversation
+    shared_payload = shared_realtime_payload(communication_thread, links, visible_source, message)
+    realtime_payload(communication_thread, links, shared_payload, read_states)
   end
 
   def recipient_groups(account, links, source_conversation)

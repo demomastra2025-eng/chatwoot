@@ -112,6 +112,28 @@ class ActionCableListener < BaseListener # rubocop:disable Metrics/ClassLength
     broadcast_communication_thread_update(conversation, CONVERSATION_UPDATED)
   end
 
+  # Appointment dispatches after commit. Message snapshots can precede a confirmation,
+  # so the status change must refresh its dialogs independently of the next message.
+  def appointment_updated(event)
+    status_change = event.data[:changed_attributes].to_h['status']
+    return if status_change.blank? || status_change.first == status_change.last
+
+    appointment, account = extract_appointment_and_account(event)
+    return unless account.feature_enabled?('scheduling')
+
+    conversations = appointment_status_conversations(appointment, account)
+    return if conversations.empty?
+
+    broadcast_appointment_status_conversations(account, conversations)
+    return unless account.feature_enabled?(COMMUNICATION_THREAD_FEATURE)
+
+    thread_ids = CommunicationThreadConversation.where(account_id: account.id, conversation_id: conversations.map(&:id))
+                                                .distinct.pluck(:communication_thread_id)
+    CommunicationThread.where(account_id: account.id, id: thread_ids).find_each do |thread|
+      enqueue_thread_realtime(thread, source_conversation_id: nil, source_event: APPOINTMENT_UPDATED)
+    end
+  end
+
   def conversation_typing_on(event)
     broadcast_typing_event(event, CONVERSATION_TYPING_ON)
   end
@@ -246,7 +268,10 @@ class ActionCableListener < BaseListener # rubocop:disable Metrics/ClassLength
   def conversation_read_tokens(account, conversation)
     candidates = conversation.inbox.members.to_a + Array(conversation.team&.members&.to_a) + account.administrators.to_a
     account_users = account.account_users.where(user_id: candidates.map(&:id)).index_by(&:user_id)
+    authorized_conversation_tokens(account, conversation, candidates, account_users)
+  end
 
+  def authorized_conversation_tokens(account, conversation, candidates, account_users)
     candidates.uniq.filter_map do |user|
       account_user = account_users[user.id]
       next if account_user.blank?
@@ -254,6 +279,38 @@ class ActionCableListener < BaseListener # rubocop:disable Metrics/ClassLength
       user_context = { user: user, account: account, account_user: account_user }
       user.pubsub_token if ConversationPolicy.new(user_context, conversation).show?
     end
+  end
+
+  def appointment_status_conversations(appointment, account)
+    scope = account.conversations.where(id: appointment.conversation_id)
+    scope = scope.or(account.conversations.where(contact_id: appointment.contact_id)) if appointment.contact_id.present?
+    scope.includes(:contact, :contact_inbox, inbox: :members, team: :members).to_a
+  end
+
+  def broadcast_appointment_status_conversations(account, conversations)
+    statuses = Scheduling::AppointmentDialogStatusContextBuilder.new(account: account).for_conversations(conversations)
+    tokens_by_conversation_id = appointment_status_tokens(account, conversations)
+    conversations.each do |conversation|
+      tokens = tokens_by_conversation_id.fetch(conversation.id)
+      next if tokens.empty?
+
+      payload = conversation.push_event_data.merge(scheduling_appointment_statuses: statuses.fetch(conversation.id, []))
+      broadcast(account, tokens, CONVERSATION_UPDATED, payload)
+    end
+  end
+
+  def appointment_status_tokens(account, conversations)
+    administrators = account.administrators.to_a
+    candidates = conversations.to_h { |conversation| [conversation.id, appointment_status_candidates(conversation, administrators)] }
+    user_ids = candidates.values.flatten.map(&:id).uniq
+    account_users = account.account_users.where(user_id: user_ids).includes(:custom_role).index_by(&:user_id)
+    conversations.to_h do |conversation|
+      [conversation.id, authorized_conversation_tokens(account, conversation, candidates.fetch(conversation.id), account_users)]
+    end
+  end
+
+  def appointment_status_candidates(conversation, administrators)
+    conversation.inbox.members.to_a + Array(conversation.team&.members&.to_a) + administrators
   end
 
   def account_token(account)
@@ -272,10 +329,14 @@ class ActionCableListener < BaseListener # rubocop:disable Metrics/ClassLength
     communication_thread = conversation.communication_thread || conversation.refresh_communication_thread!
     return if communication_thread.blank?
 
+    enqueue_thread_realtime(communication_thread, source_conversation_id: conversation.id, source_event: source_event, message: message)
+  end
+
+  def enqueue_thread_realtime(communication_thread, source_conversation_id:, source_event:, message: nil)
     if message.nil?
       seq_key = CommunicationThreads::RealtimeUpdateJob.coalesce_seq_key(
         communication_thread.id,
-        conversation.id,
+        source_conversation_id,
         source_event
       )
       Redis::Alfred.incr(seq_key)
@@ -285,7 +346,7 @@ class ActionCableListener < BaseListener # rubocop:disable Metrics/ClassLength
     CommunicationThreads::RealtimeUpdateJob.perform_later(
       **{
         communication_thread_id: communication_thread.id,
-        source_conversation_id: conversation.id,
+        source_conversation_id: source_conversation_id,
         source_event: source_event,
         message_id: message&.id,
         performer_id: Current.user&.id
