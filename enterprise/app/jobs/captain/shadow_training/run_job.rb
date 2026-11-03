@@ -19,7 +19,7 @@ class Captain::ShadowTraining::RunJob < ApplicationJob
     update_owned!(status: 'awaiting_comparison', error_code: e.message)
   rescue Captain::Runtime::DecisionRouter::UnavailableError
     update_owned!(status: 'pending_routing', error_code: 'routing_unavailable')
-  rescue Captain::ShadowTraining::Eligibility::Revoked
+  rescue Captain::ShadowTraining::Eligibility::Revoked, Llm::EgressGuard::Blocked
     update_owned!(status: 'skipped', error_code: 'no_longer_eligible')
   rescue StandardError => e
     update_owned!(status: 'failed', error_code: e.class.name)

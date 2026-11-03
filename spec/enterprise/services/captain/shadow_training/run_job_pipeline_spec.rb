@@ -41,6 +41,25 @@ RSpec.describe Captain::ShadowTraining::RunJob do
       .to_return(status: 200, body: JSON.generate(content: JSON.generate(value)))
   end
 
+  def sdk_context(max_retries:)
+    RubyLLM.context do |config|
+      config.openrouter_api_key = 'synthetic-key'
+      config.openrouter_api_base = 'https://openrouter.example/api/v1'
+      config.max_retries = max_retries
+      config.retry_interval = 0
+      config.retry_interval_randomness = 0
+    end
+  end
+
+  def enable_explicit_consent
+    Captain::AccountSettings.new(account).update!('safety' => { 'require_explicit_ai_consent' => true })
+    contact.update!(custom_attributes: { 'ai_consent_status' => 'granted' })
+  end
+
+  def revoke_consent
+    Contact.find(contact.id).update!(custom_attributes: { 'ai_consent_status' => 'declined' })
+  end
+
   # Full integration invariant: source, generation, comparison and output isolation are verified together.
   # rubocop:disable RSpec/MultipleExpectations
   it 'runs the synthetic pair through the gateway and native local judge into two pending candidates without live effects' do
@@ -231,6 +250,100 @@ RSpec.describe Captain::ShadowTraining::RunJob do
     expect(run.reload.status).to eq('skipped')
     expect(run.shadow_reply).to be_nil
     expect(a_request(:post, 'http://127.0.0.1:18080/completion')).not_to have_been_made
+  end
+
+  it 'aborts the real native Decisions fallback before a second HTTP after persisted consent revocation' do
+    enable_explicit_consent
+    create(:captain_assistant, account: account, routing_description: 'Другие услуги')
+    assistant.update!(routing_description: 'Консультации')
+    run = capture
+    allow(Llm::Config).to receive(:api_key).and_call_original
+    allow(Llm::Config).to receive(:api_key).with('openrouter', account: account).and_return('synthetic-key')
+    allow(Llm::Config).to receive(:api_base).and_call_original
+    allow(Llm::Config).to receive(:api_base).with('openrouter', account: account).and_return('https://openrouter.example/api/v1')
+    allow(Llm::DecisionChain).to receive(:models).with(:agent_routing).and_return(%w[inception/mercury-decide microsoft/microsoft-decision-1])
+    endpoint = 'https://openrouter.example/api/alpha/decisions'
+    first = stub_request(:post, endpoint).with { |request| JSON.parse(request.body)['model'] == 'inception/mercury-decide' }
+                                         .to_return do
+      revoke_consent
+      { status: 503, body: '{"error":{"message":"synthetic unavailable"}}' }
+    end
+    second = stub_request(:post, endpoint).with { |request| JSON.parse(request.body)['model'] == 'microsoft/microsoft-decision-1' }
+                                          .to_return(status: 200, body: '{}')
+
+    expect { described_class.perform_now(run.id) }.not_to raise_error
+    expect(run.reload.status).to eq('skipped')
+    expect(first).to have_been_requested.once
+    expect(second).not_to have_been_requested
+  end
+
+  it 'aborts the SDK inner Faraday retry before its second HTTP and contains the signal inside the job' do
+    enable_explicit_consent
+    run = capture
+    context = sdk_context(max_retries: 2)
+    connection = RubyLLM::Connection.new(RubyLLM::Providers::OpenRouter.new(context.config), context.config)
+    wire = stub_request(:post, 'https://openrouter.example/api/v1/chat/completions').to_return do
+      revoke_consent
+      { status: 503, body: '{"error":{"message":"synthetic unavailable"}}', headers: { 'Content-Type' => 'application/json' } }
+    end.then.to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
+    allow(Llm::Runtime).to receive(:chat) do |**request|
+      connection.post('chat/completions', { model: 'synthetic', messages: request.fetch(:messages) })
+      Struct.new(:content).new({ 'response' => 'Цена 20000' })
+    end
+
+    expect { described_class.perform_now(run.id) }.not_to raise_error
+    expect(run.reload.status).to eq('skipped')
+    expect(wire).to have_been_requested.once
+    expect(run.shadow_reply).to be_nil
+  end
+
+  it 'aborts schema repair before its second actual HTTP after the first invalid response revokes consent' do
+    enable_explicit_consent
+    run = capture
+    context = sdk_context(max_retries: 0)
+    chat = context.chat(model: 'openai/gpt-5.4-mini', provider: :openrouter, assume_model_exists: true)
+    chat.instance_variable_set(Llm::StructuredOutputPolicy::CHAT_SCHEMA_IVAR, Captain::ResponseSchema)
+    connection = RubyLLM::Connection.new(RubyLLM::Providers::OpenRouter.new(context.config), context.config)
+    wire = stub_request(:post, 'https://openrouter.example/api/v1/chat/completions').to_return do
+      revoke_consent
+      { status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' } }
+    end
+    allow(Llm::Runtime).to receive(:chat) do |**request|
+      Llm::StructuredOutputPolicy.execute(chat: chat) do
+        connection.post('chat/completions', { model: 'synthetic', messages: request.fetch(:messages) })
+        Struct.new(:content).new('not JSON')
+      end
+    end
+
+    expect { described_class.perform_now(run.id) }.not_to raise_error
+    expect(run.reload.status).to eq('skipped')
+    expect(wire).to have_been_requested.once
+    expect(run.shadow_reply).to be_nil
+  end
+
+  it 'aborts the actual ChatRequestRunner retry before its second HTTP with SDK retries disabled' do
+    enable_explicit_consent
+    run = capture
+    context = sdk_context(max_retries: 0)
+    chat = context.chat(model: 'openai/gpt-5.4-mini', provider: :openrouter, assume_model_exists: true)
+    wire = stub_request(:post, 'https://openrouter.example/api/v1/chat/completions').to_return do
+      revoke_consent
+      { status: 503, body: '{"error":{"message":"synthetic provider error: 503 upstream unavailable"}}',
+        headers: { 'Content-Type' => 'application/json' } }
+    end.then.to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
+    failure = nil
+    allow(Llm::Runtime).to receive(:chat) do |**request|
+      Llm::ChatRequestRunner.new(messages: request.fetch(:messages), chat: chat, account: account,
+                                 model: 'openai/gpt-5.4-mini', feature: :assistant).call
+    rescue StandardError => e
+      failure = e
+      raise
+    end
+
+    expect { described_class.perform_now(run.id) }.not_to raise_error
+    expect(wire).to have_been_requested.once
+    expect(run.reload.status).to eq('skipped'), "#{failure&.class}: #{failure&.backtrace&.first(3)}"
+    expect(run.shadow_reply).to be_nil
   end
 
   it 'does not recreate erased sources or send to the judge when erasure races generation' do

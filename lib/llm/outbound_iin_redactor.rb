@@ -2,6 +2,7 @@
 
 require_relative 'iin_token_vault'
 require_relative 'pii_session_pseudonymizer'
+require_relative 'egress_guard'
 
 module Llm; end
 
@@ -19,7 +20,17 @@ module Llm::OutboundIinRedactor
 
   module RubyLlmConnectionPatch
     def post(url, payload, &)
+      Llm::EgressGuard.check!
       super(url, Llm::OutboundIinRedactor.redact_payload(payload), &)
+    end
+
+    private
+
+    def setup_middleware(faraday)
+      # RubyLLM installs its retry middleware first. This inner middleware runs
+      # for every adapter attempt, including retries inside a single #post.
+      faraday.use Llm::EgressGuard::Middleware
+      super
     end
   end
 

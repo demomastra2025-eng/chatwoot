@@ -4,6 +4,7 @@ require 'json'
 require 'net/http'
 require 'uri'
 require 'timeout'
+require_relative 'egress_guard'
 
 # The native OpenRouter Decisions endpoint (/alpha/decisions). One call asks one question (criteria:, instructions:, sent as the
 # question "reason") or several questions at once (questions: { name => { criteria:, instructions: } }), and the model answers
@@ -150,6 +151,7 @@ class Llm::OpenRouterDecisionClient
         Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: [10, timeout].min, read_timeout: [90, timeout].min,
                                                 write_timeout: [10, timeout].min) do |http|
           http.max_retries = 0
+          Llm::EgressGuard.check!
           http.request(request) do |response|
             body = +''
             response.read_body do |chunk|
