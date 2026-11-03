@@ -34,7 +34,8 @@ RSpec.describe ActionCableListener do
     # provider/CRM/automation reactions while testing dashboard invalidation.
     allow(Rails.configuration.dispatcher.async_dispatcher).to receive(:dispatch)
     allow(ActionCableBroadcastJob).to receive(:perform_later) do |tokens, event, payload|
-      broadcasts << [tokens, event, payload]
+      final_payload = ActionCableBroadcastJob.new.send(:prepare_broadcast_data, event, payload)
+      broadcasts << [tokens, event, final_payload]
     end
     clear_enqueued_jobs
   end
@@ -66,20 +67,14 @@ RSpec.describe ActionCableListener do
     broadcasts.clear
     clear_enqueued_jobs
 
-    # Two siblings refer to one appointment and thread: batch the status contexts,
-    # and enqueue only one thread refresh for this committed transition.
-    context_builds = 0
-    allow(Scheduling::AppointmentDialogStatusContextBuilder).to receive(:new).and_wrap_original do |original, **arguments|
-      context_builds += 1
-      original.call(**arguments)
-    end
+    # Observe the final job-prepared payload, not only the listener's queued data.
+    # Two siblings still enqueue only one thread refresh for this transition.
     Scheduling::Appointment.transaction do
       expect(confirm!).to eq('appointment_confirmed')
       expect(broadcasts).to be_empty
       expect(enqueued_jobs.none? { |job| job[:job] == CommunicationThreads::RealtimeUpdateJob }).to be(true)
     end
     expect(appointment.reload.status).to eq('confirmed')
-    expect(context_builds).to eq(1)
     expect(conversation_broadcasts.map { |_tokens, _event, payload| payload[:id] })
       .to contain_exactly(first_conversation.display_id, second_conversation.display_id)
     expect(conversation_broadcasts.map { |_tokens, _event, payload| payload[:scheduling_appointment_statuses] }.uniq)

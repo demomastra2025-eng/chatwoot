@@ -20,6 +20,47 @@ RSpec.describe ActionCableBroadcastJob, type: :job do
     expect(conversation.push_event_data[:messages].last[:additional_attributes]).to have_key('captain_trace')
   end
 
+  it 'rehydrates the latest dashboard appointment statuses after a queued snapshot became stale with communication threads disabled' do
+    account = create(:account)
+    account.enable_features!('scheduling')
+    account.disable_features!('communication_threads')
+    conversation = create(:conversation, account: account)
+    appointment = create(:scheduling_appointment, account: account, conversation: conversation, contact: conversation.contact, status: 'scheduled')
+    queued_data = { account_id: account.id, id: conversation.display_id, scheduling_appointment_statuses: [{ status: 'scheduled', count: 1 }] }
+
+    appointment.update!(status: 'confirmed')
+    payload = described_class.new.send(:prepare_broadcast_data, 'conversation.updated', queued_data)
+
+    expect(payload[:scheduling_appointment_statuses]).to eq([{ status: 'confirmed', count: 1 }])
+    expect(payload).to include(account_id: account.id, id: conversation.display_id)
+    expect(queued_data[:scheduling_appointment_statuses]).to eq([{ status: 'scheduled', count: 1 }])
+  end
+
+  it 'does not expose requested dashboard appointment statuses in an external conversation payload' do
+    account = create(:account)
+    account.enable_features!('scheduling')
+    conversation = create(:conversation, account: account)
+    create(:scheduling_appointment, account: account, contact: conversation.contact, status: 'confirmed')
+    queued_data = { account_id: account.id, id: conversation.display_id, external_payload: true,
+                    scheduling_appointment_statuses: [{ status: 'confirmed', count: 1 }] }
+
+    payload = described_class.new.send(:prepare_broadcast_data, 'conversation.updated', queued_data)
+
+    expect(payload).not_to have_key(:scheduling_appointment_statuses)
+    expect(payload).not_to have_key(:external_payload)
+  end
+
+  it 'clears a requested appointment status snapshot when scheduling was disabled after enqueue' do
+    account = create(:account)
+    account.disable_features!('scheduling')
+    conversation = create(:conversation, account: account)
+    queued_data = { account_id: account.id, id: conversation.display_id, scheduling_appointment_statuses: [{ status: 'confirmed', count: 1 }] }
+
+    payload = described_class.new.send(:prepare_broadcast_data, 'conversation.updated', queued_data)
+
+    expect(payload[:scheduling_appointment_statuses]).to eq([])
+  end
+
   %w[message.created message.updated conversation.updated contact.updated notification.created].each do |event_name|
     it "routes #{event_name} broadcasts to the isolated broadcast queue" do
       job = described_class.new([], event_name, {})

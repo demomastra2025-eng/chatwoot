@@ -37,6 +37,12 @@ class ActionCableBroadcastJob < ApplicationJob
     account = Account.find(data[:account_id])
     conversation = account.conversations.find_by!(display_id: data[:id])
     event_data = external_payload ? conversation.external_push_event_data : conversation.push_event_data
+    if !external_payload && data.key?(:scheduling_appointment_statuses)
+      # Preserve the requested status refresh through canonical rehydration, but
+      # never replay the queued snapshot if the appointment changed meanwhile.
+      contexts = Scheduling::AppointmentDialogStatusContextBuilder.new(account: account).for_conversations([conversation])
+      event_data[:scheduling_appointment_statuses] = contexts.fetch(conversation.id, [])
+    end
     event_data.merge(account_id: data[:account_id])
   end
 
