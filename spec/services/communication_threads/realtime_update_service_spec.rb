@@ -330,7 +330,8 @@ RSpec.describe CommunicationThreads::RealtimeUpdateService do
       end
 
       def build_ad_referral(conv, provider:, type:, url:, received_at:)
-        MetaAdReferral.create!(
+        create(
+          :meta_ad_referral,
           account: conv.account, inbox: conv.inbox, contact: conv.contact, conversation: conv,
           communication_thread_id: nil, provider: provider, attribution_type: type,
           source_url: url, received_at: received_at
