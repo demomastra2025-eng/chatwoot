@@ -21,8 +21,8 @@ RSpec.describe Captain::Tools::Agent::PatientBookingContext do
     expect(conversation.reload.contact_id).to eq(mother.id)
     expect(resolve[:patient_contact_id]).to eq(card.id)
     expect(Captain::Tools::Agent::AppointmentAccess.valid_patient_selection?(
-      token: result[:patient_selection_token], assistant: assistant, contact: mother, patient_id: card.id
-    )).to be(true)
+             token: result[:patient_selection_token], assistant: assistant, contact: mother, patient_id: card.id
+           )).to be(true)
   end
 
   it 'reuses a recorded exact IIN without rewriting its clinical identity or phone' do
@@ -53,5 +53,26 @@ RSpec.describe Captain::Tools::Agent::PatientBookingContext do
       described_class.new(assistant: create(:captain_assistant), conversation: conversation, patient: details).perform
     end.to raise_error(ArgumentError)
     expect(account.contacts.count).to eq(1)
+  end
+
+  it 'splits Kazakh female+male and male+male name pairs and rejects birth-date-shaped IIN checksum typos before DB' do
+    female_male_ctx = described_class.new(
+      assistant: assistant, conversation: conversation,
+      patient: details.merge(first_name: 'Айбек Аружан', last_name: 'Айбек Аружан')
+    )
+    expect(female_male_ctx.send(:patient)[:first_name]).to eq('Аружан')
+    expect(female_male_ctx.send(:patient)[:last_name]).to eq('Айбек')
+
+    card = create(:contact, account: account, name: 'Болат', last_name: 'Айбек', phone_number: '+77010000009',
+                            identifier: '940720300129', custom_attributes: {
+                              Contacts::SharedPhone::CARD_KEY => true, 'iin' => '940720300129', 'birth_date' => '1994-07-20'
+                            })
+    aligned_res = resolve(details.merge(first_name: 'Айбек Болат', last_name: 'Айбек Болат'))
+    expect(aligned_res[:patient_contact_id]).to eq(card.id)
+
+    # Checksum typo on birth-date-shaped IIN is masked by IinValidator in text, but strictly rejected by booking context
+    typo_iin = '940720300128'
+    expect(Scheduling::IinValidator.redact_text("ИИН #{typo_iin}")).to eq('ИИН [ИИН СКРЫТ]')
+    expect { resolve(details.merge(iin: typo_iin)) }.to raise_error(ArgumentError, /Invalid patient IIN/)
   end
 end
