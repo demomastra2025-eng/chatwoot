@@ -99,54 +99,73 @@ class Telephony::Wazo::CallLogSyncService # rubocop:disable Metrics/ClassLength
     return false unless caller
 
     cdr_ref = "wazo:cdr:#{cdr_ref}"
-    existing = Telephony::Wazo::CallLogCorrelator.find(
-      account: connection.account, inbox: binding.inbox, caller: caller,
-      did: normalize(binding.phone_number), direction: direction, started_at: started_at,
-      cdr_ref: cdr_ref
-    )
     answered_at = parse_time(row['date_answer'] || row['answer'])
     voicemail = ActiveModel::Type::Boolean.new.cast(row['reached_voicemail'])
     answered_at = nil if voicemail || row['answered'] == false
-    status = if answered_at
-               'completed'
-             elsif direction == 'inbound'
-               'missed'
-             else
-               'no_answer'
-             end
-    payload = {
-      account_id: connection.account_id,
-      inbox_id: binding.inbox_id,
-      call_ref: existing&.external_call_ref || cdr_ref,
-      event_key: "#{cdr_ref}:final",
-      event: status,
-      status: status,
-      provider: 'wazo',
-      direction: direction,
-      number_ref: binding.number_ref,
-      from_number: direction == 'inbound' ? caller : normalize(binding.phone_number),
-      to_number: direction == 'inbound' ? normalize(binding.phone_number) : caller,
-      started_at: started_at.iso8601,
-      answered_at: answered_at&.iso8601,
-      answered_by: ("user:#{profile.user_id}" if answered_at && profile),
-      ended_at: ended_at.iso8601,
-      occurred_at: ended_at.iso8601,
-      duration: (ended_at - (answered_at || started_at)).to_i.clamp(0, 86_400),
-      end_reason: ('voicemail' if voicemail),
-      metadata: {
-        wazo_cdr_ref: cdr_ref,
-        reached_voicemail: voicemail,
-        chatwoot_user_id: (profile.user_id if answered_at && profile)
+    # Keep lookup and admission atomic with native SIP ingestion for this account/caller.
+    session = Telephony::CallIntakeLock.with_lock(account_id: connection.account_id, phone_number: caller) do # rubocop:disable Metrics/BlockLength
+      existing = cdr_session(cdr_ref, binding, direction) || Telephony::Wazo::CallLogCorrelator.find(
+        account: connection.account, inbox: binding.inbox, caller: caller,
+        did: normalize(binding.phone_number), direction: direction, started_at: started_at,
+        cdr_ref: cdr_ref
+      )
+      # An unanswered routing hop carries no new evidence about an already answered call.
+      next nil if answered_at.nil? && existing&.answered_at.present?
+
+      status = if answered_at
+                 'completed'
+               elsif direction == 'inbound'
+                 'missed'
+               else
+                 'no_answer'
+               end
+      payload = {
+        account_id: connection.account_id,
+        inbox_id: binding.inbox_id,
+        call_ref: existing&.external_call_ref || cdr_ref,
+        event: status,
+        status: status,
+        provider: 'wazo',
+        direction: direction,
+        number_ref: binding.number_ref,
+        from_number: direction == 'inbound' ? caller : normalize(binding.phone_number),
+        to_number: direction == 'inbound' ? normalize(binding.phone_number) : caller,
+        started_at: started_at.iso8601,
+        answered_at: answered_at&.iso8601,
+        answered_by: ("user:#{profile.user_id}" if answered_at && profile),
+        ended_at: ended_at.iso8601,
+        occurred_at: ended_at.iso8601,
+        duration: (ended_at - (answered_at || started_at)).to_i.clamp(0, 86_400),
+        end_reason: ('voicemail' if voicemail),
+        metadata: {
+          wazo_cdr_ref: cdr_ref,
+          reached_voicemail: voicemail,
+          chatwoot_user_id: (profile.user_id if answered_at && profile)
+        }.compact
       }.compact
-    }.compact
-    session = Telephony::EventsIngestionService.new(payload: payload).perform
-    raise 'Wazo CDR ingestion did not produce a call session' unless session
+      # A conversation is one call; each CDR row/revision is a distinct event.
+      # Hash normalized evidence so replay is stable, including a late answer on the same row.
+      evidence = payload.except(:call_ref)
+      payload[:event_key] = "#{cdr_ref}:#{row['id']}:#{Digest::SHA256.hexdigest(evidence.to_json)}"
+      session = Telephony::EventsIngestionService.new(payload: payload).perform
+      raise 'Wazo CDR ingestion did not produce a call session' unless session
 
-    event = connection.account.telephony_events.find_by(event_key: payload[:event_key])
-    raise 'Wazo CDR ingestion did not complete' unless event&.processed?
+      event = connection.account.telephony_events.find_by(event_key: payload[:event_key])
+      raise 'Wazo CDR ingestion did not complete' unless event&.processed?
 
-    import_cdr_recording_if_needed!(session, row, cdr_ref) unless voicemail
+      session
+    end
+    import_cdr_recording_if_needed!(session, row, cdr_ref) if session && !voicemail
     true
+  end
+
+  def cdr_session(cdr_ref, binding, direction)
+    scope = connection.account.telephony_call_sessions.where(provider: 'wazo', inbox_id: binding.inbox_id, direction: direction)
+    exact = scope.find_by(external_call_ref: cdr_ref)
+    return exact if exact
+
+    matches = scope.where("metadata->'metadata'->>'wazo_cdr_ref' = ?", cdr_ref).limit(2).to_a
+    matches.first if matches.one?
   end
 
   def unanswered?(row)
@@ -159,7 +178,7 @@ class Telephony::Wazo::CallLogSyncService # rubocop:disable Metrics/ClassLength
   end
 
   def incall_matches?(row, binding)
-    context = row['requested_context'].to_s
+    context = (row['requested_context'].presence || connection.metadata.to_h['wazo_incall_context']).to_s
     return false if context.blank?
 
     @incalls ||= client.incalls

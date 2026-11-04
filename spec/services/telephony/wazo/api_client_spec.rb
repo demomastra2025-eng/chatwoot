@@ -89,4 +89,27 @@ RSpec.describe Telephony::Wazo::ApiClient do
     expect(line_extension_request).to have_been_requested.once
     expect(line_endpoint_request).to have_been_requested.once
   end
+
+  context 'when reading incalls' do
+    before do
+      stub_request(:post, 'https://wazo.example.com/api/auth/0.1/token')
+        .to_return(status: 200, body: { data: { token: 'token-value' } }.to_json)
+    end
+
+    [{}, { items: nil }, { items: {} }, { items: 'invalid' }, [], nil].each do |response|
+      it "rejects malformed items in #{response.inspect}" do
+        stub_request(:get, 'https://wazo.example.com/api/confd/1.1/incalls?limit=1000')
+          .to_return(status: 200, body: response.to_json)
+        expect { client.incalls }.to raise_error(Telephony::Error) do |error|
+          expect(error.code).to eq('WAZO_API_RESPONSE_INVALID')
+        end
+      end
+    end
+
+    it 'accepts a valid empty items array' do
+      stub_request(:get, 'https://wazo.example.com/api/confd/1.1/incalls?limit=1000')
+        .to_return(status: 200, body: { items: [] }.to_json)
+      expect(client.incalls).to eq([])
+    end
+  end
 end
