@@ -267,7 +267,12 @@ class Telephony::Wazo::ApiClient # rubocop:disable Metrics/ClassLength -- explic
 
   def incalls
     payload = request(:get, INCALLS_PATH, params: { limit: 1000 })
-    Array.wrap(payload['items'])
+    items = payload['items'] if payload.is_a?(Hash)
+    unless items.is_a?(Array)
+      raise Telephony::Error.new(code: 'WAZO_API_RESPONSE_INVALID', message: 'Wazo incalls response has no items array', status: :bad_gateway)
+    end
+
+    items
   end
 
   def create_incall(payload)
