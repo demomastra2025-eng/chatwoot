@@ -160,6 +160,101 @@ RSpec.describe Telephony::Wazo::CallLogSyncService do
     expect(Telephony::CompressRecordingsJob).to have_received(:perform_later).with(call_session_id: session.id)
   end
 
+  context 'with an offline ring group incall' do
+    before do
+      row.delete('direction')
+      row.delete('source_exten')
+      row.delete('requested_exten')
+      row.delete('destination_exten')
+      row.delete('destination_internal_exten')
+      row.merge!('call_direction' => 'internal', 'source_extension' => '+77071112233',
+                 'requested_extension' => binding.phone_number, 'destination_extension' => binding.phone_number,
+                 'requested_context' => 'fake-incall-context', 'requested_internal_extension' => '2099',
+                 'destination_internal_extension' => nil, 'answered' => false, 'date_answer' => nil)
+      allow(client).to receive(:incalls).and_return([
+                                                      { 'extensions' => [{ 'context' => 'fake-incall-context', 'exten' => binding.phone_number }],
+                                                        'destination' => { 'type' => 'group', 'group_id' => 42 } }
+                                                    ])
+      profile.destroy!
+      connection.update!(metadata: { wazo_call_log_sync_enabled: true })
+    end
+
+    it 'records an owned missed inbound call without an operator and deduplicates the CDR' do
+      expect { service.perform }.to change(Telephony::CallSession, :count).by(1)
+      session = account.telephony_call_sessions.last
+      expect(session).to have_attributes(direction: 'inbound', status: 'missed', answered_at: nil, answered_by: nil,
+                                         account_id: account.id, inbox_id: inbox.id, number_binding_id: binding.id,
+                                         from_number: '+77071112233', to_number: binding.phone_number)
+      expect(session.metadata.dig('metadata', 'chatwoot_user_id')).to be_nil
+      expect { service.perform }.not_to change(Telephony::CallSession, :count)
+      expect(session.conversation.messages.voice_calls.count).to eq(1)
+      expect(session.conversation.messages.voice_calls.first.content_attributes.dig('data', 'status')).to eq('missed')
+    end
+
+    it 'accepts the explicit inbound schema without a configured operator extension' do
+      row['call_direction'] = 'inbound'
+      expect { service.perform }.to change(Telephony::CallSession, :count).by(1)
+      expect(account.telephony_call_sessions.last.answered_by).to be_nil
+    end
+
+    it 'rejects an unknown DID even if the incall context exists' do
+      row.merge!('requested_extension' => '+77070009999', 'destination_extension' => '+77070009999')
+      expect { service.perform }.not_to change(Telephony::CallSession, :count)
+    end
+
+    it 'rejects a DID belonging only to another account' do
+      other_account = create(:account)
+      other_connection = create(:telephony_provider_connection, account: other_account, provider_kind: 'wazo')
+      other_channel = create(:channel_voice, account: other_account, provider: 'wazo', phone_number: '+77070001002',
+                                             provider_config: { number_ref: 'other-did', provider_connection_id: other_connection.id })
+      other_binding = Telephony::NumberBinding.sync_from_voice_channel!(other_channel)
+      row.merge!('requested_extension' => other_binding.phone_number, 'destination_extension' => other_binding.phone_number)
+      expect { service.perform }.not_to change(Telephony::CallSession, :count)
+    end
+
+    it 'rejects another connection on the same account' do
+      channel.update!(provider_config: channel.provider_config_hash.merge('provider_connection_id' => connection.id + 1000))
+      expect { service.perform }.not_to change(Telephony::CallSession, :count)
+    end
+
+    it 'rejects an ambiguous DID instead of selecting the first inbox' do
+      create(:telephony_number_binding, account: account, provider_connection: connection,
+                                        provider: 'wazo', phone_number: binding.phone_number, ingress_number: binding.phone_number)
+      expect { service.perform }.not_to change(Telephony::CallSession, :count)
+    end
+
+    it 'rejects an internal call with a short caller even if the DID is present' do
+      row['source_extension'] = '102'
+      expect { service.perform }.not_to change(Telephony::CallSession, :count)
+    end
+
+    it 'rejects ordinary answered short to short calls' do
+      row.merge!('source_extension' => '102', 'requested_extension' => '2099', 'destination_extension' => '101',
+                 'answered' => true, 'date_answer' => answered_at.iso8601, 'destination_internal_extension' => '101')
+      expect { service.perform }.not_to change(Telephony::CallSession, :count)
+    end
+
+    it 'does not infer inbound from an answered internal call to a known DID' do
+      row.merge!('answered' => true, 'date_answer' => answered_at.iso8601)
+      expect { service.perform }.not_to change(Telephony::CallSession, :count)
+    end
+
+    it 'does not turn an explicit inbound answer with no operator into a missed call' do
+      row.merge!('call_direction' => 'inbound', 'answered' => true, 'date_answer' => answered_at.iso8601)
+      expect { service.perform }.not_to change(Telephony::CallSession, :count)
+    end
+
+    it 'requires a matching incall DID and context to reclassify internal CDRs' do
+      row['requested_context'] = 'another-tenant-context'
+      expect { service.perform }.not_to change(Telephony::CallSession, :count)
+    end
+
+    it 'rejects an internal source identity even if its public caller ID is a phone number' do
+      row['source_internal_extension'] = '102'
+      expect { service.perform }.not_to change(Telephony::CallSession, :count)
+    end
+  end
+
   private
 
   def browser_event(ref, event:, **attributes)

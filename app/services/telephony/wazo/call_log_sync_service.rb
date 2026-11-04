@@ -23,7 +23,6 @@ class Telephony::Wazo::CallLogSyncService # rubocop:disable Metrics/ClassLength
     raise 'Wazo CDR tenant is not configured' if ENV['TELEPHONY_WAZO_TENANT_UUID'].blank?
 
     extension = connection.metadata.to_h['wazo_call_log_sync_operator_extension'].to_s
-    return if extension.blank?
 
     until_time = Time.current
     from = (Rails.cache.read(cursor_key) || (until_time - INITIAL_LOOKBACK)) - OVERLAP
@@ -62,6 +61,12 @@ class Telephony::Wazo::CallLogSyncService # rubocop:disable Metrics/ClassLength
     return false unless row.is_a?(Hash)
 
     direction = (row['direction'] || row['call_direction']).to_s.downcase
+    binding = find_binding(row, direction == 'outbound' ? 'outbound' : 'inbound')
+    return false unless binding
+
+    # Wazo can label an unanswered incall to a ring group as internal.
+    # Require the DID's incall context and an external source, never just a group extension.
+    direction = 'inbound' if direction == 'internal' && unanswered?(row) && external_source?(row) && incall_matches?(row, binding)
     return false unless %w[inbound outbound].include?(direction)
 
     operator_extension = if direction == 'inbound'
@@ -69,13 +74,14 @@ class Telephony::Wazo::CallLogSyncService # rubocop:disable Metrics/ClassLength
                          else
                            row['source_internal_exten'] || row['source_internal_extension']
                          end
-    return false unless operator_extension.to_s == extension
+    offline_incall = direction == 'inbound' && operator_extension.blank? && unanswered?(row) && external_source?(row)
+    profile = unless offline_incall
+                return false if extension.blank? || operator_extension.to_s != extension
 
-    binding = find_binding(row, direction)
-    return false unless binding
-
-    profile = connection.sip_profiles.find_by(inbox_id: binding.inbox_id, internal_extension: extension, enabled: true)
-    return false unless profile&.user_id
+                connection.sip_profiles.find_by(account_id: connection.account_id, inbox_id: binding.inbox_id,
+                                                internal_extension: extension, enabled: true)
+              end
+    return false unless offline_incall || profile&.user_id
 
     started_at = parse_time(row['date'] || row['start'])
     ended_at = parse_time(row['date_end'] || row['end'])
@@ -100,7 +106,7 @@ class Telephony::Wazo::CallLogSyncService # rubocop:disable Metrics/ClassLength
     )
     answered_at = parse_time(row['date_answer'] || row['answer'])
     voicemail = ActiveModel::Type::Boolean.new.cast(row['reached_voicemail'])
-    answered_at = nil if voicemail
+    answered_at = nil if voicemail || row['answered'] == false
     status = if answered_at
                'completed'
              elsif direction == 'inbound'
@@ -122,7 +128,7 @@ class Telephony::Wazo::CallLogSyncService # rubocop:disable Metrics/ClassLength
       to_number: direction == 'inbound' ? normalize(binding.phone_number) : caller,
       started_at: started_at.iso8601,
       answered_at: answered_at&.iso8601,
-      answered_by: ("user:#{profile.user_id}" if answered_at),
+      answered_by: ("user:#{profile.user_id}" if answered_at && profile),
       ended_at: ended_at.iso8601,
       occurred_at: ended_at.iso8601,
       duration: (ended_at - (answered_at || started_at)).to_i.clamp(0, 86_400),
@@ -130,16 +136,39 @@ class Telephony::Wazo::CallLogSyncService # rubocop:disable Metrics/ClassLength
       metadata: {
         wazo_cdr_ref: cdr_ref,
         reached_voicemail: voicemail,
-        chatwoot_user_id: profile.user_id
-      }
+        chatwoot_user_id: (profile.user_id if answered_at && profile)
+      }.compact
     }.compact
     session = Telephony::EventsIngestionService.new(payload: payload).perform
     raise 'Wazo CDR ingestion did not produce a call session' unless session
+
     event = connection.account.telephony_events.find_by(event_key: payload[:event_key])
     raise 'Wazo CDR ingestion did not complete' unless event&.processed?
 
     import_cdr_recording_if_needed!(session, row, cdr_ref) unless voicemail
     true
+  end
+
+  def unanswered?(row)
+    row['answered'] != true && (row['date_answer'] || row['answer']).blank?
+  end
+
+  def external_source?(row)
+    (row['source_internal_exten'] || row['source_internal_extension']).blank? &&
+      normalize(row['source_exten'] || row['source_extension']).present?
+  end
+
+  def incall_matches?(row, binding)
+    context = row['requested_context'].to_s
+    return false if context.blank?
+
+    @incalls ||= client.incalls
+    @incalls.any? do |incall|
+      Array(incall['extensions']).any? do |extension|
+        extension['context'] == context &&
+          [normalize(binding.phone_number), normalize(binding.ingress_number)].compact.include?(normalize(extension['exten']))
+      end
+    end
   end
 
   def import_cdr_recording_if_needed!(session, row, cdr_ref)
@@ -212,9 +241,10 @@ class Telephony::Wazo::CallLogSyncService # rubocop:disable Metrics/ClassLength
                    )
                  end
     dids = candidates.filter_map { |value| normalize(value) }.uniq
-    bindings.find do |binding|
+    matches = bindings.select do |binding|
       dids.include?(normalize(binding.phone_number)) || dids.include?(normalize(binding.ingress_number))
     end
+    matches.first if matches.one?
   end
 
   def bindings

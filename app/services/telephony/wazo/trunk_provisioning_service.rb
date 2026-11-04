@@ -166,6 +166,8 @@ class Telephony::Wazo::TrunkProvisioningService
     name = "trunk_#{clean_did}"
     endpoint_options = [
       ['context', incall_context],
+      ['callerid', '<unknown>'],
+      ['trust_id_inbound', 'yes'],
       ['transport', 'transport-udp'],
       ['from_user', trunk_username.to_s],
       ['from_domain', trunk_domain.to_s],
@@ -193,12 +195,20 @@ class Telephony::Wazo::TrunkProvisioningService
     }
     existing = client.sip_endpoints.find { |ep| ep['name'] == name }
     if existing
+      payload[:endpoint_section_options] = merged_endpoint_options(existing.fetch('uuid'), endpoint_options)
       client.update_sip_endpoint(existing['uuid'], payload)
       existing['uuid']
     else
       created = client.create_sip_endpoint(payload)
       created.fetch('uuid')
     end
+  end
+
+  def merged_endpoint_options(endpoint_uuid, endpoint_options)
+    previous_options = Array(client.sip_endpoint(endpoint_uuid)['endpoint_section_options'])
+    managed_keys = endpoint_options.map(&:first) + ['send_pai']
+    # Keep multi-value PJSIP options as pairs rather than collapsing them into a hash.
+    previous_options.reject { |key, _| managed_keys.include?(key) } + endpoint_options # rubocop:disable Style/HashExcept
   end
 
   def upsert_trunk_resource!(endpoint_uuid:, clean_did: nil)

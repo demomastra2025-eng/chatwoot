@@ -20,7 +20,9 @@ RSpec.describe Telephony::Wazo::TrunkProvisioningService do
         endpoint_section_options: array_including(
           ['from_user', 'f9bOCzgF'],
           ['from_domain', 'astpbx.tele2.kz'],
-          ['transport', 'transport-udp']
+          %w[transport transport-udp],
+          ['callerid', '<unknown>'],
+          %w[trust_id_inbound yes]
         )
       )
     ).and_return('uuid' => 'ep-trunk-1')
@@ -118,5 +120,44 @@ RSpec.describe Telephony::Wazo::TrunkProvisioningService do
       outcall_id: 21,
       incall_id: 31
     )
+  end
+
+  it 'merges existing trunk options while restoring inbound identity and keeping outbound routing' do
+    allow(client).to receive(:sip_endpoints).and_return([{ 'name' => 'trunk_77070001001', 'uuid' => 'existing-trunk' }])
+    allow(client).to receive(:sip_endpoint).with('existing-trunk').and_return(
+      'endpoint_section_options' => [
+        ['callerid', 'Old trunk name'], ['trust_id_inbound', 'no'], ['context', 'old-context'],
+        ['acl', 'carrier-only'], ['send_pai', 'yes']
+      ]
+    )
+    expect(client).to receive(:update_sip_endpoint).with('existing-trunk', hash_including(
+                                                                             outbound_auth_section_options: [%w[username fake-login],
+                                                                                                             %w[password fake-secret]],
+                                                                             aor_section_options: [
+                                                                               ['contact',
+                                                                                'sip:fake-login@carrier.example.test:5060'], %w[qualify_frequency 30]
+                                                                             ]
+                                                                           )) do |_, payload|
+      options = payload.fetch(:endpoint_section_options)
+      expect(options.to_h).to include('callerid' => '<unknown>', 'trust_id_inbound' => 'yes',
+                                      'acl' => 'carrier-only', 'context' => 'ctx-incall-1', 'from_user' => 'fake-login')
+      expect(options.map(&:first).count('callerid')).to eq(1)
+      expect(options.to_h).not_to have_key('send_pai')
+    end
+    allow(client).to receive(:trunks).and_return([{ 'id' => 10, 'endpoint_sip' => { 'uuid' => 'existing-trunk' } }])
+    allow(client).to receive(:associate_trunk_sip_endpoint).with(10, 'existing-trunk')
+    allow(client).to receive(:outcalls).and_return([{ 'id' => 20, 'name' => 'onelink-outcall-77070001001' }])
+    allow(client).to receive(:associate_outcall_trunks).with(20, [10])
+    allow(client).to receive(:extensions).and_return([
+                                                       { 'id' => 101, 'context' => 'ctx-outcall-1', 'exten' => '_7XXXXXXXXXX' },
+                                                       { 'id' => 102, 'context' => 'ctx-outcall-1', 'exten' => '_+7XXXXXXXXXX' },
+                                                       { 'id' => 103, 'context' => 'ctx-outcall-1', 'exten' => '_87XXXXXXXXX' }
+                                                     ])
+    expect(client).to receive(:associate_outcall_extension).with(20, 101, caller_id: '77070001001', strip_digits: 0, external_prefix: '')
+    expect(client).to receive(:associate_outcall_extension).with(20, 102, caller_id: '77070001001', strip_digits: 1, external_prefix: '')
+    expect(client).to receive(:associate_outcall_extension).with(20, 103, caller_id: '77070001001', strip_digits: 1, external_prefix: '7')
+
+    service.provision_trunk!(did: '+77070001001', trunk_username: 'fake-login', trunk_password: 'fake-secret',
+                             trunk_domain: 'carrier.example.test')
   end
 end
