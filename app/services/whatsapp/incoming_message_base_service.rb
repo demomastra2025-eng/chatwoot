@@ -4,6 +4,10 @@
 class Whatsapp::IncomingMessageBaseService
   include ::Whatsapp::IncomingMessageServiceHelpers
 
+  # Only the known wa.me/Instagram greeting has proven encoded spaces. Never
+  # URL-decode the rest of the message: it can contain URLs or literal escapes.
+  INSTAGRAM_GREETING = /\AЗдравствуйте,(?:%20| )я(?:%20| )с(?:%20| )Instagram(?=\z|%20|[[:space:].,!?:;])/
+
   pattr_initialize [:inbox!, :params!, :outgoing_echo]
 
   def perform
@@ -280,9 +284,10 @@ class Whatsapp::IncomingMessageBaseService
     content_attrs[:in_reply_to_external_id] = @in_reply_to_external_id if @in_reply_to_external_id.present?
     content_attrs.merge!(message_content_attributes(message))
     content_attrs.merge!(provider_timing_attributes(message))
+    content = normalized_greeting_content(message, content_attrs)
 
     message_attributes = {
-      content: message_content(message),
+      content: content,
       account_id: @inbox.account_id,
       inbox_id: @inbox.id,
       message_type: outgoing_echo ? :outgoing : :incoming,
@@ -295,6 +300,15 @@ class Whatsapp::IncomingMessageBaseService
     provider_created_at = provider_message_time(message)
     message_attributes[:created_at] = provider_created_at if provider_created_at.present?
     @message = @conversation.messages.build(message_attributes)
+  end
+
+  def normalized_greeting_content(message, content_attrs)
+    content = message_content(message)
+    return content if outgoing_echo || message[:type] != 'text' || !content.is_a?(String)
+
+    normalized = content.sub(INSTAGRAM_GREETING) { |greeting| greeting.gsub('%20', ' ') }
+    content_attrs[:whatsapp_original_encoded_text] = content if normalized != content
+    normalized
   end
 
   def contact_message_source_id(message, index, contacts_count)
