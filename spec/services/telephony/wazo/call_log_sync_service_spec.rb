@@ -32,6 +32,7 @@ RSpec.describe Telephony::Wazo::CallLogSyncService do
       'date' => started_at.iso8601, 'date_answer' => answered_at.iso8601,
       'date_end' => ended_at.iso8601, 'direction' => 'inbound',
       'source_exten' => '+77071112233', 'requested_exten' => binding.phone_number,
+      'requested_context' => 'owned-context',
       'destination_exten' => '101', 'destination_internal_exten' => '101',
       'reached_voicemail' => false
     }
@@ -47,6 +48,11 @@ RSpec.describe Telephony::Wazo::CallLogSyncService do
   before do
     binding
     allow(client).to receive(:cdr).and_return('items' => [row])
+    unless client.is_a?(Telephony::Wazo::ApiClient)
+      allow(client).to receive(:incalls).and_return([
+                                                      { 'extensions' => [{ 'context' => 'owned-context', 'exten' => binding.phone_number }] }
+                                                    ])
+    end
   end
 
   it 'records an answered inbound call with operator and duration' do
@@ -260,6 +266,42 @@ RSpec.describe Telephony::Wazo::CallLogSyncService do
               'destination_internal_exten' => nil, 'destination_exten' => binding.phone_number)
   end
 
+  %w[inbound internal].each do |direction|
+    context "with confirmed offline #{direction} evidence" do
+      before do
+        profile.destroy!
+        connection.update!(metadata: { wazo_call_log_sync_enabled: true, wazo_incall_context: 'owned-context' })
+        allow(client).to receive(:cdr).and_return('items' => [offline_row.merge('direction' => direction)])
+      end
+
+      it 'admits the owned row context without an operator' do
+        expect { service.perform }.to change(Telephony::CallSession, :count).by(1)
+        expect(account.telephony_call_sessions.sole).to have_attributes(direction: 'inbound', status: 'missed', answered_by: nil)
+      end
+
+      it 'uses metadata only when row context is absent' do
+        allow(client).to receive(:cdr).and_return('items' => [offline_row.merge('direction' => direction, 'requested_context' => nil)])
+        expect { service.perform }.to change(Telephony::CallSession, :count).by(1)
+      end
+
+      it 'rejects an explicit foreign context despite owned metadata' do
+        allow(client).to receive(:cdr).and_return('items' => [offline_row.merge('direction' => direction, 'requested_context' => 'foreign-context')])
+        expect { service.perform }.not_to change(Telephony::CallSession, :count)
+      end
+
+      it 'rejects missing incall evidence despite owned metadata' do
+        allow(client).to receive(:incalls).and_return([])
+        allow(client).to receive(:cdr).and_return('items' => [offline_row.merge('direction' => direction, 'requested_context' => nil)])
+        expect { service.perform }.not_to change(Telephony::CallSession, :count)
+      end
+
+      it 'rejects incall context matching only a foreign DID' do
+        allow(client).to receive(:incalls).and_return([{ 'extensions' => [{ 'context' => 'owned-context', 'exten' => '+77070009999' }] }])
+        expect { service.perform }.not_to change(Telephony::CallSession, :count)
+      end
+    end
+  end
+
   it 'missed hop followed by answered hop converges to completed' do
     allow(client).to receive(:cdr).and_return('items' => [offline_row, row])
     service.perform
@@ -294,7 +336,7 @@ RSpec.describe Telephony::Wazo::CallLogSyncService do
   it 'connection incall context covers CDR without requested_context' do
     connection.update!(metadata: { wazo_call_log_sync_enabled: true, wazo_incall_context: 'fake-incall' })
     allow(client).to receive(:incalls).and_return([{ 'extensions' => [{ 'context' => 'fake-incall', 'exten' => binding.phone_number }] }])
-    allow(client).to receive(:cdr).and_return('items' => [offline_row.merge('direction' => 'internal')])
+    allow(client).to receive(:cdr).and_return('items' => [offline_row.merge('direction' => 'internal', 'requested_context' => nil)])
     expect { service.perform }.to change(Telephony::CallSession, :count).by(1)
   end
 
@@ -314,12 +356,17 @@ RSpec.describe Telephony::Wazo::CallLogSyncService do
       allow(Rails.cache).to receive(:write).and_call_original
     end
 
-    it 'uses owned DID and context from actual incalls JSON' do
-      stub_request(:get, 'https://wazo-review.example.com/api/confd/1.1/incalls?limit=1000')
-        .with(headers: { 'Wazo-Tenant' => 'tenant-example', 'X-Auth-Token' => 'fiction' }).to_return(
-          status: 200, body: { items: [{ extensions: [{ exten: binding.phone_number, context: 'fake-incall' }] }] }.to_json
-        )
-      expect { service.perform }.to change(Telephony::CallSession, :count).by(1)
+    %w[inbound internal].each do |direction|
+      it "uses owned DID and context from actual incalls JSON for #{direction}" do
+        profile.destroy!
+        connection.update!(metadata: { wazo_call_log_sync_enabled: true })
+        allow(client).to receive(:cdr).and_return('items' => [offline_row.merge('direction' => direction, 'requested_context' => 'fake-incall')])
+        stub_request(:get, 'https://wazo-review.example.com/api/confd/1.1/incalls?limit=1000')
+          .with(headers: { 'Wazo-Tenant' => 'tenant-example', 'X-Auth-Token' => 'fiction' }).to_return(
+            status: 200, body: { items: [{ extensions: [{ exten: binding.phone_number, context: 'fake-incall' }] }] }.to_json
+          )
+        expect { service.perform }.to change(Telephony::CallSession, :count).by(1)
+      end
     end
 
     it 'permission error preserves cursor' do

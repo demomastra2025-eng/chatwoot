@@ -64,9 +64,11 @@ class Telephony::Wazo::CallLogSyncService # rubocop:disable Metrics/ClassLength
     binding = find_binding(row, direction == 'outbound' ? 'outbound' : 'inbound')
     return false unless binding
 
-    # Wazo can label an unanswered incall to a ring group as internal.
-    # Require the DID's incall context and an external source, never just a group extension.
-    direction = 'inbound' if direction == 'internal' && unanswered?(row) && external_source?(row) && incall_matches?(row, binding)
+    # Both Wazo direction labels require the same confirmed incall evidence to bypass an operator.
+    offline_incall = %w[inbound internal].include?(direction) &&
+                     (row['destination_internal_exten'] || row['destination_internal_extension']).blank? &&
+                     unanswered?(row) && external_source?(row) && incall_matches?(row, binding)
+    direction = 'inbound' if direction == 'internal' && offline_incall
     return false unless %w[inbound outbound].include?(direction)
 
     operator_extension = if direction == 'inbound'
@@ -74,7 +76,6 @@ class Telephony::Wazo::CallLogSyncService # rubocop:disable Metrics/ClassLength
                          else
                            row['source_internal_exten'] || row['source_internal_extension']
                          end
-    offline_incall = direction == 'inbound' && operator_extension.blank? && unanswered?(row) && external_source?(row)
     profile = unless offline_incall
                 return false if extension.blank? || operator_extension.to_s != extension
 
