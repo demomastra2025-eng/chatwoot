@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require 'openssl'
+require_relative 'pii_name_lexicon'
+require_relative 'pii_shadow_auditor'
 
 module Llm; end
 
@@ -9,7 +11,7 @@ module Llm; end
 # ([PII_NAME_XXXXXXXX], [PII_PHONE_XXXXXXXX]) before prompts/payloads leave OneLink,
 # while preserving clinic doctors, services, medical terms, and detokenizing back
 # strictly inside the same (account_id, scope_id) for built-in tools and customer replies.
-# rubocop:disable Metrics/ModuleLength
+# rubocop:disable Metrics/ModuleLength, Metrics/CollectionLiteralLength
 module Llm::PiiSessionPseudonymizer
   THREAD_KEY = :llm_pii_session_pseudonymizer_scope
   REDIS_KEY_PREFIX = 'pii_vault:v1'
@@ -23,24 +25,38 @@ module Llm::PiiSessionPseudonymizer
 
   CYR_UPPER = 'А-ЯЁӘІҢҒҮҰҚӨҺ'
   CYR_LOWER = 'а-яёәіңғүұқөһ'
-  CYR_WORD = "[#{CYR_UPPER}][#{CYR_LOWER}]{1,24}".freeze
+  CYR_WORD = "[#{CYR_UPPER}][#{CYR_LOWER}]{1,24}(?:-[#{CYR_UPPER}][#{CYR_LOWER}]{1,24})?".freeze
+  CYR_CASED_WORD = "[#{CYR_UPPER}][#{CYR_UPPER}#{CYR_LOWER}]{1,24}(?:-[#{CYR_UPPER}#{CYR_LOWER}]{1,24})?".freeze
+  CYR_ANYCASE_WORD = "[#{CYR_UPPER}#{CYR_LOWER}]{2,24}(?:-[#{CYR_UPPER}#{CYR_LOWER}]{2,24})?".freeze
+  LAT_WORD = '[A-Z][a-z]{1,24}(?:-[A-Z][a-z]{1,24})?'
+  LAT_ANYCASE_WORD = '[A-Za-z]{2,24}(?:-[A-Za-z]{2,24})?'
 
   SELF_INTRO_CYRILLIC = /
     (?<![[:alpha:]])
-    ((?:меня\s+зовут|менің\s+атым|аты-жөнім|аты-жөні|фио|запишите\s+на\s+имя|пациент)\s*[:=-]?\s*)
-    (#{CYR_WORD}(?:\s+#{CYR_WORD}){0,2})
+    (?:
+      ((?i:меня\s+зовут|менің\s+атым|аты-жөнім|аты-жөні|фио|запишите\s+на\s+имя)\s*[:=-]?\s*)
+      (#{CYR_ANYCASE_WORD}(?:\s+#{CYR_ANYCASE_WORD}){0,2})
+      |
+      ((?i:запишите\s+пациента|пациент(?:ка)?|клиент|емделуші|(?:здравствуйте|привет|сәлеметсіз\s+бе|салеметсиз\s+бе)\s*,?\s*я)\s*[:=-]?\s*)
+      (#{CYR_CASED_WORD}(?:\s+#{CYR_CASED_WORD}){0,2})
+    )
     (?![[:alpha:]])
   /xu
 
   SELF_INTRO_LATIN = /
     (?<![[:alpha:]])
-    ((?:my\s+name\s+is|patient\s+name|full\s+name)\s*[:=-]?\s*)
-    ([A-Z][a-z]{2,24}(?:\s+[A-Z][a-z]{2,24}){0,2})
+    (?:
+      ((?i:my\s+name\s+is|patient\s+name|full\s+name)\s*[:=-]?\s*)
+      (#{LAT_ANYCASE_WORD}(?:\s+#{LAT_ANYCASE_WORD}){0,2})
+      |
+      ((?i:i\s+am)\s*[:=-]?\s*)
+      (#{LAT_WORD}(?:\s+#{LAT_WORD}){0,2})
+    )
     (?![[:alpha:]])
-  /xi
+  /x
 
-  CYRILLIC_FIO_CANDIDATE = /(?<![[:alpha:]])(#{CYR_WORD}(?:\s+#{CYR_WORD}){1,2})(?![[:alpha:]])/u
-  LATIN_FIO_CANDIDATE = /(?<![[:alpha:]])([A-Z][a-z]{1,24}(?:\s+[A-Z][a-z]{1,24}){1,2})(?![[:alpha:]])/
+  CYRILLIC_FIO_CANDIDATE = /(?<![[:alpha:]\[])(#{CYR_WORD}(?:\s+#{CYR_WORD}){0,3})(?![[:alpha:]\]])/u
+  LATIN_FIO_CANDIDATE = /(?<![[:alpha:]\[])(#{LAT_WORD}(?:\s+#{LAT_WORD}){0,3})(?![[:alpha:]\]])/
 
   SURNAME_OR_PATRONYMIC_CYR = /
     (?:ова|ева|ёва|ина|ов|ев|ёв|ин|ская|ский|цкая|цкий|кызы|қызы|улы|ұлы|
@@ -52,7 +68,9 @@ module Llm::PiiSessionPseudonymizer
 
   DOCTOR_CONTEXT_SUFFIX = /
     (?:\A|[^[:alpha:]])
-    (?:к|у|врач[ауеом]*|доктор[ауеом]*|специалист[ауеом]*|профессор[ауеом]*|дәрігер[геді]*)
+    (?:к|у|врач[ауеом]*|доктор[ауеом]*|специалист[ауеом]*|профессор[ауеом]*|дәрігер[гедің]*|маман[ғадр]*|
+       doctor|dr\.?|prof\.?|physician|specialist|
+       [а-яёәіңғүұқөһ-]+(?:лог|певт|иатр|ург|ортопед|окулист|стоматолог|акушер|узист|массажист)[ауеом]*|лор[уаом]*)
     \s+\z
   /xiu
 
@@ -75,7 +93,15 @@ module Llm::PiiSessionPseudonymizer
     январь февраль март апрель май июнь июль август сентябрь октябрь ноябрь декабрь
     января февраля марта апреля мая июня июля августа сентября октября ноября декабря
     сегодня завтра послезавтра вчера утром днем вечером срочно цена стоимость оплата
-    good morning afternoon evening hello clinic doctor appointment thank thanks
+    good morning afternoon evening hello clinic doctor dr prof physician specialist can see me appointment thank thanks
+    дәрігер дәрігерге дәрігердің дәрігері маман маманға мамандар емхана клиникаға
+    жазылу жазылайын жазыңызшы ертең ертеңге бүгін кешке таңертең сәлем салем қалайсыз
+    бала баланы балаға баламды қызымды ұлымды мен менің маған біз бізге сіз сізге
+    болады қашан қанша теңге бағасы адрес мекенжай
+    это можно нужно хочу хотела хотел прошу помогите записаться отмена отменить
+    перенести перенесите проверьте ребенок ребёнок ребенка ребёнка муж мужа жена жены
+    мама маму папа папу сын сына дочь дочку пациент пациента клиент клиента
+    имя фамилия отчество аты тегі жөні на в к по за до от из со и а но
   ].to_set.freeze
 
   IGNORED_CONTACT_NAMES = [
@@ -172,7 +198,9 @@ module Llm::PiiSessionPseudonymizer
     out = mask_phones(text, scope)
     out = mask_seeded_names(out, scope)
     out = mask_self_introductions(out, scope)
-    mask_fio_phrases(out, scope)
+    masked = mask_fio_phrases(out, scope)
+    Llm::PiiShadowAuditor.record_mask_pass!(text, masked, account_id: scope[:account_id]) if defined?(Llm::PiiShadowAuditor)
+    masked
   end
 
   def unmask_text(text)
@@ -368,12 +396,12 @@ module Llm::PiiSessionPseudonymizer
 
     out = text.dup
     scope[:seeded_names].each do |seeded|
-      pattern = /(?<![[:alpha:]])#{Regexp.escape(seeded)}(?![[:alpha:]])/iu
+      pattern = seeded_name_pattern(seeded)
       next unless out.match?(pattern)
 
       out = out.gsub(pattern) do |matched|
         prefix = Regexp.last_match.pre_match.last(32)
-        if doctor_context?(prefix) && matched.scan(/[[:alpha:]]+/).any? { |w| whitelisted_word?(w, scope[:whitelist]) }
+        if doctor_context?(prefix)
           matched
         else
           register_in_scope(scope, 'NAME', normalize_name_key(seeded), seeded)
@@ -383,6 +411,22 @@ module Llm::PiiSessionPseudonymizer
     out
   end
 
+  # Ephemeral patterns are scoped only to the active thread scope; no global plaintext cache is kept.
+  @seeded_pattern_cache = {}.freeze
+
+  def seeded_name_pattern(seeded)
+    words = seeded.scan(/[[:alpha:]-]+/)
+    if words.empty?
+      /(?<![[:alpha:]])#{Regexp.escape(seeded)}(?![[:alpha:]])/iu
+    else
+      flex_parts = words.map do |w|
+        stem = Llm::PiiNameLexicon.stem_word(normalize_word(w))
+        stem.length >= 3 ? "#{Regexp.escape(stem)}[[:alpha:]]{0,4}" : Regexp.escape(w)
+      end
+      /(?<![[:alpha:]\[])#{flex_parts.join('\s+')}(?![[:alpha:]\]])/iu
+    end
+  end
+
   def mask_self_introductions(text, scope)
     out = replace_self_intro_pattern(text, SELF_INTRO_CYRILLIC, scope)
     replace_self_intro_pattern(out, SELF_INTRO_LATIN, scope)
@@ -390,45 +434,83 @@ module Llm::PiiSessionPseudonymizer
 
   def replace_self_intro_pattern(text, pattern, scope)
     text.gsub(pattern) do |full|
-      prefix = Regexp.last_match(1)
-      candidate = Regexp.last_match(2)
-      if candidate.split(/\s+/).any? { |w| stopword_or_service_word?(w, scope[:whitelist]) }
+      prefix = Regexp.last_match(1) || Regexp.last_match(3)
+      captured_name = Regexp.last_match(2) || Regexp.last_match(4)
+      words = captured_name.to_s.split(/\s+/)
+      lead, core, tail = trim_boundary_stopwords(words, scope[:whitelist])
+      if core.empty? || lead.any?
         full
       else
-        "#{prefix}#{register_in_scope(scope, 'NAME', normalize_name_key(candidate), candidate)}"
+        core_str = core.join(' ')
+        tail_str = tail.empty? ? '' : " #{tail.join(' ')}"
+        "#{prefix}#{register_in_scope(scope, 'NAME', normalize_name_key(core_str), core_str)}#{tail_str}"
       end
     end
   end
 
   def mask_fio_phrases(text, scope)
     out = text.gsub(CYRILLIC_FIO_CANDIDATE) do |phrase|
-      prefix = Regexp.last_match.pre_match.last(32)
-      if valid_fio_phrase?(phrase, prefix, scope[:whitelist], SURNAME_OR_PATRONYMIC_CYR)
-        register_in_scope(scope, 'NAME', normalize_name_key(phrase), phrase)
-      else
-        phrase
-      end
+      replace_fio_candidate(phrase, Regexp.last_match.pre_match.last(32), scope, SURNAME_OR_PATRONYMIC_CYR)
     end
 
     out.gsub(LATIN_FIO_CANDIDATE) do |phrase|
-      prefix = Regexp.last_match.pre_match.last(32)
-      if valid_fio_phrase?(phrase, prefix, scope[:whitelist], SURNAME_OR_PATRONYMIC_LAT)
-        register_in_scope(scope, 'NAME', normalize_name_key(phrase), phrase)
-      else
-        phrase
-      end
+      replace_fio_candidate(phrase, Regexp.last_match.pre_match.last(32), scope, SURNAME_OR_PATRONYMIC_LAT)
     end
+  end
+
+  def replace_fio_candidate(phrase, prefix, scope, suffix_pattern)
+    whitelist = scope[:whitelist]
+    words = phrase.split(/\s+/)
+    lead, core, tail = trim_boundary_stopwords(words, whitelist)
+    return phrase if core.empty?
+
+    eff_prefix = lead.empty? ? prefix : "#{prefix}#{lead.join(' ')} ".last(32)
+    core_phrase = core.join(' ')
+    return phrase unless valid_fio_phrase?(core_phrase, eff_prefix, whitelist, suffix_pattern)
+
+    token = register_in_scope(scope, 'NAME', normalize_name_key(core_phrase), core_phrase)
+    lead_str = lead.empty? ? '' : "#{lead.join(' ')} "
+    tail_str = tail.empty? ? '' : " #{tail.join(' ')}"
+    "#{lead_str}#{token}#{tail_str}"
+  end
+
+  def trim_boundary_stopwords(words, whitelist)
+    idx_start = 0
+    idx_start += 1 while idx_start < words.size && stopword_or_service_word?(words[idx_start], whitelist)
+    idx_end = words.size - 1
+    idx_end -= 1 while idx_end >= idx_start && stopword_or_service_word?(words[idx_end], whitelist)
+    return [words, [], []] if idx_start > idx_end
+
+    [words[0...idx_start], words[idx_start..idx_end], words[(idx_end + 1)..] || []]
   end
 
   def valid_fio_phrase?(phrase, prefix, whitelist, suffix_pattern)
     return false if doctor_context?(prefix)
 
     words = phrase.split(/\s+/)
-    return false if words.size < 2
+    return valid_single_person_word?(words.first, whitelist) if words.one?
+
+    valid_multiword_fio?(words, whitelist, suffix_pattern)
+  end
+
+  def valid_multiword_fio?(words, whitelist, suffix_pattern)
+    return false unless words.size.between?(2, 3)
     return false if words.any? { |w| stopword_or_service_word?(w, whitelist) }
     return false if matches_clinic_doctor?(words, whitelist)
 
-    words.any? { |w| w.match?(suffix_pattern) }
+    multiword_person_match?(words, suffix_pattern)
+  end
+
+  def multiword_person_match?(words, suffix_pattern)
+    return words.all? { |w| Llm::PiiNameLexicon.known_person_name_word?(w) } unless words.any? { |w| w.match?(suffix_pattern) }
+
+    words.count { |w| w.match?(suffix_pattern) || Llm::PiiNameLexicon.known_person_name_word?(w) } >= words.size - 1
+  end
+
+  def valid_single_person_word?(word, whitelist)
+    return false if whitelisted_word?(word, whitelist)
+
+    Llm::PiiNameLexicon.unambiguous_single_name?(word, stopwords: STATIC_STOPWORDS)
   end
 
   def doctor_context?(prefix)
@@ -635,7 +717,8 @@ module Llm::PiiSessionPseudonymizer
 
   private_class_method :build_scope, :seed_scope!, :seed_contact!, :seed_conversation_appointments!,
                        :seed_phone_candidate!, :seed_name_candidate!, :mask_phones, :mask_seeded_names,
-                       :mask_self_introductions, :mask_fio_phrases, :valid_fio_phrase?, :doctor_context?,
+                       :mask_self_introductions, :mask_fio_phrases, :replace_fio_candidate, :trim_boundary_stopwords,
+                       :seeded_name_pattern, :valid_fio_phrase?, :valid_multiword_fio?, :valid_single_person_word?, :doctor_context?,
                        :stopword_or_service_word?, :matches_clinic_doctor?, :whitelisted_word?, :word_in_set?,
                        :empty_whitelist, :clinic_whitelist_for, :load_clinic_whitelist,
                        :fetch_clinic_non_doctor_names, :build_doctor_whitelist_sets,
@@ -643,4 +726,4 @@ module Llm::PiiSessionPseudonymizer
                        :register_in_scope, :same_scope?, :scope_key, :hmac_token_id, :scope_digest, :redis_key,
                        :secret_material, :encryptor_for, :write_redis_entry, :resolve_token, :read_redis_entry
 end
-# rubocop:enable Metrics/ModuleLength
+# rubocop:enable Metrics/ModuleLength, Metrics/CollectionLiteralLength

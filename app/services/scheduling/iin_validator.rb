@@ -15,7 +15,8 @@ module Scheduling::IinValidator
   IIN_DIGITS_FRAGMENT = '(?:\d{12}|\d{6}[ -](?:\d{6}|\d{3}[ -]\d{3})|\d{4}[ -]\d{4}[ -]\d{4}|' \
                         '\d{3}(?:[ -]\d{3}){3}|\d{2}[ -]\d{2}[ -]\d{2}[ -]\d{3}[ -]\d{3}|\d{2}(?:[ -]\d{2}){5})'
   LABELED_IIN_PATTERN = Regexp.new(
-    '((?<![\p{L}\p{N}_])(?i:medelement_iin|client_identifier|ИИН|ЖСН|IIN)(?![\p{L}\p{N}_])(?:\\\\*["\'])?\s*[:=№#\/-]?\s*(?:\\\\*["\'])?)' \
+    '((?<![\p{L}\p{N}_])(?i:medelement_iin|client_identifier|ИИН|ЖСН|IIN)(?![\p{L}\p{N}_])' \
+    '(?:\s+\p{L}{1,16}){0,2}(?:\\\\*["\'])?\s*[:=№#\/-]?\s*(?:\\\\*["\'])?)' \
     "(?<![+\\p{L}\\p{N}_])(#{IIN_DIGITS_FRAGMENT})(?![\\p{L}\\p{N}_])(?![ -]\\d)"
   )
   PROTECTED_OR_CANDIDATE_PATTERN = Regexp.new(
@@ -42,8 +43,14 @@ module Scheduling::IinValidator
 
   # True for a valid 12-digit Kazakhstan personal IIN (YYMMDD + 20th/21st century digit 3..6 + valid check digit).
   def personal_iin?(value)
+    valid?(value) && birth_date_iin_candidate?(value)
+  end
+
+  # True when 12 digits match YYMMDD + century digit 3..6 (excludes company BINs where DD is 40..69),
+  # even if the patient made a typo in the 12th check digit.
+  def birth_date_iin_candidate?(value)
     iin = normalize(value)
-    return false unless valid?(iin) && (century = CENTURY_BY_SEVENTH_DIGIT[iin[6].to_i])
+    return false unless iin&.match?(/\A\d{12}\z/) && (century = CENTURY_BY_SEVENTH_DIGIT[iin[6].to_i])
 
     year = century + iin[0, 2].to_i
     month = iin[2, 2].to_i
@@ -158,7 +165,7 @@ module Scheduling::IinValidator
     end
     result = labeled.gsub(PROTECTED_OR_CANDIDATE_PATTERN) do |match|
       candidate = Regexp.last_match[:iin]
-      if candidate && personal_iin?(candidate)
+      if candidate && birth_date_iin_candidate?(candidate)
         tokenize ? Llm::IinTokenVault.tokenize(candidate) : REDACTED_PLACEHOLDER
       else
         match
