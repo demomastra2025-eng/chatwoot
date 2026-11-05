@@ -38,6 +38,30 @@ RSpec.describe '/api/v1/accounts/{account.id}/contacts/:id/conversations', type:
 
           expect(json_response['payload'].length).to eq 4
         end
+
+        it 'filters the selected inbox before limiting recent conversations' do
+          account.conversations.where(inbox: inbox_1).find_each { |conversation| conversation.update!(last_activity_at: 2.days.ago) }
+          create_list(:conversation, 20, account: account, inbox: inbox_2,
+                                         contact: contact, contact_inbox: contact_inbox_2, last_activity_at: Time.current)
+
+          get "/api/v1/accounts/#{account.id}/contacts/#{contact.id}/conversations",
+              params: { inbox_id: inbox_1.id }, headers: admin.create_new_auth_token
+
+          expect(response).to have_http_status(:success)
+          payload = response.parsed_body['payload']
+          expect(payload.length).to eq 2
+          expect(payload.pluck('inbox_id')).to all(eq(inbox_1.id))
+        end
+
+        it 'does not include conversations from a foreign account inbox' do
+          foreign_inbox = create(:inbox)
+
+          get "/api/v1/accounts/#{account.id}/contacts/#{contact.id}/conversations",
+              params: { inbox_id: foreign_inbox.id }, headers: admin.create_new_auth_token
+
+          expect(response).to have_http_status(:success)
+          expect(response.parsed_body['payload']).to be_empty
+        end
       end
 
       context 'with user as agent' do
@@ -48,6 +72,14 @@ RSpec.describe '/api/v1/accounts/{account.id}/contacts/:id/conversations', type:
           json_response = response.parsed_body
 
           expect(json_response['payload'].length).to eq 2
+        end
+
+        it 'does not bypass inbox permissions through the requested inbox filter' do
+          get "/api/v1/accounts/#{account.id}/contacts/#{contact.id}/conversations",
+              params: { inbox_id: inbox_2.id }, headers: agent.create_new_auth_token
+
+          expect(response).to have_http_status(:success)
+          expect(response.parsed_body['payload']).to be_empty
         end
       end
 

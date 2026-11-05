@@ -32,11 +32,20 @@
     "ADD_PLUS": "Add plus",
     "INVALID_NUMBER": "Enter a valid phone number (use + for international numbers)",
     "CONTACT_LOOKUP_INCOMPLETE": "Could not check all contacts. Please try again.",
-    "TELEGRAM_CALLS_LABEL": "Telegram line",
+    "TELEGRAM_CALLS_LABEL": "Telegram · incoming calls",
     "TELEGRAM_CONNECT": "Connect",
     "TELEGRAM_GO_ONLINE": "Go online",
     "TELEGRAM_ONLINE": "On line",
-    "TELEGRAM_OFFLINE": "Off line"
+    "TELEGRAM_OFFLINE": "Off line",
+    "TELEGRAM_NOT_CONNECTED": "Not connected",
+    "TELEGRAM_REGISTERING": "Connecting",
+    "TELEGRAM_ERROR": "No Telegram connection",
+    "NATIVE_CONTACT": "Telegram / WhatsApp contact",
+    "NATIVE_NO_PEER": "Choose an existing private conversation on this line. Telegram cannot call a new number.",
+    "NATIVE_OFFLINE": "Telegram line is offline.",
+    "NATIVE_BUSY": "A call is already in progress.",
+    "NATIVE_LOADING": "Finding conversations…",
+    "NATIVE_LOOKUP_FAILED": "Could not find conversations. Search again."
   },
   "PROFILE_SETTINGS": {
     "LINK": "Profile Settings",

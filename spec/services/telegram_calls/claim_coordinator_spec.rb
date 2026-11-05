@@ -298,7 +298,7 @@ RSpec.describe TelegramCalls::ClaimCoordinator do
       expected_line_key = "#{group_key}:sip_profile:83"
       webphone_svc = instance_double(
         Telephony::WebphoneService,
-        token_for: { webphone_sessions: [webphone_session_fixture] },
+        token_for_telegram_operator: { webphone_sessions: [webphone_session_fixture] },
         update_presence!: { presence_update_accepted: true }
       )
       allow(Telephony::WebphoneService).to receive(:new).and_return(webphone_svc)
@@ -310,6 +310,7 @@ RSpec.describe TelegramCalls::ClaimCoordinator do
 
       res = TelegramCalls::SipLineSyncService.new(binding: binding, gateway_client: gateway_client).activate!
       expect(res[:synced_lines]).to eq(1)
+      expect(webphone_svc).to have_received(:token_for_telegram_operator).with(binding: binding)
       expect(gateway_client).to have_received(:sync_sip_lines!).with(
         hash_including(
           line_group_key: group_key, account_id: account.id, user_id: agent_one.id,
@@ -331,7 +332,7 @@ RSpec.describe TelegramCalls::ClaimCoordinator do
       expected_line_key = "account:#{account.id}:user:#{agent_one.id}:binding:#{binding.id}:sip_profile:83"
       webphone_svc = instance_double(
         Telephony::WebphoneService,
-        token_for: { webphone_sessions: [webphone_session_fixture] },
+        token_for_telegram_operator: { webphone_sessions: [webphone_session_fixture] },
         update_presence!: { presence_update_accepted: true },
         release_registration_lease!: true
       )

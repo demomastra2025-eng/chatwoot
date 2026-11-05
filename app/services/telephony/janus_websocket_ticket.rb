@@ -11,6 +11,7 @@ class Telephony::JanusWebsocketTicket
   REVOKED_PROFILE_STATUSES = %w[disabled deleting failed].freeze
 
   extend Telephony::JanusTelegramCallScope
+  extend Telephony::JanusTelegramOperatorScope
 
   class << self
     def issue(server_url:, account:, user:, sip_profile:, registration_instance_id:)
@@ -68,7 +69,7 @@ class Telephony::JanusWebsocketTicket
 
     def valid_payload?(payload, origin:, path:)
       payload[:jti].present? &&
-        secure_match?(payload[:origin], normalize_origin(origin)) &&
+        authorized_origin?(payload, origin) &&
         secure_match?(payload[:path], normalize_path(path)) &&
         active_scope?(payload)
     end
@@ -76,8 +77,15 @@ class Telephony::JanusWebsocketTicket
     def active_scope?(payload)
       return active_profile?(payload) if payload[:version].to_i == 1
       return active_telegram_call?(payload) if payload[:version].to_i == 2 && payload[:kind] == 'telegram_personal_call'
+      return active_telegram_operator?(payload) if telegram_operator_payload?(payload)
 
       false
+    end
+
+    def authorized_origin?(payload, origin)
+      return origin.to_s.empty? if telegram_operator_payload?(payload)
+
+      secure_match?(payload[:origin], normalize_origin(origin))
     end
 
     def verified_payload(ticket)

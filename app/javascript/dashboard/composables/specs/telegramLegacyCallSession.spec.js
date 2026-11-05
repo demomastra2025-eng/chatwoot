@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   agentAnswer: vi.fn(),
   remoteGate: null,
   gathering: false,
+  autoConnect: true,
   janus: vi.fn(),
 }));
 vi.mock('dashboard/api/channel/voice/janusAudioBridgeCallClient', () => ({
@@ -30,6 +31,9 @@ vi.mock('dashboard/api/telegramPersonalCalls', async importOriginal => {
     callsApiFor: value =>
       original.isTelegramPersonalProvider(value)
         ? {
+            get url() {
+              return original.callsApiFor(value).url;
+            },
             reconnect: state.reconnect,
             accept: state.accept,
             agentAnswer: state.agentAnswer,
@@ -52,6 +56,19 @@ const offer = {
   sdp_offer: 'v=0\r\na=ice-ufrag:gateway583\r\n',
   ice_servers: [{ urls: 'stun:example.invalid:3478' }],
 };
+const answerSdp = [
+  'v=0',
+  'o=- 1 1 IN IP4 127.0.0.1',
+  's=-',
+  't=0 0',
+  'm=audio 49152 UDP/TLS/RTP/SAVPF 111',
+  'a=ice-ufrag:browser583',
+  'a=ice-pwd:abcdefghijklmnopqrstuvwx',
+  `a=fingerprint:sha-256 ${Array(32).fill('AB').join(':')}`,
+  'a=setup:active',
+  'a=candidate:1 1 UDP 2122260223 192.0.2.10 49152 typ host',
+  '',
+].join('\r\n');
 const options = { provider: 'telegram_personal' };
 let track;
 let wrapper;
@@ -81,6 +98,7 @@ function deferred() {
 }
 
 beforeEach(() => {
+  window.history.replaceState({}, '', '/app/accounts/1/conversations/1');
   setActivePinia(createPinia());
   vi.spyOn(console, 'info').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -93,7 +111,11 @@ beforeEach(() => {
   state.peers.length = 0;
   state.remoteGate = null;
   state.gathering = false;
-  state.agentAnswer.mockResolvedValue({ data: { success: true } });
+  state.autoConnect = true;
+  state.agentAnswer.mockImplementation(async () => {
+    if (state.autoConnect) state.peers.at(-1).connectionState = 'connected';
+    return { data: { success: true } };
+  });
   WhatsappCallsAPI.agentAnswer.mockResolvedValue({ data: { success: true } });
   track = { kind: 'audio', enabled: true, stop: vi.fn() };
   Object.defineProperty(navigator, 'mediaDevices', {
@@ -107,7 +129,7 @@ beforeEach(() => {
       this.config = config;
       this.iceGatheringState = state.gathering ? 'gathering' : 'complete';
       this.connectionState = 'new';
-      this.localDescription = { type: 'answer', sdp: 'local-answer-with-ice' };
+      this.localDescription = { type: 'answer', sdp: answerSdp };
       this.addTrack = vi.fn();
       const gate = state.remoteGate;
       this.setRemoteDescription = vi.fn(
@@ -125,6 +147,7 @@ afterEach(() => {
   wrapper = null;
   clearPreparedInboundAgentAnswer({}, { cleanupWebrtc: true });
   vi.useRealTimers();
+  window.history.replaceState({}, '', '/');
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -146,7 +169,7 @@ describe('Telegram gateway583 direct SDP call session', () => {
       });
       expect(state.agentAnswer).toHaveBeenCalledWith(
         1,
-        'local-answer-with-ice',
+        answerSdp,
         expect.any(Object)
       );
       expect(WhatsappCallsAPI.agentAnswer).not.toHaveBeenCalled();
@@ -376,32 +399,242 @@ describe('Telegram gateway583 direct SDP call session', () => {
     expect(state.agentAnswer).not.toHaveBeenCalled();
     pc.localDescription = {
       type: 'answer',
-      sdp: 'complete-answer-with-all-candidates',
+      sdp: answerSdp,
     };
     pc.iceGatheringState = 'complete';
     pc.onicegatheringstatechange();
     await pending;
     expect(state.agentAnswer).toHaveBeenCalledWith(
       1,
-      'complete-answer-with-all-candidates',
+      answerSdp,
       expect.any(Object)
     );
     expect(state.agentAnswer).toHaveBeenCalledOnce();
     expect(pc.onicecandidate).toBeNull();
   });
 
-  it('rejects an ICE deadline without posting a partial answer', async () => {
+  it('posts a valid candidate snapshot once at the deadline, then waits for connected', async () => {
+    vi.useFakeTimers();
+    state.gathering = true;
+    state.autoConnect = false;
+    const done = vi.fn();
+    const pending = handleCallAgentOffer(1, offer, options).then(done);
+    await vi.advanceTimersByTimeAsync(10001);
+    const pc = state.peers[0];
+    expect(pc.iceGatheringState).toBe('gathering');
+    expect(state.agentAnswer).toHaveBeenCalledExactlyOnceWith(
+      1,
+      answerSdp,
+      expect.any(Object)
+    );
+    expect(done).not.toHaveBeenCalled();
+    pc.connectionState = 'connected';
+    pc.onconnectionstatechange();
+    await pending;
+    expect(done).toHaveBeenCalledWith({ success: true });
+    expect(state.agentAnswer).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['no candidates', answerSdp.replace(/^a=candidate:.*\r\n/m, '')],
+    [
+      'malformed candidate',
+      answerSdp.replace('192.0.2.10 49152', 'not-an-address 99999'),
+    ],
+    ['arbitrary nonempty text', 'local-answer-with-ice'],
+    ['rejected audio', answerSdp.replace('m=audio 49152', 'm=audio 0')],
+    ['no ICE password', answerSdp.replace(/^a=ice-pwd:.*\r\n/m, '')],
+    [
+      'TCP-only unsupported native candidate',
+      answerSdp.replace('1 1 UDP', '1 1 TCP'),
+    ],
+    [
+      'component2-only candidate',
+      answerSdp.replace('candidate:1 1 UDP', 'candidate:1 2 UDP'),
+    ],
+  ])(
+    'rejects %s at the ICE deadline without posting an answer',
+    async (_name, sdp) => {
+      vi.useFakeTimers();
+      state.gathering = true;
+      const pending = handleCallAgentOffer(1, offer, options);
+      const rejected = expect(pending).rejects.toMatchObject({
+        stage: 'ice_candidates',
+        retryable: false,
+      });
+      await vi.advanceTimersByTimeAsync(1);
+      state.peers[0].localDescription = { type: 'answer', sdp };
+      await vi.advanceTimersByTimeAsync(10000);
+      await rejected;
+      expect(state.agentAnswer).not.toHaveBeenCalled();
+      expect(state.peers[0].close).toHaveBeenCalledOnce();
+      expect(track.stop).toHaveBeenCalledOnce();
+    }
+  );
+
+  it('rejects answer200 without connected and reclaims resources with no retry', async () => {
+    vi.useFakeTimers();
+    state.autoConnect = false;
+    const pending = handleCallAgentOffer(1, offer, options);
+    const rejected = expect(pending).rejects.toMatchObject({
+      stage: 'peer_connection',
+      retryable: false,
+    });
+    await vi.advanceTimersByTimeAsync(10001);
+    await rejected;
+    expect(state.agentAnswer).toHaveBeenCalledOnce();
+    expect(state.peers).toHaveLength(1);
+    expect(state.peers[0].close).toHaveBeenCalledOnce();
+    expect(state.peers[0].onconnectionstatechange).toBeNull();
+    expect(track.stop).toHaveBeenCalledOnce();
+  });
+
+  it('does not return a deferred Telegram success before its answer and actual connection', async () => {
+    state.autoConnect = false;
+    const done = vi.fn();
+    const pending = handleCallAgentOffer(1, offer, {
+      ...options,
+      deferPost: true,
+    }).then(done);
+    await vi.waitFor(() =>
+      expect(state.peers[0]?.onconnectionstatechange).toBeTypeOf('function')
+    );
+    expect(state.agentAnswer).toHaveBeenCalledOnce();
+    expect(done).not.toHaveBeenCalled();
+    state.peers[0].connectionState = 'connected';
+    state.peers[0].onconnectionstatechange();
+    await pending;
+    expect(done).toHaveBeenCalledWith({ success: true });
+  });
+
+  it('observes connected reached before the answer POST resolves', async () => {
+    const gate = deferred();
+    state.agentAnswer.mockReturnValue(gate.promise);
+    const done = vi.fn();
+    const pending = handleCallAgentOffer(1, offer, options).then(done);
+    await vi.waitFor(() => expect(state.agentAnswer).toHaveBeenCalledOnce());
+    state.peers[0].connectionState = 'connected';
+    expect(done).not.toHaveBeenCalled();
+    gate.resolve({ data: { success: true } });
+    await pending;
+    expect(done).toHaveBeenCalledWith({ success: true });
+  });
+
+  it('never resends an answer after an ambiguously failed POST marked retryable', async () => {
+    const error = Object.assign(
+      new Error('synthetic answer transport timeout'),
+      { retryable: true }
+    );
+    state.agentAnswer.mockRejectedValue(error);
+    await expect(handleCallAgentOffer(1, offer, options)).rejects.toMatchObject(
+      { retryable: false }
+    );
+    expect(state.agentAnswer).toHaveBeenCalledOnce();
+    expect(state.peers).toHaveLength(1);
+    expect(track.stop).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a failed connection after the single answer without retrying', async () => {
+    state.autoConnect = false;
+    const pending = handleCallAgentOffer(1, offer, options);
+    const rejected = expect(pending).rejects.toMatchObject({
+      stage: 'peer_connection',
+      retryable: false,
+    });
+    await vi.waitFor(() =>
+      expect(state.peers[0]?.onconnectionstatechange).toBeTypeOf('function')
+    );
+    state.peers[0].connectionState = 'failed';
+    state.peers[0].onconnectionstatechange();
+    await rejected;
+    expect(state.agentAnswer).toHaveBeenCalledOnce();
+    expect(state.peers).toHaveLength(1);
+    expect(track.stop).toHaveBeenCalledOnce();
+  });
+
+  it('cancels a superseded connection wait without closing the new peer', async () => {
+    vi.useFakeTimers();
+    state.autoConnect = false;
+    const old = handleCallAgentOffer(1, offer, options);
+    const rejected = expect(old).rejects.toMatchObject({ cancelled: true });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(state.peers[0].onconnectionstatechange).toBeTypeOf('function');
+    state.autoConnect = true;
+    await handleCallAgentOffer(
+      1,
+      { ...offer, sdp_offer: 'new-generation-sdp' },
+      options
+    );
+    await rejected;
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(state.peers).toHaveLength(2);
+    expect(state.peers[0].close).toHaveBeenCalled();
+    expect(state.peers[1].close).not.toHaveBeenCalled();
+    expect(state.agentAnswer).toHaveBeenCalledTimes(2);
+  });
+
+  it('fences the real media answer when the account changes during microphone permission', async () => {
+    const gate = deferred();
+    navigator.mediaDevices.getUserMedia.mockReturnValue(gate.promise);
+    const pending = handleCallAgentOffer(1, offer, options);
+    const rejected = expect(pending).rejects.toMatchObject({ cancelled: true });
+    window.history.replaceState({}, '', '/app/accounts/2/conversations/1');
+    gate.resolve(microphone());
+    await rejected;
+    expect(state.agentAnswer).not.toHaveBeenCalled();
+    expect(state.reconnect).not.toHaveBeenCalled();
+    expect(track.stop).toHaveBeenCalled();
+  });
+
+  it('fences an account change during bounded ICE gathering before the answer POST', async () => {
     vi.useFakeTimers();
     state.gathering = true;
     const pending = handleCallAgentOffer(1, offer, options);
-    const rejected = expect(pending).rejects.toThrow(
-      'ICE gathering did not complete'
-    );
-    await vi.advanceTimersByTimeAsync(10001);
+    const rejected = expect(pending).rejects.toMatchObject({ cancelled: true });
+    await vi.advanceTimersByTimeAsync(1);
+    window.history.replaceState({}, '', '/app/accounts/2/conversations/1');
+    await vi.advanceTimersByTimeAsync(10000);
     await rejected;
     expect(state.agentAnswer).not.toHaveBeenCalled();
     expect(state.peers[0].close).toHaveBeenCalled();
+  });
+
+  it('rejects an answer response after switching accounts without declaring media ready', async () => {
+    const gate = deferred();
+    state.agentAnswer.mockReturnValue(gate.promise);
+    const done = vi.fn();
+    const pending = handleCallAgentOffer(1, offer, options).then(done);
+    const rejected = expect(pending).rejects.toMatchObject({ cancelled: true });
+    await vi.waitFor(() => expect(state.agentAnswer).toHaveBeenCalledOnce());
+    window.history.replaceState({}, '', '/app/accounts/2/conversations/1');
+    state.peers[0].connectionState = 'connected';
+    gate.resolve({ data: { success: true } });
+    await rejected;
+    expect(done).not.toHaveBeenCalled();
+    expect(state.agentAnswer).toHaveBeenCalledOnce();
     expect(track.stop).toHaveBeenCalled();
+  });
+
+  it('does not reconnect an old call under the new account API URL', async () => {
+    await handleCallAgentOffer(1, offer, options);
+    window.history.replaceState({}, '', '/app/accounts/2/conversations/1');
+    await expect(reconnectTelegramMedia(1)).rejects.toMatchObject({
+      cancelled: true,
+    });
+    expect(state.reconnect).not.toHaveBeenCalled();
+    expect(state.agentAnswer).toHaveBeenCalledOnce();
+  });
+
+  it('discards an old-account reconnect response before creating media', async () => {
+    await handleCallAgentOffer(1, offer, options);
+    const gate = deferred();
+    state.reconnect.mockReturnValue(gate.promise);
+    const pending = reconnectTelegramMedia(1);
+    window.history.replaceState({}, '', '/app/accounts/2/conversations/1');
+    gate.resolve({ data: { ...offer, sdp_offer: 'late-old-account-offer' } });
+    await pending;
+    expect(state.peers).toHaveLength(1);
+    expect(state.agentAnswer).toHaveBeenCalledOnce();
   });
 
   it('cancels an ICE wait immediately on cleanup and never sends a late answer', async () => {
@@ -606,14 +839,22 @@ describe('Telegram gateway583 direct SDP call session', () => {
   });
 
   it('preserves one legitimate Telegram retry and deduplicates its successful SDP', async () => {
-    state.agentAnswer.mockRejectedValueOnce(
-      Object.assign(new Error('retryable active failure'), { retryable: true })
+    const original = RTCPeerConnection.getMockImplementation();
+    RTCPeerConnection.mockImplementationOnce(
+      function RetryableLocalPeer(config) {
+        original.call(this, config);
+        this.createAnswer.mockRejectedValueOnce(
+          Object.assign(new Error('retryable local SDP failure before POST'), {
+            retryable: true,
+          })
+        );
+      }
     );
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     await handleCallAgentOffer(1, offer, options);
-    expect(state.agentAnswer).toHaveBeenCalledTimes(2);
+    expect(state.agentAnswer).toHaveBeenCalledOnce();
     await handleCallAgentOffer(1, offer, options);
-    expect(state.agentAnswer).toHaveBeenCalledTimes(2);
+    expect(state.agentAnswer).toHaveBeenCalledOnce();
     expect(state.peers[1].close).not.toHaveBeenCalled();
   });
 

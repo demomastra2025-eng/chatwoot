@@ -30,6 +30,8 @@ import WhatsappCallWidget from 'dashboard/components/widgets/WhatsappCallWidget.
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
+import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
+import { usePhoneNativeCallTarget } from 'dashboard/composables/usePhoneNativeCallTarget';
 
 const SIP_PROVIDERS = new Set([
   'asterisk_analog',
@@ -132,6 +134,13 @@ const hasWhatsappCallingInbox = computed(() =>
   )
 );
 
+const telegramVoiceInboxes = computed(() =>
+  (inboxes.value || []).filter(
+    inbox =>
+      inbox.channel_type === INBOX_TYPES.TELEGRAM_PERSONAL &&
+      inbox.calling_enabled === true
+  )
+);
 const whatsappIncomingCalls = computed(() =>
   Array.isArray(whatsappCallsStore?.incomingCalls)
     ? whatsappCallsStore.incomingCalls
@@ -153,6 +162,7 @@ const hasWhatsappCall = computed(
 const allCallableInboxes = computed(() => [
   ...availableVoiceInboxes.value,
   ...whatsappVoiceInboxes.value,
+  ...telegramVoiceInboxes.value,
 ]);
 
 const selectedInbox = computed(
@@ -163,8 +173,13 @@ const selectedInbox = computed(
     allCallableInboxes.value.find(
       inbox => String(inbox.id) === String(selectedInboxId.value)
     ) ||
-    availableVoiceInboxes.value[0] ||
+    allCallableInboxes.value[0] ||
     null
+);
+const isNativeLine = computed(() =>
+  [INBOX_TYPES.TELEGRAM_PERSONAL, INBOX_TYPES.WHATSAPP].includes(
+    selectedInbox.value?.channel_type
+  )
 );
 const sessionsForInbox = inboxId =>
   sipSessions.value.filter(
@@ -192,6 +207,19 @@ const hasCall = computed(
     callsStore.hasIncomingCall ||
     hasWhatsappCall.value
 );
+const {
+  targetOptions,
+  targetId,
+  searchTargets,
+  targetLoading,
+  targetReason,
+  initiateCall: initiateNativeCall,
+  isInitiatingCall: isInitiatingNativeCall,
+} = usePhoneNativeCallTarget({
+  inbox: selectedInbox,
+  accountId,
+  busy: computed(() => hasCall.value),
+});
 // The employee's own call (ringing, being dialled or connected) is shown in
 // the phone itself instead of the dialer; there is no second call window.
 const hasOwnCall = computed(() =>
@@ -320,6 +348,38 @@ const lineStatusLabel = value => {
       return 'Отключён';
   }
 };
+const telegramSoftphone = ref({
+  configured: false,
+  connected: false,
+  on_line: false,
+  username: '',
+  sip_lines: [],
+});
+const isTelegramSoftphoneBusy = ref(false);
+const telegramLoadError = ref(false);
+const telegramStatusLoading = ref(false);
+let telegramRequestId = 0;
+let telegramActionId = 0;
+const telegramLineStatus = computed(() => {
+  const state = telegramSoftphone.value;
+  if (telegramLoadError.value) return 'error';
+  if (!state.connected || !state.on_line) return 'disconnected';
+  if ((state.sip_lines || []).some(line => line.error)) return 'error';
+  if ((state.sip_lines || []).some(line => line.registered === true))
+    return 'ready';
+  return 'connecting';
+});
+const telegramLineStatusLabel = computed(() => {
+  if (telegramLineStatus.value === 'error')
+    return t('PHONE_WIDGET.TELEGRAM_ERROR');
+  if (telegramLineStatus.value === 'connecting')
+    return t('PHONE_WIDGET.TELEGRAM_REGISTERING');
+  if (telegramLineStatus.value === 'ready')
+    return t('PHONE_WIDGET.TELEGRAM_ONLINE');
+  return telegramSoftphone.value.connected
+    ? t('PHONE_WIDGET.TELEGRAM_OFFLINE')
+    : t('PHONE_WIDGET.TELEGRAM_NOT_CONNECTED');
+});
 const allPhoneLines = computed(() => {
   const sipLines = availableVoiceInboxes.value.map(inbox => {
     const session = bestSessionForInbox(inbox.id);
@@ -366,7 +426,26 @@ const allPhoneLines = computed(() => {
     };
   });
 
-  return [...sipLines, ...whatsappLines];
+  const telegramLines = telegramVoiceInboxes.value.map(inbox => {
+    const connected = inbox.connection_state === 'connected';
+    const lineStatus = connected ? 'ready' : 'disconnected';
+    return {
+      id: inbox.id,
+      inbox,
+      name: inbox.name,
+      phoneNumber: inbox.phone_number,
+      provider: 'telegram_personal',
+      providerLabel: 'Telegram',
+      isTelegram: true,
+      status: lineStatus,
+      statusColor: phoneWidgetStatusColor(lineStatus),
+      statusLabel: connected
+        ? t('SIDEBAR.SIP_TELEPHONY.STATUS.READY')
+        : t('SIDEBAR.SIP_TELEPHONY.STATUS.DISCONNECTED'),
+      canReconnect: false,
+    };
+  });
+  return [...sipLines, ...whatsappLines, ...telegramLines];
 });
 const linesStatusById = computed(() =>
   Object.fromEntries(
@@ -385,11 +464,22 @@ const activePhoneLine = computed(
 );
 
 const status = computed(() => {
+  if (selectedInbox.value?.channel_type === INBOX_TYPES.TELEGRAM_PERSONAL) {
+    return selectedInbox.value.connection_state === 'connected'
+      ? 'ready'
+      : 'disconnected';
+  }
   if (
     !availableVoiceInboxes.value.length &&
     (hasWhatsappCallingInbox.value || hasWhatsappCall.value)
   ) {
     return 'ready';
+  }
+  if (
+    !availableVoiceInboxes.value.length &&
+    telegramSoftphone.value.configured
+  ) {
+    return telegramLineStatus.value;
   }
   return sessionStatus(selectedSession.value);
 });
@@ -518,7 +608,8 @@ const reconnectAllLines = async () => {
   await Promise.all(targets.map(session => reconnect(session)));
 };
 const selectLine = inboxId => {
-  if (inboxId === null || inboxId === undefined) return;
+  if (inboxId === null || inboxId === undefined || inboxId === 'telegram')
+    return;
   selectedInboxId.value = inboxId;
   phoneWidgetStore.setSelectedInboxId(inboxId);
   isLinesListOpen.value = false;
@@ -545,6 +636,7 @@ const pasteNumber = event => {
   phone.value = number;
 };
 const dialOnEnter = () => {
+  if (isNativeLine.value) return;
   if (canDial.value && selectedInbox.value) callButton.value?.onClick();
 };
 
@@ -557,18 +649,16 @@ watch(
   { immediate: true }
 );
 watch(
-  [availableVoiceInboxes, whatsappVoiceInboxes],
+  [availableVoiceInboxes, whatsappVoiceInboxes, telegramVoiceInboxes],
   () => {
-    const candidates = availableVoiceInboxes.value.length
-      ? availableVoiceInboxes.value
-      : whatsappVoiceInboxes.value;
+    const candidates = allCallableInboxes.value;
     if (
       !allCallableInboxes.value.some(
         inbox => String(inbox.id) === String(selectedInboxId.value)
       )
     ) {
       const storedId = phoneWidgetStore.selectedInboxId;
-      const storedMatch = candidates.find(
+      const storedMatch = allCallableInboxes.value.find(
         inbox => String(inbox.id) === String(storedId)
       );
       selectedInboxId.value = storedMatch?.id || candidates[0]?.id || null;
@@ -590,7 +680,9 @@ const hasAnyPhoneLine = computed(
   () =>
     hasBrowserLine.value ||
     hasWhatsappCallingInbox.value ||
-    hasWhatsappCall.value
+    telegramVoiceInboxes.value.length > 0 ||
+    hasWhatsappCall.value ||
+    telegramSoftphone.value.configured
 );
 // The sidebar phone button shows the same line state as this header.
 watch(
@@ -630,7 +722,10 @@ const fetchChannelCapacity = async () => {
     return;
   }
   const inbox = selectedInbox.value;
-  if (inbox?.provider && inbox.provider !== 'wazo') {
+  if (
+    inbox?.channel_type !== INBOX_TYPES.VOICE ||
+    (inbox?.provider && inbox.provider !== 'wazo')
+  ) {
     channelCapacity.value = null;
     return;
   }
@@ -659,59 +754,85 @@ watch([selectedInboxId, hasCall], () => {
   fetchChannelCapacity();
 });
 
-const telegramSoftphone = ref({
-  configured: false,
-  connected: false,
-  on_line: false,
-  username: '',
-});
-const isTelegramSoftphoneBusy = ref(false);
 const fetchTelegramSoftphone = async () => {
-  if (!hasAnyPhoneLine.value) return;
+  if (!accountId.value) return;
+  telegramRequestId += 1;
+  const requestId = telegramRequestId;
+  telegramStatusLoading.value = true;
   try {
     const payload = await TelegramSoftphoneAPI.getStatus();
-    if (payload && typeof payload === 'object') {
-      telegramSoftphone.value = { ...telegramSoftphone.value, ...payload };
+    if (
+      requestId === telegramRequestId &&
+      payload &&
+      typeof payload === 'object'
+    ) {
+      telegramSoftphone.value = payload;
+      telegramLoadError.value = false;
     }
   } catch {
-    // Optional integration: leave hidden if unavailable.
+    if (requestId === telegramRequestId) telegramLoadError.value = true;
+  } finally {
+    if (requestId === telegramRequestId) telegramStatusLoading.value = false;
   }
 };
 const handleTelegramSoftphoneAction = async () => {
   if (isTelegramSoftphoneBusy.value) return;
   isTelegramSoftphoneBusy.value = true;
+  telegramActionId += 1;
+  const actionId = telegramActionId;
+  const actionAccountId = accountId.value;
+  const isCurrentAction = () =>
+    actionId === telegramActionId && actionAccountId === accountId.value;
   try {
     if (!telegramSoftphone.value.connected) {
       const payload = await TelegramSoftphoneAPI.issueLinkToken();
+      if (!isCurrentAction()) return;
       if (payload?.deep_link && typeof window !== 'undefined') {
         window.open(payload.deep_link, '_blank', 'noopener,noreferrer');
       }
     } else {
       const nextOnline = !telegramSoftphone.value.on_line;
       const payload = await TelegramSoftphoneAPI.setOnLine(nextOnline);
+      if (!isCurrentAction()) return;
       telegramSoftphone.value = { ...telegramSoftphone.value, ...payload };
       if (!nextOnline) {
         WebphoneClient.bootstrapIncomingSupport?.().catch?.(() => null);
       }
     }
   } catch {
-    useAlert(t('PROFILE_SETTINGS.FORM.TELEGRAM_SOFTPHONE.ERROR_GENERIC'));
+    if (isCurrentAction())
+      useAlert(t('PROFILE_SETTINGS.FORM.TELEGRAM_SOFTPHONE.ERROR_GENERIC'));
   } finally {
-    isTelegramSoftphoneBusy.value = false;
+    if (isCurrentAction()) isTelegramSoftphoneBusy.value = false;
   }
 };
-watch(hasAnyPhoneLine, available => {
-  if (available) fetchTelegramSoftphone();
+watch(accountId, () => {
+  telegramRequestId += 1;
+  telegramActionId += 1;
+  isTelegramSoftphoneBusy.value = false;
+  telegramSoftphone.value = {
+    configured: false,
+    connected: false,
+    on_line: false,
+    sip_lines: [],
+  };
+  telegramLoadError.value = false;
+  fetchTelegramSoftphone();
 });
+let telegramStatusTimer;
 
 onMounted(() => {
   WebphoneClient.addEventListener('call:sessions-changed', syncSessions);
   syncSessions();
   fetchChannelCapacity();
   fetchTelegramSoftphone();
+  telegramStatusTimer = window.setInterval(fetchTelegramSoftphone, 10_000);
 });
 onUnmounted(() => {
   WebphoneClient.removeEventListener('call:sessions-changed', syncSessions);
+  window.clearInterval(telegramStatusTimer);
+  telegramRequestId += 1;
+  telegramActionId += 1;
   clearHandoverTimer();
   phoneWidgetStore.publishSipState({ available: false });
 });
@@ -724,8 +845,10 @@ onUnmounted(() => {
       isVisible &&
       (availableVoiceInboxes.length > 0 ||
         hasWhatsappCallingInbox ||
+        telegramVoiceInboxes.length > 0 ||
         hasCall ||
-        hasOwnCall)
+        hasOwnCall ||
+        telegramSoftphone.configured)
     "
     ref="widgetRef"
     class="fixed z-40 max-w-[calc(100vw-2rem)]"
@@ -940,9 +1063,11 @@ onUnmounted(() => {
                 <i
                   class="shrink-0 text-xs"
                   :class="
-                    activePhoneLine.isWhatsapp
-                      ? 'i-ri-whatsapp-fill text-n-teal-9'
-                      : 'i-ri-phone-fill text-n-slate-11'
+                    activePhoneLine.isTelegram
+                      ? 'i-ri-telegram-fill text-n-blue-11'
+                      : activePhoneLine.isWhatsapp
+                        ? 'i-ri-whatsapp-fill text-n-teal-9'
+                        : 'i-ri-phone-fill text-n-slate-11'
                   "
                   aria-hidden="true"
                 />
@@ -986,12 +1111,12 @@ onUnmounted(() => {
                 :key="line.id"
                 role="button"
                 tabindex="0"
-                class="flex cursor-pointer items-center justify-between gap-1.5 rounded-md border px-2 py-1 text-left transition-colors"
-                :class="
+                class="flex items-center justify-between gap-1.5 rounded-md border px-2 py-1 text-left transition-colors cursor-pointer"
+                :class="[
                   String(selectedInboxId) === String(line.id)
                     ? 'border-n-teal-9 bg-n-teal-2'
-                    : 'border-n-weak bg-n-alpha-1 hover:bg-n-alpha-2'
-                "
+                    : 'border-n-weak bg-n-alpha-1 hover:bg-n-alpha-2',
+                ]"
                 :aria-pressed="String(selectedInboxId) === String(line.id)"
                 :data-line-id="String(line.id)"
                 :data-line-status="line.status"
@@ -1018,9 +1143,11 @@ onUnmounted(() => {
                   <i
                     class="shrink-0 text-xs"
                     :class="
-                      line.isWhatsapp
-                        ? 'i-ri-whatsapp-fill text-n-teal-9'
-                        : 'i-ri-phone-fill text-n-slate-11'
+                      line.isTelegram
+                        ? 'i-ri-telegram-fill text-n-blue-11'
+                        : line.isWhatsapp
+                          ? 'i-ri-whatsapp-fill text-n-teal-9'
+                          : 'i-ri-phone-fill text-n-slate-11'
                     "
                     aria-hidden="true"
                   />
@@ -1099,38 +1226,27 @@ onUnmounted(() => {
                 aria-hidden="true"
               />
               <span class="truncate font-medium text-n-slate-12">
-                {{
-                  telegramSoftphone.connected && telegramSoftphone.username
-                    ? `@${telegramSoftphone.username}`
-                    : t('PHONE_WIDGET.TELEGRAM_CALLS_LABEL')
-                }}
+                {{ t('PHONE_WIDGET.TELEGRAM_CALLS_LABEL') }}
               </span>
               <span
-                v-if="telegramSoftphone.connected"
                 class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
                 :class="
-                  telegramSoftphone.on_line
+                  telegramLineStatus === 'ready'
                     ? 'bg-n-teal-3 text-n-teal-11'
                     : 'bg-n-alpha-2 text-n-slate-11'
                 "
                 data-testid="phone-widget-telegram-status"
               >
-                {{
-                  telegramSoftphone.on_line
-                    ? t('PHONE_WIDGET.TELEGRAM_ONLINE')
-                    : t('PHONE_WIDGET.TELEGRAM_OFFLINE')
-                }}
+                {{ telegramLineStatusLabel }}
               </span>
             </div>
-            <button
+            <Button
               type="button"
-              class="shrink-0 rounded px-2 py-0.5 text-[11px] font-medium transition-colors"
-              :class="
-                telegramSoftphone.connected && telegramSoftphone.on_line
-                  ? 'bg-n-ruby-3 text-n-ruby-11 hover:bg-n-ruby-4'
-                  : 'bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-3'
-              "
-              :disabled="isTelegramSoftphoneBusy"
+              size="sm"
+              variant="ghost"
+              color="slate"
+              :disabled="isTelegramSoftphoneBusy || telegramStatusLoading"
+              :is-loading="isTelegramSoftphoneBusy"
               data-testid="phone-widget-telegram-action"
               @click="handleTelegramSoftphoneAction"
             >
@@ -1143,7 +1259,7 @@ onUnmounted(() => {
                       )
                     : t('PHONE_WIDGET.TELEGRAM_GO_ONLINE')
               }}
-            </button>
+            </Button>
           </div>
           <div
             v-if="channelCapacityLabel"
@@ -1157,8 +1273,45 @@ onUnmounted(() => {
           >
             <span class="truncate">{{ channelCapacityLabel }}</span>
           </div>
+          <div v-if="isNativeLine" class="mb-2">
+            <ComboBox
+              v-model="targetId"
+              :options="targetOptions"
+              :local-loading="targetLoading"
+              :disabled="hasCall || isInitiatingNativeCall"
+              :placeholder="t('PHONE_WIDGET.NATIVE_CONTACT')"
+              :search-placeholder="t('PHONE_WIDGET.NATIVE_CONTACT')"
+              :aria-label="t('PHONE_WIDGET.NATIVE_CONTACT')"
+              :empty-state="t('PHONE_WIDGET.NATIVE_NO_PEER')"
+              use-api-results
+              data-testid="phone-widget-native-target"
+              @search="searchTargets"
+            />
+            <p
+              class="mt-2 text-xs text-n-slate-11"
+              role="status"
+              data-testid="phone-widget-native-reason"
+            >
+              {{ targetReason }}
+            </p>
+          </div>
           <div class="flex items-center gap-2">
+            <Button
+              v-if="isNativeLine"
+              type="button"
+              variant="solid"
+              color="teal"
+              size="md"
+              icon="i-ph-phone-bold"
+              :label="t('PHONE_WIDGET.CALL')"
+              :disabled="Boolean(targetReason) || isInitiatingNativeCall"
+              :is-loading="isInitiatingNativeCall"
+              :title="targetReason || t('PHONE_WIDGET.CALL')"
+              data-testid="phone-widget-native-call"
+              @click="initiateNativeCall"
+            />
             <Input
+              v-if="!isNativeLine"
               id="phone-widget-number"
               v-model="phone"
               type="tel"
@@ -1171,7 +1324,7 @@ onUnmounted(() => {
               @enter="dialOnEnter"
             />
             <VoiceCallButton
-              v-if="canDial && selectedInbox"
+              v-if="!isNativeLine && canDial && selectedInbox"
               ref="callButton"
               :phone="dialNumber"
               :inbox-id="selectedInbox.id"
@@ -1185,7 +1338,7 @@ onUnmounted(() => {
               @call-initiated="isExpanded = false"
             />
             <Button
-              v-else
+              v-else-if="!isNativeLine"
               type="button"
               disabled
               variant="solid"

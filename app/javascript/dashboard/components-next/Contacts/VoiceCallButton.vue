@@ -117,6 +117,11 @@ const candidateVoiceInboxes = computed(() => {
     if (preferredId === null || preferredId === undefined) {
       return voiceInboxes.value;
     }
+    const preferredInbox = (inboxesList.value || []).find(
+      item => String(item.id) === String(preferredId)
+    );
+    if (preferredInbox && preferredInbox.channel_type !== INBOX_TYPES.VOICE)
+      return [];
     return [...voiceInboxes.value].sort((a, b) => {
       const aPreferred = String(a.id) === String(preferredId) ? 0 : 1;
       const bPreferred = String(b.id) === String(preferredId) ? 0 : 1;
@@ -128,12 +133,7 @@ const candidateVoiceInboxes = computed(() => {
     inbox => String(inbox.id) === String(props.inboxId)
   );
 
-  return [
-    selectedInbox || {
-      id: props.inboxId,
-      channel_type: INBOX_TYPES.VOICE,
-    },
-  ];
+  return selectedInbox ? [selectedInbox] : [];
 });
 const hasVoiceInboxes = computed(() => candidateVoiceInboxes.value.length > 0);
 
@@ -450,7 +450,7 @@ const isPreferredInbox = inbox =>
   String(inbox?.id) === String(phoneWidgetStore.selectedInboxId);
 
 const onClick = async () => {
-  if (isCallButtonBusy.value) return;
+  if (isCallButtonBusy.value || !hasVoiceInboxes.value) return;
 
   if (candidateVoiceInboxes.value.length > 1) {
     dialogRef.value?.open();

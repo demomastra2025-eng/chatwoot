@@ -1,4 +1,4 @@
-import { computed, ref, unref } from 'vue';
+import { computed, ref, unref, watch } from 'vue';
 import { useStore } from 'vuex';
 import { useI18n } from 'vue-i18n';
 
@@ -65,7 +65,7 @@ export const useWhatsappCallInitiation = (options = {}) => {
   const whatsappCallsStore = useWhatsappCallsStore();
   const isInitiatingCall = ref(false);
 
-  const currentChat = computed(() => store.getters.getSelectedChat || {});
+  const currentChat = computed(() => store?.getters?.getSelectedChat || {});
   const selectedConversationId = computed(
     () => unref(options.conversationId) || currentChat.value?.id
   );
@@ -85,6 +85,28 @@ export const useWhatsappCallInitiation = (options = {}) => {
     const senderId = currentChat.value?.meta?.sender?.id;
     return senderId ? store.getters['contacts/getContact'](senderId) : {};
   });
+  let targetGeneration = 0;
+  watch(
+    [
+      () => store?.getters?.getCurrentAccountId,
+      selectedInboxId,
+      selectedConversationId,
+    ],
+    () => {
+      targetGeneration += 1;
+    },
+    { flush: 'sync' }
+  );
+  const capturePreparation = () => ({
+    callGeneration: whatsappCallsStore.activeCallGeneration,
+    targetGeneration,
+    accountId: store?.getters?.getCurrentAccountId,
+  });
+  const samePreparationAccount = scope =>
+    scope.accountId === store?.getters?.getCurrentAccountId;
+  const samePreparationTarget = scope =>
+    samePreparationAccount(scope) &&
+    scope.targetGeneration === targetGeneration;
   const isAWhatsAppCloudChannel = computed(() => {
     return (
       (inbox.value?.channel_type === INBOX_TYPES.WHATSAPP &&
@@ -102,6 +124,7 @@ export const useWhatsappCallInitiation = (options = {}) => {
   const targetConversation = computed(() => {
     const convId = selectedConversationId.value;
     return (
+      unref(options.conversation) ||
       (convId && store.getters.getConversationById?.(convId)) ||
       currentChat.value ||
       {}
@@ -217,7 +240,8 @@ export const useWhatsappCallInitiation = (options = {}) => {
   };
 
   const ownsOutboundPreparation = generation =>
-    whatsappCallsStore.activeCallGeneration === generation &&
+    whatsappCallsStore.activeCallGeneration === generation.callGeneration &&
+    samePreparationTarget(generation) &&
     !whatsappCallsStore.hasWhatsappCall;
 
   const setOutboundActiveCall = (response, initialGeneration) => {
@@ -290,7 +314,7 @@ export const useWhatsappCallInitiation = (options = {}) => {
     let preparedCallId = null;
     let dialStarted = false;
     let callScope = null;
-    const initialGeneration = whatsappCallsStore.activeCallGeneration;
+    const initialGeneration = capturePreparation();
 
     try {
       showCallingAlert();
@@ -300,7 +324,8 @@ export const useWhatsappCallInitiation = (options = {}) => {
 
       const activeCallData = setOutboundActiveCall(response, initialGeneration);
       if (!activeCallData) {
-        if (preparedCallId) api.terminate(preparedCallId).catch(() => {});
+        if (preparedCallId && samePreparationAccount(initialGeneration))
+          api.terminate(preparedCallId).catch(() => {});
         return;
       }
       callScope = whatsappCallsStore.captureActiveCallScope();
@@ -315,13 +340,32 @@ export const useWhatsappCallInitiation = (options = {}) => {
         agentOffer,
         provider
       );
+      if (!samePreparationTarget(initialGeneration)) {
+        if (whatsappCallsStore.matchesActiveCallScope(callScope)) {
+          // Use the session's existing cleanup callback; never touch a newer
+          // call generation or send an old call id to the new account URL.
+          whatsappCallsStore.handleCallEnded(
+            activeCallData.callId,
+            preparedCallId
+          );
+          if (samePreparationAccount(initialGeneration)) {
+            api.terminate(preparedCallId).catch(() => {});
+          }
+        }
+        return;
+      }
       if (!operatorLegReady) {
         throw new Error(t('WHATSAPP_CALL.CALL_FAILED'));
       }
 
-      if (!whatsappCallsStore.matchesActiveCallScope(callScope)) return;
+      if (
+        !samePreparationTarget(initialGeneration) ||
+        !whatsappCallsStore.matchesActiveCallScope(callScope)
+      )
+        return;
       dialStarted = true;
       const dialResponse = await api.dial(response.data?.id);
+      if (!samePreparationTarget(initialGeneration)) return;
       const currentActive = whatsappCallsStore.activeCall;
       if (!whatsappCallsStore.matchesActiveCallScope(callScope)) return;
       if (handleInitiatePermissionStatus(dialResponse)) {
@@ -349,6 +393,7 @@ export const useWhatsappCallInitiation = (options = {}) => {
         emitter.emit('whatsapp_call:agent_webrtc_connected');
       }
     } catch (err) {
+      if (!samePreparationAccount(initialGeneration)) return;
       if (preparedCallId && !dialStarted) {
         api.terminate(preparedCallId).catch(() => {});
       }
@@ -368,7 +413,7 @@ export const useWhatsappCallInitiation = (options = {}) => {
     isInitiatingCall.value = true;
     let pc = null;
     let localStream = null;
-    const initialGeneration = whatsappCallsStore.activeCallGeneration;
+    const initialGeneration = capturePreparation();
     try {
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (!ownsOutboundPreparation(initialGeneration)) {
@@ -415,7 +460,7 @@ export const useWhatsappCallInitiation = (options = {}) => {
       if (!setOutboundActiveCall(response, initialGeneration)) {
         pc.close();
         localStream.getTracks().forEach(track => track.stop());
-        if (response.data?.id)
+        if (response.data?.id && samePreparationAccount(initialGeneration))
           WhatsappCallsAPI.terminate(response.data.id).catch(() => {});
         return;
       }

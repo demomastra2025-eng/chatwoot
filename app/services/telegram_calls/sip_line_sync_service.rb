@@ -49,10 +49,7 @@ class TelegramCalls::SipLineSyncService
   end
 
   def fetch_webphone_tokens
-    webphone_service.token_for(
-      user: @user, client_instance_id: "telegram_softphone:#{@binding.id}",
-      browser_instance_id: "telegram_softphone:#{@user.id}", lease_mode: 'takeover'
-    )
+    webphone_service.token_for_telegram_operator(binding: @binding)
   rescue Telephony::Error => e
     Rails.logger.info("TELEGRAM_CALLS_SIP_SYNC_SKIPPED binding=#{@binding.id} code=#{e.code}")
     nil

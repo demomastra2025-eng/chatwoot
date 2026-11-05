@@ -32,11 +32,20 @@
     "ADD_PLUS": "Плюс қосу",
     "INVALID_NUMBER": "Дұрыс телефон нөмірін енгізіңіз (халықаралық нөмір үшін + қолданыңыз)",
     "CONTACT_LOOKUP_INCOMPLETE": "Барлық контактіні тексеру мүмкін болмады. Қайталап көріңіз.",
-    "TELEGRAM_CALLS_LABEL": "Telegram желісі",
+    "TELEGRAM_CALLS_LABEL": "Telegram · қоңырау қабылдау",
     "TELEGRAM_CONNECT": "Қосу",
     "TELEGRAM_GO_ONLINE": "Желіге шығу",
     "TELEGRAM_ONLINE": "Желіде",
-    "TELEGRAM_OFFLINE": "Желіде емес"
+    "TELEGRAM_OFFLINE": "Желіде емес",
+    "TELEGRAM_NOT_CONNECTED": "Қосылмаған",
+    "TELEGRAM_REGISTERING": "Қосылуда",
+    "TELEGRAM_ERROR": "Telegram-мен байланыс жоқ",
+    "NATIVE_CONTACT": "Telegram / WhatsApp контактісі",
+    "NATIVE_NO_PEER": "Осы желідегі бар жеке диалогты таңдаңыз. Telegram арқылы жаңа нөмірге қоңырау шалу мүмкін емес.",
+    "NATIVE_OFFLINE": "Telegram желісі ажыратылған.",
+    "NATIVE_BUSY": "Қоңырау жүріп жатыр.",
+    "NATIVE_LOADING": "Диалогтар ізделуде…",
+    "NATIVE_LOOKUP_FAILED": "Диалогтарды табу мүмкін болмады. Қайта іздеңіз."
   },
   "PROFILE_SETTINGS": {
     "LINK": "Profile Settings",

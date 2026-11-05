@@ -143,6 +143,27 @@ const mountComponent = ({
 };
 
 describe('VoiceCallButton', () => {
+  it('never sends a Telegram inbox to the SIP endpoint or falls back to SIP', async () => {
+    const telegramInbox = {
+      id: 225,
+      channel_type: 'Channel::TelegramPersonal',
+      calling_enabled: true,
+    };
+    const { wrapper, dispatchMock } = mountComponent({
+      inboxes: [voiceInbox(), telegramInbox],
+      props: { inboxId: 225 },
+    });
+    await wrapper.vm.onClick();
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(startOutboundBrowserCallMock).not.toHaveBeenCalled();
+    expect(wrapper.find('button').exists()).toBe(false);
+    wrapper.unmount();
+    usePhoneWidgetStore().setSelectedInboxId(225);
+    const next = mountComponent({ inboxes: [voiceInbox(), telegramInbox] });
+    await next.wrapper.vm.onClick();
+    expect(next.dispatchMock).not.toHaveBeenCalled();
+    expect(next.wrapper.find('button').exists()).toBe(false);
+  });
   beforeEach(() => {
     window.localStorage?.clear?.();
     setActivePinia(createPinia());
@@ -697,19 +718,14 @@ describe('VoiceCallButton', () => {
     });
   });
 
-  it('uses explicit inboxId even when the voice inbox list is not hydrated', async () => {
+  it('waits for the inbox type before using an explicit unhydrated inboxId', async () => {
     const { dispatchMock, wrapper } = mountComponent({
       inboxes: [],
       props: { inboxId: 4593 },
     });
-
-    await wrapper.find('button').trigger('click');
-    await flushPromises();
-
-    expect(dispatchMock).toHaveBeenCalledWith('contacts/initiateCall', {
-      contactId: 2179,
-      inboxId: 4593,
-    });
+    expect(wrapper.find('button').exists()).toBe(false);
+    await wrapper.vm.onClick();
+    expect(dispatchMock).not.toHaveBeenCalled();
   });
 
   it('does not navigate when the initiated call belongs to the currently open conversation', async () => {

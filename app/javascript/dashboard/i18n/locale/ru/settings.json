@@ -32,11 +32,20 @@
     "ADD_PLUS": "Добавить плюс",
     "INVALID_NUMBER": "Введите корректный номер; для других стран начните с +",
     "CONTACT_LOOKUP_INCOMPLETE": "Не удалось проверить все контакты. Повторите попытку.",
-    "TELEGRAM_CALLS_LABEL": "Telegram-линия",
+    "TELEGRAM_CALLS_LABEL": "Telegram · приём звонков",
     "TELEGRAM_CONNECT": "Подключить",
     "TELEGRAM_GO_ONLINE": "На линию",
     "TELEGRAM_ONLINE": "На линии",
-    "TELEGRAM_OFFLINE": "Не на линии"
+    "TELEGRAM_OFFLINE": "Не на линии",
+    "TELEGRAM_NOT_CONNECTED": "Не подключено",
+    "TELEGRAM_REGISTERING": "Подключается",
+    "TELEGRAM_ERROR": "Нет связи с Telegram",
+    "NATIVE_CONTACT": "Контакт Telegram / WhatsApp",
+    "NATIVE_NO_PEER": "Выберите существующий личный диалог в этой линии. Новый номер нельзя вызвать через Telegram.",
+    "NATIVE_OFFLINE": "Линия Telegram отключена.",
+    "NATIVE_BUSY": "Уже идёт звонок.",
+    "NATIVE_LOADING": "Поиск диалогов…",
+    "NATIVE_LOOKUP_FAILED": "Не удалось найти диалоги. Повторите поиск."
   },
   "PROFILE_SETTINGS": {
     "LINK": "Настройки профиля",

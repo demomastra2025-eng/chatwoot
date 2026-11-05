@@ -45,6 +45,14 @@ describe('#ContactsAPI', () => {
       );
     });
 
+    it('filters conversations by the selected inbox before server pagination', () => {
+      contactAPI.getConversations(1, 225);
+      expect(axiosMock.get).toHaveBeenCalledWith(
+        '/api/v1/contacts/1/conversations',
+        { params: { inbox_id: 225 } }
+      );
+    });
+
     it('#getAttachments', () => {
       contactAPI.getAttachments(1, 2);
       expect(axiosMock.get).toHaveBeenCalledWith(

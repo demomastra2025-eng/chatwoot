@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import PhoneWidget from './PhoneWidget.vue';
+import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
 
 const {
   webphoneClient,
@@ -19,7 +20,7 @@ const {
       issueLinkToken: vi.fn(),
       setOnLine: vi.fn(),
     },
-    values: {
+    values: reactive({
       'inboxes/getInboxes': [
         {
           id: 43,
@@ -30,7 +31,7 @@ const {
       ],
       getCurrentAccountId: 1,
       getCurrentUser: { name: 'Асет' },
-    },
+    }),
     callsState: reactive({
       activeCall: null,
       hasActiveCall: false,
@@ -70,6 +71,16 @@ const {
   };
 });
 
+vi.mock('dashboard/composables/useWhatsappCallInitiation', async () => {
+  const { ref } = await import('vue');
+  return {
+    useWhatsappCallInitiation: () => ({
+      canInitiateWhatsappCall: ref(true),
+      isInitiatingWhatsappCall: ref(false),
+      initiateWhatsappCall: vi.fn(),
+    }),
+  };
+});
 vi.mock('dashboard/api/telephony/telegramSoftphone', () => ({
   default: telegramApiMock,
 }));
@@ -125,6 +136,7 @@ describe('PhoneWidget Telegram softphone bar', () => {
         connected: true,
         on_line: true,
         username: 'zhanar_od',
+        sip_lines: [{ inbox_id: 43, registered: true }],
       })
       .mockResolvedValueOnce({
         configured: true,
@@ -147,7 +159,7 @@ describe('PhoneWidget Telegram softphone bar', () => {
 
     const bar = wrapper.find('[data-testid="phone-widget-telegram-softphone"]');
     expect(bar.exists()).toBe(true);
-    expect(bar.text()).toContain('@zhanar_od');
+    expect(bar.text()).toContain('PHONE_WIDGET.TELEGRAM_CALLS_LABEL');
 
     const statusBadge = wrapper.find(
       '[data-testid="phone-widget-telegram-status"]'
@@ -157,6 +169,7 @@ describe('PhoneWidget Telegram softphone bar', () => {
     const btn = wrapper.find('[data-testid="phone-widget-telegram-action"]');
     expect(btn.text()).toContain('PHONE_WIDGET.TELEGRAM_GO_ONLINE');
 
+    webphoneClient.bootstrapIncomingSupport.mockClear();
     await btn.trigger('click');
     await flushPromises();
     expect(telegramApiMock.setOnLine).toHaveBeenNthCalledWith(1, true);
@@ -164,6 +177,7 @@ describe('PhoneWidget Telegram softphone bar', () => {
     expect(btn.text()).toContain(
       'PROFILE_SETTINGS.FORM.TELEGRAM_SOFTPHONE.GO_OFFLINE_BTN'
     );
+    expect(webphoneClient.bootstrapIncomingSupport).not.toHaveBeenCalled();
 
     webphoneClient.bootstrapIncomingSupport.mockClear();
     await btn.trigger('click');
@@ -172,4 +186,154 @@ describe('PhoneWidget Telegram softphone bar', () => {
     expect(statusBadge.text()).toContain('PHONE_WIDGET.TELEGRAM_OFFLINE');
     expect(webphoneClient.bootstrapIncomingSupport).toHaveBeenCalledTimes(1);
   });
+
+  it('shows Telegram in the line list and reports SIP registration errors instead of online', async () => {
+    telegramApiMock.getStatus.mockResolvedValue({
+      configured: true,
+      connected: true,
+      on_line: true,
+      username: 'operator',
+      sip_lines: [{ inbox_id: 43, registered: false, error: 'unauthorized' }],
+    });
+    const wrapper = mount(PhoneWidget, {
+      global: {
+        directives: { 'on-clickaway': {} },
+        stubs: {
+          VoiceCallButton: { template: '<button />' },
+          FloatingCallWidget: { template: '<div />' },
+          WhatsappCallWidget: { template: '<div />' },
+        },
+      },
+    });
+    await flushPromises();
+    await wrapper
+      .find('[data-testid="phone-widget-lines-toggle"]')
+      .trigger('click');
+    const telegramLine = wrapper.find('[data-line-id="telegram"]');
+    expect(telegramLine.exists()).toBe(false);
+    expect(
+      wrapper.find('[data-testid="phone-widget-telegram-status"]').text()
+    ).toContain('PHONE_WIDGET.TELEGRAM_ERROR');
+  });
+
+  it('keeps an online request in registration state until a SIP line registers', async () => {
+    telegramApiMock.getStatus.mockResolvedValue({
+      configured: true,
+      connected: true,
+      on_line: true,
+      sip_lines: [{ inbox_id: 43, registered: false }],
+    });
+    const wrapper = mount(PhoneWidget, {
+      global: {
+        directives: { 'on-clickaway': {} },
+        stubs: {
+          VoiceCallButton: { template: '<button />' },
+          FloatingCallWidget: { template: '<div />' },
+          WhatsappCallWidget: { template: '<div />' },
+        },
+      },
+    });
+    await flushPromises();
+    expect(
+      wrapper.find('[data-testid="phone-widget-telegram-status"]').text()
+    ).toContain('PHONE_WIDGET.TELEGRAM_REGISTERING');
+  });
+  it('shows and persists a Telegram-only native line without offering a SIP call', async () => {
+    values['inboxes/getInboxes'] = [
+      {
+        id: 225,
+        name: 'Telegram native',
+        channel_type: 'Channel::TelegramPersonal',
+        calling_enabled: true,
+        connection_state: 'connected',
+      },
+    ];
+    telegramApiMock.getStatus.mockResolvedValue({ configured: false });
+    const wrapper = mount(PhoneWidget, {
+      global: {
+        stubs: {
+          FloatingCallWidget: true,
+          WhatsappCallWidget: true,
+          VoiceCallButton: true,
+          ComboBox: true,
+        },
+      },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="phone-widget"]').exists()).toBe(true);
+    expect(wrapper.find('[data-line-id="225"]').exists()).toBe(true);
+    expect(wrapper.findComponent({ name: 'VoiceCallButton' }).exists()).toBe(
+      false
+    );
+    expect(
+      wrapper
+        .find('[data-testid="phone-widget-native-call"]')
+        .attributes('disabled')
+    ).toBeDefined();
+    expect(String(usePhoneWidgetStore().selectedInboxId)).toBe('225');
+    values.getCurrentAccountId = 2;
+    values['inboxes/getInboxes'] = [
+      {
+        id: 226,
+        name: 'Other Telegram',
+        channel_type: 'Channel::TelegramPersonal',
+        calling_enabled: true,
+        connection_state: 'connected',
+      },
+    ];
+    await flushPromises();
+    expect(String(usePhoneWidgetStore().selectedInboxId)).toBe('226');
+    expect(wrapper.find('[data-line-id="225"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+  it.each([false, true])(
+    'fences delayed bot actions after account switch (connected=%s)',
+    async connected => {
+      values.getCurrentAccountId = 1;
+      let resolveAction;
+      const pendingAction = new Promise(resolve => {
+        resolveAction = resolve;
+      });
+      telegramApiMock.getStatus.mockResolvedValue({
+        configured: true,
+        connected,
+        on_line: false,
+      });
+      const apiAction = connected
+        ? telegramApiMock.setOnLine
+        : telegramApiMock.issueLinkToken;
+      apiAction.mockReturnValueOnce(pendingAction);
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+      const wrapper = mount(PhoneWidget, {
+        global: {
+          stubs: {
+            FloatingCallWidget: true,
+            WhatsappCallWidget: true,
+            VoiceCallButton: true,
+            ComboBox: true,
+          },
+        },
+      });
+      await flushPromises();
+      await wrapper
+        .find('[data-testid="phone-widget-telegram-action"]')
+        .trigger('click');
+      telegramApiMock.getStatus.mockResolvedValue({ configured: false });
+      values.getCurrentAccountId = 2;
+      await flushPromises();
+      resolveAction({
+        configured: true,
+        connected: true,
+        on_line: true,
+        deep_link: 'https://example.test/stale-link',
+      });
+      await flushPromises();
+      expect(
+        wrapper.find('[data-testid="phone-widget-telegram-softphone"]').exists()
+      ).toBe(false);
+      expect(openSpy).not.toHaveBeenCalled();
+      wrapper.unmount();
+      openSpy.mockRestore();
+    }
+  );
 });

@@ -21,7 +21,8 @@ let inboundStream = null;
 let inboundAudio = null;
 let inboundNegotiationToken = 0;
 let telegramMediaConnection = null;
-let cancelTelegramIceGathering = null;
+let telegramMediaAccountScope = null;
+let cancelTelegramMediaWait = null;
 
 // Inbound accept can prewarm microphone while Rails/Meta accepts the call.
 // Keep this separate from the active PeerConnection stream so a warmed inbound
@@ -76,6 +77,34 @@ function isInboundNegotiationActive(token, callScope = null) {
   );
 }
 
+function assertTelegramApiScope(scope) {
+  if (
+    !scope ||
+    !/\/accounts\/[1-9]\d*\/telegram_personal_calls$/.test(scope.url) ||
+    scope.api.url !== scope.url
+  ) {
+    throw inboundNegotiationCancelledError();
+  }
+}
+
+function telegramApiScopeFor(callScope) {
+  const store = useWhatsappCallsStore();
+  if (
+    telegramMediaAccountScope?.store === store &&
+    store.matchesActiveCallScope(telegramMediaAccountScope.callScope)
+  ) {
+    assertTelegramApiScope(telegramMediaAccountScope.apiScope);
+    return telegramMediaAccountScope.apiScope;
+  }
+  const api = callsApiFor('telegram_personal');
+  const apiScope = { api, url: api.url };
+  assertTelegramApiScope(apiScope);
+  // Retain the account fence through cleanup/failure for a manual reconnect of
+  // this same call. A fresh call generation captures its own native API URL.
+  telegramMediaAccountScope = { store, callScope, apiScope };
+  return apiScope;
+}
+
 function assertInboundNegotiationActive(token, { callScope = null } = {}) {
   if (!isInboundNegotiationActive(token, callScope)) {
     throw inboundNegotiationCancelledError();
@@ -111,7 +140,7 @@ function cleanupCancelledInboundNegotiation(resources) {
 function cleanupInboundWebRTC({ keepPrewarmStream = false } = {}) {
   inboundNegotiationToken += 1;
   telegramMediaConnection = null;
-  cancelTelegramIceGathering?.();
+  cancelTelegramMediaWait?.();
   if (inboundPc) {
     inboundPc.close();
     inboundPc = null;
@@ -360,7 +389,7 @@ function stopAndUploadRecording(callId) {
 
 function waitForIceGathering(
   pc,
-  { timeoutMs, firstCandidate = false, requireComplete = false, warning }
+  { timeoutMs, firstCandidate = false, telegram = false, warning }
 ) {
   return new Promise((resolve, reject) => {
     if (pc.iceGatheringState === 'complete') {
@@ -369,29 +398,28 @@ function waitForIceGathering(
     }
 
     let timeout = null;
+    let cancel;
 
     const cleanup = () => {
       clearTimeout(timeout);
       pc.onicegatheringstatechange = null;
       pc.onicecandidate = null;
       pc.oniceconnectionstatechange = null;
-      if (requireComplete) cancelTelegramIceGathering = null;
+      if (cancelTelegramMediaWait === cancel) cancelTelegramMediaWait = null;
     };
 
-    if (requireComplete) {
-      cancelTelegramIceGathering = () => {
-        cleanup();
-        reject(inboundNegotiationCancelledError());
-      };
-    }
+    cancel = () => {
+      cleanup();
+      reject(inboundNegotiationCancelledError());
+    };
+    if (telegram) cancelTelegramMediaWait = cancel;
 
     timeout = setTimeout(() => {
       cleanup();
-      if (requireComplete) {
-        const error = new Error('Telegram ICE gathering did not complete');
-        error.retryable = false;
-        error.stage = 'ice_gathering';
-        reject(error);
+      // A single snapshot can already contain a usable candidate set even
+      // while another STUN request is outstanding. Validate it before POST.
+      if (telegram) {
+        resolve();
         return;
       }
       // eslint-disable-next-line no-console
@@ -415,11 +443,128 @@ function waitForIceGathering(
       if (pc.iceConnectionState === 'failed') {
         cleanup();
         const error = new Error('ICE connection failed');
-        error.retryable = true;
+        error.retryable = !telegram;
         error.stage = 'ice_connection';
         reject(error);
       }
     };
+  });
+}
+
+function telegramMediaError(message, stage) {
+  const error = new Error(message);
+  error.retryable = false;
+  error.stage = stage;
+  return error;
+}
+
+function usableIceAddress(address) {
+  if (/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.local$/i.test(address)) return true;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(address)) {
+    return address.split('.').every(part => Number(part) <= 255);
+  }
+  if (!address.includes(':')) return false;
+  try {
+    return new URL(`http://[${address}]`).hostname.startsWith('[');
+  } catch {
+    return false;
+  }
+}
+
+function usableIceCandidate(line) {
+  const fields = line.slice('a=candidate:'.length).trim().split(/\s+/);
+  const [foundation, component, transport, priority, address, port, typ, type] =
+    fields;
+  return (
+    /^[a-z0-9+/]{1,32}$/i.test(foundation || '') &&
+    component === '1' &&
+    /^udp$/i.test(transport || '') &&
+    /^\d+$/.test(priority || '') &&
+    Number(priority) > 0 &&
+    Number(priority) <= 0xffffffff &&
+    usableIceAddress(address || '') &&
+    /^\d+$/.test(port || '') &&
+    Number(port) > 0 &&
+    Number(port) <= 65535 &&
+    typ === 'typ' &&
+    /^(host|srflx|prflx|relay)$/.test(type || '')
+  );
+}
+
+// Validate the browser's native answer, not merely a nonempty SDP string.
+// No candidate is a guarantee of NAT reachability: connected is checked later.
+function hasUsableTelegramAnswer(description) {
+  if (
+    description?.type !== 'answer' ||
+    !/^v=0\r?\n/.test(description.sdp || '')
+  )
+    return false;
+  const sections = description.sdp.split(/\r?\nm=/);
+  const session = sections.shift();
+  return sections.some(section => {
+    const media = section.match(
+      /^audio ([1-9]\d*) (?:UDP\/TLS\/RTP\/SAVPF|RTP\/SAVPF) /i
+    );
+    if (!media || Number(media[1]) > 65535) return false;
+    const attributes = `${session}\n${section}`;
+    return (
+      /^a=ice-ufrag:[a-z0-9+/]{4,256}\r?$/im.test(attributes) &&
+      /^a=ice-pwd:[a-z0-9+/]{22,256}\r?$/im.test(attributes) &&
+      /^a=fingerprint:sha-256 (?:[a-f0-9]{2}:){31}[a-f0-9]{2}\r?$/im.test(
+        attributes
+      ) &&
+      /^a=setup:(?:active|passive)\r?$/m.test(attributes) &&
+      section
+        .split(/\r?\n/)
+        .some(
+          line => line.startsWith('a=candidate:') && usableIceCandidate(line)
+        )
+    );
+  });
+}
+
+function waitForTelegramConnection(pc) {
+  return new Promise((resolve, reject) => {
+    let timeout;
+    let cancel;
+    let check;
+    const cleanup = () => {
+      clearTimeout(timeout);
+      if (pc.onconnectionstatechange === check)
+        pc.onconnectionstatechange = null;
+      if (cancelTelegramMediaWait === cancel) cancelTelegramMediaWait = null;
+    };
+    cancel = () => {
+      cleanup();
+      reject(inboundNegotiationCancelledError());
+    };
+    check = () => {
+      if (pc.connectionState === 'connected') {
+        cleanup();
+        resolve();
+      } else if (['failed', 'closed'].includes(pc.connectionState)) {
+        cleanup();
+        reject(
+          telegramMediaError(
+            'Telegram media connection failed',
+            'peer_connection'
+          )
+        );
+      }
+    };
+    cancelTelegramMediaWait = cancel;
+    pc.onconnectionstatechange = check;
+    timeout = setTimeout(() => {
+      cleanup();
+      reject(
+        telegramMediaError(
+          'Telegram media connection timed out',
+          'peer_connection'
+        )
+      );
+    }, 10000);
+    // The connection may already be established before the POST resolves.
+    check();
   });
 }
 
@@ -473,6 +618,7 @@ async function negotiateAgentOfferOnce(
     negotiationToken,
     callScope,
     resources,
+    apiScope,
   }
 ) {
   timing.mark('get_user_media_start');
@@ -562,11 +708,27 @@ async function negotiateAgentOfferOnce(
   );
   timing.mark('set_local_description_ok');
   assertInboundNegotiationActive(negotiationToken, { stream, pc, callScope });
-  // Gateway583 has no trickle-ICE endpoint. Bundle every candidate into the
-  // one native SDP answer; never send a partial answer after a timeout.
+  // Gateway583 has no trickle endpoint: send exactly one validated native SDP
+  // snapshot after bounded gathering, then require actual ICE/DTLS connection.
   if (isTelegramPersonalProvider(provider)) {
-    await waitForIceGathering(pc, { timeoutMs: 10000, requireComplete: true });
-    timing.mark('ice_gathering_complete');
+    await waitForIceGathering(pc, { timeoutMs: 10000, telegram: true });
+    if (['failed', 'closed'].includes(pc.connectionState)) {
+      throw telegramMediaError(
+        'Telegram media connection failed',
+        'peer_connection'
+      );
+    }
+    if (!hasUsableTelegramAnswer(pc.localDescription)) {
+      throw telegramMediaError(
+        'Telegram answer has no usable ICE candidates',
+        'ice_candidates'
+      );
+    }
+    timing.mark(
+      pc.iceGatheringState === 'complete'
+        ? 'ice_gathering_complete'
+        : 'ice_gathering_deadline'
+    );
   } else {
     await waitForFastAgentAnswerSdp(pc);
     timing.mark('fast_ice_ready');
@@ -586,7 +748,9 @@ async function negotiateAgentOfferOnce(
     };
     const resolvedProvider =
       provider || useWhatsappCallsStore().activeCall?.provider;
-    const api = callsApiFor(resolvedProvider);
+    const telegram = isTelegramPersonalProvider(resolvedProvider);
+    if (telegram) assertTelegramApiScope(apiScope);
+    const api = telegram ? apiScope.api : callsApiFor(resolvedProvider);
     try {
       if (peerId) {
         await api.agentAnswer(callId, completeSdp, clientTiming, peerId);
@@ -594,17 +758,30 @@ async function negotiateAgentOfferOnce(
         await api.agentAnswer(callId, completeSdp, clientTiming);
       }
       assertInboundNegotiationActive(negotiationToken, { callScope });
+      if (telegram) assertTelegramApiScope(apiScope);
       timing.mark('agent_answer_ok');
+      if (telegram) {
+        await waitForTelegramConnection(pc);
+        assertInboundNegotiationActive(negotiationToken, { callScope });
+        assertTelegramApiScope(apiScope);
+        timing.mark('peer_connection_connected');
+      }
     } catch (error) {
       if (!isInboundNegotiationActive(negotiationToken, callScope)) {
         cleanupCancelledInboundNegotiation(resources);
         throw inboundNegotiationCancelledError();
       }
+      // An answer POST may already have reached the native peer. Never resend
+      // it or create a second media leg on an ambiguous transport failure.
+      if (telegram) {
+        error.retryable = false;
+        error.stage ||= 'agent_answer';
+      }
       throw error;
     }
   };
 
-  if (deferPost) {
+  if (deferPost && !isTelegramPersonalProvider(provider)) {
     return { success: true, postAgentAnswer };
   }
 
@@ -636,6 +813,7 @@ async function handleSdpAgentOffer(callId, sdpOffer, iceServers, options = {}) {
         negotiationToken,
         callScope: options.callScope,
         resources,
+        apiScope: options.apiScope,
       });
     } catch (err) {
       if (!isInboundNegotiationActive(negotiationToken, options.callScope)) {
@@ -692,6 +870,7 @@ export async function handleCallAgentOffer(callId, offer, options = {}) {
   ) {
     throw inboundNegotiationCancelledError();
   }
+  const apiScope = telegramApiScopeFor(callScope);
   // Old gateway generations have no peer_id. Compare the actual SDP too, so a
   // fresh reconnect offer replaces the previous leg even when both ids are nil.
   const key = JSON.stringify([
@@ -714,9 +893,11 @@ export async function handleCallAgentOffer(callId, offer, options = {}) {
       provider,
       peerId: offer.peer_id,
       callScope,
+      apiScope,
     }
   )
     .then(result => {
+      assertTelegramApiScope(apiScope);
       if (
         telegramMediaConnection !== connection ||
         !callsStore.matchesActiveCallScope(callScope)
@@ -772,13 +953,18 @@ export async function reconnectTelegramMedia(callId) {
   )
     return;
   const callScope = store.captureActiveCallScope();
+  // Resolve the existing call account before any reconnect side effect.
+  const apiScope = telegramApiScopeFor(callScope);
   store.setReconnecting(true);
   store.updateActiveCall({ agentWebrtcConnecting: true });
   try {
-    const { data } = await callsApiFor('telegram_personal').reconnect(callId);
+    assertTelegramApiScope(apiScope);
+    const { data } = await apiScope.api.reconnect(callId);
     if (!store.matchesActiveCallScope(callScope)) return;
+    assertTelegramApiScope(apiScope);
     await handleCallAgentOffer(callId, data, { provider: 'telegram_personal' });
     if (!store.matchesActiveCallScope(callScope)) return;
+    assertTelegramApiScope(apiScope);
     store.updateActiveCall({
       agentWebrtcConnected: true,
       agentWebrtcConnecting: false,

@@ -80,4 +80,10 @@ RSpec.describe Telephony::JanusWebsocketTicket do
     expect(described_class.valid?(ticket: ticket, origin: 'https://other.example.test', path: '/janus-sipuni')).to be(false)
     expect(described_class.valid?(ticket: ticket, origin: 'https://app.example.test', path: '/janus-asterisk')).to be(false)
   end
+
+  it 'continues to reject a missing Origin for TelegramPersonal version2' do
+    expect(described_class.valid?(ticket: ticket, origin: nil, path: '/janus-sipuni')).to be(false)
+    expect(described_class.valid?(ticket: ticket, origin: '', path: '/janus-sipuni')).to be(false)
+    expect(valid_ticket?).to be(true)
+  end
 end

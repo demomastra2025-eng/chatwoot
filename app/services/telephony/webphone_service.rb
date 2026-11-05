@@ -38,6 +38,19 @@ class Telephony::WebphoneService
     webphone_payload_for_identity(user, inbox, operator_identity, client_instance_id)
   end
 
+  # Only the server-side SIP synchronizer supplies a persisted, validated binding.
+  # Browser-controlled instance IDs never select the headless ticket kind.
+  def token_for_telegram_operator(binding:)
+    @telegram_operator_binding = Telephony::JanusWebsocketTicket.validated_telegram_operator_binding!(binding: binding, account: account)
+    token_for(
+      user: @telegram_operator_binding.user,
+      client_instance_id: "telegram_softphone:#{@telegram_operator_binding.id}",
+      browser_instance_id: "telegram_softphone:#{@telegram_operator_binding.user_id}", lease_mode: 'takeover'
+    )
+  ensure
+    @telegram_operator_binding = nil
+  end
+
   def update_presence!(user:, registered:, inbox: nil, registration_context: {})
     registration_context, registration_failure = split_registration_failure(registered, registration_context)
     operator_identity = operator_identity_for(user: user, inbox: inbox)
@@ -589,6 +602,13 @@ class Telephony::WebphoneService
 
   def authorized_janus_server_url(server_url, user, profile, registration_instance_id:)
     return server_url if server_url.blank?
+
+    if @telegram_operator_binding.present?
+      return Telephony::JanusWebsocketTicket.url_for_telegram_operator(
+        server_url: server_url, sip_profile: profile,
+        binding: @telegram_operator_binding, registration_instance_id: registration_instance_id
+      )
+    end
 
     Telephony::JanusWebsocketTicket.url_for(
       server_url: server_url,
