@@ -674,7 +674,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   # Runs before create and update: refuses a switch the clinic may not have changed (SuperAdmin::FeatureChangeGuard).
   # What the request changes is kept for the audit entry.
   def reject_forbidden_feature_changes
-    guard = SuperAdmin::FeatureChangeGuard.new(action_name == 'create' ? Account.new : requested_resource)
+    guard = SuperAdmin::FeatureChangeGuard.new(action_name == 'create' ? Account.new : requested_resource, allow_owner_decisions: true)
     states = submitted_feature_states
     @feature_changes = guard.changes(states)
     message = guard.message(states)

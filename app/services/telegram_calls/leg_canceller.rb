@@ -1,5 +1,12 @@
 class TelegramCalls::LegCanceller
   class << self
+    def cancel_if_disabled!(account:, leg_id:)
+      return false if TelegramCalls::Config.enabled_for?(account)
+
+      cancel_single_leg!(leg_id: leg_id, status_text: '⚪ Звонки через Telegram-бота отключены')
+      true
+    end
+
     def cancel_for_source!(source_type:, account_id:, source_call_ref:, status_text:, **options)
       group = TelegramCalls::Registry.fetch_source_group(
         source_type: source_type, account_id: account_id, source_call_ref: source_call_ref

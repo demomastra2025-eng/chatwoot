@@ -142,6 +142,8 @@ class TelegramCalls::CallDispatcher
   end
 
   def dispatch_to_binding(binding, group_id:)
+    return unless TelegramCalls::Config.enabled_for?(@account)
+
     leg_id = SecureRandom.uuid
     leg_meta = build_leg_record(binding: binding, leg_id: leg_id, group_id: group_id)
     TelegramCalls::Registry.store_leg!(leg_meta)
@@ -178,6 +180,7 @@ class TelegramCalls::CallDispatcher
   end
 
   def start_gateway_voice_leg(binding:, leg_meta:)
+    return false if TelegramCalls::LegCanceller.cancel_if_disabled!(account: @account, leg_id: leg_meta['leg_id'])
     return false unless @gateway_client.configured? && TelegramCalls::Config.callback_url.present?
 
     @gateway_client.create_leg!(gateway_create_leg_payload(binding: binding, leg_meta: leg_meta))

@@ -11,6 +11,7 @@ class TelegramCalls::OutboundDialService
   end
 
   def self.dial_and_activate_outbound!(data:, call_session:)
+    TelegramCalls::Config.ensure_enabled!(call_session.account)
     TelegramCalls::GatewaySoftphoneClient.new.dial_sip!(
       leg_id: data['leg_id'],
       line_key: data['line_key'],
@@ -134,7 +135,7 @@ class TelegramCalls::OutboundDialService
       'chat_id' => @binding.telegram_chat_id, 'line_key' => line['line_key'], 'provider' => line['provider'],
       'provider_label' => TelegramCalls::CallerCardBuilder.provider_label(line['provider']),
       'caller_title' => contact&.name.presence || number, 'caller_phone' => number, 'inbox_name' => inbox&.name,
-      'status' => 'ringing', 'voice_ring_started' => true
+      'status' => 'ringing', 'voice_ring_started' => false
     }
   end
 
@@ -145,11 +146,14 @@ class TelegramCalls::OutboundDialService
     markup = TelegramCalls::BotClient.call_inline_keyboard(leg_id: leg_meta['leg_id'], state: :ringing)
     msg = @bot_client.send_message(chat_id: @binding.telegram_chat_id, text: text, reply_markup: markup)
     updated_meta = TelegramCalls::Registry.update_leg!(leg_meta['leg_id'], 'message_id' => msg&.dig('message_id')) || leg_meta
-    ring_operator_in_gateway!(updated_meta)
-    updated_meta
+    ring_operator_in_gateway!(updated_meta) || updated_meta
+  rescue StandardError
+    self.class.terminate_failed_outbound_leg(updated_meta || leg_meta)
+    raise
   end
 
   def ring_operator_in_gateway!(leg_meta)
+    TelegramCalls::Config.ensure_enabled!(@account)
     @gateway_client.create_leg!(
       leg_id: leg_meta['leg_id'],
       source_type: 'telephony_sip_outbound',
@@ -163,6 +167,7 @@ class TelegramCalls::OutboundDialService
       callback_token: TelegramCalls::Config.callback_token.presence,
       metadata: { group_id: leg_meta['group_id'], caller_label: leg_meta['caller_title'] }.compact
     )
+    TelegramCalls::Registry.update_leg!(leg_meta['leg_id'], 'voice_ring_started' => true)
   end
 
   def raise_invalid_number!

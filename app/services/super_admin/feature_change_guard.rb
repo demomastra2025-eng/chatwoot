@@ -11,7 +11,7 @@
 #   guard.violations('crm' => true, 'saml' => true)  # => [Violation(flag: 'saml', reason: :never_enabled)]
 #
 # Rules (config/account_plans.yml):
-#   * the owner-decision flags (SuperAdmin::FineTuning::OWNER_DECISION_FLAGS) may always be changed;
+#   * owner-decision flags may be changed only by an explicitly authorized superadmin caller;
 #   * a flag in `never_enabled` may be switched off, never on;
 #   * a flag in `locked_on` may be switched on, never off;
 #   * any other `internal` flag, and a flag no place of the plans names, may not be changed at all.
@@ -23,8 +23,9 @@ class SuperAdmin::FeatureChangeGuard
   end
 
   # account: the clinic (an unsaved Account.new for a clinic that is being created)
-  def initialize(account)
+  def initialize(account, allow_owner_decisions: false)
     @account = account
+    @owner_decision_flags = allow_owner_decisions ? SuperAdmin::FineTuning::OWNER_DECISION_FLAGS : []
   end
 
   # requested: { 'flag' => true | false }. Only the flags whose wanted state differs from the clinic's now.
@@ -50,7 +51,7 @@ class SuperAdmin::FeatureChangeGuard
   private
 
   def reason_for(flag, wanted)
-    return if SuperAdmin::FineTuning::OWNER_DECISION_FLAGS.include?(flag)
+    return if @owner_decision_flags.include?(flag)
     return :internal if internal?(flag)
     return :never_enabled if wanted && Accounts::Plans.never_enabled.include?(flag)
     return :locked_on if !wanted && Accounts::Plans.locked_on.include?(flag)
