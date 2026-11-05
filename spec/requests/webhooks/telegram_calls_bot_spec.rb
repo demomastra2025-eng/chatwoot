@@ -113,10 +113,8 @@ RSpec.describe 'Webhooks::TelegramCallsBot', type: :request do
     expect(bot_client).to have_received(:send_message).with(
       hash_including(
         reply_markup: {
-          inline_keyboard: [
-            [{ text: "📞 #{b1.account.name}", callback_data: "dialws:#{b1.id}:77015551122" }],
-            [{ text: "📞 #{b2.account.name}", callback_data: "dialws:#{b2.id}:77015551122" }]
-          ]
+          inline_keyboard: contain_exactly([{ text: "📞 #{b1.account.name}", callback_data: "dialws:#{b1.id}:77015551122" }],
+                                           [{ text: "📞 #{b2.account.name}", callback_data: "dialws:#{b2.id}:77015551122" }])
         }
       )
     )
