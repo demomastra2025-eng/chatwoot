@@ -378,8 +378,8 @@ RSpec.describe 'Platform Accounts API', type: :request do
 
       before { create(:platform_app_permissible, platform_app: platform_app, permissible: own) }
 
-      SuperAdmin::FineTuning::OWNER_DECISION_FLAGS.each do |flag|
-        [true, false].each do |wanted|
+      [true, false].each do |wanted|
+        SuperAdmin::FineTuning::OWNER_DECISION_FLAGS.each do |flag|
           it "cannot change owner decision #{flag} to #{wanted}, saving none of the request" do
             wanted ? own.disable_features!(flag) : own.enable_features!(flag)
             snapshot = own.reload.attributes.slice('name', 'locale', 'limits', 'custom_attributes',
