@@ -12,7 +12,16 @@ class TelegramCalls::GatewaySoftphoneClient
   end
 
   def create_leg!(payload)
-    post_json!('/internal/operator-softphone/legs', payload)
+    worker = TelegramCalls::Config.operator_worker
+    return post_json!('/internal/operator-softphone/legs', payload) unless worker
+
+    begin
+      post_json!('/internal/operator-softphone/legs', payload.merge(worker: worker))
+    rescue StandardError
+      raise Telephony::Error.new(
+        code: 'TELEGRAM_GATEWAY_ERROR', message: 'Telegram voice gateway request failed', status: :bad_gateway
+      ), cause: nil
+    end
   end
 
   def attach_webrtc!(leg_id:, sdp_offer:, ice_servers: [])
