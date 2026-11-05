@@ -1240,26 +1240,28 @@ onUnmounted(() => {
                 {{ telegramLineStatusLabel }}
               </span>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              color="slate"
-              :disabled="isTelegramSoftphoneBusy || telegramStatusLoading"
-              :is-loading="isTelegramSoftphoneBusy"
-              data-testid="phone-widget-telegram-action"
-              @click="handleTelegramSoftphoneAction"
-            >
-              {{
-                !telegramSoftphone.connected
-                  ? t('PHONE_WIDGET.TELEGRAM_CONNECT')
-                  : telegramSoftphone.on_line
-                    ? t(
-                        'PROFILE_SETTINGS.FORM.TELEGRAM_SOFTPHONE.GO_OFFLINE_BTN'
-                      )
-                    : t('PHONE_WIDGET.TELEGRAM_GO_ONLINE')
-              }}
-            </Button>
+            <div class="shrink-0">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                color="slate"
+                :disabled="isTelegramSoftphoneBusy || telegramStatusLoading"
+                :is-loading="isTelegramSoftphoneBusy"
+                data-testid="phone-widget-telegram-action"
+                @click="handleTelegramSoftphoneAction"
+              >
+                {{
+                  !telegramSoftphone.connected
+                    ? t('PHONE_WIDGET.TELEGRAM_CONNECT')
+                    : telegramSoftphone.on_line
+                      ? t(
+                          'PROFILE_SETTINGS.FORM.TELEGRAM_SOFTPHONE.GO_OFFLINE_BTN'
+                        )
+                      : t('PHONE_WIDGET.TELEGRAM_GO_ONLINE')
+                }}
+              </Button>
+            </div>
           </div>
           <div
             v-if="channelCapacityLabel"
