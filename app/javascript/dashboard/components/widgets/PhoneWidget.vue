@@ -54,6 +54,14 @@ const dialKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 const { t } = useI18n();
 const inboxes = useMapGetter('inboxes/getInboxes');
 const accountId = useMapGetter('getCurrentAccountId');
+const isFeatureEnabledonAccount = useMapGetter(
+  'accounts/isFeatureEnabledonAccount'
+);
+const isTelegramCallsBotEnabled = computed(
+  () =>
+    isFeatureEnabledonAccount.value?.(accountId.value, 'telegram_calls_bot') ===
+    true
+);
 const currentUser = useMapGetter('getCurrentUser');
 const callsStore = useCallsStore();
 const phoneWidgetStore = usePhoneWidgetStore();
@@ -477,6 +485,7 @@ const status = computed(() => {
   }
   if (
     !availableVoiceInboxes.value.length &&
+    isTelegramCallsBotEnabled.value &&
     telegramSoftphone.value.configured
   ) {
     return telegramLineStatus.value;
@@ -682,7 +691,7 @@ const hasAnyPhoneLine = computed(
     hasWhatsappCallingInbox.value ||
     telegramVoiceInboxes.value.length > 0 ||
     hasWhatsappCall.value ||
-    telegramSoftphone.value.configured
+    (isTelegramCallsBotEnabled.value && telegramSoftphone.value.configured)
 );
 // The sidebar phone button shows the same line state as this header.
 watch(
@@ -755,7 +764,7 @@ watch([selectedInboxId, hasCall], () => {
 });
 
 const fetchTelegramSoftphone = async () => {
-  if (!accountId.value) return;
+  if (!accountId.value || !isTelegramCallsBotEnabled.value) return;
   telegramRequestId += 1;
   const requestId = telegramRequestId;
   telegramStatusLoading.value = true;
@@ -776,13 +785,15 @@ const fetchTelegramSoftphone = async () => {
   }
 };
 const handleTelegramSoftphoneAction = async () => {
-  if (isTelegramSoftphoneBusy.value) return;
+  if (!isTelegramCallsBotEnabled.value || isTelegramSoftphoneBusy.value) return;
   isTelegramSoftphoneBusy.value = true;
   telegramActionId += 1;
   const actionId = telegramActionId;
   const actionAccountId = accountId.value;
   const isCurrentAction = () =>
-    actionId === telegramActionId && actionAccountId === accountId.value;
+    isTelegramCallsBotEnabled.value &&
+    actionId === telegramActionId &&
+    actionAccountId === accountId.value;
   try {
     if (!telegramSoftphone.value.connected) {
       const payload = await TelegramSoftphoneAPI.issueLinkToken();
@@ -806,7 +817,15 @@ const handleTelegramSoftphoneAction = async () => {
     if (isCurrentAction()) isTelegramSoftphoneBusy.value = false;
   }
 };
-watch(accountId, () => {
+let telegramStatusTimer;
+const restartTelegramPolling = () => {
+  window.clearInterval(telegramStatusTimer);
+  telegramStatusTimer = undefined;
+  if (!accountId.value || !isTelegramCallsBotEnabled.value) return;
+  fetchTelegramSoftphone();
+  telegramStatusTimer = window.setInterval(fetchTelegramSoftphone, 10_000);
+};
+watch([accountId, isTelegramCallsBotEnabled], () => {
   telegramRequestId += 1;
   telegramActionId += 1;
   isTelegramSoftphoneBusy.value = false;
@@ -817,16 +836,14 @@ watch(accountId, () => {
     sip_lines: [],
   };
   telegramLoadError.value = false;
-  fetchTelegramSoftphone();
+  restartTelegramPolling();
 });
-let telegramStatusTimer;
 
 onMounted(() => {
   WebphoneClient.addEventListener('call:sessions-changed', syncSessions);
   syncSessions();
   fetchChannelCapacity();
-  fetchTelegramSoftphone();
-  telegramStatusTimer = window.setInterval(fetchTelegramSoftphone, 10_000);
+  restartTelegramPolling();
 });
 onUnmounted(() => {
   WebphoneClient.removeEventListener('call:sessions-changed', syncSessions);
@@ -848,7 +865,7 @@ onUnmounted(() => {
         telegramVoiceInboxes.length > 0 ||
         hasCall ||
         hasOwnCall ||
-        telegramSoftphone.configured)
+        (isTelegramCallsBotEnabled && telegramSoftphone.configured))
     "
     ref="widgetRef"
     class="fixed z-40 max-w-[calc(100vw-2rem)]"
@@ -1216,7 +1233,7 @@ onUnmounted(() => {
             </div>
           </div>
           <div
-            v-if="telegramSoftphone.configured"
+            v-if="isTelegramCallsBotEnabled && telegramSoftphone.configured"
             class="mb-2 flex items-center justify-between gap-2 rounded-md border border-n-weak bg-n-alpha-1 px-2.5 py-1.5 text-xs"
             data-testid="phone-widget-telegram-softphone"
           >

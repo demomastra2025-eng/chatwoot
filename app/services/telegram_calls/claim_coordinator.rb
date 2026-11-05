@@ -56,6 +56,10 @@ class TelegramCalls::ClaimCoordinator
   end
 
   def handle_leg_answered(leg)
+    unless TelegramCalls::Config.enabled_for?(Account.find_by(id: leg['account_id']))
+      reject_losing_leg!(leg)
+      return { ok: true, claimed: false }
+    end
     return TelegramCalls::OutboundDialService.bridge_answered_operator_leg!(leg: leg) if leg['source_type'] == 'telephony_sip_outbound'
 
     unless acquire_source_claim(leg)
@@ -75,6 +79,7 @@ class TelegramCalls::ClaimCoordinator
 
   def bridge_claimed_leg!(leg)
     account = Account.find(leg['account_id'])
+    TelegramCalls::Config.ensure_enabled!(account)
     user = account.users.find(leg['user_id'])
     case leg['source_type']
     when 'whatsapp' then bridge_whatsapp_call!(account: account, user: user, leg: leg)

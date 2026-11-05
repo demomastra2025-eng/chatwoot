@@ -275,3 +275,7 @@
   display_name: AI Agents - Workspace OpenRouter Key
   enabled: false
   chatwoot_internal: true
+- name: telegram_calls_bot
+  display_name: Calls via Telegram Bot
+  enabled: false
+  chatwoot_internal: true

@@ -2,6 +2,7 @@ class TelegramCalls::OutboundDialService
   def self.bridge_answered_operator_leg!(leg:)
     data = leg.deep_stringify_keys
     account = Account.find(data['account_id'])
+    TelegramCalls::Config.ensure_enabled!(account)
     user = account.users.find(data['user_id'])
     call_session = ingest_outbound_call_session!(account: account, user: user, leg: data)
     dial_and_activate_outbound!(data: data, call_session: call_session)
@@ -89,6 +90,7 @@ class TelegramCalls::OutboundDialService
   end
 
   def perform!
+    TelegramCalls::Config.ensure_enabled!(@account)
     number = self.class.normalize_number(@raw_number)
     raise_invalid_number! if number.blank?
     line = select_registered_line

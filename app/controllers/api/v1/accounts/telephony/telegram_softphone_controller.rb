@@ -2,10 +2,12 @@ class Api::V1::Accounts::Telephony::TelegramSoftphoneController < Api::V1::Accou
   skip_before_action :ensure_voice_enabled!
 
   def show
+    TelegramCalls::Config.ensure_enabled!(Current.account)
     render_payload(current_or_unpersisted_binding_payload)
   end
 
   def link_token
+    TelegramCalls::Config.ensure_enabled!(Current.account)
     ensure_bot_configured!
     token_data = find_or_create_binding!.issue_link_token!
     render_payload(find_or_create_binding!.status_payload.merge(token_data))
@@ -13,6 +15,7 @@ class Api::V1::Accounts::Telephony::TelegramSoftphoneController < Api::V1::Accou
 
   def update
     on_line = parse_boolean(params.require(:on_line))
+    TelegramCalls::Config.ensure_enabled!(Current.account) if on_line
     binding = find_or_create_binding!
     on_line ? binding.go_on_line! : binding.go_off_line!
     render_payload(binding.status_payload)

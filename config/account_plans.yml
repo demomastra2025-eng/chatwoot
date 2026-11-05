@@ -149,6 +149,7 @@ internal:
   - communication_threads # one chat per patient: an owner decision, not a plan option
   - deferred_touch_materialization
   - captain_openrouter_byok
+  - telegram_calls_bot # SIP calls via the bot: account entitlement assigned by the owner
 
 # Approved unified commercial tariff grid (2026-10) + legacy archive tariffs (basic, pro, max).
 tariffs:

@@ -7,6 +7,21 @@ class TelegramCalls::Config
   STRING_SESSION_LENGTHS = { 352 => 263, 368 => 275 }.freeze
 
   class << self
+    def enabled_for?(account)
+      return false if account&.id.blank?
+
+      Account.uncached { Account.find_by(id: account.id)&.feature_enabled?('telegram_calls_bot') == true }
+    end
+
+    def ensure_enabled!(account)
+      return if enabled_for?(account)
+
+      raise Telephony::Error.new(
+        code: 'TELEGRAM_CALLS_BOT_DISABLED',
+        message: 'Telegram bot calls are not enabled for this account', status: :forbidden
+      )
+    end
+
     def bot_token
       ENV['TELEGRAM_CALLS_BOT_TOKEN'].to_s.strip
     end

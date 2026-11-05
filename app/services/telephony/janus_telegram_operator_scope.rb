@@ -8,7 +8,7 @@ module Telephony::JanusTelegramOperatorScope
         id: binding&.id, account_id: account&.id, user_id: binding&.user_id
       )
     end
-    return scoped if scoped.present? && scoped.account.feature_enabled?('channel_voice')
+    return scoped if scoped.present? && scoped.account.feature_enabled?('channel_voice') && TelegramCalls::Config.enabled_for?(scoped.account)
 
     raise ArgumentError, 'Janus Telegram operator requires a connected account binding'
   end
@@ -50,8 +50,8 @@ module Telephony::JanusTelegramOperatorScope
         id: payload[:sip_profile_id], account_id: payload[:account_id], user_id: payload[:user_id],
         enabled: true, availability_mode: 'browser_webphone'
       ).where.not(status: Telephony::JanusWebsocketTicket::REVOKED_PROFILE_STATUSES).first
-      binding.present? && binding.account.feature_enabled?('channel_voice') && profile.present? &&
-        Telephony::ProviderPolicy.enabled_for_profile?(profile) && operator_registration_lease?(profile, binding, payload)
+      binding.present? && binding.account.feature_enabled?('channel_voice') && TelegramCalls::Config.enabled_for?(binding.account) &&
+        profile.present? && Telephony::ProviderPolicy.enabled_for_profile?(profile) && operator_registration_lease?(profile, binding, payload)
     end
   end
 

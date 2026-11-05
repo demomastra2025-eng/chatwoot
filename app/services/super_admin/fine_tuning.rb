@@ -30,7 +30,7 @@ class SuperAdmin::FineTuning
   OTHER_GROUP = 'other'
   # Internal flags that differ from clinic to clinic by a decision of the owner (see `internal` in config/account_plans.yml).
   # They are not part of any plan; the «Служебные» block of the clinic card switches them.
-  OWNER_DECISION_FLAGS = %w[communication_threads assignment_v2 captain_openrouter_byok].freeze
+  OWNER_DECISION_FLAGS = %w[communication_threads assignment_v2 captain_openrouter_byok telegram_calls_bot].freeze
 
   def initialize(account)
     @account = account

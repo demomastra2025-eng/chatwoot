@@ -314,6 +314,10 @@ ru:
         hint: "Аккаунт сможет подключить собственный ключ OpenRouter, и его ИИ-агенты будут работать на нём. Пока ключ не подключён, они работают на ключе платформы."
         confirm_on: "Разрешить аккаунту «%{clinic}» подключить свой ключ OpenRouter? Его ИИ-агенты смогут работать на этом ключе."
         confirm_off: "Запретить аккаунту «%{clinic}» свой ключ OpenRouter? Ключ аккаунта перестанет использоваться, агенты будут работать на ключе платформы."
+      telegram_calls_bot:
+        hint: "Сотрудники смогут принимать и совершать SIP-звонки через Telegram-бота."
+        confirm_on: "Разрешить аккаунту «%{clinic}» звонки через Telegram-бота?"
+        confirm_off: "Запретить аккаунту «%{clinic}» новые звонки через Telegram-бота?"
 
     clinic_card:
       breadcrumb: "Путь"
@@ -494,3 +498,4 @@ ru:
       communication_threads: "Один чат на контакт"
       deferred_touch_materialization: "Отложенная обработка событий"
       captain_openrouter_byok: "Разрешить свой ключ OpenRouter"
+      telegram_calls_bot: "Звонки через Telegram-бота"

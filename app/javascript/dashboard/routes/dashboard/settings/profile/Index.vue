@@ -100,12 +100,21 @@ export default {
       currentUser: 'getCurrentUser',
       currentUserId: 'getCurrentUserID',
       globalConfig: 'globalConfig/get',
+      isFeatureEnabledonAccount: 'accounts/isFeatureEnabledonAccount',
     }),
     isMfaEnabled() {
       return parseBoolean(window.chatwootConfig?.isMfaEnabled);
     },
     profileAccountId() {
       return Number(this.$route.params.accountId);
+    },
+    isTelegramCallsBotEnabled() {
+      return (
+        this.isFeatureEnabledonAccount?.(
+          this.profileAccountId,
+          'telegram_calls_bot'
+        ) === true
+      );
     },
   },
   watch: {
@@ -350,11 +359,12 @@ export default {
         <MfaSettingsCard />
       </SectionLayout>
       <SectionLayout
+        v-if="isTelegramCallsBotEnabled"
         with-border
         :title="$t('PROFILE_SETTINGS.FORM.TELEGRAM_SOFTPHONE.TITLE')"
         :description="$t('PROFILE_SETTINGS.FORM.TELEGRAM_SOFTPHONE.NOTE')"
       >
-        <TelegramSoftphoneCard />
+        <TelegramSoftphoneCard :key="profileAccountId" />
       </SectionLayout>
       <Policy :permissions="notificationPermissions">
         <SectionLayout

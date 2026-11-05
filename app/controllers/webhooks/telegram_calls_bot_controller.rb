@@ -86,7 +86,7 @@ class Webhooks::TelegramCallsBotController < ApplicationController
   end
 
   def toggle_bindings_line!(chat_id:, tg_user_id:, on_line:)
-    bindings = connected_bindings(tg_user_id)
+    bindings = connected_bindings(tg_user_id, include_disabled: !on_line)
     return reply_unlinked(chat_id) if bindings.empty?
 
     bindings.each { |binding| toggle_single_binding!(chat_id: chat_id, binding: binding, on_line: on_line) }
@@ -199,12 +199,15 @@ class Webhooks::TelegramCallsBotController < ApplicationController
 
   def authorized_leg_operator?(leg, tg_user_id)
     leg.present? && Telephony::TelegramOperatorBinding.connected.exists?(
-      id: leg['binding_id'], user_id: leg['user_id'], telegram_user_id: tg_user_id
+      id: leg['binding_id'], account_id: leg['account_id'], user_id: leg['user_id'], telegram_user_id: tg_user_id
     )
   end
 
-  def connected_bindings(tg_user_id)
-    Telephony::TelegramOperatorBinding.connected.includes(:account, :user).where(telegram_user_id: tg_user_id).to_a
+  def connected_bindings(tg_user_id, include_disabled: false)
+    bindings = Telephony::TelegramOperatorBinding.connected.includes(:account, :user).where(telegram_user_id: tg_user_id).to_a
+    return bindings if include_disabled
+
+    bindings.select { |binding| TelegramCalls::Config.enabled_for?(binding.account) }
   end
 
   def reply_unlinked(chat_id)

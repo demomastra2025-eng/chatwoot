@@ -51,6 +51,7 @@ class Telephony::TelegramOperatorBinding < ApplicationRecord
   end
 
   def issue_link_token!
+    TelegramCalls::Config.ensure_enabled!(account)
     raw_token = SecureRandom.urlsafe_base64(24)
     expires_at = LINK_TOKEN_TTL.from_now
     update!(
@@ -71,6 +72,7 @@ class Telephony::TelegramOperatorBinding < ApplicationRecord
       return nil if link_token_digest != digest
       return nil if link_token_expires_at.blank? || link_token_expires_at <= Time.current
       return nil unless active_account_member?
+      return nil unless TelegramCalls::Config.enabled_for?(account)
 
       apply_telegram_identity!(from: from, chat_id: chat_id)
     end
@@ -85,6 +87,7 @@ class Telephony::TelegramOperatorBinding < ApplicationRecord
   end
 
   def go_on_line!(sync_sip: true)
+    TelegramCalls::Config.ensure_enabled!(account)
     raise_not_connected! unless connected?
 
     TelegramCalls::SipLineSyncService.new(binding: self).activate! if sync_sip

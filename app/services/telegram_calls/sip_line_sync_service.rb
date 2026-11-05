@@ -21,6 +21,7 @@ class TelegramCalls::SipLineSyncService
   end
 
   def activate!
+    TelegramCalls::Config.ensure_enabled!(@account)
     return { synced_lines: 0, skipped: 'voice_disabled' } unless voice_ready?
 
     token_payload = fetch_webphone_tokens

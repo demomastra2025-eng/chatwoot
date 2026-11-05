@@ -1,12 +1,28 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
+import { useMapGetter } from 'dashboard/composables/store';
 import TelegramSoftphoneAPI from 'dashboard/api/telephony/telegramSoftphone';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 import Button from 'dashboard/components-next/button/Button.vue';
 
 const { t } = useI18n();
+const accountId = useMapGetter('getCurrentAccountId');
+const isFeatureEnabledonAccount = useMapGetter(
+  'accounts/isFeatureEnabledonAccount'
+);
+const isTelegramCallsBotEnabled = computed(
+  () =>
+    isFeatureEnabledonAccount.value?.(accountId.value, 'telegram_calls_bot') ===
+    true
+);
+const mountedAccountId = accountId.value;
+let active = true;
+const isCurrentAccount = () =>
+  active &&
+  isTelegramCallsBotEnabled.value &&
+  accountId.value === mountedAccountId;
 
 const isLoading = ref(false);
 const isActionPending = ref(false);
@@ -38,10 +54,11 @@ const activeSipLinesCount = computed(
 );
 
 const loadStatus = async () => {
+  if (!isCurrentAccount()) return;
   isLoading.value = true;
   try {
     const payload = await TelegramSoftphoneAPI.getStatus();
-    if (payload && typeof payload === 'object') {
+    if (isCurrentAccount() && payload && typeof payload === 'object') {
       state.value = { ...state.value, ...payload };
       if (state.value.connected) pendingDeepLink.value = '';
     }
@@ -53,15 +70,18 @@ const loadStatus = async () => {
 };
 
 const connectTelegram = async () => {
+  if (!isCurrentAccount() || isActionPending.value) return;
   isActionPending.value = true;
   try {
     const payload = await TelegramSoftphoneAPI.issueLinkToken();
+    if (!isCurrentAccount()) return;
     state.value = { ...state.value, ...payload };
     pendingDeepLink.value = payload?.deep_link || '';
     if (pendingDeepLink.value && typeof window !== 'undefined') {
       window.open(pendingDeepLink.value, '_blank', 'noopener,noreferrer');
     }
   } catch (error) {
+    if (!isCurrentAccount()) return;
     useAlert(
       error?.response?.data?.error ||
         t('PROFILE_SETTINGS.FORM.TELEGRAM_SOFTPHONE.ERROR_GENERIC')
@@ -72,15 +92,18 @@ const connectTelegram = async () => {
 };
 
 const toggleOnLine = async () => {
+  if (!isCurrentAccount() || isActionPending.value) return;
   isActionPending.value = true;
   const targetOnLine = !state.value.on_line;
   try {
     const payload = await TelegramSoftphoneAPI.setOnLine(targetOnLine);
+    if (!isCurrentAccount()) return;
     state.value = { ...state.value, ...payload };
     if (!targetOnLine) {
       WebphoneClient.bootstrapIncomingSupport?.().catch?.(() => null);
     }
   } catch (error) {
+    if (!isCurrentAccount()) return;
     useAlert(
       error?.response?.data?.error ||
         t('PROFILE_SETTINGS.FORM.TELEGRAM_SOFTPHONE.ERROR_GENERIC')
@@ -91,13 +114,16 @@ const toggleOnLine = async () => {
 };
 
 const disconnectTelegram = async () => {
+  if (!isCurrentAccount() || isActionPending.value) return;
   isActionPending.value = true;
   try {
     const payload = await TelegramSoftphoneAPI.disconnect();
+    if (!isCurrentAccount()) return;
     state.value = { ...state.value, ...payload };
     pendingDeepLink.value = '';
     WebphoneClient.bootstrapIncomingSupport?.().catch?.(() => null);
   } catch (error) {
+    if (!isCurrentAccount()) return;
     useAlert(
       error?.response?.data?.error ||
         t('PROFILE_SETTINGS.FORM.TELEGRAM_SOFTPHONE.ERROR_GENERIC')
@@ -110,10 +136,14 @@ const disconnectTelegram = async () => {
 onMounted(() => {
   loadStatus();
 });
+onUnmounted(() => {
+  active = false;
+});
 </script>
 
 <template>
   <div
+    v-if="isTelegramCallsBotEnabled"
     class="flex flex-col gap-3 rounded-xl border border-n-weak bg-n-solid-2 p-4"
     data-testid="telegram-softphone-card"
   >

@@ -92,6 +92,8 @@ class TelegramCalls::CallDispatcher
   end
 
   def dispatch!
+    return [] unless TelegramCalls::Config.enabled_for?(@account)
+
     bindings = eligible_bindings
     return [] if bindings.empty?
 

@@ -1,4 +1,6 @@
 class TelegramCalls::SipEventProcessor
+  include TelegramCalls::SipEventAccess
+
   SIP_URI_USER_REGEX = /\Asips?:([^@;>]+)/i
   LEASE_CONFLICT_REASONS = %w[sip_profile_registration_lease_conflict sip_profile_registration_context_stale].freeze
   HEARTBEAT_KEYS = %w[sip_profile_id inbox_id session_key registration_instance_id
@@ -14,6 +16,8 @@ class TelegramCalls::SipEventProcessor
     account = Account.find_by(id: @payload['account_id'])
     user = account&.users&.find_by(id: @payload['user_id'])
     return { ignored: 'tenant_not_found' } unless account && user
+
+    return { ignored: 'telegram_calls_bot_disabled' } if revoke_disabled_line?(account: account, user: user)
 
     dispatch_sip_event(account: account, user: user)
   end
