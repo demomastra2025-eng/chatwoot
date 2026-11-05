@@ -1,9 +1,14 @@
 require 'rails_helper'
 
 RSpec.describe TelegramCalls::GatewaySoftphoneClient do
+  def synthetic_string_session(ip_length = 4)
+    packet = [2].pack('C') + ("\x01".b * ip_length) + [443].pack('n') + ('a'.b * 256)
+    "1#{Base64.urlsafe_encode64(packet)}"
+  end
+
   let(:worker) do
     { 'worker_id' => 'voice_worker_1', 'api_id' => 123,
-      'api_hash' => 'a' * 32, 'string_session' => 'syntheticSession_123=' }
+      'api_hash' => 'a' * 32, 'string_session' => synthetic_string_session }
   end
   let(:payload) { { leg_id: 'leg-1', metadata: { source: 'test' } } }
   let(:client) { described_class.new(base_url: 'http://gateway.test', token: 'test-token') }
@@ -34,12 +39,25 @@ RSpec.describe TelegramCalls::GatewaySoftphoneClient do
     end
   end
 
+  it 'preserves native IPv4 and IPv6 session bytes with canonical padding' do
+    [4, 16].each do |ip_length|
+      session = synthetic_string_session(ip_length)
+      with_modified_env('TELEGRAM_CALLS_OPERATOR_WORKER_JSON' => worker.merge('string_session' => session).to_json) do
+        expect(TelegramCalls::Config.operator_worker.fetch('string_session')).to eq(session)
+      end
+    end
+  end
+
   it 'rejects malformed, incomplete and untrusted worker settings before HTTP' do
-    invalid = ['{', worker.except('api_hash').to_json, worker.merge('extra' => 'x').to_json,
+    invalid_sessions = ['x', '1', '1a=', "2#{worker['string_session'].delete_prefix('1')}",
+                        "#{worker['string_session']}=", worker['string_session'].delete_suffix('='),
+                        "1#{Base64.urlsafe_encode64('a' * 262)}", "1#{Base64.urlsafe_encode64('a' * 274)}"]
+    invalid = [' ', '{', worker.except('api_hash').to_json, worker.merge('extra' => 'x').to_json,
                worker.merge('api_id' => '123').to_json, worker.merge('api_hash' => 'bad').to_json,
                worker.merge('worker_id' => '123456789').to_json,
                worker.merge('string_session' => 'bad=inside').to_json,
                worker.merge('string_session' => "secret\nvalue").to_json, 'x' * 8193]
+    invalid.concat(invalid_sessions.map { |value| worker.merge('string_session' => value).to_json })
     invalid.each do |value|
       with_modified_env('TELEGRAM_CALLS_OPERATOR_WORKER_JSON' => value) do
         expect(HTTParty).not_to receive(:post)

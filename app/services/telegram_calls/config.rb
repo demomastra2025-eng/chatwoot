@@ -1,7 +1,10 @@
+require 'base64'
+
 class TelegramCalls::Config
   DEFAULT_BOT_USERNAME = 'onelink_calls_bot'.freeze
   OPERATOR_WORKER_KEYS = %w[worker_id api_id api_hash string_session].freeze
   OPERATOR_WORKER_ERROR = 'Telegram voice worker configuration is invalid'.freeze
+  STRING_SESSION_LENGTHS = { 352 => 263, 368 => 275 }.freeze
 
   class << self
     def bot_token
@@ -27,7 +30,7 @@ class TelegramCalls::Config
 
     def operator_worker
       raw = ENV.fetch('TELEGRAM_CALLS_OPERATOR_WORKER_JSON', nil)
-      return nil if raw.blank?
+      return nil if raw.to_s.empty?
 
       invalid_operator_worker! if raw.bytesize > 8192
       worker = JSON.parse(raw)
@@ -94,7 +97,16 @@ class TelegramCalls::Config
     end
 
     def valid_string_session?(value)
-      value.is_a?(String) && value.bytesize.between?(1, 4096) && value.match?(/\A[A-Za-z0-9_-]+={0,2}\z/)
+      return false unless value.is_a?(String) && value.start_with?('1')
+
+      encoded = value.delete_prefix('1')
+      expected_length = STRING_SESSION_LENGTHS[encoded.bytesize]
+      return false unless expected_length && encoded.match?(/\A[A-Za-z0-9_-]+={0,2}\z/)
+
+      decoded = Base64.urlsafe_decode64(encoded)
+      decoded.bytesize == expected_length && Base64.urlsafe_encode64(decoded) == encoded
+    rescue ArgumentError, EncodingError
+      false
     end
 
     def invalid_operator_worker!
