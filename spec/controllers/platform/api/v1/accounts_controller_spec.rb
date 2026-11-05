@@ -50,22 +50,22 @@ RSpec.describe 'Platform Accounts API', type: :request do
                                                                                                     'enabled' => true },
                                                                                                   { 'name' => 'disable_branding',
                                                                                                     'enabled' => true },
-                                                                                                  { 'name' => 'help_center',
+                                                                                                  { 'name' => 'sla',
                                                                                                     'enabled' => false }])
 
         post '/platform/api/v1/accounts', params: { name: 'Test Account', features: {
           campaigns: true,
-          help_center: true,
+          sla: true,
           disable_branding: false
         } }, headers: { api_access_token: platform_app.access_token.token }, as: :json
 
         json_response = response.parsed_body
         created_account = Account.find(json_response['id'])
         # the base plan is applied first, the features the caller sends are applied on top of it
-        expect(created_account.enabled_features.keys).to include('inbox_management', 'campaigns', 'help_center')
+        expect(created_account.enabled_features.keys).to include('inbox_management', 'campaigns', 'sla')
         expect(created_account.enabled_features.keys).not_to include('disable_branding')
         expect(json_response['name']).to include('Test Account')
-        expect(json_response['features'].keys).to include('inbox_management', 'campaigns', 'help_center')
+        expect(json_response['features'].keys).to include('inbox_management', 'campaigns', 'sla')
         expect(json_response['features'].keys).not_to include('disable_branding')
       end
 
@@ -238,7 +238,7 @@ RSpec.describe 'Platform Accounts API', type: :request do
           name: 'Test Account',
           features: {
             campaigns: true,
-            help_center: true,
+            sla: true,
             channel_facebook: false
           },
           limits: { agents: 5, inboxes: 10 }
@@ -247,7 +247,7 @@ RSpec.describe 'Platform Accounts API', type: :request do
         expect(response).to have_http_status(:success)
         account.reload
         expect(account.name).to eq('Test Account')
-        expect(account.enabled_features.keys).to match_array(%w[inbox_management campaigns help_center])
+        expect(account.enabled_features.keys).to match_array(%w[inbox_management campaigns sla])
         expect(account.enabled_features['channel_facebook']).to be_nil
         expect(account.limits['agents']).to eq(5)
         expect(account.limits['inboxes']).to eq(10)
@@ -309,6 +309,23 @@ RSpec.describe 'Platform Accounts API', type: :request do
     def refused_features = response.parsed_body['violations'].to_h { |violation| [violation['feature'], violation['reason']] }
 
     context 'when an account is created' do
+      it 'cannot grant owner decisions and atomically creates no account or partner relationship' do
+        flags = SuperAdmin::FineTuning::OWNER_DECISION_FLAGS
+        InstallationConfig.where(name: 'ACCOUNT_LEVEL_FEATURE_DEFAULTS').delete_all
+        create(:installation_config, name: 'ACCOUNT_LEVEL_FEATURE_DEFAULTS',
+                                     value: flags.map { |flag| { 'name' => flag, 'enabled' => false } })
+
+        expect do
+          post '/platform/api/v1/accounts',
+               params: { name: 'Owner-only refused', limits: { agents: 4 }, features: flags.index_with { true } },
+               headers: headers, as: :json
+        end.not_to change(Account, :count)
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(refused_features).to eq(flags.index_with { 'internal' })
+        expect(platform_app.platform_app_permissibles).to be_empty
+        expect(Audited::Audit.where(user_type: 'PlatformApp')).to be_empty
+      end
+
       it 'refuses a function that no plan ever enables, creates no account and names the function and the reason' do
         expect do
           post '/platform/api/v1/accounts', params: { name: 'Refused', features: { saml: true, custom_roles: true, crm: true } },
@@ -360,6 +377,47 @@ RSpec.describe 'Platform Accounts API', type: :request do
       let!(:own) { create(:account) }
 
       before { create(:platform_app_permissible, platform_app: platform_app, permissible: own) }
+
+      SuperAdmin::FineTuning::OWNER_DECISION_FLAGS.each do |flag|
+        [true, false].each do |wanted|
+          it "cannot change owner decision #{flag} to #{wanted}, saving none of the request" do
+            wanted ? own.disable_features!(flag) : own.enable_features!(flag)
+            snapshot = own.reload.attributes.slice('name', 'locale', 'limits', 'custom_attributes',
+                                                   'feature_flags', 'feature_flags_overflow')
+            patch "/platform/api/v1/accounts/#{own.id}",
+                  params: { name: 'Rejected rename', locale: 'kk', limits: { agents: 7 },
+                            custom_attributes: { 'external_marker' => 'rejected' }, features: { flag => wanted } },
+                  headers: headers, as: :json
+
+            expect(response).to have_http_status(:unprocessable_content)
+            expect(refused_features).to eq(flag => 'internal')
+            expect(own.reload.attributes.slice(*snapshot.keys)).to eq(snapshot)
+            expect(Audited::Audit.where(auditable: own, action: 'partner_update_account')).to be_empty
+          end
+        end
+      end
+
+      it 'also refuses a prefixed bot flag while leaving ordinary attributes unchanged' do
+        own.disable_features!('telegram_calls_bot')
+        before_name = own.name
+        patch "/platform/api/v1/accounts/#{own.id}",
+              params: { name: 'Rejected prefix', features: { feature_telegram_calls_bot: true } },
+              headers: headers, as: :json
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(refused_features).to eq('telegram_calls_bot' => 'internal')
+        expect(own.reload.name).to eq(before_name)
+        expect(own.feature_enabled?('telegram_calls_bot')).to be(false)
+      end
+
+      it 'accepts an unchanged bot entitlement without changing its owner-assigned state' do
+        own.enable_features!('telegram_calls_bot')
+        patch "/platform/api/v1/accounts/#{own.id}",
+              params: { name: 'Allowed ordinary change', features: { telegram_calls_bot: true } },
+              headers: headers, as: :json
+        expect(response).to have_http_status(:success)
+        expect(own.reload.name).to eq('Allowed ordinary change')
+        expect(own.feature_enabled?('telegram_calls_bot')).to be(true)
+      end
 
       it 'refuses a function that no plan enables and saves nothing of the request' do
         patch "/platform/api/v1/accounts/#{own.id}", params: { name: 'Renamed', features: { saml: true, campaigns: true } },

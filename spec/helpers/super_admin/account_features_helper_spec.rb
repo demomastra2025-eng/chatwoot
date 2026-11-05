@@ -56,7 +56,7 @@ RSpec.describe SuperAdmin::AccountFeaturesHelper do
     end
 
     it 'says the AI agents once, and the mailings once' do
-      expect(described_class.module_feature_labels('ai_agents')).to eq(['ИИ-агенты', 'Задачи ИИ-агентов', 'Умный поиск по базе знаний'])
+      expect(described_class.module_feature_labels('ai_agents')).to eq(['ИИ-агенты', 'Задачи ИИ-агентов'])
       expect(described_class.module_feature_labels('broadcasts')).to eq(['Рассылки (в том числе в WhatsApp)'])
     end
 

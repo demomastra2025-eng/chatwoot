@@ -20,7 +20,7 @@ RSpec.describe Telephony::JanusWebsocketTicket do
   end
   let(:ticket) { described_class.issue_for_telegram_operator(**issue_scope) }
 
-  before { account.enable_features!(:channel_voice) }
+  before { account.enable_features!(:channel_voice, :telegram_calls_bot) }
 
   def issue_scope
     { server_url: server_url, sip_profile: profile,
@@ -99,6 +99,16 @@ RSpec.describe Telephony::JanusWebsocketTicket do
     issued = ticket
     AccountUser.where(account_id: account.id, user_id: user.id).delete_all
     expect(valid_ticket?(issued)).to be(false)
+  end
+
+  it 'revokes an already issued headless ticket when the bot flag is removed independently of native voice' do
+    issued = ticket
+    Account.find(account.id).disable_features!(:telegram_calls_bot)
+
+    expect(account.feature_enabled?('channel_voice')).to be(true)
+    expect(valid_ticket?(issued)).to be(false)
+    expect(described_class.authorize?(ticket: issued, origin: nil, path: '/janus-sipuni')).to be(false)
+    expect { described_class.issue_for_telegram_operator(**issue_scope) }.to raise_error(ArgumentError)
   end
 
   it 'revokes disconnected and unverified bindings' do

@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount, enableAutoUnmount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import PhoneWidget from './PhoneWidget.vue';
 import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
@@ -11,9 +11,12 @@ const {
   microphoneState,
   alertMock,
   telegramApiMock,
+  featureAccess,
 } = await vi.hoisted(async () => {
   const { reactive, ref } = await import('vue');
+  const accessByAccount = reactive({ 1: true, 2: true });
   return {
+    featureAccess: accessByAccount,
     alertMock: vi.fn(),
     telegramApiMock: {
       getStatus: vi.fn(),
@@ -30,6 +33,8 @@ const {
         },
       ],
       getCurrentAccountId: 1,
+      'accounts/isFeatureEnabledonAccount': (id, flag) =>
+        flag === 'telegram_calls_bot' && accessByAccount[id] === true,
       getCurrentUser: { name: 'Асет' },
     }),
     callsState: reactive({
@@ -70,6 +75,7 @@ const {
     },
   };
 });
+enableAutoUnmount(afterEach);
 
 vi.mock('dashboard/composables/useWhatsappCallInitiation', async () => {
   const { ref } = await import('vue');
@@ -121,6 +127,63 @@ describe('PhoneWidget Telegram softphone bar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setActivePinia(createPinia());
+    featureAccess[1] = true;
+    featureAccess[2] = true;
+    values.getCurrentAccountId = 1;
+  });
+
+  it('hides the bot and never starts polling when access is off', async () => {
+    vi.useFakeTimers();
+    featureAccess[1] = false;
+    const wrapper = mount(PhoneWidget, {
+      global: {
+        stubs: {
+          FloatingCallWidget: true,
+          WhatsappCallWidget: true,
+          VoiceCallButton: true,
+          ComboBox: true,
+        },
+      },
+    });
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(telegramApiMock.getStatus).not.toHaveBeenCalled();
+    expect(
+      wrapper.find('[data-testid="phone-widget-telegram-softphone"]').exists()
+    ).toBe(false);
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it('stops bot polling and discards a pending response after revocation', async () => {
+    vi.useFakeTimers();
+    let resolveStatus;
+    telegramApiMock.getStatus.mockReturnValueOnce(
+      new Promise(resolve => {
+        resolveStatus = resolve;
+      })
+    );
+    const wrapper = mount(PhoneWidget, {
+      global: {
+        stubs: {
+          FloatingCallWidget: true,
+          WhatsappCallWidget: true,
+          VoiceCallButton: true,
+          ComboBox: true,
+        },
+      },
+    });
+    featureAccess[1] = false;
+    await flushPromises();
+    resolveStatus({ configured: true, connected: true, on_line: true });
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(telegramApiMock.getStatus).toHaveBeenCalledTimes(1);
+    expect(
+      wrapper.find('[data-testid="phone-widget-telegram-softphone"]').exists()
+    ).toBe(false);
+    wrapper.unmount();
+    vi.useRealTimers();
   });
 
   it('renders compact bar when configured and toggles on-line / off-line', async () => {
@@ -239,6 +302,8 @@ describe('PhoneWidget Telegram softphone bar', () => {
     ).toContain('PHONE_WIDGET.TELEGRAM_REGISTERING');
   });
   it('shows and persists a Telegram-only native line without offering a SIP call', async () => {
+    featureAccess[1] = false;
+    featureAccess[2] = false;
     values['inboxes/getInboxes'] = [
       {
         id: 225,
@@ -260,6 +325,7 @@ describe('PhoneWidget Telegram softphone bar', () => {
       },
     });
     await flushPromises();
+    expect(telegramApiMock.getStatus).not.toHaveBeenCalled();
     expect(wrapper.find('[data-testid="phone-widget"]').exists()).toBe(true);
     expect(wrapper.find('[data-line-id="225"]').exists()).toBe(true);
     expect(wrapper.findComponent({ name: 'VoiceCallButton' }).exists()).toBe(
@@ -270,6 +336,7 @@ describe('PhoneWidget Telegram softphone bar', () => {
         .find('[data-testid="phone-widget-native-call"]')
         .attributes('disabled')
     ).toBeDefined();
+    await wrapper.find('[data-line-id="225"]').trigger('click');
     expect(String(usePhoneWidgetStore().selectedInboxId)).toBe('225');
     values.getCurrentAccountId = 2;
     values['inboxes/getInboxes'] = [

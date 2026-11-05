@@ -5,6 +5,7 @@ RSpec.describe Telephony::TelegramOperatorBinding do
   let(:user) { create(:user, account: account, role: :agent) }
 
   before do
+    account.enable_features!(:telegram_calls_bot)
     allow(TelegramCalls::Config).to receive_messages(
       bot_token: '123456:TEST_BOT_TOKEN',
       bot_username: 'onelink_calls_bot',
@@ -47,6 +48,28 @@ RSpec.describe Telephony::TelegramOperatorBinding do
   end
 
   describe 'single-use link token lifecycle and membership revocation' do
+    it 'refuses a previously issued token after access is removed without linking an identity' do
+      binding = described_class.create!(account: account, user: user)
+      issued = binding.issue_link_token!
+      Account.find(account.id).disable_features!(:telegram_calls_bot)
+
+      expect(described_class.consume_link_token!(issued[:token], from: { id: 777_001 }, chat_id: 777_001)).to be_nil
+      expect(binding.reload.telegram_user_id).to be_nil
+      expect(binding.verified_at).to be_nil
+    end
+
+    it 'rejects token issuance and going online while OFF before invoking SIP sync' do
+      binding = described_class.create!(account: account, user: user, telegram_user_id: '777001',
+                                        telegram_chat_id: '777001', verified_at: Time.current)
+      account.disable_features!(:telegram_calls_bot)
+      expect(TelegramCalls::SipLineSyncService).not_to receive(:new)
+
+      expect { binding.issue_link_token! }.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TELEGRAM_CALLS_BOT_DISABLED') }
+      expect { binding.go_on_line! }.to raise_error(Telephony::Error)
+      expect(binding.reload.link_token_digest).to be_nil
+      expect(binding).not_to be_on_line
+    end
+
     it 'issues a hashed token, consumes it once, and blocks replay' do
       binding = described_class.create!(account: account, user: user)
       issued = binding.issue_link_token!

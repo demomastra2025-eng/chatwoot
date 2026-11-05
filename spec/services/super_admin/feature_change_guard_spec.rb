@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe SuperAdmin::FeatureChangeGuard do
   let(:account) { create(:account) }
-  let(:guard) { described_class.new(account) }
+  let(:guard) { described_class.new(account, allow_owner_decisions: true) }
 
   def reasons(requested)
     guard.violations(requested).to_h { |violation| [violation.flag, violation.reason] }
@@ -15,6 +15,26 @@ RSpec.describe SuperAdmin::FeatureChangeGuard do
       expect(reasons('crm' => true, 'sla' => true)).to be_empty
       account.enable_features!('crm', 'sla')
       expect(reasons('crm' => false, 'sla' => false)).to be_empty
+    end
+  end
+
+  describe 'a caller without explicit superadmin authorization' do
+    it 'refuses every owner-decision flag both on and off by default' do
+      flags = SuperAdmin::FineTuning::OWNER_DECISION_FLAGS
+      account.disable_features!(*flags)
+      default_guard = described_class.new(account)
+      expect(default_guard.violations(flags.index_with { true }).map(&:flag)).to match_array(flags)
+      expect(default_guard.violations(flags.index_with { true }).map(&:reason)).to all(eq(:internal))
+
+      account.enable_features!(*flags)
+      expect(default_guard.violations(flags.index_with { false }).map(&:flag)).to match_array(flags)
+    end
+
+    it 'permits unchanged owner decisions without granting permission to change them' do
+      account.enable_features!('telegram_calls_bot')
+      default_guard = described_class.new(account)
+      expect(default_guard.violations('telegram_calls_bot' => true)).to be_empty
+      expect(default_guard.violations('telegram_calls_bot' => false).map(&:flag)).to eq(['telegram_calls_bot'])
     end
   end
 

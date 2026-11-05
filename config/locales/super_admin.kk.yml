@@ -4,7 +4,7 @@ kk:
       telegram_calls_bot: "Telegram боты арқылы қоңыраулар"
     service_flags:
       telegram_calls_bot:
-        hint: "Қызметкерлер Telegram боты арқылы SIP қоңырауларын қабылдап, шала алады."
+        hint: "Қызметкерлер Telegram боты арқылы қоңырауларды қабылдап, қоңырау шала алады."
         confirm_on: "«%{clinic}» аккаунтына Telegram боты арқылы қоңырауларға рұқсат беру керек пе?"
         confirm_off: "«%{clinic}» аккаунтына Telegram боты арқылы жаңа қоңырауларға тыйым салу керек пе?"
     audits:

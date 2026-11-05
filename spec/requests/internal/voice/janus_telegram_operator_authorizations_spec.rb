@@ -21,6 +21,7 @@ RSpec.describe 'Internal Janus authorization for Telegram operator SIP', type: :
   let(:service) { Telephony::WebphoneService.new(account: account) }
 
   before do
+    account.enable_features!(:telegram_calls_bot)
     account.enable_features!(:channel_voice)
     profile
     create(:inbox_member, inbox: channel.inbox, user: user)
@@ -67,6 +68,17 @@ RSpec.describe 'Internal Janus authorization for Telegram operator SIP', type: :
     expect(response).to have_http_status(:unauthorized)
     authorize(browser, origin: 'https://wrong.example.test')
     expect(response).to have_http_status(:unauthorized)
+    authorize(browser, origin: 'https://app.example.test')
+    expect(response).to have_http_status(:no_content)
+  end
+
+  it 'rejects a previously issued server ticket after bot access is removed but keeps native browser authorization' do
+    headless = extract_ticket(token_from(:token_for_telegram_operator, binding: binding))
+    account.disable_features!(:telegram_calls_bot)
+    authorize(headless)
+    expect(response).to have_http_status(:unauthorized)
+
+    browser = extract_ticket(token_from(:token_for, user: user, client_instance_id: 'native-with-bot-off', lease_mode: 'takeover'))
     authorize(browser, origin: 'https://app.example.test')
     expect(response).to have_http_status(:no_content)
   end

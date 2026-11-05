@@ -74,6 +74,7 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
 
       expect(service_block.at_css('input#service-assignment_v2')['checked']).to be_present
       expect(service_block.at_css('input#service-communication_threads')['checked']).to be_nil
+      expect(service_block.at_css('input#service-telegram_calls_bot')['checked']).to be_nil
     end
 
     it 'no longer says that the developer switches these' do
@@ -93,6 +94,29 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
   describe 'saving the switches' do
     def save(states)
       patch card_path, params: { enabled_features: states.transform_keys { |flag| "feature_#{flag}" } }
+    end
+
+    it 'assigns bot calling to the chosen account and audits it without enabling another account' do
+      other = create(:account)
+      save('telegram_calls_bot' => 'true')
+      expect(response).to redirect_to(card_path)
+      expect(account.reload.feature_enabled?('telegram_calls_bot')).to be(true)
+      expect(other.reload.feature_enabled?('telegram_calls_bot')).to be(false)
+      expect(audits('update_service_flags').sole.audited_changes['features']).to eq(
+        'telegram_calls_bot' => { 'from' => false, 'to' => true }
+      )
+      save('telegram_calls_bot' => 'false')
+      expect(account.reload.feature_enabled?('telegram_calls_bot')).to be(false)
+    end
+
+    it 'does not let a company administrator assign a platform entitlement' do
+      administrator = create(:user)
+      create(:account_user, account: account, user: administrator, role: :administrator)
+      sign_out(:super_admin)
+      sign_in(administrator)
+      save('telegram_calls_bot' => 'true')
+      expect(response).to redirect_to(new_super_admin_session_path)
+      expect(account.reload.feature_enabled?('telegram_calls_bot')).to be(false)
     end
 
     it 'switches the decisions and says so' do
@@ -135,7 +159,7 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
     end
 
     it 'is not touched by a plan: applying a plan keeps the decisions as they are' do
-      account.enable_features!('communication_threads', 'captain_openrouter_byok')
+      account.enable_features!('communication_threads', 'captain_openrouter_byok', 'telegram_calls_bot')
 
       Accounts::ApplyPlan.new(account: account.reload, modules: %w[ai_agents quality]).call
       Accounts::ApplyPlan.new(account: account.reload, modules: []).call
@@ -143,6 +167,7 @@ RSpec.describe 'Super admin service flags and feature changes', type: :request d
       account.reload
       expect(account.feature_enabled?('communication_threads')).to be(true)
       expect(account.feature_enabled?('captain_openrouter_byok')).to be(true)
+      expect(account.feature_enabled?('telegram_calls_bot')).to be(true)
       expect(account.feature_enabled?('assignment_v2')).to be(false)
       expect(Accounts::Plans.managed_features & SuperAdmin::FineTuning::OWNER_DECISION_FLAGS).to be_empty
     end

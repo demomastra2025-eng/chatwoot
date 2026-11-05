@@ -30,6 +30,7 @@ RSpec.describe TelegramCalls::ClaimCoordinator do
   end
 
   before do
+    account.enable_features!(:telegram_calls_bot)
     allow(TelegramCalls::Config).to receive_messages(
       bot_token: '123456:TEST_BOT_TOKEN',
       bot_username: 'onelink_calls_bot',
@@ -49,6 +50,205 @@ RSpec.describe TelegramCalls::ClaimCoordinator do
       account: account, user: agent_two, telegram_user_id: '1002',
       telegram_chat_id: '1002', username: 'sherkhan_tg', verified_at: Time.current, on_line: true
     )
+  end
+
+  describe 'account bot access revocation' do
+    let(:voice_inbox) { create(:inbox, account: account, name: 'Synthetic SIP') }
+    let(:binding) { account.telephony_telegram_operator_bindings.find_by!(user_id: agent_one.id) }
+
+    it 'does not create new dispatch legs, cards or gateway calls while OFF' do
+      account.disable_features!(:telegram_calls_bot)
+      expect(TelegramCalls::Registry).not_to receive(:store_leg!)
+      result = TelegramCalls::CallDispatcher.new(
+        account: account, inbox: voice_inbox, meta: { source_type: 'telephony_sip', source_call_ref: 'disabled-dispatch' }
+      ).dispatch!
+
+      expect(result).to eq([])
+      expect(gateway_client).not_to have_received(:create_leg!)
+      expect(bot_client).not_to have_received(:send_message)
+    end
+
+    it 'cancels a dispatched card when access changes during Bot API await and never notifies the second binding' do
+      allow(bot_client).to receive(:send_message) do
+        Account.find(account.id).disable_features!(:telegram_calls_bot)
+        { 'message_id' => 901 }
+      end
+
+      TelegramCalls::CallDispatcher.new(
+        account: account, inbox: voice_inbox, meta: { source_type: 'telephony_sip', source_call_ref: 'await-revoked' }
+      ).dispatch!
+
+      group = TelegramCalls::Registry.fetch_source_group(
+        source_type: 'telephony_sip', account_id: account.id, source_call_ref: 'await-revoked'
+      )
+      expect(group['leg_ids'].size).to eq(1)
+      leg = TelegramCalls::Registry.fetch_leg(group['leg_ids'].first)
+      expect(leg).to include('status' => 'cancelled', 'voice_ring_started' => false)
+      expect(bot_client).to have_received(:send_message).once
+      expect(bot_client).to have_received(:edit_message_text).with(hash_including(text: include('отключены')))
+      expect(gateway_client).not_to have_received(:create_leg!)
+    end
+
+    it 'cancels an outbound callback card before ringing when Bot API await observes access removal' do
+      binding.update!(sip_lease_meta: {
+                        'lines' => [{ 'line_key' => 'outbound-line', 'inbox_id' => voice_inbox.id, 'provider' => 'wazo', 'registered' => true }]
+                      })
+      allow(SecureRandom).to receive(:uuid).and_return('8eb8418b-6e18-47ba-9581-a8e949424001')
+      allow(bot_client).to receive(:send_message) do
+        Account.find(account.id).disable_features!(:telegram_calls_bot)
+        { 'message_id' => 901 }
+      end
+
+      expect do
+        TelegramCalls::OutboundDialService.new(binding: binding, raw_number: '+77015551122').perform!
+      end.to raise_error(Telephony::Error)
+
+      leg = TelegramCalls::Registry.fetch_leg('8eb8418b-6e18-47ba-9581-a8e949424001')
+      expect(leg).to include('status' => 'cancelled', 'voice_ring_started' => false)
+      expect(gateway_client).not_to have_received(:create_leg!)
+      expect(bot_client).to have_received(:edit_message_text).with(hash_including(text: include('Не удалось соединить')))
+    end
+
+    it 'cancels the outbound registry leg and card without claiming voice started when gateway create fails' do
+      binding.update!(sip_lease_meta: {
+                        'lines' => [{ 'line_key' => 'outbound-line', 'inbox_id' => voice_inbox.id, 'provider' => 'wazo', 'registered' => true }]
+                      })
+      allow(SecureRandom).to receive(:uuid).and_return('8eb8418b-6e18-47ba-9581-a8e949424002')
+      allow(gateway_client).to receive(:create_leg!).and_raise(RuntimeError, 'synthetic create failure')
+
+      expect do
+        TelegramCalls::OutboundDialService.new(binding: binding, raw_number: '+77015551122').perform!
+      end.to raise_error(RuntimeError, 'synthetic create failure')
+
+      expect(TelegramCalls::Registry.fetch_leg('8eb8418b-6e18-47ba-9581-a8e949424002')).to include(
+        'status' => 'cancelled', 'voice_ring_started' => false
+      )
+      expect(bot_client).to have_received(:edit_message_text).with(hash_including(text: include('Не удалось соединить')))
+    end
+
+    it 'fails an ingested outbound session when access changes during ingestion without dialing SIP' do
+      session = Telephony::CallSession.create!(account: account, inbox: voice_inbox, provider: 'wazo',
+                                               external_call_ref: 'outbound-ingest-revoked', direction: 'outbound', status: 'ringing')
+      leg = {
+        'leg_id' => 'ingest-revoked', 'account_id' => account.id, 'user_id' => agent_one.id,
+        'inbox_id' => voice_inbox.id, 'source_type' => 'telephony_sip_outbound',
+        'source_call_ref' => session.external_call_ref, 'provider' => 'wazo', 'caller_phone' => '+77015551122',
+        'status' => 'ringing', 'voice_ring_started' => false, 'chat_id' => '1001', 'message_id' => 901
+      }
+      TelegramCalls::Registry.store_leg!(leg)
+      ingestion = instance_double(Telephony::EventsIngestionService)
+      allow(ingestion).to receive(:perform) do
+        Account.find(account.id).disable_features!(:telegram_calls_bot)
+        session
+      end
+      allow(Telephony::EventsIngestionService).to receive(:new).and_return(ingestion)
+      reject = instance_double(Telephony::OperatorCallRejectService)
+      allow(reject).to receive(:perform) { session.update!(status: 'failed') }
+      allow(Telephony::OperatorCallRejectService).to receive(:new).and_return(reject)
+
+      result = TelegramCalls::OutboundDialService.bridge_answered_operator_leg!(leg: leg)
+
+      expect(result[:ok]).to be(false)
+      expect(gateway_client).not_to have_received(:dial_sip!)
+      expect(session.reload.status).to eq('failed')
+      expect(Telephony::OperatorCallRejectService).to have_received(:new).with(
+        account: account, user: agent_one, call_ref: session.external_call_ref, status: 'failed', reason: 'outbound_dial_failed'
+      )
+      expect(TelegramCalls::Registry.fetch_leg(leg['leg_id'])['status']).to eq('cancelled')
+    end
+
+    %w[telephony_sip telephony_sip_outbound whatsapp].each do |source|
+      it "rejects an answered #{source} leg after access removal without SIP dial or CRM claim" do
+        TelegramCalls::Registry.store_leg!(
+          'leg_id' => 'revoked-answer', 'account_id' => account.id, 'user_id' => agent_one.id,
+          'binding_id' => binding.id, 'source_type' => source, 'source_call_ref' => 'revoked-ref',
+          'status' => 'ringing', 'chat_id' => '1001', 'message_id' => 901
+        )
+        account.disable_features!(:telegram_calls_bot)
+        expect(TelegramCalls::Registry).not_to receive(:try_claim_source!)
+        expect(Telephony::OperatorCallClaimService).not_to receive(:new)
+        expect(Telephony::EventsIngestionService).not_to receive(:new)
+
+        result = described_class.new(payload: { event_type: 'operator_leg.answered', leg_id: 'revoked-answer' }).perform
+
+        expect(result).to eq(ok: true, claimed: false)
+        expect(TelegramCalls::Registry.fetch_leg('revoked-answer')['status']).to eq('cancelled')
+        expect(gateway_client).not_to have_received(:dial_sip!)
+        expect(gateway_client).to have_received(:terminate_leg!).with(leg_id: 'revoked-answer', reason: 'answered_elsewhere')
+      end
+    end
+
+    %w[sip_line.heartbeat sip_line.incoming_call].each do |event|
+      it "revokes the saved lease on disabled #{event} without registering, ingesting or dispatching" do
+        binding.update!(sip_lease_meta: { 'group_key' => 'revoked-group', 'lines' => [{ 'release_key' => 'revoked-release' }] })
+        account.disable_features!(:telegram_calls_bot)
+        webphone = instance_double(Telephony::WebphoneService, release_registration_lease!: true)
+        allow(Telephony::WebphoneService).to receive(:new).and_return(webphone)
+        expect(webphone).not_to receive(:report_browser_sip_incoming!)
+        expect(gateway_client).not_to receive(:sync_sip_lines!)
+
+        result = described_class.new(payload: {
+                                       event_type: event, account_id: account.id, user_id: agent_one.id, inbox_id: voice_inbox.id,
+                                       line_key: 'revoked-line', janus_call_id: 'revoked-janus', registered: true
+                                     }).perform
+
+        expect(result).to eq(ignored: 'telegram_calls_bot_disabled')
+        expect(binding.reload.attributes).to include('on_line' => false, 'sip_lease_meta' => {})
+        expect(webphone).to have_received(:release_registration_lease!).with(release_key: 'revoked-release')
+        expect(gateway_client).to have_received(:remove_sip_line_group!).with(group_key: 'revoked-group')
+        expect(gateway_client).not_to have_received(:create_leg!)
+      end
+    end
+
+    it 'does not resync a disabled disconnected line and releases its lease' do
+      lines = [{ 'line_key' => 'revoked-line', 'release_key' => 'revoked-release' }]
+      binding.update!(sip_lease_meta: { 'group_key' => 'revoked-group', 'lines' => lines })
+      account.disable_features!(:telegram_calls_bot)
+      webphone = instance_double(Telephony::WebphoneService, update_presence!: {}, release_registration_lease!: true)
+      allow(Telephony::WebphoneService).to receive(:new).and_return(webphone)
+      expect(gateway_client).not_to receive(:sync_sip_lines!)
+
+      described_class.new(payload: {
+                            event_type: 'sip_line.disconnected', account_id: account.id, user_id: agent_one.id,
+                            inbox_id: voice_inbox.id, line_key: 'revoked-line'
+                          }).perform
+
+      expect(binding.reload).not_to be_on_line
+      expect(webphone).to have_received(:release_registration_lease!).with(release_key: 'revoked-release')
+    end
+
+    it 'blocks direct outbound creation and SIP activation while OFF' do
+      account.disable_features!(:telegram_calls_bot)
+      expect(Telephony::EventsIngestionService).not_to receive(:new)
+      expect(Telephony::WebphoneService).not_to receive(:new)
+
+      expect { TelegramCalls::OutboundDialService.new(binding: binding, raw_number: '+77015551122').perform! }.to raise_error(Telephony::Error)
+      expect { TelegramCalls::SipLineSyncService.new(binding: binding).activate! }.to raise_error(Telephony::Error)
+      expect(gateway_client).not_to have_received(:create_leg!)
+    end
+
+    it 'still finalizes an already claimed SIP leg after the flag is removed' do
+      session = Telephony::CallSession.create!(account: account, inbox: voice_inbox, provider: 'wazo',
+                                               external_call_ref: 'revoked-cleanup', direction: 'inbound',
+                                               status: 'in_progress', answered_at: 20.seconds.ago)
+      TelegramCalls::Registry.store_leg!(
+        'leg_id' => 'revoked-ended', 'account_id' => account.id, 'user_id' => agent_one.id,
+        'source_type' => 'telephony_sip', 'source_call_ref' => session.external_call_ref,
+        'status' => 'in_progress', 'claimed' => true, 'chat_id' => '1001', 'message_id' => 901
+      )
+      account.disable_features!(:telegram_calls_bot)
+      reject = instance_double(Telephony::OperatorCallRejectService, perform: true)
+      allow(Telephony::OperatorCallRejectService).to receive(:new).and_return(reject)
+
+      result = described_class.new(payload: { event_type: 'operator_leg.ended', leg_id: 'revoked-ended' }).perform
+
+      expect(result).to eq(ok: true, ended: true)
+      expect(TelegramCalls::Registry.fetch_leg('revoked-ended')['status']).to eq('ended')
+      expect(Telephony::OperatorCallRejectService).to have_received(:new).with(
+        account: account, user: agent_one, call_ref: session.external_call_ref, status: 'completed', reason: 'telegram_softphone_end'
+      )
+      expect(reject).to have_received(:perform)
+    end
   end
 
   describe 'WhatsApp Business incoming call consolidation and race claim' do

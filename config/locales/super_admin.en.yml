@@ -4,7 +4,7 @@ en:
       telegram_calls_bot: "Calls via Telegram bot"
     service_flags:
       telegram_calls_bot:
-        hint: "Staff can receive and make SIP calls through the Telegram bot."
+        hint: "Staff can receive and make calls through the Telegram bot."
         confirm_on: "Allow calls through the Telegram bot for account “%{clinic}”?"
         confirm_off: "Block new calls through the Telegram bot for account “%{clinic}”?"
     audits:

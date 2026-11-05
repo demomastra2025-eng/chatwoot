@@ -1,5 +1,5 @@
-import { mount, flushPromises } from '@vue/test-utils';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mount, flushPromises, enableAutoUnmount } from '@vue/test-utils';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import TelegramSoftphoneCard from './TelegramSoftphoneCard.vue';
 
 const mockGetStatus = vi.fn();
@@ -8,6 +8,26 @@ const mockSetOnLine = vi.fn();
 const mockDisconnect = vi.fn();
 const mockBootstrapIncomingSupport = vi.fn(() => Promise.resolve());
 const mockUseAlert = vi.fn();
+const accountAccess = await vi.hoisted(async () => {
+  const { reactive } = await import('vue');
+  return reactive({ accountId: 1, enabled: true });
+});
+
+enableAutoUnmount(afterEach);
+vi.mock('dashboard/composables/store', async () => {
+  const { computed } = await import('vue');
+  return {
+    useMapGetter: getter =>
+      computed(() =>
+        getter === 'getCurrentAccountId'
+          ? accountAccess.accountId
+          : (id, flag) =>
+              id === accountAccess.accountId &&
+              flag === 'telegram_calls_bot' &&
+              accountAccess.enabled
+      ),
+  };
+});
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
@@ -55,6 +75,43 @@ const mountCard = () =>
 describe('TelegramSoftphoneCard.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    accountAccess.accountId = 1;
+    accountAccess.enabled = true;
+  });
+
+  it('hides the card and makes no bot requests when the account entitlement is off', async () => {
+    accountAccess.enabled = false;
+    const wrapper = mountCard();
+    await flushPromises();
+    expect(
+      wrapper.find('[data-testid="telegram-softphone-card"]').exists()
+    ).toBe(false);
+    expect(mockGetStatus).not.toHaveBeenCalled();
+    expect(mockIssueLinkToken).not.toHaveBeenCalled();
+  });
+
+  it('does not open a delayed bot link after access is revoked', async () => {
+    mockGetStatus.mockResolvedValue({ configured: true, connected: false });
+    let resolveLink;
+    mockIssueLinkToken.mockReturnValueOnce(
+      new Promise(resolve => {
+        resolveLink = resolve;
+      })
+    );
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const wrapper = mountCard();
+    await flushPromises();
+    await wrapper
+      .find('[data-testid="telegram-softphone-connect"]')
+      .trigger('click');
+    accountAccess.enabled = false;
+    resolveLink({ deep_link: 'https://example.test/revoked-bot-link' });
+    await flushPromises();
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(
+      wrapper.find('[data-testid="telegram-softphone-card"]').exists()
+    ).toBe(false);
+    openSpy.mockRestore();
   });
 
   it('issues a single-use deep link and opens Telegram when unlinked', async () => {

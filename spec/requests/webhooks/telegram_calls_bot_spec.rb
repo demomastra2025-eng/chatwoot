@@ -20,6 +20,7 @@ RSpec.describe 'Webhooks::TelegramCallsBot', type: :request do
   end
 
   before do
+    account.enable_features!(:telegram_calls_bot)
     allow(TelegramCalls::Config).to receive_messages(
       bot_token: '123456:TEST_BOT_TOKEN',
       bot_username: 'onelink_calls_bot',
@@ -89,6 +90,7 @@ RSpec.describe 'Webhooks::TelegramCallsBot', type: :request do
 
   it 'prompts workspace selection when operator has active SIP lines in multiple workspaces' do
     second_account = create(:account, name: 'Sezim Clinic')
+    second_account.enable_features!(:telegram_calls_bot)
     second_user = create(:user, account: second_account, role: :agent)
     b1 = Telephony::TelegramOperatorBinding.create!(
       account: account, user: user, telegram_user_id: '500111',
@@ -149,6 +151,55 @@ RSpec.describe 'Webhooks::TelegramCallsBot', type: :request do
       }
     }
     expect(binding.reload.phone_number).to eq('+77011112233')
+  end
+
+  it 'dials only the enabled company and refuses a stale dialws callback for a disabled company' do
+    enabled = Telephony::TelegramOperatorBinding.create!(
+      account: account, user: user, telegram_user_id: '500111', telegram_chat_id: '500111',
+      verified_at: Time.current, on_line: true,
+      sip_lease_meta: { 'lines' => [{ 'line_key' => 'enabled-line', 'registered' => true }] }
+    )
+    other = create(:account)
+    other_user = create(:user, account: other, role: :agent)
+    disabled = Telephony::TelegramOperatorBinding.create!(
+      account: other, user: other_user, telegram_user_id: '500111', telegram_chat_id: '500111',
+      verified_at: Time.current, on_line: true,
+      sip_lease_meta: { 'lines' => [{ 'line_key' => 'disabled-line', 'registered' => true }] }
+    )
+    dial = instance_double(TelegramCalls::OutboundDialService, perform!: { 'leg_id' => 'enabled-leg' })
+    allow(TelegramCalls::OutboundDialService).to receive(:new).and_return(dial)
+
+    post '/webhooks/telegram_calls_bot/wh-secret-999', params: {
+      message: { chat: { id: 500_111 }, from: { id: 500_111 }, text: '/call +77015551122' }
+    }
+    expect(response).to have_http_status(:ok)
+    expect(TelegramCalls::OutboundDialService).to have_received(:new).with(binding: enabled, raw_number: '+77015551122').once
+
+    post '/webhooks/telegram_calls_bot/wh-secret-999', params: {
+      callback_query: { id: 'disabled-ws', from: { id: 500_111 }, data: "dialws:#{disabled.id}:77015551122" }
+    }
+    expect(response).to have_http_status(:ok)
+    expect(TelegramCalls::OutboundDialService).not_to have_received(:new).with(binding: disabled, raw_number: anything)
+    expect(bot_client).to have_received(:answer_callback_query).with(
+      callback_query_id: 'disabled-ws', text: 'Линия недоступна', show_alert: true
+    )
+  end
+
+  it 'still lets the bot take a disabled binding offline and release its SIP lease' do
+    binding = Telephony::TelegramOperatorBinding.create!(
+      account: account, user: user, telegram_user_id: '500111', telegram_chat_id: '500111',
+      verified_at: Time.current, on_line: true, sip_lease_meta: { 'group_key' => 'disabled-group' }
+    )
+    account.disable_features!(:telegram_calls_bot)
+
+    post '/webhooks/telegram_calls_bot/wh-secret-999', params: {
+      message: { chat: { id: 500_111 }, from: { id: 500_111 }, text: TelegramCalls::BotClient::OFF_LINE_BUTTON }
+    }
+    expect(response).to have_http_status(:ok)
+    expect(binding.reload).not_to be_on_line
+    expect(binding.sip_lease_meta).to eq({})
+    expect(sync_service).to have_received(:deactivate!)
+    expect(sync_service).not_to have_received(:activate!)
   end
 
   it 'authorizes callback query reject/hangup and uploads SIP recording on bot hangup button' do

@@ -80,7 +80,8 @@ RSpec.describe SuperAdmin::FineTuning do
       switches = tuning.service_switches
 
       expect(switches.map(&:name)).to eq(described_class::OWNER_DECISION_FLAGS)
-      expect(switches.map(&:label)).to eq(['Один чат на контакт', 'Автораспределение, версия 2', 'Разрешить свой ключ OpenRouter'])
+      expect(switches.map(&:label)).to eq(['Один чат на контакт', 'Автораспределение, версия 2', 'Разрешить свой ключ OpenRouter',
+                                           'Звонки через Telegram-бота'])
       expect(described_class::OWNER_DECISION_FLAGS & names).to be_empty
     end
 
@@ -99,7 +100,21 @@ RSpec.describe SuperAdmin::FineTuning do
 
       states = tuning.service_switches.to_h { |switch| [switch.name, switch.enabled] }
 
-      expect(states).to eq('communication_threads' => true, 'assignment_v2' => false, 'captain_openrouter_byok' => false)
+      expect(states).to eq('communication_threads' => true, 'assignment_v2' => false, 'captain_openrouter_byok' => false,
+                           'telegram_calls_bot' => false)
+    end
+
+    it 'provides the Telegram bot entitlement label and confirmation in every supported admin locale' do
+      %i[ru kk en].each do |locale|
+        I18n.with_locale(locale) do
+          item = described_class.new(account).service_switches.find { |candidate| candidate.name == 'telegram_calls_bot' }
+          expect(item.label).to include('Telegram')
+          expect(item.hint).to include('Telegram')
+          expect(item.confirm_on).to include(account.name)
+          expect(item.confirm_off).to include(account.name)
+          expect(item.label + item.hint + item.confirm_on + item.confirm_off).not_to include('translation missing')
+        end
+      end
     end
 
     it 'leaves out a decision flag that the application no longer has' do

@@ -22,6 +22,20 @@ RSpec.describe Account, type: :model do
       expect(account.selected_feature_flags).to include(:crm_deals)
     end
 
+    it 'defaults Telegram bot calling off and stores an explicit entitlement only in overflow' do
+      feature = Featurable::FEATURE_LIST.find { |item| item['name'] == 'telegram_calls_bot' }
+      expect(feature['enabled']).to be(false)
+      expect(account.feature_enabled?('telegram_calls_bot')).to be(false)
+      expect(Featurable::FEATURE_POSITIONS).not_to have_key('telegram_calls_bot')
+      legacy_bits = account.feature_flags
+
+      account.enable_features!('telegram_calls_bot')
+      expect(account.reload.feature_flags_overflow).to include('telegram_calls_bot')
+      expect(account.feature_flags).to eq(legacy_bits)
+      account.disable_features!('telegram_calls_bot')
+      expect(account.reload.feature_enabled?('telegram_calls_bot')).to be(false)
+    end
+
     it 'supports bulk selected_feature_flags updates across bitmask and overflow features' do
       account.selected_feature_flags = %i[crm scheduling crm_deals]
       account.save!
