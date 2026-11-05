@@ -11,7 +11,6 @@ class Webhooks::TelegramPersonalController < ActionController::API
   def process_payload
     return skip_service_account_event if TelegramPersonal::ServiceAccount.event?(params[:event], webhook_data)
 
-    TelegramPersonal::UpdateMessageService.provider_edit_time!(webhook_data) if params[:event].to_s == 'message.updated'
     store_session!
     job_class.perform_later(@channel.id, job_payload)
     head :ok
@@ -89,8 +88,6 @@ class Webhooks::TelegramPersonalController < ActionController::API
   end
 
   def error_status_for(error)
-    return :service_unavailable if error.is_a?(TelegramPersonal::UpdateMessageService::InvalidEditMetadataError)
-
     transient_queue_error?(error) ? :service_unavailable : :internal_server_error
   end
 
