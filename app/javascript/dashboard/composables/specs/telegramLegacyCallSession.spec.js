@@ -72,10 +72,12 @@ function microphone(audioTrack = track) {
 }
 function deferred() {
   let resolve;
-  const promise = new Promise(done => {
+  let reject;
+  const promise = new Promise((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 beforeEach(() => {
@@ -469,6 +471,177 @@ describe('Telegram gateway583 direct SDP call session', () => {
     expect(track.stop).toHaveBeenCalled();
     expect(state.janus).not.toHaveBeenCalled();
     expect(state.agentAnswer).toHaveBeenCalledOnce();
+  });
+
+  it.each(['new-call', 'same-call-fresh-sdp'])(
+    'cancels a late old answer rejection without closing %s media or retrying',
+    async replacement => {
+      const gate = deferred();
+      state.agentAnswer.mockReturnValueOnce(gate.promise);
+      const first = handleCallAgentOffer(1, offer, options);
+      const observed = first.catch(error => error);
+      await vi.waitFor(() => expect(state.agentAnswer).toHaveBeenCalledOnce());
+      const nextId = replacement === 'new-call' ? 2 : 1;
+      if (nextId === 2) {
+        useWhatsappCallsStore().setActiveCall({
+          id: 2,
+          provider: 'telegram_personal',
+          direction: 'incoming',
+        });
+      }
+      const freshTrack = { kind: 'audio', enabled: true, stop: vi.fn() };
+      navigator.mediaDevices.getUserMedia.mockResolvedValue(
+        microphone(freshTrack)
+      );
+      const freshOffer = { ...offer, sdp_offer: 'fresh-replacement-sdp' };
+      await handleCallAgentOffer(nextId, freshOffer, options);
+      const freshPc = state.peers[1];
+      gate.reject(
+        Object.assign(new Error('old answer failed late'), { retryable: true })
+      );
+      expect(await observed).toMatchObject({ cancelled: true });
+      expect(freshPc.close).not.toHaveBeenCalled();
+      expect(freshTrack.stop).not.toHaveBeenCalled();
+      expect(state.agentAnswer).toHaveBeenCalledTimes(2);
+      await handleCallAgentOffer(nextId, freshOffer, options);
+      expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
+    }
+  );
+
+  it('cancels a late old microphone rejection without touching fresh media', async () => {
+    const gate = deferred();
+    navigator.mediaDevices.getUserMedia.mockReturnValueOnce(gate.promise);
+    const first = handleCallAgentOffer(1, offer, options);
+    const observed = first.catch(error => error);
+    useWhatsappCallsStore().setActiveCall({
+      id: 2,
+      provider: 'telegram_personal',
+      direction: 'incoming',
+    });
+    const freshTrack = { kind: 'audio', enabled: true, stop: vi.fn() };
+    navigator.mediaDevices.getUserMedia.mockResolvedValue(
+      microphone(freshTrack)
+    );
+    await handleCallAgentOffer(
+      2,
+      { ...offer, sdp_offer: 'fresh-call-sdp' },
+      options
+    );
+    gate.reject(new Error('old microphone request failed late'));
+    expect(await observed).toMatchObject({ cancelled: true });
+    expect(state.peers[0].close).not.toHaveBeenCalled();
+    expect(freshTrack.stop).not.toHaveBeenCalled();
+    expect(state.agentAnswer).toHaveBeenCalledOnce();
+  });
+
+  it('ignores late old answer success and remote audio after a same-call SDP replacement', async () => {
+    const gate = deferred();
+    state.agentAnswer.mockReturnValueOnce(gate.promise);
+    const first = handleCallAgentOffer(1, offer, options);
+    const observed = first.catch(error => error);
+    await vi.waitFor(() => expect(state.agentAnswer).toHaveBeenCalledOnce());
+    const freshTrack = { kind: 'audio', enabled: true, stop: vi.fn() };
+    navigator.mediaDevices.getUserMedia.mockResolvedValue(
+      microphone(freshTrack)
+    );
+    await handleCallAgentOffer(
+      1,
+      { ...offer, sdp_offer: 'same-call-fresh-sdp' },
+      options
+    );
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    const freshStream = {};
+    state.peers[1].ontrack({ streams: [freshStream] });
+    const audio = Array.from(document.querySelectorAll('audio')).at(-1);
+    state.peers[0].ontrack({ streams: [{}] });
+    expect(audio.srcObject).toBe(freshStream);
+    const currentDisconnect = state.peers[1].onconnectionstatechange;
+    gate.resolve({ data: { success: true } });
+    expect(await observed).toMatchObject({ cancelled: true });
+    expect(state.peers[1].onconnectionstatechange).toBe(currentDisconnect);
+    expect(state.peers[1].close).not.toHaveBeenCalled();
+    expect(freshTrack.stop).not.toHaveBeenCalled();
+  });
+
+  it('does not stop a track reused by the current SDP when an old answer fails', async () => {
+    const gate = deferred();
+    state.agentAnswer.mockReturnValueOnce(gate.promise);
+    const first = handleCallAgentOffer(1, offer, options);
+    const observed = first.catch(error => error);
+    await vi.waitFor(() => expect(state.agentAnswer).toHaveBeenCalledOnce());
+    // Separate MediaStreams can contain the same live track.
+    navigator.mediaDevices.getUserMedia.mockResolvedValue(microphone(track));
+    await handleCallAgentOffer(
+      1,
+      { ...offer, sdp_offer: 'reused-track-sdp' },
+      options
+    );
+    const stopsBeforeStaleFailure = track.stop.mock.calls.length;
+    gate.reject(new Error('old answer failed late'));
+    expect(await observed).toMatchObject({ cancelled: true });
+    expect(track.stop).toHaveBeenCalledTimes(stopsBeforeStaleFailure);
+    expect(state.peers[1].close).not.toHaveBeenCalled();
+  });
+
+  it('protects a current stream from an old permission result arriving after its timeout', async () => {
+    vi.useFakeTimers();
+    const gate = deferred();
+    navigator.mediaDevices.getUserMedia.mockReturnValueOnce(gate.promise);
+    const first = handleCallAgentOffer(1, offer, options);
+    const observed = first.catch(error => error);
+    await vi.advanceTimersByTimeAsync(15001);
+    expect(await observed).toMatchObject({ stage: 'get_user_media' });
+    const freshTrack = { kind: 'audio', enabled: true, stop: vi.fn() };
+    const freshStream = microphone(freshTrack);
+    navigator.mediaDevices.getUserMedia.mockResolvedValue(freshStream);
+    await handleCallAgentOffer(
+      1,
+      { ...offer, sdp_offer: 'fresh-permission-sdp' },
+      options
+    );
+    gate.resolve(freshStream);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(freshTrack.stop).not.toHaveBeenCalled();
+    expect(state.peers[0].close).not.toHaveBeenCalled();
+  });
+
+  it('preserves one legitimate Telegram retry and deduplicates its successful SDP', async () => {
+    state.agentAnswer.mockRejectedValueOnce(
+      Object.assign(new Error('retryable active failure'), { retryable: true })
+    );
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await handleCallAgentOffer(1, offer, options);
+    expect(state.agentAnswer).toHaveBeenCalledTimes(2);
+    await handleCallAgentOffer(1, offer, options);
+    expect(state.agentAnswer).toHaveBeenCalledTimes(2);
+    expect(state.peers[1].close).not.toHaveBeenCalled();
+  });
+
+  it('applies the stale failure guard to WhatsApp without closing its fresh peer', async () => {
+    useWhatsappCallsStore().setActiveCall({ id: 99, provider: 'whatsapp' });
+    const gate = deferred();
+    WhatsappCallsAPI.agentAnswer.mockReturnValueOnce(gate.promise);
+    const first = handleAgentOffer(99, 'old-wa-sdp', [], {
+      provider: 'whatsapp',
+    });
+    const observed = first.catch(error => error);
+    await vi.waitFor(() =>
+      expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledOnce()
+    );
+    const freshTrack = { kind: 'audio', enabled: true, stop: vi.fn() };
+    navigator.mediaDevices.getUserMedia.mockResolvedValue(
+      microphone(freshTrack)
+    );
+    await handleAgentOffer(99, 'fresh-wa-sdp', [], { provider: 'whatsapp' });
+    gate.reject(
+      Object.assign(new Error('old WhatsApp answer failed late'), {
+        retryable: true,
+      })
+    );
+    expect(await observed).toMatchObject({ cancelled: true });
+    expect(state.peers[1].close).not.toHaveBeenCalled();
+    expect(freshTrack.stop).not.toHaveBeenCalled();
+    expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledTimes(2);
   });
 
   it('keeps the WhatsApp direct SDP API and mute behavior', async () => {

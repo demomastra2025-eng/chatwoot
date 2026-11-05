@@ -69,18 +69,43 @@ function inboundNegotiationCancelledError() {
   return error;
 }
 
-function assertInboundNegotiationActive(
-  token,
-  { stream = null, pc = null, callScope = null } = {}
-) {
-  if (
+function isInboundNegotiationActive(token, callScope = null) {
+  return (
     token === inboundNegotiationToken &&
     (!callScope || useWhatsappCallsStore().matchesActiveCallScope(callScope))
-  )
-    return;
-  if (pc) pc.close();
-  if (stream) stopStream(stream);
-  throw inboundNegotiationCancelledError();
+  );
+}
+
+function assertInboundNegotiationActive(token, { callScope = null } = {}) {
+  if (!isInboundNegotiationActive(token, callScope)) {
+    throw inboundNegotiationCancelledError();
+  }
+}
+
+// A superseded negotiation can finish after another call/SDP owns the globals.
+// Release only its own resources, protecting streams/tracks reused by that leg.
+function cleanupCancelledInboundNegotiation(resources) {
+  if (resources.cleanedUp) return;
+  resources.cleanedUp = true;
+  const { token, pc, stream, audio } = resources;
+  const stillOwnsGlobals = token === inboundNegotiationToken;
+  if (pc && (stillOwnsGlobals || pc !== inboundPc)) {
+    pc.close();
+    if (pc === inboundPc) inboundPc = null;
+  }
+  if (stillOwnsGlobals && stream === inboundStream) inboundStream = null;
+  const currentTracks = new Set([
+    ...(inboundStream?.getTracks?.() || []),
+    ...(inboundPrewarmStream?.getTracks?.() || []),
+  ]);
+  stream?.getTracks?.().forEach(track => {
+    if (!currentTracks.has(track)) track.stop();
+  });
+  if (audio && (stillOwnsGlobals || audio !== inboundAudio)) {
+    audio.srcObject = null;
+    audio.remove();
+    if (audio === inboundAudio) inboundAudio = null;
+  }
 }
 
 function cleanupInboundWebRTC({ keepPrewarmStream = false } = {}) {
@@ -447,6 +472,7 @@ async function negotiateAgentOfferOnce(
     deferPost = false,
     negotiationToken,
     callScope,
+    resources,
   }
 ) {
   timing.mark('get_user_media_start');
@@ -455,14 +481,29 @@ async function negotiateAgentOfferOnce(
         takeInboundPrewarmedAudioStream(),
         AGENT_WEBRTC_MEDIA_TIMEOUT_MS,
         'get_user_media',
-        { retryable: false, onLateResolve: stopStream }
+        {
+          retryable: false,
+          onLateResolve: lateStream =>
+            cleanupCancelledInboundNegotiation({
+              token: negotiationToken,
+              stream: lateStream,
+            }),
+        }
       )
     : await withTimeout(
         navigator.mediaDevices.getUserMedia({ audio: true }),
         AGENT_WEBRTC_MEDIA_TIMEOUT_MS,
         'get_user_media',
-        { retryable: false, onLateResolve: stopStream }
+        {
+          retryable: false,
+          onLateResolve: lateStream =>
+            cleanupCancelledInboundNegotiation({
+              token: negotiationToken,
+              stream: lateStream,
+            }),
+        }
       );
+  resources.stream = stream;
   timing.mark('get_user_media_ok');
   assertInboundNegotiationActive(negotiationToken, { stream, callScope });
   setInboundAudioStream(stream);
@@ -472,6 +513,7 @@ async function negotiateAgentOfferOnce(
     : [{ urls: 'stun:stun.l.google.com:19302' }];
 
   const pc = new RTCPeerConnection({ iceServers: servers });
+  resources.pc = pc;
   assertInboundNegotiationActive(negotiationToken, { stream, pc, callScope });
   inboundPc = pc;
 
@@ -483,8 +525,7 @@ async function negotiateAgentOfferOnce(
   stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
   pc.ontrack = event => {
-    if (callScope && !useWhatsappCallsStore().matchesActiveCallScope(callScope))
-      return;
+    if (!isInboundNegotiationActive(negotiationToken, callScope)) return;
     const [remoteStream] = event.streams;
     if (!remoteStream) return;
     if (!inboundAudio) {
@@ -493,6 +534,7 @@ async function negotiateAgentOfferOnce(
       document.body.appendChild(audio);
       inboundAudio = audio;
     }
+    resources.audio = inboundAudio;
     inboundAudio.srcObject = remoteStream;
     inboundAudio.play().catch(() => {});
 
@@ -545,12 +587,21 @@ async function negotiateAgentOfferOnce(
     const resolvedProvider =
       provider || useWhatsappCallsStore().activeCall?.provider;
     const api = callsApiFor(resolvedProvider);
-    if (peerId) {
-      await api.agentAnswer(callId, completeSdp, clientTiming, peerId);
-    } else {
-      await api.agentAnswer(callId, completeSdp, clientTiming);
+    try {
+      if (peerId) {
+        await api.agentAnswer(callId, completeSdp, clientTiming, peerId);
+      } else {
+        await api.agentAnswer(callId, completeSdp, clientTiming);
+      }
+      assertInboundNegotiationActive(negotiationToken, { callScope });
+      timing.mark('agent_answer_ok');
+    } catch (error) {
+      if (!isInboundNegotiationActive(negotiationToken, callScope)) {
+        cleanupCancelledInboundNegotiation(resources);
+        throw inboundNegotiationCancelledError();
+      }
+      throw error;
     }
-    timing.mark('agent_answer_ok');
   };
 
   if (deferPost) {
@@ -572,6 +623,7 @@ async function handleSdpAgentOffer(callId, sdpOffer, iceServers, options = {}) {
 
   const attemptNegotiation = async attempt => {
     const negotiationToken = inboundNegotiationToken;
+    const resources = { token: negotiationToken };
     try {
       return await negotiateAgentOfferOnce(callId, sdpOffer, iceServers, {
         direction,
@@ -583,8 +635,14 @@ async function handleSdpAgentOffer(callId, sdpOffer, iceServers, options = {}) {
         deferPost: options.deferPost === true,
         negotiationToken,
         callScope: options.callScope,
+        resources,
       });
     } catch (err) {
+      if (!isInboundNegotiationActive(negotiationToken, options.callScope)) {
+        cleanupCancelledInboundNegotiation(resources);
+        throw inboundNegotiationCancelledError();
+      }
+      const connection = telegramMediaConnection;
       if (!err.cancelled) cleanupInboundWebRTC();
       if (
         !err.cancelled &&
@@ -596,6 +654,9 @@ async function handleSdpAgentOffer(callId, sdpOffer, iceServers, options = {}) {
           '[WhatsApp Call] Retrying agent WebRTC negotiation after local failure',
           { callId, direction, context, attempt, stage: err.stage }
         );
+        // A retry still belongs to this same media request. Keep its dedup
+        // record while the negotiation token advances for the new attempt.
+        telegramMediaConnection = connection;
         return attemptNegotiation(attempt + 1);
       }
       timing.mark('agent_answer_error');
@@ -656,7 +717,10 @@ export async function handleCallAgentOffer(callId, offer, options = {}) {
     }
   )
     .then(result => {
-      if (!callsStore.matchesActiveCallScope(callScope)) {
+      if (
+        telegramMediaConnection !== connection ||
+        !callsStore.matchesActiveCallScope(callScope)
+      ) {
         throw inboundNegotiationCancelledError();
       }
       const pc = inboundPc;
