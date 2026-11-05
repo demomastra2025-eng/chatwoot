@@ -2,7 +2,6 @@ class TelegramPersonal::OutboundCallService
   pattr_initialize [:account!, :user!]
 
   def prepare!(conversation)
-    TelegramPersonal::JanusMediaConfig.server_url!
     recipient_id, username = resolve_outbound_target!(conversation)
     client = gateway_client(conversation)
     session_id = nil
@@ -34,7 +33,7 @@ class TelegramPersonal::OutboundCallService
   end
 
   def dial!(call)
-    TelegramPersonal::JanusMediaConfig.normalize!(call.meta.to_h['agent_offer'])
+    TelegramPersonal::CallBroadcaster.normalize_agent_offer!(call.meta.to_h['agent_offer'])
     claim_prepared_outbound_dial!(call)
     response = gateway_client(call.conversation).dial_call!(call_ref: gateway_call_ref(call))
     provider_call_id = response[:call_id].to_s.presence
@@ -51,7 +50,7 @@ class TelegramPersonal::OutboundCallService
   private
 
   def build_prepared_call!(conversation, response, session_id)
-    agent_offer = TelegramPersonal::JanusMediaConfig.normalize!(response[:agent_offer])
+    agent_offer = TelegramPersonal::CallBroadcaster.normalize_agent_offer!(response[:agent_offer])
     pending_call_id = response[:call_id].to_s.presence || "pending_#{session_id}"
 
     account.calls.create!(

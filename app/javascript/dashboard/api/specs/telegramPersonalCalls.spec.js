@@ -101,8 +101,7 @@ vi.mock('dashboard/stores/calls', () => ({
 vi.mock('dashboard/composables/useWhatsappCallSession', () => ({
   handleAgentOffer: (...args) => mockHandleAgentOffer(...args),
   handleCallAgentOffer: (...args) => mockHandleCallAgentOffer(...args),
-  hasAgentMediaOffer: offer =>
-    offer?.transport === 'janus_audiobridge' || Boolean(offer?.sdp_offer),
+  hasAgentMediaOffer: offer => Boolean(offer?.sdp_offer),
   WHATSAPP_CALL_MEDIA_LEG_CLOSED_MESSAGE: 'Media leg closed',
   isMediaLegClosedError: () => false,
 }));
@@ -213,13 +212,8 @@ describe('useWhatsappCallInitiation for Channel::TelegramPersonal', () => {
           call_id: 'pending_tg-sess-91',
           provider: 'telegram_personal',
           agent_offer: {
-            transport: 'janus_audiobridge',
-            room_id: 123,
-            server: 'wss://example.test/janus-sipuni',
-            token: 'ephemeral-token',
-            pin: 'ephemeral-pin',
+            sdp_offer: 'legacy-gateway-offer',
             ice_servers: [],
-            peer_id: 'peer-91',
           },
         },
       });
@@ -258,10 +252,10 @@ describe('useWhatsappCallInitiation for Channel::TelegramPersonal', () => {
     expect(mockHandleAgentOffer).not.toHaveBeenCalled();
     expect(mockHandleCallAgentOffer).toHaveBeenCalledWith(
       91,
-      expect.objectContaining({ transport: 'janus_audiobridge', room_id: 123 }),
+      expect.objectContaining({ sdp_offer: 'legacy-gateway-offer' }),
       expect.objectContaining({
         direction: 'outbound',
-        peerId: 'peer-91',
+        peerId: undefined,
         provider: 'telegram_personal',
       })
     );
@@ -317,8 +311,7 @@ describe('useWhatsappCallInitiation for Channel::TelegramPersonal', () => {
         id: 91,
         provider: 'telegram_personal',
         agent_offer: {
-          transport: 'janus_audiobridge',
-          room_id: 123,
+          sdp_offer: 'obsolete-legacy-offer',
           peer_id: 'old-peer',
         },
       },

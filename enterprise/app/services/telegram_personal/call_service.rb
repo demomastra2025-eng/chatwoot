@@ -4,7 +4,6 @@ class TelegramPersonal::CallService
   attr_reader :agent_offer
 
   def accept
-    TelegramPersonal::JanusMediaConfig.server_url!
     reserve_acceptance!
     accept_on_gateway_and_commit!
     finalize_accepted_call!
@@ -36,7 +35,7 @@ class TelegramPersonal::CallService
     gateway_accepted = false
     response = gateway_client.accept_call!(call_ref: gateway_call_ref)
     gateway_accepted = true
-    @agent_offer = TelegramPersonal::JanusMediaConfig.normalize!(response[:agent_offer])
+    @agent_offer = TelegramPersonal::CallBroadcaster.normalize_agent_offer!(response[:agent_offer])
     commit_accepted_call!(response[:session_id])
   rescue StandardError
     notify_gateway(:terminate_call!, gateway_call_ref) if gateway_accepted

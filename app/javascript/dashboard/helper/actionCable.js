@@ -188,9 +188,16 @@ class ActionCableConnector extends BaseActionCableConnector {
       'telegram_personal_call.ended': this.onWhatsappCallEnded,
       'telegram_personal_call.outbound_accepted':
         this.onWhatsappCallOutboundAccepted,
-      'telegram_personal_call.agent_offer': this.onWhatsappCallAgentOffer,
-      'telegram_personal_call.agent_disconnected':
-        this.onWhatsappCallAgentDisconnected,
+      'telegram_personal_call.agent_offer': data =>
+        this.onWhatsappCallAgentOffer({
+          ...data,
+          provider: 'telegram_personal',
+        }),
+      'telegram_personal_call.agent_disconnected': data =>
+        this.onWhatsappCallAgentDisconnected({
+          ...data,
+          provider: 'telegram_personal',
+        }),
       'crm.deal.created': data =>
         this.onCrmDealRealtimeEvent('crm.deal.created', data),
       'crm.deal.updated': data =>
@@ -993,10 +1000,17 @@ class ActionCableConnector extends BaseActionCableConnector {
       communicationThreadId:
         data.communication_thread_id || data.communicationThreadId,
       caller: data.caller,
-      sdpOffer: data.sdp_offer || null,
-      iceServers: data.ice_servers || null,
-      agentOffer:
-        data.agent_offer || data.agent_offers?.[String(currentUserId)] || null,
+      sdpOffer: isTelegramPersonalProvider(data)
+        ? null
+        : data.sdp_offer || null,
+      iceServers: isTelegramPersonalProvider(data)
+        ? null
+        : data.ice_servers || null,
+      agentOffer: isTelegramPersonalProvider(data)
+        ? null
+        : data.agent_offer ||
+          data.agent_offers?.[String(currentUserId)] ||
+          null,
       mediaServerEnabled: data.media_server_enabled,
       mediaSessionId: data.media_session_id || null,
     };
@@ -1055,8 +1069,15 @@ class ActionCableConnector extends BaseActionCableConnector {
   // eslint-disable-next-line class-methods-use-this
   matchesActiveCall(activeCall, data) {
     if (!activeCall || !data) return false;
+    if (
+      isTelegramPersonalProvider(activeCall) !==
+      isTelegramPersonalProvider(data)
+    )
+      return false;
     return (
-      String(activeCall.callId) === String(data.call_id) ||
+      (activeCall.callId != null &&
+        data.call_id != null &&
+        String(activeCall.callId) === String(data.call_id)) ||
       (data.id !== null &&
         data.id !== undefined &&
         String(activeCall.id) === String(data.id))
@@ -1180,20 +1201,29 @@ class ActionCableConnector extends BaseActionCableConnector {
     const activeCall = whatsappCallsStore.activeCall;
 
     if (!activeCall) {
-      whatsappCallsStore.storePendingAgentOffer(data);
+      // Telegram account events only announce readiness. Never retain their
+      // SDP as an accept fallback; grants come exclusively from protected APIs.
+      if (!isTelegramPersonalProvider(data)) {
+        whatsappCallsStore.storePendingAgentOffer(data);
+      }
       return;
     }
     // Verify this offer is for the current active call
-    if (
-      String(activeCall.callId) !== String(data.call_id) &&
-      String(activeCall.id) !== String(data.id)
-    ) {
-      whatsappCallsStore.storePendingAgentOffer(data);
+    if (!this.matchesActiveCall(activeCall, data)) {
+      // Telegram account events only announce readiness. Never retain their
+      // SDP as an accept fallback; grants come exclusively from protected APIs.
+      if (!isTelegramPersonalProvider(data)) {
+        whatsappCallsStore.storePendingAgentOffer(data);
+      }
       return;
     }
 
     if (activeCall.providerAccepting) {
-      whatsappCallsStore.storePendingAgentOffer(data);
+      // Telegram account events only announce readiness. Never retain their
+      // SDP as an accept fallback; grants come exclusively from protected APIs.
+      if (!isTelegramPersonalProvider(data)) {
+        whatsappCallsStore.storePendingAgentOffer(data);
+      }
       return;
     }
 
@@ -1254,6 +1284,8 @@ class ActionCableConnector extends BaseActionCableConnector {
       if (!data.agent_offer || store.activeCall.agentWebrtcConnected) return;
       await handleCallAgentOffer(activeCall.id, data.agent_offer, {
         provider: 'telegram_personal',
+        direction: activeCall.direction,
+        context: 'actioncable-agent-offer',
         usePrewarmedStream: ['incoming', 'inbound'].includes(
           activeCall.direction
         ),
@@ -1288,10 +1320,7 @@ class ActionCableConnector extends BaseActionCableConnector {
     const activeCall = whatsappCallsStore.activeCall;
 
     if (!activeCall) return;
-    if (
-      String(activeCall.callId) !== String(data.call_id) &&
-      String(activeCall.id) !== String(data.id)
-    ) {
+    if (!this.matchesActiveCall(activeCall, data)) {
       return;
     }
 

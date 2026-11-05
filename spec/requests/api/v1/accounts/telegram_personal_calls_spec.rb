@@ -24,8 +24,8 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
   end
   let(:gateway_client) { instance_double(TelegramPersonal::GatewayClient) }
 
-  def janus_offer(peer_id)
-    { transport: 'janus_audiobridge', room_id: 45_001, pin: 'room-pin', token: 'browser-token', peer_id: peer_id }
+  def legacy_offer(peer_id)
+    { sdp_offer: "v=0\r\no=#{peer_id}\r\n", ice_servers: [{ 'urls' => 'stun:stun.example.com' }], peer_id: peer_id }
   end
 
   around do |example|
@@ -51,14 +51,14 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
     Current.suppress_runtime_events = nil
   end
 
-  describe 'outbound Janus preconnect flow (prepare_outbound -> Janus join -> dial)' do
+  describe 'outbound legacy preconnect flow (prepare_outbound -> SDP answer -> dial)' do
     it 'prepares an outbound call with agent_offer and voice_call message' do
       expect(gateway_client).to receive(:prepare_outbound_call!).with(
         hash_including(recipient_id: '554433')
       ).and_return(
         {
           session_id: 'tg-out-sess-1',
-          agent_offer: janus_offer('peer-out-1')
+          agent_offer: legacy_offer('peer-out-1')
         }
       )
 
@@ -72,10 +72,10 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
       expect(body).to include(
         'provider' => 'telegram_personal',
         'agent_offer' => a_hash_including(
-          janus_offer('peer-out-1').stringify_keys.merge('server' => a_string_starting_with('wss://app.example.com/janus-sipuni?janus_ticket='))
+          legacy_offer('peer-out-1').stringify_keys
         )
       )
-      expect(body['agent_offer']).not_to have_key('sdp_offer')
+      expect(body['agent_offer']).not_to have_key('server')
       call = Call.telegram_personal.find(body['id'])
       expect(call.media_session_id).to eq('tg-out-sess-1')
       expect(call.message&.content_attributes&.dig('data')).to include(
@@ -89,7 +89,7 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
         provider: :telegram_personal, account: account, inbox: inbox, conversation: conversation,
         contact: contact, provider_call_id: 'pending_tg-out-fail-1', media_session_id: 'tg-out-fail-1',
         direction: :outgoing, status: 'ringing', accepted_by_agent: agent,
-        meta: { 'outbound_prepare_pending' => true, 'agent_offer' => janus_offer('dial-fail-peer') }
+        meta: { 'outbound_prepare_pending' => true, 'agent_offer' => legacy_offer('dial-fail-peer') }
       )
       msg = TelegramPersonal::CallMessageBuilder.create!(conversation: conversation, call: call, user: agent)
       call.update!(message_id: msg.id)
@@ -109,12 +109,12 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
       expect(conversation.reload.additional_attributes['call_status']).to eq('failed')
     end
 
-    it 'dials Telegram on a prepared outbound Janus call' do
+    it 'dials Telegram on a prepared outbound SDP call' do
       call = Call.create!(
         provider: :telegram_personal, account: account, inbox: inbox, conversation: conversation,
         contact: contact, provider_call_id: 'pending_tg-out-sess-2', media_session_id: 'tg-out-sess-2',
         direction: :outgoing, status: 'ringing', accepted_by_agent: agent,
-        meta: { 'outbound_prepare_pending' => true, 'agent_offer' => janus_offer('peer-out-2') }
+        meta: { 'outbound_prepare_pending' => true, 'agent_offer' => legacy_offer('peer-out-2') }
       )
       msg = TelegramPersonal::CallMessageBuilder.create!(conversation: conversation, call: call, user: agent)
       call.update!(message_id: msg.id)
@@ -143,7 +143,7 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
       expect(response.parsed_body['error']).to include('private')
     end
 
-    it 'rejects the previous direct SDP endpoint without contacting the gateway' do
+    it 'sends the outbound browser SDP answer to the native gateway' do
       call = Call.create!(
         provider: :telegram_personal,
         account: account,
@@ -158,20 +158,22 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
         meta: { 'outbound_prepare_pending' => true }
       )
 
-      expect(TelegramPersonal::GatewayClient).not_to receive(:new)
+      expect(gateway_client).to receive(:set_call_agent_answer!).with(
+        call_ref: 'tg-closed', sdp_answer: 'v=0\r\nanswer\r\n'
+      ).and_return(ok: true)
 
       post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{call.id}/agent_answer",
            params: { sdp_answer: 'v=0\r\nanswer\r\n' },
            headers: headers,
            as: :json
 
-      expect(response).to have_http_status(:unprocessable_entity)
-      expect(response.parsed_body['code']).to eq('janus_media_required')
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['success']).to be(true)
     end
 
-    it 'refuses legacy direct SDP and closes the prepared gateway session' do
+    it 'refuses a Janus descriptor and closes the prepared gateway session' do
       allow(gateway_client).to receive(:prepare_outbound_call!).and_return(
-        session_id: 'legacy-outbound', agent_offer: { peer_id: 'old-peer', sdp_offer: 'v=0' }
+        session_id: 'legacy-outbound', agent_offer: { transport: 'janus_audiobridge', room_id: 45_001, peer_id: 'new-peer' }
       )
       expect(gateway_client).to receive(:terminate_call!).with(call_ref: 'legacy-outbound').and_return(ok: true)
 
@@ -181,7 +183,7 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
       end.not_to change(Call.telegram_personal, :count)
 
       expect(response).to have_http_status(:unprocessable_entity)
-      expect(response.parsed_body['error']).to include('require Janus')
+      expect(response.parsed_body['error']).to include('SDP offer')
     end
   end
 
@@ -210,7 +212,7 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
       expect(gateway_client).to receive(:accept_call!).with(call_ref: 'tg-sess-500').and_return(
         {
           session_id: 'tg-sess-500',
-          agent_offer: janus_offer('peer-in-1')
+          agent_offer: legacy_offer('peer-in-1')
         }
       )
 
@@ -229,6 +231,72 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
       expect(response).to have_http_status(:unprocessable_entity)
     end
 
+    it 'completes incoming negotiation without peer_id, as returned by gateway583' do
+      offer = legacy_offer('gateway583').except(:peer_id)
+      allow(gateway_client).to receive(:accept_call!).and_return(session_id: 'tg-sess-500', agent_offer: offer)
+      post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}/accept", headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['agent_offer']).to eq(offer.stringify_keys)
+
+      expect(gateway_client).to receive(:set_call_agent_answer!).with(
+        call_ref: 'tg-sess-500', sdp_answer: 'v=0-answer'
+      ).and_return(ok: true)
+      post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}/agent_answer",
+           params: { sdp_answer: 'v=0-answer' }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+    end
+
+    it 'forbids another operator from answering or reconnecting an owned call' do
+      inbound_call.update!(status: 'in_progress', accepted_by_agent: agent, meta: { agent_offer: legacy_offer('owner') })
+      expect(gateway_client).not_to receive(:set_call_agent_answer!)
+      expect(gateway_client).not_to receive(:reconnect_call!)
+      %w[agent_answer reconnect].each do |action|
+        post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}/#{action}",
+             params: { sdp_answer: 'v=0-answer' }, headers: other_headers, as: :json
+        expect(response).to have_http_status(:forbidden)
+      end
+    end
+
+    it 'scopes call lookup to the account for show and browser answer' do
+      alien_account = create(:account)
+      create(:account_user, account: alien_account, user: agent, role: :administrator)
+      expect(gateway_client).not_to receive(:set_call_agent_answer!)
+      get "/api/v1/accounts/#{alien_account.id}/telegram_personal_calls/#{inbound_call.id}", headers: headers
+      expect(response).to have_http_status(:not_found)
+      post "/api/v1/accounts/#{alien_account.id}/telegram_personal_calls/#{inbound_call.id}/agent_answer",
+           params: { sdp_answer: 'v=0-answer' }, headers: headers, as: :json
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it 'denies media after inbox access is removed from the accepted agent' do
+      restricted_agent = create(:user, account: account, role: :agent)
+      inbound_call.update!(status: 'in_progress', accepted_by_agent: restricted_agent, meta: { agent_offer: legacy_offer('restricted') })
+      inbox.inbox_members.find_by!(user_id: restricted_agent.id).destroy!
+      restricted_headers = restricted_agent.create_new_auth_token
+      expect(gateway_client).not_to receive(:set_call_agent_answer!)
+      get "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}", headers: restricted_headers
+      expect(response).to have_http_status(:unauthorized)
+      post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}/agent_answer",
+           params: { sdp_answer: 'v=0-answer' }, headers: restricted_headers, as: :json
+      expect(response).to have_http_status(:unauthorized)
+      expect(TelegramPersonal::CallSerializer.agent_offer_for_user(inbound_call, restricted_agent)).to be_nil
+    end
+
+    it 'rejects empty or structured answers and answers after the call ends' do
+      inbound_call.update!(status: 'in_progress', accepted_by_agent: agent)
+      expect(gateway_client).not_to receive(:set_call_agent_answer!)
+      [nil, '', { sdp: 'v=0' }].each do |answer|
+        post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}/agent_answer",
+             params: { sdp_answer: answer }, headers: headers, as: :json
+        expect(response).to have_http_status(:unprocessable_entity)
+      end
+      inbound_call.update!(status: 'completed')
+      post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}/agent_answer",
+           params: { sdp_answer: 'v=0-answer' }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(TelegramPersonal::CallSerializer.agent_offer_for_user(inbound_call, agent)).to be_nil
+    end
+
     it 'lists in_progress call in active and reconnects' do
       inbound_call.update!(status: 'in_progress', started_at: 10.seconds.ago, accepted_by_agent: agent)
 
@@ -240,7 +308,7 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
 
       expect(gateway_client).to receive(:reconnect_call!).with(call_ref: 'tg-sess-500').and_return(
         {
-          agent_offer: janus_offer('peer-in-2')
+          agent_offer: legacy_offer('peer-in-2')
         }
       )
 
@@ -251,10 +319,10 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body['peer_id']).to eq('peer-in-2')
       expect(inbound_call.reload.meta.dig('agent_offer', 'peer_id')).to eq('peer-in-2')
-      expect(response.parsed_body['server']).to include('janus_ticket=')
+      expect(response.parsed_body).to include(legacy_offer('peer-in-2').stringify_keys)
     end
 
-    it 'rejects a concurrent reconnect without allocating another room or changing the current lease' do
+    it 'rejects a concurrent reconnect without allocating another media generation or changing the current lease' do
       inbound_call.update!(status: 'in_progress', started_at: 10.seconds.ago, accepted_by_agent: agent)
       key = "telegram_personal:media_reconnect:#{account.id}:#{inbound_call.id}"
       lock = Redis::LockManager.new
@@ -277,7 +345,7 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
         expect do
           TelegramPersonal::ReconnectCallService.new(call: Call.find(inbound_call.id), agent: agent).perform
         end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('CALL_RECONNECT_IN_PROGRESS') }
-        { agent_offer: janus_offer('current-worker-peer') }
+        { agent_offer: legacy_offer('current-worker-peer') }
       end
 
       post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}/reconnect", headers: headers, as: :json
@@ -287,11 +355,11 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
 
     it 'does not persist media after losing the distributed reconnect lease' do
       inbound_call.update!(status: 'in_progress', started_at: 10.seconds.ago, accepted_by_agent: agent,
-                           meta: { agent_offer: janus_offer('previous-peer') })
+                           meta: { agent_offer: legacy_offer('previous-peer') })
       lock = Redis::LockManager.new
       allow(Redis::LockManager).to receive(:new).and_return(lock)
       allow(lock).to receive(:renew).and_return(false)
-      expect(gateway_client).to receive(:reconnect_call!).and_return(agent_offer: janus_offer('stale-worker-peer'))
+      expect(gateway_client).to receive(:reconnect_call!).and_return(agent_offer: legacy_offer('stale-worker-peer'))
       expect(gateway_client).not_to receive(:terminate_call!)
 
       post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}/reconnect", headers: headers, as: :json
@@ -341,8 +409,8 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
       expect(response.parsed_body['error']).to include('already accepted')
     end
 
-    it 'returns room credentials only to the accepted operator through show' do
-      inbound_call.update!(status: 'in_progress', accepted_by_agent: agent, meta: { 'agent_offer' => janus_offer('owner-peer') })
+    it 'returns SDP and ICE only to the accepted operator through show' do
+      inbound_call.update!(status: 'in_progress', accepted_by_agent: agent, meta: { 'agent_offer' => legacy_offer('owner-peer') })
 
       get "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}", headers: other_headers
       expect(response).to have_http_status(:ok)
@@ -350,13 +418,13 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
 
       get "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}", headers: headers
       expect(response).to have_http_status(:ok)
-      expect(response.parsed_body['agent_offer']).to include(janus_offer('owner-peer').stringify_keys)
+      expect(response.parsed_body['agent_offer']).to include(legacy_offer('owner-peer').stringify_keys)
     end
 
-    it 'does not broadcast room credentials when an operator accepts' do
+    it 'does not broadcast SDP or ICE credentials when an operator accepts' do
       events = []
       allow(ActionCable.server).to receive(:broadcast) { |_topic, payload| events << payload }
-      allow(gateway_client).to receive(:accept_call!).and_return(session_id: 'tg-sess-500', agent_offer: janus_offer('accepted-peer'))
+      allow(gateway_client).to receive(:accept_call!).and_return(session_id: 'tg-sess-500', agent_offer: legacy_offer('accepted-peer'))
 
       post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}/accept", headers: headers, as: :json
 
@@ -369,36 +437,39 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
         anything,
         hash_including(event: 'telegram_personal_call.agent_offer', data: hash_including(token: anything))
       )
-      expect(events.to_json).not_to include('room-pin', 'browser-token', 'janus_ticket')
+      expect(events.to_json).not_to include('v=0', 'stun.example.com')
     end
 
-    it 'closes a legacy direct gateway leg and releases the incoming reservation' do
-      allow(gateway_client).to receive(:accept_call!).and_return(session_id: 'tg-sess-500', agent_offer: { sdp_offer: 'v=0', peer_id: 'old-peer' })
+    it 'closes an incompatible gateway leg and releases the incoming reservation' do
+      allow(gateway_client).to receive(:accept_call!).and_return(
+        session_id: 'tg-sess-500', agent_offer: { transport: 'janus_audiobridge', room_id: 45_001 }
+      )
       expect(gateway_client).to receive(:terminate_call!).with(call_ref: 'tg-sess-500').and_return(ok: true)
 
       post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}/accept", headers: headers, as: :json
 
       expect(response).to have_http_status(:unprocessable_entity)
-      expect(response.parsed_body['code']).to eq('janus_media_required')
+      expect(response.parsed_body['code']).to eq('media_offer_invalid')
       expect(inbound_call.reload.accepted_by_agent_id).to be_nil
     end
 
-    it 'revokes the previous room-generation ticket on reconnect' do
-      inbound_call.update!(status: 'in_progress', accepted_by_agent: agent, meta: { 'agent_offer' => janus_offer('old-peer') })
-      get "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}", headers: headers
-      uri = URI.parse(response.parsed_body.dig('agent_offer', 'server'))
-      old_ticket = URI.decode_www_form(uri.query).to_h.fetch('janus_ticket')
-      allow(gateway_client).to receive(:reconnect_call!).and_return(agent_offer: janus_offer('new-peer'))
+    it 'replaces the previous SDP generation on reconnect and returns only legacy media fields' do
+      inbound_call.update!(status: 'in_progress', accepted_by_agent: agent, meta: { 'agent_offer' => legacy_offer('old-peer') })
+      allow(gateway_client).to receive(:reconnect_call!).and_return(
+        legacy_offer('new-peer').merge(call_id: 'tg-in-500', session_id: 'tg-sess-500')
+      )
 
       post "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}/reconnect", headers: headers, as: :json
 
       expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to eq(legacy_offer('new-peer').stringify_keys)
       expect(inbound_call.reload.meta.dig('agent_offer', 'peer_id')).to eq('new-peer')
-      expect(Telephony::JanusWebsocketTicket.valid?(ticket: old_ticket, origin: 'https://app.example.com', path: '/janus-sipuni')).to be(false)
+      get "/api/v1/accounts/#{account.id}/telegram_personal_calls/#{inbound_call.id}", headers: headers
+      expect(response.parsed_body['agent_offer']).to eq(legacy_offer('new-peer').stringify_keys)
     end
 
     it 'returns media_leg_closed and clears operator busy state when reconnect finds a dead gateway call' do
-      inbound_call.update!(status: 'in_progress', accepted_by_agent: agent, meta: { 'agent_offer' => janus_offer('old-peer') })
+      inbound_call.update!(status: 'in_progress', accepted_by_agent: agent, meta: { 'agent_offer' => legacy_offer('old-peer') })
       allow(gateway_client).to receive(:reconnect_call!).and_raise(
         TelegramPersonal::GatewayClient::GatewayError.new('Call leg already closed', http_status: 409, code: 'media_leg_closed')
       )
@@ -413,10 +484,10 @@ RSpec.describe 'Telegram Personal Calls API', type: :request do
     end
 
     it 'does not resurrect a call that ends during a gateway reconnect' do
-      inbound_call.update!(status: 'in_progress', accepted_by_agent: agent, meta: { 'agent_offer' => janus_offer('old-peer') })
+      inbound_call.update!(status: 'in_progress', accepted_by_agent: agent, meta: { 'agent_offer' => legacy_offer('old-peer') })
       allow(gateway_client).to receive(:reconnect_call!) do
         inbound_call.update!(status: 'completed')
-        { agent_offer: janus_offer('late-peer') }
+        { agent_offer: legacy_offer('late-peer') }
       end
       expect(gateway_client).to receive(:terminate_call!).with(call_ref: 'tg-sess-500').and_return(ok: true)
 

@@ -9,7 +9,7 @@ class TelegramPersonal::ReconnectCallService
       call.reload
       validate_call!
       response = gateway_client.reconnect_call!(call_ref: call_ref)
-      offer = TelegramPersonal::JanusMediaConfig.normalize!(response[:agent_offer] || response)
+      offer = TelegramPersonal::CallBroadcaster.normalize_agent_offer!(response[:agent_offer] || response)
       raise_reconnect_conflict! unless lock.renew(reconnect_lock_key, RECONNECT_LOCK_TTL)
 
       persist_offer!(offer)

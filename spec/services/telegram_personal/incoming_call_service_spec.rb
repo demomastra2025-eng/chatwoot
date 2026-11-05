@@ -83,10 +83,8 @@ RSpec.describe TelegramPersonal::IncomingCallService do
         username: 'arman_k',
         phone_number: '+77015550101',
         agent_offer: {
-          transport: 'janus_audiobridge',
-          room_id: 45_001,
-          pin: 'room-pin',
-          token: 'browser-token',
+          sdp_offer: "v=0\r\nlegacy-incoming\r\n",
+          ice_servers: [{ urls: 'stun:stun.example.com' }],
           peer_id: 'peer-b-1'
         }
       }

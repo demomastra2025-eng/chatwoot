@@ -28,6 +28,10 @@ module TelegramPersonal::GatewayCallMethods
     post_with_runtime_retry(call_endpoint(call_ref, 'accept'), body: {})
   end
 
+  def set_call_agent_answer!(call_ref:, sdp_answer:)
+    post_with_runtime_retry(call_endpoint(call_ref, 'agent-answer'), body: { sdp_answer: sdp_answer })
+  end
+
   def reconnect_call!(call_ref:)
     post_with_runtime_retry(call_endpoint(call_ref, 'reconnect'), body: {})
   end

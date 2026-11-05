@@ -4,4 +4,5 @@ module TelegramPersonal::CallErrors
   class AlreadyAccepted < Error; end
   class NotCallOwner < Error; end
   class NotInProgress < Error; end
+  class InvalidOffer < Error; end
 end

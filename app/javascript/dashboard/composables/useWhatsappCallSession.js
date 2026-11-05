@@ -13,9 +13,6 @@ import {
 } from 'dashboard/api/telegramPersonalCalls';
 import Auth from 'dashboard/api/auth';
 import Timer from 'dashboard/helper/Timer';
-import JanusAudioBridgeCallClient, {
-  isJanusAudioBridgeOffer,
-} from 'dashboard/api/channel/voice/janusAudioBridgeCallClient';
 import { emitter } from 'shared/helpers/mitt';
 
 // ── Module-level WebRTC state (shared across legacy inbound + server-relay) ──
@@ -23,7 +20,8 @@ let inboundPc = null;
 let inboundStream = null;
 let inboundAudio = null;
 let inboundNegotiationToken = 0;
-let telegramJanusConnection = null;
+let telegramMediaConnection = null;
+let cancelTelegramIceGathering = null;
 
 // Inbound accept can prewarm microphone while Rails/Meta accepts the call.
 // Keep this separate from the active PeerConnection stream so a warmed inbound
@@ -73,9 +71,13 @@ function inboundNegotiationCancelledError() {
 
 function assertInboundNegotiationActive(
   token,
-  { stream = null, pc = null } = {}
+  { stream = null, pc = null, callScope = null } = {}
 ) {
-  if (token === inboundNegotiationToken) return;
+  if (
+    token === inboundNegotiationToken &&
+    (!callScope || useWhatsappCallsStore().matchesActiveCallScope(callScope))
+  )
+    return;
   if (pc) pc.close();
   if (stream) stopStream(stream);
   throw inboundNegotiationCancelledError();
@@ -83,9 +85,8 @@ function assertInboundNegotiationActive(
 
 function cleanupInboundWebRTC({ keepPrewarmStream = false } = {}) {
   inboundNegotiationToken += 1;
-  const janusConnection = telegramJanusConnection;
-  telegramJanusConnection = null;
-  janusConnection?.client.close();
+  telegramMediaConnection = null;
+  cancelTelegramIceGathering?.();
   if (inboundPc) {
     inboundPc.close();
     inboundPc = null;
@@ -334,7 +335,7 @@ function stopAndUploadRecording(callId) {
 
 function waitForIceGathering(
   pc,
-  { timeoutMs, firstCandidate = false, warning }
+  { timeoutMs, firstCandidate = false, requireComplete = false, warning }
 ) {
   return new Promise((resolve, reject) => {
     if (pc.iceGatheringState === 'complete') {
@@ -349,10 +350,25 @@ function waitForIceGathering(
       pc.onicegatheringstatechange = null;
       pc.onicecandidate = null;
       pc.oniceconnectionstatechange = null;
+      if (requireComplete) cancelTelegramIceGathering = null;
     };
+
+    if (requireComplete) {
+      cancelTelegramIceGathering = () => {
+        cleanup();
+        reject(inboundNegotiationCancelledError());
+      };
+    }
 
     timeout = setTimeout(() => {
       cleanup();
+      if (requireComplete) {
+        const error = new Error('Telegram ICE gathering did not complete');
+        error.retryable = false;
+        error.stage = 'ice_gathering';
+        reject(error);
+        return;
+      }
       // eslint-disable-next-line no-console
       console.warn(warning);
       resolve();
@@ -430,6 +446,7 @@ async function negotiateAgentOfferOnce(
     timing,
     deferPost = false,
     negotiationToken,
+    callScope,
   }
 ) {
   timing.mark('get_user_media_start');
@@ -447,7 +464,7 @@ async function negotiateAgentOfferOnce(
         { retryable: false, onLateResolve: stopStream }
       );
   timing.mark('get_user_media_ok');
-  assertInboundNegotiationActive(negotiationToken, { stream });
+  assertInboundNegotiationActive(negotiationToken, { stream, callScope });
   setInboundAudioStream(stream);
 
   const servers = iceServers?.length
@@ -455,7 +472,7 @@ async function negotiateAgentOfferOnce(
     : [{ urls: 'stun:stun.l.google.com:19302' }];
 
   const pc = new RTCPeerConnection({ iceServers: servers });
-  assertInboundNegotiationActive(negotiationToken, { stream, pc });
+  assertInboundNegotiationActive(negotiationToken, { stream, pc, callScope });
   inboundPc = pc;
 
   // Keep the browser microphone as a real outbound WebRTC track. A previous
@@ -466,6 +483,8 @@ async function negotiateAgentOfferOnce(
   stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
   pc.ontrack = event => {
+    if (callScope && !useWhatsappCallsStore().matchesActiveCallScope(callScope))
+      return;
     const [remoteStream] = event.streams;
     if (!remoteStream) return;
     if (!inboundAudio) {
@@ -486,30 +505,37 @@ async function negotiateAgentOfferOnce(
     'set_remote_description'
   );
   timing.mark('set_remote_description_ok');
-  assertInboundNegotiationActive(negotiationToken, { stream, pc });
+  assertInboundNegotiationActive(negotiationToken, { stream, pc, callScope });
   const answer = await withTimeout(
     pc.createAnswer(),
     AGENT_WEBRTC_STEP_TIMEOUT_MS,
     'create_answer'
   );
   timing.mark('create_answer_ok');
-  assertInboundNegotiationActive(negotiationToken, { stream, pc });
+  assertInboundNegotiationActive(negotiationToken, { stream, pc, callScope });
   await withTimeout(
     pc.setLocalDescription(answer),
     AGENT_WEBRTC_STEP_TIMEOUT_MS,
     'set_local_description'
   );
   timing.mark('set_local_description_ok');
-  assertInboundNegotiationActive(negotiationToken, { stream, pc });
-  await waitForFastAgentAnswerSdp(pc);
-  timing.mark('fast_ice_ready');
-  assertInboundNegotiationActive(negotiationToken, { stream, pc });
+  assertInboundNegotiationActive(negotiationToken, { stream, pc, callScope });
+  // Gateway583 has no trickle-ICE endpoint. Bundle every candidate into the
+  // one native SDP answer; never send a partial answer after a timeout.
+  if (isTelegramPersonalProvider(provider)) {
+    await waitForIceGathering(pc, { timeoutMs: 10000, requireComplete: true });
+    timing.mark('ice_gathering_complete');
+  } else {
+    await waitForFastAgentAnswerSdp(pc);
+    timing.mark('fast_ice_ready');
+  }
+  assertInboundNegotiationActive(negotiationToken, { stream, pc, callScope });
 
   const completeSdp = pc.localDescription.sdp;
   timing.mark('agent_answer_ready');
 
   const postAgentAnswer = async () => {
-    assertInboundNegotiationActive(negotiationToken, { stream, pc });
+    assertInboundNegotiationActive(negotiationToken, { stream, pc, callScope });
     timing.mark('agent_answer_post_start');
     const clientTiming = {
       direction,
@@ -535,14 +561,7 @@ async function negotiateAgentOfferOnce(
   return { success: true };
 }
 
-async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
-  if (
-    isTelegramPersonalProvider(
-      options.provider || useWhatsappCallsStore().activeCall
-    )
-  ) {
-    throw new Error('Telegram calls require Janus media');
-  }
+async function handleSdpAgentOffer(callId, sdpOffer, iceServers, options = {}) {
   const direction = options.direction || 'incoming';
   const context = options.context || 'agent-offer';
   const usePrewarmedStream =
@@ -563,6 +582,7 @@ async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
         timing,
         deferPost: options.deferPost === true,
         negotiationToken,
+        callScope: options.callScope,
       });
     } catch (err) {
       if (!err.cancelled) cleanupInboundWebRTC();
@@ -586,28 +606,21 @@ async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
   return attemptNegotiation(1);
 }
 
+// Telegram gateway583 uses a direct browser SDP/ICE leg, without a Janus room.
 export const hasAgentMediaOffer = offer =>
-  isJanusAudioBridgeOffer(offer) || Boolean(offer?.sdp_offer);
-
-function attachInboundRemoteAudio(stream) {
-  if (!inboundAudio) {
-    inboundAudio = document.createElement('audio');
-    inboundAudio.autoplay = true;
-    document.body.appendChild(inboundAudio);
-  }
-  inboundAudio.srcObject = stream;
-  inboundAudio.play().catch(() => {});
-}
+  typeof offer?.sdp_offer === 'string' && offer.sdp_offer.trim().length > 0;
 
 export async function handleCallAgentOffer(callId, offer, options = {}) {
-  if (!isTelegramPersonalProvider(options.provider)) {
-    return handleAgentOffer(callId, offer?.sdp_offer, offer?.ice_servers, {
+  const provider =
+    options.provider || useWhatsappCallsStore().activeCall?.provider;
+  if (!isTelegramPersonalProvider(provider)) {
+    return handleSdpAgentOffer(callId, offer?.sdp_offer, offer?.ice_servers, {
       ...options,
       peerId: offer?.peer_id,
     });
   }
-  if (!isJanusAudioBridgeOffer(offer)) {
-    throw new Error('Telegram calls require Janus media');
+  if (!hasAgentMediaOffer(offer) || offer.transport) {
+    throw new Error('Telegram call response is missing a direct SDP offer');
   }
   const callsStore = useWhatsappCallsStore();
   const callScope = callsStore.captureActiveCallScope();
@@ -618,63 +631,75 @@ export async function handleCallAgentOffer(callId, offer, options = {}) {
   ) {
     throw inboundNegotiationCancelledError();
   }
-  const key = `${callScope.generation}:${callId}:${offer.peer_id}`;
-  if (telegramJanusConnection?.key === key) {
-    return telegramJanusConnection.promise;
+  // Old gateway generations have no peer_id. Compare the actual SDP too, so a
+  // fresh reconnect offer replaces the previous leg even when both ids are nil.
+  const key = JSON.stringify([
+    callScope.generation,
+    String(callId),
+    offer.peer_id || null,
+    offer.sdp_offer,
+  ]);
+  if (telegramMediaConnection?.key === key) {
+    return telegramMediaConnection.promise;
   }
-  const usePrewarmedStream = options.usePrewarmedStream === true;
-  cleanupInboundWebRTC({ keepPrewarmStream: usePrewarmedStream });
-  const negotiationToken = inboundNegotiationToken;
-  const client = new JanusAudioBridgeCallClient();
-  const connection = { key, client, promise: null };
-  telegramJanusConnection = connection;
-  connection.promise = (async () => {
-    const stream = await withTimeout(
-      usePrewarmedStream
-        ? takeInboundPrewarmedAudioStream()
-        : navigator.mediaDevices.getUserMedia({ audio: true }),
-      AGENT_WEBRTC_MEDIA_TIMEOUT_MS,
-      'get_user_media',
-      { retryable: false, onLateResolve: stopStream }
-    );
-    assertInboundNegotiationActive(negotiationToken, { stream });
-    if (!callsStore.matchesActiveCallScope(callScope)) {
-      stopStream(stream);
-      throw inboundNegotiationCancelledError();
+  const connection = { key, promise: null };
+  connection.promise = handleSdpAgentOffer(
+    callId,
+    offer.sdp_offer,
+    offer.ice_servers,
+    {
+      ...options,
+      direction: options.direction || callsStore.activeCall.direction,
+      provider,
+      peerId: offer.peer_id,
+      callScope,
     }
-    setInboundAudioStream(stream);
-    await client.connect(offer, {
-      stream,
-      onRemoteStream: remoteStream => {
-        if (negotiationToken === inboundNegotiationToken) {
-          attachInboundRemoteAudio(remoteStream);
-        }
-      },
-      onDisconnected: () => {
-        if (!callsStore.matchesActiveCallScope(callScope)) return;
+  )
+    .then(result => {
+      if (!callsStore.matchesActiveCallScope(callScope)) {
+        throw inboundNegotiationCancelledError();
+      }
+      const pc = inboundPc;
+      const onDisconnected = () => {
+        if (
+          inboundPc !== pc ||
+          callsStore.isReconnecting ||
+          !callsStore.matchesActiveCallScope(callScope) ||
+          !['disconnected', 'failed'].includes(pc.connectionState)
+        )
+          return;
         callsStore.updateActiveCall({
           agentWebrtcConnected: false,
           agentWebrtcConnecting: false,
         });
-        // Reconnection and connection share the same generation guard.
         // eslint-disable-next-line no-use-before-define
-        reconnectTelegramJanusMedia(callId).catch(() => {});
-      },
+        reconnectTelegramMedia(callId).catch(() => {});
+      };
+      pc.onconnectionstatechange = onDisconnected;
+      return result;
+    })
+    .catch(error => {
+      if (telegramMediaConnection === connection) cleanupInboundWebRTC();
+      throw error;
     });
-    assertInboundNegotiationActive(negotiationToken, { stream });
-    if (!callsStore.matchesActiveCallScope(callScope)) {
-      stopStream(stream);
-      throw inboundNegotiationCancelledError();
-    }
-    return { success: true };
-  })().catch(error => {
-    if (telegramJanusConnection === connection) cleanupInboundWebRTC();
-    throw error;
-  });
+  telegramMediaConnection = connection;
   return connection.promise;
 }
 
-export async function reconnectTelegramJanusMedia(callId) {
+async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
+  const provider =
+    options.provider || useWhatsappCallsStore().activeCall?.provider;
+  if (isTelegramPersonalProvider(provider)) {
+    return handleCallAgentOffer(
+      callId,
+      { sdp_offer: sdpOffer, ice_servers: iceServers, peer_id: options.peerId },
+      { ...options, provider }
+    );
+  }
+  return handleSdpAgentOffer(callId, sdpOffer, iceServers, options);
+}
+
+export async function reconnectTelegramMedia(callId) {
   const store = useWhatsappCallsStore();
   if (
     String(store.activeCall?.id) !== String(callId) ||
@@ -746,6 +771,9 @@ function sameAgentOffer(firstOffer, secondOffer) {
 }
 
 export function prewarmInboundAgentAnswerForCall(call) {
+  // Telegram grants are owner-only and become available after accept. Request
+  // its microphone from the accept gesture, never from a ringing broadcast.
+  if (isTelegramPersonalProvider(call)) return null;
   if (!isServerRelayCall(call) || !call?.agentOffer?.sdp_offer) {
     if (isServerRelayCall(call)) prepareInboundAudioStream();
     return null;
@@ -1005,7 +1033,10 @@ export async function acceptWhatsappCallById(callId, callSource = 'whatsapp') {
   }
 
   let call = callsStore.incomingCalls.find(
-    c => c.id === callId || c.callId === String(callId)
+    c =>
+      isTelegramPersonalProvider(c) ===
+        isTelegramPersonalProvider(callSource) &&
+      (c.id === callId || c.callId === String(callId))
   );
 
   if (!call) {

@@ -1161,9 +1161,8 @@ describe('ActionCableConnector', () => {
         direction: 'incoming',
       });
       const offer = {
-        transport: 'janus_audiobridge',
-        room_id: 123,
-        peer_id: 'peer-1',
+        sdp_offer: 'authorized-legacy-sdp',
+        ice_servers: [],
       };
       telegramShowMock.mockResolvedValue({ data: { agent_offer: offer } });
       actionCable.onWhatsappCallAgentOffer({
@@ -1190,6 +1189,102 @@ describe('ActionCableConnector', () => {
       expect(handleAgentOfferMock).not.toHaveBeenCalled();
       expect(callsStore.activeCall.agentWebrtcConnected).toBe(true);
     });
+
+    it.each([false, true])(
+      'never queues Telegram account-event credentials before acceptance: pending=%s',
+      accepting => {
+        const mediaStore = useWhatsappCallsStore();
+        if (accepting) {
+          mediaStore.setActiveCall({
+            id: 42,
+            callId: 'tg-call',
+            provider: 'telegram_personal',
+            providerAccepting: true,
+          });
+        }
+        actionCable.onWhatsappCallAgentOffer({
+          id: 42,
+          call_id: 'tg-call',
+          provider: 'telegram_personal',
+          accepted_by_agent_id: 7,
+          sdp_offer: 'forged-sdp',
+        });
+        expect(
+          mediaStore.consumePendingAgentOffer({ id: 42, callId: 'tg-call' })
+        ).toBeNull();
+        expect(telegramShowMock).not.toHaveBeenCalled();
+        expect(handleCallAgentOfferMock).not.toHaveBeenCalled();
+      }
+    );
+
+    it('never retains a Telegram incoming broadcast SDP as an accept fallback', () => {
+      const mediaStore = useWhatsappCallsStore();
+      actionCable.onTelegramPersonalCallIncoming({
+        id: 42,
+        call_id: 'tg-call',
+        sdp_offer: 'forged-sdp',
+        agent_offer: { sdp_offer: 'forged-agent-sdp' },
+      });
+      expect(mediaStore.incomingCalls[0]).toMatchObject({
+        provider: 'telegram_personal',
+        sdpOffer: null,
+        iceServers: null,
+        agentOffer: null,
+      });
+    });
+
+    it('ignores forged Telegram event SDP and uses only the protected API offer', async () => {
+      const mediaStore = useWhatsappCallsStore();
+      mediaStore.setActiveCall({
+        id: 42,
+        callId: 'tg-call',
+        provider: 'telegram_personal',
+      });
+      const authorized = { sdp_offer: 'authorized-sdp', ice_servers: [] };
+      telegramShowMock.mockResolvedValue({ data: { agent_offer: authorized } });
+      actionCable.onWhatsappCallAgentOffer({
+        id: 42,
+        provider: 'telegram_personal',
+        accepted_by_agent_id: 7,
+        sdp_offer: 'forged-account-broadcast-sdp',
+        ice_servers: [{ urls: 'stun:forged.invalid' }],
+      });
+      await vi.waitFor(() =>
+        expect(handleCallAgentOfferMock).toHaveBeenCalledOnce()
+      );
+      expect(handleCallAgentOfferMock).toHaveBeenCalledWith(
+        42,
+        authorized,
+        expect.anything()
+      );
+    });
+
+    it.each(['whatsapp', 'telegram_personal'])(
+      'ignores media events from the other provider with the same database id: %s',
+      provider => {
+        const mediaStore = useWhatsappCallsStore();
+        mediaStore.setActiveCall({
+          id: 42,
+          callId: 'same-provider-id',
+          provider,
+        });
+        const event = {
+          id: 42,
+          call_id: 'same-provider-id',
+          accepted_by_agent_id: 7,
+          provider: provider === 'whatsapp' ? 'telegram_personal' : 'whatsapp',
+          sdp_offer: 'other-provider-offer',
+          media_ready: true,
+        };
+        actionCable.onWhatsappCallAgentOffer(event);
+        actionCable.onWhatsappCallAgentDisconnected(event);
+        expect(telegramShowMock).not.toHaveBeenCalled();
+        expect(reconnectMock).not.toHaveBeenCalled();
+        expect(handleCallAgentOfferMock).not.toHaveBeenCalled();
+        expect(handleAgentOfferMock).not.toHaveBeenCalled();
+        expect(mediaStore.activeCall.agentWebrtcConnecting).toBeUndefined();
+      }
+    );
 
     it('does not fetch Telegram media credentials for an event claimed by another operator', () => {
       const callsStore = useWhatsappCallsStore();
@@ -1242,6 +1337,7 @@ describe('ActionCableConnector', () => {
         const pending = actionCable.onWhatsappCallAgentDisconnected({
           id: 42,
           call_id: 'old-call',
+          provider: 'telegram_personal',
         });
         expect(reconnectMock).toHaveBeenCalledWith(42);
         callsStore.handleCallEnded('old-call', 42);
@@ -1254,9 +1350,8 @@ describe('ActionCableConnector', () => {
         callsStore.setReconnecting(true);
         resolveReconnect({
           data: {
-            transport: 'janus_audiobridge',
-            room_id: 123,
-            peer_id: 'obsolete-peer',
+            sdp_offer: 'obsolete-legacy-sdp',
+            ice_servers: [],
           },
         });
         await pending;

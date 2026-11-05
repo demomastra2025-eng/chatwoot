@@ -31,6 +31,19 @@ RSpec.describe TelegramPersonal::GatewayClient do
   end
   let(:client) { described_class.new(channel: channel) }
 
+  describe '#set_call_agent_answer!' do
+    it 'posts the actual legacy SDP schema to the escaped native endpoint without requiring peer_id' do
+      response = instance_double(HTTParty::Response, success?: true, parsed_response: { ok: true })
+      expect(HTTParty).to receive(:post) do |url, options|
+        expect(url).to eq("#{ENV.fetch('TELEGRAM_PERSONAL_GATEWAY_URL')}/internal/channels/42/calls/session%2Fone/agent-answer")
+        expect(JSON.parse(options[:body])).to eq('sdp_answer' => 'v=0-answer')
+        expect(options[:headers]).to include('Authorization' => 'Bearer test-gateway-token')
+      end.and_return(response)
+
+      expect(client.set_call_agent_answer!(call_ref: 'session/one', sdp_answer: 'v=0-answer')).to include(ok: true)
+    end
+  end
+
   describe '#sync_channel!' do
     it 'sends resolved API credentials so shared defaults can be used across inboxes' do
       response = instance_double(

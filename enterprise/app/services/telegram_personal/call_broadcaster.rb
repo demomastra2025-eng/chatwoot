@@ -92,7 +92,14 @@ class TelegramPersonal::CallBroadcaster
     end
 
     def normalize_agent_offer(offer)
-      TelegramPersonal::JanusMediaConfig.normalize(offer)
+      return unless offer.respond_to?(:to_h)
+
+      normalized = offer.to_h.stringify_keys.slice('peer_id', 'sdp_offer', 'ice_servers')
+      normalized['sdp_offer'].is_a?(String) && normalized['sdp_offer'].present? ? normalized : nil
+    end
+
+    def normalize_agent_offer!(offer)
+      normalize_agent_offer(offer) || raise(TelegramPersonal::CallErrors::InvalidOffer, 'Gateway SDP offer not returned')
     end
 
     def merged_agent_offer_meta(raw_meta, agent_id, offer)
