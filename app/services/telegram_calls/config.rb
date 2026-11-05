@@ -88,7 +88,7 @@ class TelegramCalls::Config
     end
 
     def valid_api_credentials?(worker)
-      worker['api_id'].instance_of?(Integer) && worker['api_id'].positive? &&
+      worker['api_id'].instance_of?(Integer) && worker['api_id'].between?(1, 2_147_483_647) &&
         worker['api_hash'].is_a?(String) && worker['api_hash'].match?(/\A[0-9a-fA-F]{32}\z/)
     end
 

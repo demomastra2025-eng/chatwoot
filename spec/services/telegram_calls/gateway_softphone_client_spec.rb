@@ -48,6 +48,12 @@ RSpec.describe TelegramCalls::GatewaySoftphoneClient do
     end
   end
 
+  it 'accepts the native signed int32 upper boundary for api_id' do
+    with_modified_env('TELEGRAM_CALLS_OPERATOR_WORKER_JSON' => worker.merge('api_id' => 2_147_483_647).to_json) do
+      expect(TelegramCalls::Config.operator_worker.fetch('api_id')).to eq(2_147_483_647)
+    end
+  end
+
   it 'rejects malformed, incomplete and untrusted worker settings before HTTP' do
     invalid_sessions = ['x', '1', '1a=', "2#{worker['string_session'].delete_prefix('1')}",
                         "#{worker['string_session']}=", worker['string_session'].delete_suffix('='),
@@ -58,6 +64,7 @@ RSpec.describe TelegramCalls::GatewaySoftphoneClient do
                worker.merge('string_session' => 'bad=inside').to_json,
                worker.merge('string_session' => "secret\nvalue").to_json, 'x' * 8193]
     invalid.concat(invalid_sessions.map { |value| worker.merge('string_session' => value).to_json })
+    invalid.concat([0, -1, true, 2_147_483_648].map { |value| worker.merge('api_id' => value).to_json })
     invalid.each do |value|
       with_modified_env('TELEGRAM_CALLS_OPERATOR_WORKER_JSON' => value) do
         expect(HTTParty).not_to receive(:post)
