@@ -53,7 +53,12 @@ class Messages::MarkdownRendererService
   end
 
   def render_telegram_personal_html
-    render_telegram_with(Messages::MarkdownRenderers::TelegramPersonalRenderer)
+    # Keep Markdown block boundaries intact; inline newline placeholders break
+    # fenced code and lists before the renderer can see them.
+    normalized_content = @content.gsub(/^[ \t]+$/m, '')
+    renderer = Messages::MarkdownRenderers::TelegramPersonalRenderer.new(source: normalized_content)
+    doc = CommonMarker.render_doc(normalized_content, [:STRIKETHROUGH_DOUBLE_TILDE], [:strikethrough])
+    renderer.render(doc).gsub(/\n+\z/, '')
   end
 
   def render_telegram_with(renderer_class)

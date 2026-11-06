@@ -62,7 +62,7 @@ class TelegramPersonal::GatewayClient
     recipient_id, chat_id = outbound_target!(message)
     reply_to_id = TelegramPersonal::MessageSourceId.provider_id(message.content_attributes.to_h['in_reply_to_external_id']).presence
     body = {
-      recipient_id: recipient_id, chat_id: chat_id, text: message.outgoing_content,
+      recipient_id: recipient_id, chat_id: chat_id, text: message.outgoing_content, text_format: 'html',
       reply_to_message_id: reply_to_id, attachments: serialize_attachments(message)
     }
     post_with_runtime_retry("/internal/channels/#{channel.id}/messages", body: body)
@@ -70,7 +70,11 @@ class TelegramPersonal::GatewayClient
 
   def edit_message!(message:, content:)
     recipient_id, chat_id = outbound_target!(message)
-    body = { recipient_id: recipient_id, chat_id: chat_id, message_id: provider_message_id_for(message), text: content }
+    rendered_content = Messages::MarkdownRendererService.new(content, 'Channel::TelegramPersonal', channel).render
+    body = {
+      recipient_id: recipient_id, chat_id: chat_id, message_id: provider_message_id_for(message),
+      text: rendered_content, text_format: 'html'
+    }
     post_with_runtime_retry("/internal/channels/#{channel.id}/messages/edit", body: body)
   end
 

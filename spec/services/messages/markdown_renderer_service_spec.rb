@@ -379,13 +379,40 @@ RSpec.describe Messages::MarkdownRendererService, type: :service do
     context 'when channel is Channel::TelegramPersonal' do
       let(:channel_type) { 'Channel::TelegramPersonal' }
 
-      it 'preserves the existing personal gateway rendering contract' do
+      it 'uses escaped Telegram HTML for the native entity gateway contract' do
         content = '**bold** <FAILED_MESSAGE_ID> `a < b`'
 
         result = described_class.new(content, channel_type).render
 
-        expect(result).to include('<strong>bold</strong>', '<code>a < b</code>')
-        expect(result).not_to include('&lt;FAILED_MESSAGE_ID&gt;')
+        expect(result).to include('<strong>bold</strong>', '<code>a &lt; b</code>', '&lt;FAILED_MESSAGE_ID&gt;')
+        expect(result).not_to include('<FAILED_MESSAGE_ID>')
+      end
+
+      it 'renders nested formatting, email links and multiline lists' do
+        content = "😀 **Документы**\n\n- _Первый_\n- [**почта**](mailto:team@example.invalid)\n\n```\na < b && c > d\n```"
+
+        result = described_class.new(content, channel_type).render
+
+        expect(result).to include(
+          "😀 <strong>Документы</strong>\n\n",
+          '• <em>Первый</em>',
+          '<a href="mailto:team@example.invalid"><strong>почта</strong></a>',
+          '<pre>a &lt; b &amp;&amp; c &gt; d'
+        )
+      end
+
+      it 'escapes literal markup and ampersands once' do
+        content = 'Цена < 5 & > 2; `literal <strong> &amp;`'
+
+        result = described_class.new(content, channel_type).render
+
+        expect(result).to eq('Цена &lt; 5 &amp; &gt; 2; <code>literal &lt;strong&gt; &amp;amp;</code>')
+      end
+
+      it 'preserves single and consecutive blank lines without treating them as inline Markdown' do
+        content = "line 1\nline 2\n \n\t\n\nline 3"
+
+        expect(described_class.new(content, channel_type).render).to eq("line 1\nline 2\n\n\n\nline 3")
       end
     end
 

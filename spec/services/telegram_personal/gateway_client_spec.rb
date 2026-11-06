@@ -132,6 +132,28 @@ RSpec.describe TelegramPersonal::GatewayClient do
   end
 
   describe '#send_message!' do
+    it 'keeps the original document name alongside the formatted caption' do
+      conversation = instance_double(
+        Conversation, contact_inbox: instance_double(ContactInbox, source_id: '77'), additional_attributes: {}
+      )
+      file = instance_double(ActiveStorage::Blob, filename: 'Счёт тест.pdf', content_type: 'application/pdf')
+      attachment = instance_double(Attachment, file_type: 'file', download_url: 'https://example.invalid/test.pdf', file: file)
+      message = instance_double(
+        Message,
+        conversation: conversation, outgoing_content: '<strong>Отчёт</strong>',
+        content_attributes: {}, attachments: [attachment]
+      )
+      expect(client).to receive(:post_with_runtime_retry).with(
+        '/internal/channels/42/messages',
+        body: hash_including(
+          text: '<strong>Отчёт</strong>', text_format: 'html',
+          attachments: [hash_including(filename: 'Счёт тест.pdf', voice_note: false)]
+        )
+      )
+
+      client.send_message!(message)
+    end
+
     it 'falls back chat_id to contact_inbox source_id when conversation chat_id is missing' do
       contact_inbox = instance_double(ContactInbox, source_id: '77')
       conversation = instance_double(
@@ -163,6 +185,7 @@ RSpec.describe TelegramPersonal::GatewayClient do
           'recipient_id' => '77',
           'chat_id' => '77',
           'text' => 'hello',
+          'text_format' => 'html',
           'reply_to_message_id' => nil,
           'attachments' => []
         )
@@ -192,6 +215,24 @@ RSpec.describe TelegramPersonal::GatewayClient do
         TelegramPersonal::GatewayClient::GatewayError,
         'Telegram Personal conversation is missing contact inbox source_id'
       )
+    end
+  end
+
+  describe '#edit_message!' do
+    it 'renders edited Markdown with the same escaped HTML contract as sends' do
+      conversation = instance_double(
+        Conversation, contact_inbox: instance_double(ContactInbox, source_id: '77'), additional_attributes: {}
+      )
+      message = instance_double(Message, conversation: conversation, source_id: '123')
+      expect(client).to receive(:post_with_runtime_retry).with(
+        '/internal/channels/42/messages/edit',
+        body: {
+          recipient_id: '77', chat_id: '77', message_id: '123',
+          text: '<strong>Отчёт</strong> &lt; 5 &amp; 6', text_format: 'html'
+        }
+      )
+
+      client.edit_message!(message: message, content: '**Отчёт** < 5 & 6')
     end
   end
 
