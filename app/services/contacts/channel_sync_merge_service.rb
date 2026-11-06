@@ -21,9 +21,10 @@ class Contacts::ChannelSyncMergeService
   end
   private_class_method :merge_duplicate_deal_contact!
 
-  def initialize(source_contact:, target_contact:, &preferred_name_block)
+  def initialize(source_contact:, target_contact:, name_source_inbox: nil, &preferred_name_block)
     @source_contact = source_contact
     @target_contact = target_contact
+    @name_source_inbox = name_source_inbox
     @preferred_name_block = preferred_name_block
   end
 
@@ -38,6 +39,8 @@ class Contacts::ChannelSyncMergeService
   def perform_merge
     # Lock order: phone identity lock first, then appointments, contacts and their chats (see the number transfer).
     Contacts::PhoneIdentityLock.acquire!(account_id: target_contact.account_id)
+    source_contact.reload
+    target_contact.reload
     Contacts::PatientIdentityMergeGuard.lock_patient_bindings!(source_contact, target_contact)
     return false unless Contacts::PatientIdentityMergeGuard.allowed?(source_contact: source_contact, target_contact: target_contact)
 
@@ -51,7 +54,7 @@ class Contacts::ChannelSyncMergeService
     finalize_contact_merge!(now)
   end
 
-  attr_reader :source_contact, :target_contact, :preferred_name_block
+  attr_reader :source_contact, :target_contact, :name_source_inbox, :preferred_name_block
 
   def build_reference_merger
     Contacts::ReferenceMergeService.new(
@@ -127,6 +130,9 @@ class Contacts::ChannelSyncMergeService
   end
 
   def resolved_contact_name
+    return target_contact.name if manual_name?(target_contact)
+    return source_contact.name if transfer_manual_name?
+
     preferred_name_block ? preferred_name_block.call : target_contact.name
   end
 
@@ -136,7 +142,37 @@ class Contacts::ChannelSyncMergeService
     merged = source_attrs.merge(target_attrs)
     merged_profiles = merge_channel_profile_hashes(source_attrs['channel_profiles'], target_attrs['channel_profiles'])
     merged['channel_profiles'] = merged_profiles if merged_profiles.present?
+    if transfer_manual_name?
+      merged = target_contact.merge_display_source(
+        additional_attributes: merged,
+        key: Contact::PRIMARY_NAME_SOURCE_KEY,
+        source: source_contact.primary_name_source
+      )
+    end
     merged
+  end
+
+  def transfer_manual_name?
+    return false unless matching_name_source_accounts?
+    return false unless manual_name?(source_contact)
+    return false if manual_name?(target_contact)
+    return false if source_contact.name.blank?
+
+    !different_primary_name_inbox?
+  end
+
+  def different_primary_name_inbox?
+    selected_source = target_contact.primary_name_source
+    selected_source.present? && selected_source == target_contact.resolved_primary_name_source &&
+      selected_source['inbox_id'].to_i != name_source_inbox.id
+  end
+
+  def matching_name_source_accounts?
+    name_source_inbox.present? && [source_contact.account_id, target_contact.account_id].all?(name_source_inbox.account_id)
+  end
+
+  def manual_name?(contact)
+    contact.primary_name_source['kind'] == Contact::DISPLAY_SOURCE_KIND_MANUAL
   end
 
   def merge_channel_profile_hashes(source_profiles, target_profiles)

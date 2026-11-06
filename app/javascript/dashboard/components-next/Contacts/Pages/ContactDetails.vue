@@ -264,7 +264,20 @@ const avatarSrc = computed(() => {
 });
 
 const handleFormUpdate = updatedData => {
+  const nameWasEdited =
+    Object.prototype.hasOwnProperty.call(updatedData, 'name') &&
+    updatedData.name !== contactData.value.name;
   Object.assign(contactData.value, updatedData);
+  if (nameWasEdited) {
+    contactData.value.additionalAttributes = camelcaseKeys(
+      contactData.value.additionalAttributes ||
+        contactData.value.additional_attributes ||
+        {},
+      { deep: true }
+    );
+    delete contactData.value.additional_attributes;
+    updateLocalDisplayPreference('primaryNameSource', { kind: 'manual' });
+  }
 };
 
 const updateContact = async () => {

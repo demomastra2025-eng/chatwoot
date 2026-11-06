@@ -367,13 +367,16 @@ class Contact < ApplicationRecord
     attrs.merge(DISPLAY_PREFERENCES_KEY => prefs.merge(key => next_source))
   end
 
-  def name_updates_allowed_for?(contact_inbox:, replaceable_current_name:)
-    return true if replaceable_current_name
-
+  def name_updates_allowed_for?(contact_inbox:, replaceable_current_name:, equivalent_contact_inbox: nil)
     source = resolve_display_source(primary_name_source)
-    return display_source_matches_contact_inbox?(source, contact_inbox) if source.present?
+    source ||= primary_name_source if declared_whatsapp_name_source?(primary_name_source, contact_inbox)
+    if source.present?
+      return true if display_source_matches_contact_inbox?(source, contact_inbox)
 
-    false
+      return replaceable_current_name && display_source_matches_contact_inbox?(source, equivalent_contact_inbox)
+    end
+
+    replaceable_current_name
   end
 
   def avatar_updates_allowed_for?(contact_inbox:)
@@ -673,6 +676,21 @@ class Contact < ApplicationRecord
 
     source['source_id'].to_s == contact_inbox.source_id.to_s &&
       source['inbox_id'].to_s == contact_inbox.inbox_id.to_s
+  end
+
+  def declared_whatsapp_name_source?(source, contact_inbox)
+    return false if contact_inbox.blank? || contact_inbox.inbox.account_id != account_id
+    return false unless contact_inbox.inbox.channel_type == 'Channel::WhatsappWeb'
+
+    expected = {
+      'kind' => DISPLAY_SOURCE_KIND_CHANNEL_PROFILE,
+      'provider' => 'whatsapp_web',
+      'inbox_id' => contact_inbox.inbox_id.to_s,
+      'source_id' => contact_inbox.source_id
+    }
+    return false unless expected.all? { |key, value| source[key].to_s == value }
+
+    contact_inboxes.exists?(id: contact_inbox.id, inbox_id: contact_inbox.inbox_id, source_id: contact_inbox.source_id)
   end
 
   def linked_to_other_channel_type?(contact_inbox)
