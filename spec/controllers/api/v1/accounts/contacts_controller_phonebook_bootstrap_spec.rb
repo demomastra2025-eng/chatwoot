@@ -44,9 +44,14 @@ RSpec.describe 'Contacts API phonebook bootstrap', type: :request do
 
   it 'preserves a meaningful unmarked API-created name' do
     contact = create_native_contact(nil)
+    WhatsappWeb::ContactSyncService.new(channel: channel, contact_payload: {
+                                          remoteJid: '15550000011@s.whatsapp.net', pushName: 'Profile Name'
+                                        }).perform
+    expect(contact.reload.primary_name_source).to be_blank
     deliver_saved_name
 
     expect(contact.reload.name).to eq('Profile Name')
+    expect(contact.primary_name_source).to be_blank
   end
 
   it 'preserves an explicit manual API-created name' do

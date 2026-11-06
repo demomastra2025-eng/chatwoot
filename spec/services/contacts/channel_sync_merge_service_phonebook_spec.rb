@@ -84,6 +84,29 @@ RSpec.describe Contacts::ChannelSyncMergeService do
     expect(target.primary_name_source).to eq(selected_source)
   end
 
+  ['', 'Manual Target'].each do |target_name|
+    it "calls a generic caller's preferred-name callback for its manual target #{target_name.inspect}" do
+      target.update!(name: target_name)
+      mark_manual(target)
+      chooser = -> { 'Caller Choice' }
+      expect(chooser).to receive(:call).and_call_original
+
+      expect(described_class.new(source_contact: source, target_contact: target) { chooser.call }.perform).to be(true)
+      expect(target.reload.name).to eq('Caller Choice')
+    end
+  end
+
+  it 'does not enable the WhatsApp name policy for a generic inbox context' do
+    target.update!(name: '')
+    mark_manual(target)
+    generic = create(:inbox, account: channel.account)
+
+    result = described_class.new(source_contact: source, target_contact: target, name_source_inbox: generic) { 'Caller Choice' }.perform
+
+    expect(result).to be(true)
+    expect(target.reload.name).to eq('Caller Choice')
+  end
+
   it 'keeps nonmanual merges on the existing preferred-name callback', :aggregate_failures do
     result = described_class.new(source_contact: source, target_contact: target, name_source_inbox: channel.inbox) { 'Provider Choice' }.perform
     expect(result).to be(true)

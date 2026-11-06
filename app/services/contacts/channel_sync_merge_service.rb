@@ -130,7 +130,7 @@ class Contacts::ChannelSyncMergeService
   end
 
   def resolved_contact_name
-    return target_contact.name if manual_name?(target_contact)
+    return target_contact.name if whatsapp_name_source_context? && manual_name?(target_contact)
     return source_contact.name if transfer_manual_name?
 
     preferred_name_block ? preferred_name_block.call : target_contact.name
@@ -153,7 +153,7 @@ class Contacts::ChannelSyncMergeService
   end
 
   def transfer_manual_name?
-    return false unless matching_name_source_accounts?
+    return false unless whatsapp_name_source_context?
     return false unless manual_name?(source_contact)
     return false if manual_name?(target_contact)
     return false if source_contact.name.blank?
@@ -167,8 +167,9 @@ class Contacts::ChannelSyncMergeService
       selected_source['inbox_id'].to_i != name_source_inbox.id
   end
 
-  def matching_name_source_accounts?
-    name_source_inbox.present? && [source_contact.account_id, target_contact.account_id].all?(name_source_inbox.account_id)
+  def whatsapp_name_source_context?
+    name_source_inbox&.channel_type == 'Channel::WhatsappWeb' &&
+      [source_contact.account_id, target_contact.account_id].all?(name_source_inbox.account_id)
   end
 
   def manual_name?(contact)

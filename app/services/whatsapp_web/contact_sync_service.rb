@@ -118,9 +118,22 @@ class WhatsappWeb::ContactSyncService
       name: display_name,
       phone_number: phone_number,
       identifier: contact_identifier,
-      additional_attributes: additional_attributes,
+      additional_attributes: additional_attributes.merge(creation_display_preferences),
       avatar_url: profile_pic_url
     }.compact
+  end
+
+  def creation_display_preferences
+    {
+      Contact::DISPLAY_PREFERENCES_KEY => {
+        Contact::PRIMARY_NAME_SOURCE_KEY => {
+          'kind' => Contact::DISPLAY_SOURCE_KIND_CHANNEL_PROFILE,
+          'provider' => 'whatsapp_web',
+          'inbox_id' => channel.inbox.id,
+          'source_id' => source_id
+        }
+      }
+    }
   end
 
   def additional_attributes
@@ -157,12 +170,6 @@ class WhatsappWeb::ContactSyncService
           source: contact.display_source_for_contact_inbox(contact_inbox)
         )
       end
-    elsif contact_inbox.present? && should_initialize_primary_name_source?(contact) && whatsapp_primary_contact?(contact)
-      merged_attributes = contact.merge_display_source(
-        additional_attributes: merged_attributes,
-        key: Contact::PRIMARY_NAME_SOURCE_KEY,
-        source: contact.display_source_for_contact_inbox(contact_inbox)
-      )
     end
 
     updates[:additional_attributes] = merged_attributes if merged_attributes != current_attributes
@@ -365,10 +372,6 @@ class WhatsappWeb::ContactSyncService
     return unless resolved_lid_identity?
 
     channel.inbox.contact_inboxes.find_by(contact_id: contact.id, source_id: lid_jid)
-  end
-
-  def should_initialize_primary_name_source?(contact)
-    contact.primary_name_source.blank? && contact.name.to_s.strip == display_name(contact).to_s.strip
   end
 
   def should_replace_profile_display_name?(profile, contact:)

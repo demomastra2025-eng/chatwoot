@@ -101,6 +101,27 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     expect(source.channel_profile.profile_data).not_to have_key('phonebook_name')
   end
 
+  it 'does not claim ownership of a reused meaningful contact when the legacy profile name happens to match', :aggregate_failures do
+    contact = create(:contact, account: channel.account, name: 'Profile Name', phone_number: '+15550000011')
+    sync
+    expect(contact.reload.primary_name_source).to be_blank
+
+    sync_saved_name
+
+    expect(contact.reload.name).to eq('Profile Name')
+    expect(contact.primary_name_source).to be_blank
+  end
+
+  it 'records the provider creator explicitly and accepts its later phonebook name', :aggregate_failures do
+    source = sync
+    expect(source.contact.primary_name_source).to include('kind' => 'channel_profile', 'inbox_id' => channel.inbox.id)
+
+    sync_saved_name
+
+    expect(source.contact.reload.name).to eq('Saved Alias')
+    expect(source.contact.primary_name_source).to include('kind' => 'channel_profile', 'inbox_id' => channel.inbox.id)
+  end
+
   it 'does not replace a group subject with a personal saved-name field' do
     allow(channel).to receive(:sync_groups?).and_return(true)
     source = sync(remoteJid: '12000000001@g.us', pushName: nil, name: 'Workshop Group', phonebookName: 'Personal Alias')
