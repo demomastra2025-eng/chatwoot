@@ -73,8 +73,14 @@ job; genuine exact-zero silence returns empty text/turns with valid metadata.
 Candidate selectorv1 uses model-reported EN when available, Vosk distinctive
 Kazakh characters plus confidence>=0.60, otherwise Giga RU. This heuristic is
 explicit, reference-free and unvalidated; KK without distinctive letters may be
-misclassified. English requires a language property from the installed model API;
-its presence must be checked during native smoke. Conservative text processing
+misclassified. Sherpa2.0.1 exposes the read-only result property `lang`;
+SenseVoice supplies a symbol-table token such as `<|en|>`, which the adapter
+unwraps to `en` before selection. See the pinned upstream
+[Python binding](https://github.com/k2-fsa/sherpa-onnx/blob/v2.0.1/sherpa-onnx/python/csrc/offline-stream.cc#L76)
+and [SenseVoice result conversion](https://github.com/k2-fsa/sherpa-onnx/blob/v2.0.1/sherpa-onnx/csrc/offline-recognizer-sense-voice-impl.h#L53).
+Missing, unknown or malformed language metadata never establishes English from
+Latin text alone. Actual native selection still requires smoke verification.
+Conservative text processing
 is NFC+whitespace only; no memorized substitutions or automatic corrections.
 
 Response schema is `onelink.voicecore.response.v1` with account_id/job_id/text,

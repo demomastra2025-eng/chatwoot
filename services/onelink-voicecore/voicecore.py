@@ -282,14 +282,20 @@ class LocalModels:
                 en_stream = self.en.create_stream()
                 en_stream.accept_waveform(16000, floats)
                 self.en.decode_stream(en_stream)
-                en_text = postprocess(en_stream.result.text)
-                en_lang = str(getattr(en_stream.result, "lang", "")).lower()
+                en_text, en_lang = sense_voice_candidate(en_stream.result)
                 text, language = select_candidate(ru_text, kk_text, conf, en_text, en_lang)
                 if text:
                     results.append({"channel": channel, "start_sec": start / 16000,
                                     "end_sec": (start + len(track)) / 16000,
                                     "text": text, "language": language})
         return results
+
+
+def sense_voice_candidate(result):
+    """Adapt Sherpa2.0.1 SenseVoice's model-reported lang token (e.g. <|en|>)."""
+    language = str(getattr(result, "lang", "")).lower()
+    token = re.fullmatch(r"<\|([a-z]+)\|>", language)
+    return postprocess(result.text), token[1] if token else language
 
 
 def select_candidate(ru, kk, kk_confidence, en, en_language):

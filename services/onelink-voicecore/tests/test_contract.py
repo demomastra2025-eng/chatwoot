@@ -1,5 +1,6 @@
 """Pure stdlib tests: synthetic text/bytes only, no native imports, models or API."""
 import copy
+from collections import namedtuple
 import io
 import json
 import os
@@ -177,6 +178,24 @@ class ContractTest(unittest.TestCase):
         self.assertEqual(vc.select_candidate("synthetic ru", "қазақ", .8, "English", "en"), ("English", "en"))
         self.assertEqual(vc.select_candidate("synthetic ru", "қазақ", .8, "English", ""), ("қазақ", "kk"))
         self.assertEqual(vc.select_candidate("synthetic ru", "қазақ", .1, "English", ""), ("synthetic ru", "ru"))
+
+    def test_sense_voice_native_language_tag_selects_english(self):
+        # Sherpa2.0.1 exposes read-only text/lang; SenseVoice lang is a token.
+        result_type = namedtuple("OfflineRecognitionResult", "text lang")
+        result = result_type("  Synthetic\tEnglish  ", "<|en|>")
+        text, language = vc.sense_voice_candidate(result)
+        self.assertEqual((text, language), ("Synthetic English", "en"))
+        self.assertEqual(vc.select_candidate("synthetic ru", "қазақ", .8, text, language),
+                         ("Synthetic English", "en"))
+
+    def test_sense_voice_adapter_never_infers_english_from_text(self):
+        for raw in ("", "<|zh|>", "<|nospeech|>", "<|en", "en|>", "<|en|>extra"):
+            with self.subTest(lang=raw):
+                text, language = vc.sense_voice_candidate(SimpleNamespace(text="Latin text", lang=raw))
+                self.assertEqual(vc.select_candidate("synthetic ru", "", 0, text, language),
+                                 ("synthetic ru", "ru"))
+        self.assertEqual(vc.sense_voice_candidate(SimpleNamespace(text="Latin text")),
+                         ("Latin text", ""))
 
     def test_manifest_must_be_complete_before_any_native_import(self):
         for manifest in ({}, {"schema": vc.MANIFEST_SCHEMA, "files": {}, "dependencies": {}, "tools": {}}):
