@@ -123,4 +123,59 @@ RSpec.describe Llm::PiiFeedbackMetrics do
     expect(counters).to include('diagnostic_audits_completed' => 1, 'audit_completed' => 0, 'eligible_checks' => 0)
     expect(described_class.summary(account_id: tenant_id)[:completed_per_eligible_check]).to be_nil
   end
+
+  it 'retries a queued storage failure through ActiveJob and completes once after recovery' do
+    allow(Account).to receive(:find_by).with(id: tenant_id).and_return(account)
+    auditor.record_mask_pass!('Синтетикповторхранилища', 'Синтетикповторхранилища', account_id: tenant_id)
+    calls = 0
+    allow(auditor).to receive(:redis_atomic_acquire_inflight).and_wrap_original do |original, *args|
+      calls += 1
+      raise Llm::PiiShadowAuditor::StorageUnavailable, 'synthetic storage failure' if calls == 1
+
+      original.call(*args)
+    end
+    allow(auditor).to receive(:invoke_decider).and_return(response('clean'))
+    clear_enqueued_jobs
+    perform_enqueued_jobs(only: Llm::PiiShadowAuditJob) do
+      Llm::PiiShadowAuditJob.perform_now('Синтетикповторхранилища', account_id: tenant_id)
+    end
+    expect(calls).to eq(2)
+    expect(auditor).to have_received(:invoke_decider).once
+    expect(counters).to include('audit_completed' => 1, 'audit_unavailable' => 1, 'audit_attempts' => 1)
+  end
+
+  it 'stops queued retries after two storage failures and never invokes the decider' do
+    allow(Account).to receive(:find_by).with(id: tenant_id).and_return(account)
+    allow(auditor).to receive(:redis_atomic_acquire_inflight).and_raise(Llm::PiiShadowAuditor::StorageUnavailable, 'synthetic storage failure')
+    expect(auditor).not_to receive(:invoke_decider)
+    clear_enqueued_jobs
+    expect do
+      perform_enqueued_jobs(only: Llm::PiiShadowAuditJob) do
+        Llm::PiiShadowAuditJob.perform_now('Синтетикпределповторов', account_id: tenant_id)
+      end
+    end.to raise_error(Llm::PiiShadowAuditor::StorageUnavailable)
+    expect(auditor).to have_received(:redis_atomic_acquire_inflight).twice
+    expect(counters).to include('audit_completed' => 0, 'audit_unavailable' => 2, 'audit_attempts' => 0)
+  end
+
+  it 'never caches a partial learned snapshot or a fake version when Redis fails during loading' do
+    lexicon = Llm::PiiNameLexicon
+    allow(Redis::Alfred).to receive(:get).and_call_original
+    version_key = "#{lexicon::TENANT_VERSION_REDIS_PREFIX}:kv_#{lexicon.current_key_version}:acct_#{tenant_id}"
+    allow(Redis::Alfred).to receive(:get).with(version_key).and_raise(IOError, 'synthetic unavailable')
+    expect(lexicon.send(:tenant_learned_sets, tenant_id)).to be_nil
+    expect(lexicon.instance_variable_get(:@tenant_learned_cache)).not_to have_key("#{lexicon.current_key_version}:#{tenant_id}")
+  end
+
+  it 'discards an interrupted multi-category snapshot and loads the complete tenant after recovery' do
+    lexicon = Llm::PiiNameLexicon
+    lexicon.learn_word!('Синтетикпервыйсловарь', category: :first_name, account_id: tenant_id, verified: true)
+    bad_key = "#{lexicon::LEARNED_REDIS_PREFIX}:kv_#{lexicon.current_key_version}:acct_#{tenant_id}:female_name:exact"
+    Redis::Alfred.set(bad_key, 'wrong-type')
+    expect(lexicon.send(:tenant_learned_sets, tenant_id)).to be_nil
+    expect(lexicon.instance_variable_get(:@tenant_learned_cache)).not_to have_key("#{lexicon.current_key_version}:#{tenant_id}")
+    Redis::Alfred.delete(bad_key)
+    expect(lexicon.first_name?('Синтетикпервыйсловарь', account_id: tenant_id)).to be(true)
+    expect(lexicon.first_name?('Синтетикпервыйсловарь', account_id: other_id)).to be(false)
+  end
 end

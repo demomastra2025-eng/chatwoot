@@ -291,6 +291,11 @@ module Llm::PiiShadowAuditor
     return audit_result(:completion_unavailable) unless audit_completed
 
     res
+  rescue StorageUnavailable => e
+    Llm::PiiFeedbackMetrics.increment(eff_account_id, audit_unavailable: 1)
+    raise if raise_on_transient
+
+    audit_result(:storage_unavailable).merge(error_class: e.class.name)
   rescue StandardError => e
     Llm::PiiFeedbackMetrics.increment(eff_account_id, e.is_a?(PolicyBlocked) ? { skipped_policy: 1 } : { audit_failed: 1 })
     raise if raise_on_transient && transient_decision_error?(e)
@@ -305,6 +310,7 @@ module Llm::PiiShadowAuditor
   end
 
   class PolicyBlocked < StandardError; end
+  class StorageUnavailable < StandardError; end
 
   def compile_decision_request_options(account_id: nil, account: nil, model: DEFAULT_DECIDER_MODEL,
                                        privacy_profile: nil, runtime_preferences: nil)
@@ -474,8 +480,6 @@ module Llm::PiiShadowAuditor
       @tracked_redis_keys << inf_rkey
       true
     end
-  rescue StandardError
-    false
   end
 
   def release_inflight_audit!(msg_digest, lease_token: nil)
@@ -660,10 +664,6 @@ module Llm::PiiShadowAuditor
     defined?(Llm::OpenRouterDecisionClient::Error) && error.is_a?(Llm::OpenRouterDecisionClient::Error)
   end
 
-  def redis_configured?
-    (defined?($alfred) && $alfred.respond_to?(:with)) || defined?(Redis::Alfred)
-  end
-
   def native_eval_supported?(conn)
     return false if defined?(::MockRedis) && (conn.instance_of?(::MockRedis) || (conn.respond_to?(:redis) && conn.redis.instance_of?(::MockRedis)))
 
@@ -738,8 +738,7 @@ module Llm::PiiShadowAuditor
   end
 
   def redis_atomic_acquire_inflight(inf_rkey, aud_rkey, token)
-    return true unless redis_configured?
-    return false unless defined?($alfred) && $alfred.respond_to?(:with)
+    raise StorageUnavailable, 'PII audit storage unavailable' unless defined?($alfred) && $alfred.respond_to?(:with)
 
     $alfred.with do |conn|
       if native_eval_supported?(conn)
@@ -764,7 +763,7 @@ module Llm::PiiShadowAuditor
       end
     end
   rescue StandardError
-    false
+    raise StorageUnavailable, 'PII audit storage unavailable', cause: nil
   end
 
   def redis_atomic_release_inflight(inf_rkey, token)

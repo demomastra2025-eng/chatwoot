@@ -300,7 +300,6 @@ module Llm::PiiNameLexicon
     norm = normalize_word(word)
     return false if norm.length < 2
 
-    target_keys = LEARNED_CATEGORIES[category.to_sym] || LEARNED_CATEGORIES[:first_name]
     key_ver = current_key_version
     exact_hash = hmac_digest(norm)
     stem = stem_word(norm)
@@ -309,7 +308,7 @@ module Llm::PiiNameLexicon
     added = persist_learned_digest!(key_ver, acct_id, category.to_sym, [exact_hash, stem_hash], feedback: feedback)
     return false unless added
 
-    inject_learned_into_tenant_ram!(key_ver, acct_id, target_keys, exact_hash, stem_hash)
+    @lexicon_mutex.synchronize { @tenant_learned_cache.delete("#{key_ver}:#{acct_id}") }
     true
   end
 
@@ -600,27 +599,6 @@ module Llm::PiiNameLexicon
     false
   end
 
-  def inject_learned_into_tenant_ram!(key_ver, acct_id, target_keys, exact_hash, stem_hash)
-    cache_key = "#{key_ver}:#{acct_id}"
-    now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    @lexicon_mutex.synchronize do
-      ver = fetch_tenant_redis_version(key_ver, acct_id)
-      entry = (@tenant_learned_cache[cache_key] ||= { version: ver, sets: empty_tenant_sets, expires_at: now + TENANT_CACHE_TTL_SECONDS })
-      target_keys.each do |k|
-        set = entry[:sets][k]
-        next if set.nil? || set.size >= MAX_LEARNED_PER_TENANT
-
-        if k.to_s.end_with?('_stems')
-          set << stem_hash if stem_hash
-        else
-          set << exact_hash
-        end
-      end
-      entry[:version] = ver
-      entry[:expires_at] = now + TENANT_CACHE_TTL_SECONDS
-    end
-  end
-
   def tenant_learned_sets(acct_id)
     now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     key_ver = current_key_version
@@ -636,6 +614,8 @@ module Llm::PiiNameLexicon
       end
 
       loaded = load_tenant_sets_from_redis(key_ver, acct_id)
+      return nil unless fetch_tenant_redis_version(key_ver, acct_id) == remote_ver
+
       @tenant_learned_cache[cache_key] = {
         version: remote_ver,
         sets: loaded,
@@ -648,11 +628,9 @@ module Llm::PiiNameLexicon
   end
 
   def fetch_tenant_redis_version(key_ver, acct_id)
-    return 'local' unless defined?(Redis::Alfred) && Redis::Alfred.respond_to?(:get)
+    raise 'PII lexicon storage unavailable' unless defined?(Redis::Alfred) && Redis::Alfred.respond_to?(:get)
 
     Redis::Alfred.get("#{TENANT_VERSION_REDIS_PREFIX}:kv_#{key_ver}:acct_#{acct_id}").to_s
-  rescue StandardError
-    'local'
   end
 
   def empty_tenant_sets
@@ -663,25 +641,20 @@ module Llm::PiiNameLexicon
 
   def load_tenant_sets_from_redis(key_ver, acct_id)
     sets = empty_tenant_sets
-    return sets unless defined?(Redis::Alfred)
-
-    LEARNED_CATEGORIES.each do |category, target_keys|
-      exact_key = "#{LEARNED_REDIS_PREFIX}:kv_#{key_ver}:acct_#{acct_id}:#{category}:exact"
-      stem_key = "#{LEARNED_REDIS_PREFIX}:kv_#{key_ver}:acct_#{acct_id}:#{category}:stem"
-      @tracked_redis_keys << exact_key
-      @tracked_redis_keys << stem_key
-      exact_hexes = Array(redis_smembers(exact_key)).first(MAX_LEARNED_PER_TENANT)
-      stem_hexes = Array(redis_smembers(stem_key)).first(MAX_LEARNED_PER_TENANT)
-      target_keys.each do |k|
-        if k.to_s.end_with?('_stems')
-          stem_hexes.each { |h| sets[k] << [h].pack('H*').freeze }
-        else
-          exact_hexes.each { |h| sets[k] << [h].pack('H*').freeze }
+    Llm::PiiFeedbackMetrics.with_store do |conn|
+      LEARNED_CATEGORIES.each do |category, target_keys|
+        exact_key = "#{LEARNED_REDIS_PREFIX}:kv_#{key_ver}:acct_#{acct_id}:#{category}:exact"
+        stem_key = "#{LEARNED_REDIS_PREFIX}:kv_#{key_ver}:acct_#{acct_id}:#{category}:stem"
+        @tracked_redis_keys << exact_key
+        @tracked_redis_keys << stem_key
+        exact_hexes = Array(conn.smembers(exact_key)).first(MAX_LEARNED_PER_TENANT)
+        stem_hexes = Array(conn.smembers(stem_key)).first(MAX_LEARNED_PER_TENANT)
+        target_keys.each do |key|
+          hexes = key.to_s.end_with?('_stems') ? stem_hexes : exact_hexes
+          hexes.each { |hex| sets[key] << [hex].pack('H*').freeze }
         end
       end
     end
-    sets
-  rescue StandardError
     sets
   end
 
@@ -721,7 +694,7 @@ module Llm::PiiNameLexicon
                        :db_ready?, :merge_contact_unique_names!, :merge_medelement_json_names!,
                        :merge_appointment_unique_names!, :pluck_unique, :hmac_digest, :secret_material, :safe_key_version,
                        :resolve_account_id, :lookup_in_category?, :match_in_sets?, :persist_learned_digest!,
-                       :persist_quarantined_digest!, :inject_learned_into_tenant_ram!, :tenant_learned_sets, :fetch_tenant_redis_version,
+                       :persist_quarantined_digest!, :tenant_learned_sets, :fetch_tenant_redis_version,
                        :empty_tenant_sets, :load_tenant_sets_from_redis, :redis_sadd, :redis_smembers, :delete_redis_key!
 end
 # rubocop:enable Metrics/ModuleLength, Metrics/CollectionLiteralLength, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/AbcSize, Metrics/MethodLength, Style/GlobalVars

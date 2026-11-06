@@ -153,5 +153,55 @@ RSpec.describe Llm::PiiShadowAuditor, :pii_feedback_native do
       expect(conn.scan_each(match: "#{lexicon::TENANT_VERSION_REDIS_PREFIX}:*").to_a).to be_empty
     end
   end
+
+  it 'reloads both different names after another process learns into a stale tenant cache and after expiry' do
+    lexicon = Llm::PiiNameLexicon
+    words = %w[Синтетикальфалекс Синтетикбеталекс]
+    expect(words.map { |word| lexicon.last_name?(word, account_id: tenant_id) }).to eq([false, false])
+    first_pid = fork do
+      $alfred = native_pool
+      lexicon.learn_word!(words.first, category: :last_name, account_id: tenant_id, verified: true)
+      exit! 0
+    end
+    expect(Process.wait2(first_pid).last.success?).to be(true)
+    reader, writer = IO.pipe
+    second_pid = fork do
+      reader.close
+      $alfred = native_pool
+      lexicon.learn_word!(words.last, category: :last_name, account_id: tenant_id, verified: true)
+      fresh = words.map { |word| lexicon.last_name?(word, account_id: tenant_id) }
+      cache_key = "#{lexicon.current_key_version}:#{tenant_id}"
+      lexicon.instance_variable_get(:@tenant_learned_cache).fetch(cache_key)[:expires_at] = 0
+      expired = words.map { |word| lexicon.last_name?(word, account_id: tenant_id) }
+      foreign = words.map { |word| lexicon.last_name?(word, account_id: other_id) }
+      writer.write(JSON.generate([fresh, expired, foreign]))
+      writer.close
+      exit! 0
+    end
+    writer.close
+    result = JSON.parse(reader.read)
+    reader.close
+    expect(Process.wait2(second_pid).last.success?).to be(true)
+    expect(result).to eq([[true, true], [true, true], [false, false]])
+  end
+
+  it 'reports a real native acquire error as unavailable and allows a later audit after storage recovers' do
+    text = 'Синтетикошибкааренды'
+    account = instance_double(Account, id: tenant_id)
+    digest = auditor.message_dedup_digest(text, account_id: tenant_id)
+    inflight_key = "#{auditor::DEDUP_REDIS_PREFIX}:inflight:#{digest}"
+    auditor.record_mask_pass!(text, text, account_id: tenant_id)
+    allow(auditor).to receive(:invoke_decider).and_return(
+      OpenStruct.new(answers: { 'overall' => OpenStruct.new(choice: 'clean', confidence: 0.99) })
+    )
+    $alfred.with { |conn| conn.hset(inflight_key, 'wrong', 'type') }
+    expect(auditor.audit_masked_message!(text, account: account)).to include(status: :storage_unavailable, missed: nil)
+    expect(auditor).not_to have_received(:invoke_decider)
+    expect(counters).to include('audit_unavailable' => 1, 'audit_completed' => 0, 'audit_attempts' => 0)
+    $alfred.with { |conn| conn.del(inflight_key) }
+    expect(auditor.audit_masked_message!(text, account: account)[:status]).to eq(:completed)
+    expect(counters).to include('audit_unavailable' => 1, 'audit_completed' => 1, 'audit_attempts' => 1)
+    expect(auditor.audit_masked_message!(text, account: account)[:status]).to eq(:deduplicated)
+  end
 end
 # rubocop:enable Style/GlobalVars, Rails/Exit
