@@ -123,6 +123,8 @@
       "SUMMARY": "Call summary",
       "OPERATOR": "Employee",
       "CLIENT": "Client",
+      "CHANNEL": "Channel {channel}",
+      "UNKNOWN_SPEAKER": "Speaker",
       "AI_AGENT": "AI agent",
       "AUDIO_NOT_SUPPORTED": "Your browser does not support audio playback.",
       "AI_AGENT_ANSWERED": "AI agent answered and is talking",

@@ -103,7 +103,12 @@ const buildWrapper = contextOverrides => {
   return mount(Host, {
     global: {
       mocks: {
-        $t: (key, params = {}) => (params.name ? `${key} ${params.name}` : key),
+        $t: (key, params = {}) => {
+          if (params.name) return `${key} ${params.name}`;
+          return Number.isInteger(params.channel)
+            ? `${key} ${params.channel}`
+            : key;
+        },
       },
       stubs: {
         BaseBubble: {
@@ -567,6 +572,43 @@ describe('VoiceCall bubble', () => {
         .find('[data-testid="voice-call-recording"]')
         .attributes('data-show-transcribed-text')
     ).toBe('false');
+  });
+
+  it('labels unmapped audio channels without assigning employee or client roles', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          transcriptItems: [
+            {
+              speaker: 'unknown',
+              channel: 0,
+              timestamp: '00:01',
+              text: 'first channel',
+            },
+            {
+              speaker: 'unknown',
+              channel: 1,
+              timestamp: '00:02',
+              text: 'second channel',
+            },
+            {
+              speaker: 'unknown',
+              timestamp: '00:03',
+              text: 'unmapped speaker',
+            },
+          ],
+        },
+      }),
+    });
+
+    const dialogue = wrapper.find('[data-testid="voice-call-dialogue"]').text();
+    expect(dialogue).toContain('CONVERSATION.VOICE_CALL.CHANNEL 1');
+    expect(dialogue).toContain('CONVERSATION.VOICE_CALL.CHANNEL 2');
+    expect(dialogue).toContain('CONVERSATION.VOICE_CALL.UNKNOWN_SPEAKER');
+    expect(dialogue).toContain('00:03');
+    expect(dialogue).not.toContain('CONVERSATION.VOICE_CALL.OPERATOR');
+    expect(dialogue).not.toContain('CONVERSATION.VOICE_CALL.CLIENT');
   });
 
   it('renders the shared audio waveform chip for cancelled terminal calls with an authorized recording URL', () => {

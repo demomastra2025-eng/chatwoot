@@ -190,16 +190,25 @@ const plainTranscript = computed(() =>
 );
 const turnLabelKey = turn => {
   if (turn.speaker === 'ai') return 'CONVERSATION.VOICE_CALL.AI_AGENT';
-  return ['client', 'caller', 'customer', 'contact', 'user'].includes(
-    turn.speaker
-  )
-    ? 'CONVERSATION.VOICE_CALL.CLIENT'
-    : 'CONVERSATION.VOICE_CALL.OPERATOR';
+  if (
+    ['client', 'caller', 'customer', 'contact', 'user'].includes(turn.speaker)
+  ) {
+    return 'CONVERSATION.VOICE_CALL.CLIENT';
+  }
+  if (['operator', 'agent', 'employee', 'op'].includes(turn.speaker)) {
+    return 'CONVERSATION.VOICE_CALL.OPERATOR';
+  }
+  return Number.isInteger(turn.channel) && [0, 1].includes(turn.channel)
+    ? 'CONVERSATION.VOICE_CALL.CHANNEL'
+    : 'CONVERSATION.VOICE_CALL.UNKNOWN_SPEAKER';
 };
-const speakerName = speaker => {
-  if (speaker === 'ai') return 'AI-агент';
-  if (speaker === 'operator') return 'Сотрудник';
-  return 'Клиент';
+const turnLabelParams = turn => ({ channel: turn.channel + 1 });
+const speakerName = turn => {
+  const key = turnLabelKey(turn);
+  if (key.endsWith('AI_AGENT')) return 'AI-агент';
+  if (key.endsWith('OPERATOR')) return 'Сотрудник';
+  if (key.endsWith('CLIENT')) return 'Клиент';
+  return t(key, turnLabelParams(turn));
 };
 const aiVoice = computed(() => data.value?.aiVoice || {});
 const callRefs = computed(() =>
@@ -522,7 +531,7 @@ const recordingExtension = computed(() => {
 const transcriptFallback = computed(() => {
   if (transcript.value) return transcript.value;
   return transcriptItems.value
-    .map(item => `${speakerName(item.speaker)}: ${item.text}`)
+    .map(item => `${speakerName(item)}: ${item.text}`)
     .join('\n');
 });
 
@@ -909,7 +918,9 @@ const handleJoinCall = async () => {
                   : 'bg-n-teal-2'
               "
             >
-              <span class="font-semibold">{{ $t(turnLabelKey(turn)) }}</span>
+              <span class="font-semibold">{{
+                $t(turnLabelKey(turn), turnLabelParams(turn))
+              }}</span>
               <span
                 v-if="turn.timestamp"
                 class="ml-2 font-mono text-n-slate-10"

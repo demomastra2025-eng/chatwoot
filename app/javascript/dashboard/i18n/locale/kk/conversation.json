@@ -96,6 +96,8 @@
       "HIDE_LABELS": "Hide tags"
     },
     "VOICE_CALL": {
+      "CHANNEL": "Арна {channel}",
+      "UNKNOWN_SPEAKER": "Сөйлеуші",
       "INCOMING_CALL": "Incoming call",
       "OUTGOING_CALL": "Outgoing call",
       "CALL_IN_PROGRESS": "Call in progress",

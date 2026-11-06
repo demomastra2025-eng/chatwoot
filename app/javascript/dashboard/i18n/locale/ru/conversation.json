@@ -126,6 +126,8 @@
       "SUMMARY": "Итог звонка",
       "OPERATOR": "Сотрудник",
       "CLIENT": "Клиент",
+      "CHANNEL": "Канал {channel}",
+      "UNKNOWN_SPEAKER": "Говорящий",
       "AI_AGENT": "AI-агент",
       "AUDIO_NOT_SUPPORTED": "Ваш браузер не поддерживает воспроизведение аудио.",
       "AI_AGENT_ANSWERED": "AI-агент взял трубку и общается",
