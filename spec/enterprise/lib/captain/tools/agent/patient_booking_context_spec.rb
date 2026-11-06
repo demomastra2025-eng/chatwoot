@@ -75,4 +75,48 @@ RSpec.describe Captain::Tools::Agent::PatientBookingContext do
     expect(Scheduling::IinValidator.redact_text("ИИН #{typo_iin}")).to eq('ИИН [ИИН СКРЫТ]')
     expect { resolve(details.merge(iin: typo_iin)) }.to raise_error(ArgumentError, /Invalid patient IIN/)
   end
+
+  it 'only verifies learning after matching an existing recorded identity in the same account' do
+    card = create(:contact, account: account, name: 'Test', last_name: 'Son',
+                            identifier: '940720300129', custom_attributes: {
+                              Contacts::SharedPhone::CARD_KEY => true, 'iin' => '940720300129', 'birth_date' => '1994-07-20'
+                            })
+    expect(Llm::PiiShadowAuditor).not_to receive(:record_verified_patient!)
+    expect { resolve(details.merge(last_name: 'Mismatch')) }.to raise_error(ArgumentError, /name/)
+    expect { resolve(details.merge(birth_date: '1994-07-21')) }.to raise_error(ArgumentError, /birth date/)
+    RSpec::Mocks.space.proxy_for(Llm::PiiShadowAuditor).reset
+    expect(Llm::PiiShadowAuditor).to receive(:record_verified_patient!).with(contact: card, account_id: account.id).once
+    resolve
+  end
+
+  it 'never treats new or publicly self-declared patient cards as verified learning' do
+    with_modified_env(PII_SHADOW_AUDIT_ENABLED: 'true') do
+      expect(Llm::PiiNameLexicon).not_to receive(:learn_word!)
+      create(:contact, account: account, identifier: '940720300129')
+      2.times { resolve }
+    end
+  end
+
+  it 'promotes a quarantined verified name only for its account and only once' do
+    with_modified_env(PII_SHADOW_AUDIT_ENABLED: 'true') do
+      lexicon = Llm::PiiNameLexicon
+      auditor = Llm::PiiShadowAuditor
+      card = create(:contact, account: account, name: 'Test', last_name: 'Синтетиккарточка',
+                              identifier: '940720300129', custom_attributes: {
+                                Contacts::SharedPhone::CARD_KEY => true, 'iin' => '940720300129', 'birth_date' => '1994-07-20',
+                                'medelement_patient_code' => 'synthetic-provider-card', 'medelement_iin' => '940720300129',
+                                'medelement_first_name' => 'Test', 'medelement_last_name' => 'Синтетиккарточка'
+                              })
+      lexicon.clear_cache!
+      Llm::PiiFeedbackMetrics.keys(account.id).each { |key| Redis::Alfred.delete(key) }
+      lexicon.quarantine_candidate!('Синтетиккарточка', category: :last_name, account_id: account.id)
+      expect(lexicon.promote_quarantined_word!('Синтетиккарточка', category: :last_name, account_id: account.id)).to be(false)
+      expect(auditor.record_verified_patient!(contact: card, account_id: account.id + 1)).to be(false)
+      2.times { resolve(details.merge(last_name: 'Синтетиккарточка')) }
+      counts = Llm::PiiFeedbackMetrics.summary(account_id: account.id).fetch(:counters)
+      expect(counts['verified_quarantine_promotions']).to eq(1)
+      expect(counts['verified_name_promotions']).to eq(2)
+      expect(Llm::PiiFeedbackMetrics.summary(account_id: account.id)[:confirmed_false_negatives]).to be_nil
+    end
+  end
 end

@@ -263,7 +263,7 @@ RSpec.describe Llm::PiiSessionPseudonymizer do
     expect(rate_windows["#{account.id}:#{old_min + 1}"].to_i).to eq(0)
 
     # Promoting quarantine activates only for `account.id`, never for `other_account.id`
-    expect(Llm::PiiNameLexicon.promote_quarantined_word!('Редкофамилия', category: :last_name, account_id: account.id)).to be(true)
+    expect(Llm::PiiNameLexicon.promote_quarantined_word!('Редкофамилия', category: :last_name, account_id: account.id, verified: true)).to be(true)
     expect(Llm::PiiNameLexicon.unambiguous_single_name?('Редкофамилия', account_id: account.id)).to be(true)
     expect(Llm::PiiNameLexicon.unambiguous_single_name?('Редкофамилия', account_id: other_account.id)).to be(false)
   end
