@@ -10,7 +10,9 @@ RSpec.describe Llm::PiiShadowAuditor, :pii_feedback_native do
   let(:namespace) { "pii-feedback-proof-#{SecureRandom.hex(8)}" }
 
   def native_pool
-    ConnectionPool.new(size: 12) { Redis::Namespace.new(namespace, redis: Redis.new(url: ENV.fetch('PII_FEEDBACK_REDIS_URL'))) }
+    proof_namespace = namespace
+    proof_url = ENV.fetch('PII_FEEDBACK_REDIS_URL')
+    ConnectionPool.new(size: 12) { Redis::Namespace.new(proof_namespace, redis: Redis.new(url: proof_url)) }
   end
 
   around do |example|
@@ -99,7 +101,7 @@ RSpec.describe Llm::PiiShadowAuditor, :pii_feedback_native do
         lexicon.learn_word!('Синтетикпродвижение', category: :last_name, account_id: tenant_id, verified: true)
         exit! 0
       end
-      Process.wait(pid)
+      expect(Process.wait2(pid).last.success?).to be(true)
     end
     expect(lexicon.quarantine_candidate!('Синтетикпродвижение', category: :last_name, account_id: tenant_id)).to be(false)
     expect(lexicon.learn_word!('Синтетикпродвижение', category: :last_name, account_id: tenant_id, verified: true)).to be(false)
