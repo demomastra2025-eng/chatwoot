@@ -77,6 +77,43 @@ RSpec.describe WhatsappWeb::ContactNameResolver do
     expect(resolve(payload, [stored_name]).phonebook_attributes).to eq(stored_name)
   end
 
+  [nil, 'not-a-timestamp'].each do |timestamp|
+    it "preserves the original winner when an epoch-zero date meets #{timestamp.inspect}", :aggregate_failures do
+      undated = { 'phonebook_name' => 'Zulu', 'phonebook_name_updated_at' => timestamp }
+      dated = { 'phonebook_name' => 'Alpha', 'phonebook_name_updated_at' => '1970-01-01T00:00:00.000Z' }
+
+      expect(resolve({}, [undated, dated]).phonebook_attributes).to eq('phonebook_name' => 'Zulu')
+      expect(resolve({}, [dated, undated]).phonebook_attributes).to eq(dated)
+      expect(resolve({ phonebookName: 'Zulu', phonebookNameUpdatedAt: timestamp }, [dated]).phonebook_attributes)
+        .to eq('phonebook_name' => 'Zulu')
+      expect(resolve({ phonebookName: 'Alpha', phonebookNameUpdatedAt: dated['phonebook_name_updated_at'] }, [undated]).phonebook_attributes)
+        .to eq(dated)
+    end
+  end
+
+  it 'refines an epoch-zero winner using only its valid equal-date peers', :aggregate_failures do
+    profiles = [
+      { 'phonebook_name' => 'Aardvark' },
+      { 'phonebook_name' => 'Alpha', 'phonebook_name_updated_at' => '1970-01-01T00:00:00.000Z' }
+    ]
+    payload = { phonebookName: 'Zulu', phonebookNameUpdatedAt: '1970-01-01T00:00:00.000Z' }
+
+    expect(resolve(payload, profiles).phonebook_attributes).to eq(profiles.last)
+    expect(resolve({}, profiles).phonebook_attributes).to eq(profiles.first)
+  end
+
+  it 'does not treat unequal original dates as equal when their float scores coincide' do
+    earlier = '2026-11-01T12:00:00.000000001Z'
+    later = '2026-11-01T12:00:00.000000002Z'
+    expect(Time.iso8601(earlier).to_f).to eq(Time.iso8601(later).to_f)
+    profiles = [
+      { 'phonebook_name' => 'Zulu', 'phonebook_name_updated_at' => earlier },
+      { 'phonebook_name' => 'Alpha', 'phonebook_name_updated_at' => later }
+    ]
+
+    expect(resolve({}, profiles).phonebook_attributes['phonebook_name']).to eq('Zulu')
+  end
+
   it 'does not infer phonebook provenance from legacy name or pushName fields' do
     result = resolve({ name: 'Legacy Name', pushName: 'Profile Name' })
 
