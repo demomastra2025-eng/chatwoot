@@ -37,6 +37,66 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     expect(source.reload.channel_profile.display_name).to eq('New Alias')
   end
 
+  [
+    ['Alpha', 'Zulu', 'Alpha'],
+    ["\uE000", "\u{1F600}", "\u{1F600}"],
+    ["\uE000", "\u{10000}", "\u{10000}"],
+    ['alpha', 'Alpha', 'Alpha'],
+    ['AlphaX', 'Alpha', 'Alpha']
+  ].each do |left, right, expected|
+    [[left, right], [right, left]].each do |first, second|
+      it "converges after equal-dated webhooks #{first.inspect} then #{second.inspect}", :aggregate_failures do
+        source = sync(phonebookName: first, phonebookNameUpdatedAt: saved_at)
+        sync(phonebookName: second, phonebookNameUpdatedAt: saved_at)
+
+        expect(source.contact.reload.name).to eq(expected)
+        expect(source.reload.channel_profile.display_name).to eq(expected)
+        expect(source.channel_profile.profile_data).to include('phonebook_name' => expected, 'phonebook_name_updated_at' => saved_at)
+      end
+    end
+  end
+
+  equal_date_names = ["\u{1F600}", "\uE000"]
+  ['Manual Alias', '15550000011'].each do |manual_name|
+    it "preserves manual #{manual_name.inspect} while equal-dated phonebook events converge", :aggregate_failures do
+      source = sync(phonebookName: "\uE000", phonebookNameUpdatedAt: saved_at)
+      source.contact.update!(
+        name: manual_name,
+        additional_attributes: source.contact.merge_display_source(
+          additional_attributes: source.contact.additional_attributes,
+          key: Contact::PRIMARY_NAME_SOURCE_KEY,
+          source: { 'kind' => Contact::DISPLAY_SOURCE_KIND_MANUAL }
+        )
+      )
+      equal_date_names.each { |name| sync(phonebookName: name, phonebookNameUpdatedAt: saved_at) }
+
+      expect(source.contact.reload.name).to eq(manual_name)
+      expect(source.contact.primary_name_source).to eq('kind' => 'manual')
+      expect(source.reload.channel_profile.display_name).to eq("\u{1F600}")
+    end
+  end
+
+  it 'preserves another selected channel while equal-dated phonebook events converge', :aggregate_failures do
+    source = sync(phonebookName: 'Zulu', phonebookNameUpdatedAt: saved_at)
+    telegram = create(:channel_telegram_personal, account: channel.account)
+    other_source = create(:contact_inbox, contact: source.contact, inbox: telegram.inbox, source_id: '89001')
+    create(:contact_channel_profile, contact_inbox: other_source, display_name: '15550000011', provider: 'telegram_personal')
+    selected_source = source.contact.display_source_for_contact_inbox(other_source)
+    source.contact.update!(
+      name: '15550000011',
+      additional_attributes: source.contact.merge_display_source(
+        additional_attributes: source.contact.additional_attributes,
+        key: Contact::PRIMARY_NAME_SOURCE_KEY,
+        source: selected_source
+      )
+    )
+    %w[Alpha Zulu].each { |name| sync(phonebookName: name, phonebookNameUpdatedAt: saved_at) }
+
+    expect(source.contact.reload.name).to eq('15550000011')
+    expect(source.contact.primary_name_source).to eq(selected_source)
+    expect(source.reload.channel_profile.display_name).to eq('Alpha')
+  end
+
   it 'preserves ordinary and technical manual card names while retaining automatic profile provenance', :aggregate_failures do
     source = sync_saved_name
     ['Manual Alias', '15550000011'].each do |manual_name|

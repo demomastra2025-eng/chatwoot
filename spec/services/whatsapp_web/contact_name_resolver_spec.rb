@@ -37,6 +37,25 @@ RSpec.describe WhatsappWeb::ContactNameResolver do
     expect(resolve({}, [newer, stored_name]).phonebook_attributes['phonebook_name']).to eq('Latest Alias')
   end
 
+  [
+    ['Alpha', 'Zulu', 'Alpha'],
+    ["\uE000", "\u{1F600}", "\u{1F600}"],
+    ["\uE000", "\u{10000}", "\u{10000}"],
+    ['alpha', 'Alpha', 'Alpha'],
+    ['AlphaX', 'Alpha', 'Alpha']
+  ].each do |left, right, expected|
+    [[left, right], [right, left]].each do |stored, incoming|
+      it "uses the JavaScript UTF-16 minimum for equal-dated #{stored.inspect} then #{incoming.inspect}", :aggregate_failures do
+        first = stored_name.merge('phonebook_name' => stored)
+        second = stored_name.merge('phonebook_name' => incoming)
+        payload = { phonebookName: incoming, phonebookNameUpdatedAt: first['phonebook_name_updated_at'] }
+
+        expect(resolve(payload, [first]).phonebook_attributes['phonebook_name']).to eq(expected)
+        expect(resolve({}, [first, second]).phonebook_attributes['phonebook_name']).to eq(expected)
+      end
+    end
+  end
+
   it 'does not infer phonebook provenance from legacy name or pushName fields' do
     result = resolve({ name: 'Legacy Name', pushName: 'Profile Name' })
 
