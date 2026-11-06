@@ -36,7 +36,6 @@ vi.mock('wavesurfer.js', async () => {
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }));
 vi.mock('dashboard/composables', () => ({ useAlert: vi.fn() }));
-vi.mock('dashboard/composables/emitter', () => ({ useEmitter: vi.fn() }));
 vi.mock('dashboard/composables/useAttachmentAvailability', async () => {
   const { ref } = await import('vue');
   return {
@@ -52,6 +51,7 @@ import AudioChip from './Audio.vue';
 import { downloadFile } from '@chatwoot/utils';
 import { useAlert } from 'dashboard/composables';
 import { useAudioPlaybackState } from '../audioPlaybackState';
+import { emitter } from 'shared/helpers/mitt';
 
 const RECORDING_URL =
   '/api/v1/accounts/77/telephony/calls/sipuni%3Alocal%3Aabc/recording?recording_token=signed';
@@ -127,6 +127,86 @@ describe('Audio chip playback', () => {
       .spyOn(window.HTMLElement.prototype, 'clientWidth', 'get')
       .mockReturnValue(width);
   };
+
+  it('does not restart native playback after another chip cancels pending waveform play', async () => {
+    withContainerWidth(300);
+    const chip = mountChip();
+    await flushPromises();
+    const [waveSurfer] = waveSurferState.instances;
+    waveSurfer.handlers.ready(30);
+    let rejectPlay;
+    waveSurfer.playPause.mockReturnValueOnce(
+      new Promise((resolve, reject) => {
+        rejectPlay = reject;
+      })
+    );
+    await playButton(chip).trigger('click');
+    await flushPromises();
+
+    emitter.emit('pause_playing_audio', -999);
+    rejectPlay(new DOMException('interrupted', 'AbortError'));
+    await flushPromises();
+
+    expect(playSpy).not.toHaveBeenCalled();
+    expect(useAlert).not.toHaveBeenCalled();
+  });
+
+  it.each(['native', 'waveform'])(
+    'does not report or restart a pending %s play after user pause',
+    async player => {
+      withContainerWidth(player === 'native' ? 0 : 300);
+      const chip = mountChip();
+      await flushPromises();
+      let rejectPlay;
+      const pendingPlay = new Promise((resolve, reject) => {
+        rejectPlay = reject;
+      });
+      if (player === 'native') {
+        playSpy.mockReturnValueOnce(pendingPlay);
+      } else {
+        const [waveSurfer] = waveSurferState.instances;
+        waveSurfer.handlers.ready(30);
+        waveSurfer.playPause.mockReturnValueOnce(pendingPlay);
+      }
+      await playButton(chip).trigger('click');
+      await flushPromises();
+      if (player === 'native') {
+        await chip.find('audio').trigger('loadedmetadata');
+        await chip.find('audio').trigger('play');
+        Object.defineProperty(chip.find('audio').element, 'paused', {
+          configurable: true,
+          value: false,
+        });
+      } else {
+        waveSurferState.instances[0].handlers.play();
+      }
+
+      await playButton(chip).trigger('click');
+      rejectPlay(new DOMException('interrupted by pause', 'AbortError'));
+      await flushPromises();
+
+      expect(useAlert).not.toHaveBeenCalled();
+      expect(playSpy).toHaveBeenCalledTimes(player === 'native' ? 1 : 0);
+    }
+  );
+
+  it('allows a new play after another chip cancels fallback source loading', async () => {
+    withContainerWidth(0);
+    const chip = mountChip();
+    const click = playButton(chip).trigger('click');
+    emitter.emit('pause_playing_audio', -999);
+    await click;
+    await flushPromises();
+    expect(playSpy).not.toHaveBeenCalled();
+
+    await playButton(chip).trigger('click');
+    await flushPromises();
+    expect(chip.find('audio').attributes('src')).toContain(
+      'recording_token=signed'
+    );
+    expect(playSpy).toHaveBeenCalledTimes(1);
+    expect(useAlert).not.toHaveBeenCalled();
+  });
 
   it.each([NaN, Infinity])(
     'updates late native duration after metadata reported %s',

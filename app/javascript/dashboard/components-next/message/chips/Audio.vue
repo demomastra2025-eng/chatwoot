@@ -334,7 +334,8 @@ useResizeObserver(waveformContainer, () => {
 });
 
 useEmitter('pause_playing_audio', currentPlayingId => {
-  if (currentPlayingId !== uid && isPlaying.value) {
+  if (currentPlayingId !== uid) {
+    playbackGeneration += 1;
     try {
       if (waveSurfer.value && !isFallbackMode.value) {
         waveSurfer.value.pause();
@@ -418,9 +419,12 @@ const playBeforeWaveformReady = async () => {
 
   emitter.emit('pause_playing_audio', uid);
 
-  if (isFallbackMode.value && hasNativeAudioFailed.value) {
-    // The native source failed earlier (network blip, expired signed URL):
-    // load it again from the current URL instead of replaying the dead one.
+  if (
+    isFallbackMode.value &&
+    (hasNativeAudioFailed.value || !audioElement.value?.getAttribute('src'))
+  ) {
+    // Reload a failed source, or one whose loading was canceled before src
+    // was set. A new user click starts from the current URL.
     hasNativeAudioFailed.value = false;
     await loadNativeAudio(generation);
   } else {
@@ -439,11 +443,13 @@ const playOrPause = async () => {
   emitter.emit('pause_playing_audio', uid);
 
   if (waveSurfer.value && !isFallbackMode.value) {
+    const isPausing = isPlaying.value;
+    if (isPausing) playbackGeneration += 1;
     const generation = playbackGeneration;
     try {
       await waveSurfer.value.playPause();
     } catch {
-      if (!isCurrentPlayback(generation)) return;
+      if (isPausing || !isCurrentPlayback(generation)) return;
       await activateNativeFallback(generation);
       await playNativeAudio(generation);
     }
@@ -456,6 +462,7 @@ const playOrPause = async () => {
   if (audio.paused) {
     await playNativeAudio();
   } else {
+    playbackGeneration += 1;
     audio.pause();
   }
 };
