@@ -75,6 +75,25 @@ class ContractTest(unittest.TestCase):
             with self.assertRaises(vc.Failure):
                 vc.load_json(value)
 
+    def test_voice_message_formats_use_fixed_demuxers_without_accepting_paths(self):
+        for filename, demuxer in (("audio.aac", "aac"), ("audio.webm", "matroska")):
+            with self.subTest(filename=filename):
+                body = {**request(), "audio_filename": filename, "is_phone_call": False}
+                self.assertEqual(vc.validate_request(body, {7}), body)
+                self.assertEqual(vc.DEMUXERS[filename], demuxer)
+                with self.assertRaises(vc.Failure):
+                    vc.validate_request({**body, "audio_filename": "../" + filename}, {7})
+
+    def test_phone_or_voice_message_flag_is_strict_bool_with_identical_pipeline(self):
+        turn = {"channel": 0, "start_sec": 0, "end_sec": 1, "text": "synthetic", "language": "ru"}
+        runtime = self.runtime([turn], channels=1)
+        call = runtime.transcribe({**request(), "is_phone_call": True})
+        voice_message = runtime.transcribe({**request(), "is_phone_call": False})
+        self.assertEqual(call, voice_message)
+        for invalid in ("false", "true", 0, 1, None):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(vc.Failure, "INVALID_PHONE_FLAG"):
+                vc.validate_request({**request(), "is_phone_call": invalid}, {7})
+
     def test_private_snapshot_survives_original_replacement(self):
         with vc.open_audio(self.root, self.body) as snapshot:
             self.audio.unlink()

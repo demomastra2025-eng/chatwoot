@@ -45,6 +45,25 @@ RSpec.describe Telephony::VoiceCoreClient do
     end
   end
 
+  it 'sends an explicit boolean false for a voice note and refuses string booleans' do
+    request = stub_response
+    client.transcribe(**request_args, is_phone_call: false)
+    expect(request).to have_been_requested.once
+    expect(WebMock).to have_requested(:post, 'http://127.0.0.1:8095/transcribe').with do |sent|
+      JSON.parse(sent.body)['is_phone_call'] == false
+    end
+    expect { client.transcribe(**request_args, is_phone_call: 'false') }.to raise_error(described_class::Error)
+  end
+
+  it 'accepts AAC and WebM descriptors and rejects disguised paths or URLs' do
+    request = stub_response
+    %w[audio.aac audio.webm].each { |filename| client.transcribe(**request_args, audio_filename: filename, is_phone_call: false) }
+    expect(request).to have_been_requested.twice
+    %w[audio.webm/../audio.wav audio.aac?source=http://example.test/audio.aac].each do |filename|
+      expect { client.transcribe(**request_args, audio_filename: filename) }.to raise_error(described_class::Error)
+    end
+  end
+
   it 'rejects a foreign account or job in an otherwise successful response' do
     stub_response(payload.merge(account_id: 102))
     expect { client.transcribe(**request_args) }.to raise_error(described_class::Error) { |error| expect(error.code).to eq('invalid_response') }

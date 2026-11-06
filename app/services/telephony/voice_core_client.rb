@@ -38,9 +38,9 @@ class Telephony::VoiceCoreClient
     values.include?(account.id.to_s)
   end
 
-  def transcribe(account_id:, job_id:, audio_filename:, channel_map:)
+  def transcribe(account_id:, job_id:, audio_filename:, channel_map:, is_phone_call: true)
     payload = { schema: REQUEST_SCHEMA, account_id: account_id, job_id: job_id, audio_filename: audio_filename,
-                channel_map: channel_map, is_phone_call: true }
+                channel_map: channel_map, is_phone_call: is_phone_call }
     validate_request!(payload)
     body = JSON.generate(payload)
     raise Error, 'request_too_large' if body.bytesize > MAX_REQUEST_BYTES
@@ -107,11 +107,17 @@ class Telephony::VoiceCoreClient
   end
 
   def validate_request!(payload)
+    validate_phone_flag!(payload[:is_phone_call])
+
     valid = payload[:account_id].is_a?(Integer) && payload[:account_id].positive? &&
             valid_job_id?(payload[:job_id]) &&
-            payload[:audio_filename].is_a?(String) && payload[:audio_filename].match?(/\Aaudio\.(wav|mp3|ogg|m4a|flac)\z/) &&
+            payload[:audio_filename].is_a?(String) && payload[:audio_filename].match?(/\Aaudio\.(wav|mp3|ogg|m4a|flac|aac|webm)\z/) &&
             valid_channel_map?(payload[:channel_map])
     raise Error, 'invalid_request' unless valid
+  end
+
+  def validate_phone_flag!(value)
+    raise Error, 'invalid_request' unless [true, false].include?(value)
   end
 
   def valid_channel_map?(map)

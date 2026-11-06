@@ -3,7 +3,7 @@ require 'rails_helper'
 RSpec.describe Telephony::VoiceCoreRecordingTranscription do
   let(:session) { instance_double(Telephony::CallSession, account_id: 101, metadata: { 'recording' => { 'channel_map' => channel_map } }) }
   let(:channel_map) { { 'FL' => 'client', 'FR' => 'operator' } }
-  let(:spool) { instance_double(Telephony::VoiceCoreRecordingSpool, job_id: 'a' * 32, audio_filename: 'audio.wav') }
+  let(:spool) { instance_double(Telephony::VoiceCoreAudioSpool, job_id: 'a' * 32, audio_filename: 'audio.wav') }
   let(:client) { instance_double(Telephony::VoiceCoreClient) }
   let(:response) do
     { 'dialogue_turns' => [{ 'speaker' => 'client', 'channel' => 0, 'start_sec' => 0.25, 'end_sec' => 1.5, 'text' => 'Тест' }],

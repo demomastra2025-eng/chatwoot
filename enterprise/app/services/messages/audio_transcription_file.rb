@@ -15,6 +15,10 @@ class Messages::AudioTranscriptionFile
     extension.present?
   end
 
+  def canonical_extension
+    extension
+  end
+
   # Copies the audio into a temp file and returns its path; the caller removes the file
   def copy_to_temp_file
     blob = @attachment.file.blob

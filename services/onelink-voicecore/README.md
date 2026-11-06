@@ -42,8 +42,10 @@ POST `/transcribe`. No learning routes. Request fields are exactly:
 {"schema":"onelink.voicecore.request.v1","account_id":7,"job_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","audio_filename":"audio.wav","channel_map":{},"is_phone_call":true}
 ```
 
-These IDs/bytes are synthetic. Filename is one of audio.wav/mp3/ogg/m4a/flac;
+These IDs/bytes are synthetic. Filename is one of audio.wav/mp3/ogg/m4a/flac/aac/webm;
 it identifies a file under `<spool>/<account>/<job>/`, never a caller path/URL.
+`is_phone_call` is strictly boolean: true for calls, false for voice messages.
+Both use this same decoder/postprocessor; the flag never selects DSP or rules.
 Every path component uses no-follow directory descriptors; file owner, mode,
 regular type, link count, size and unchanged inode metadata are checked while
 copying into a bounded private snapshot. Forced demuxers, `/proc/self/fd`, disabled

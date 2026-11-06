@@ -37,5 +37,15 @@ RSpec.describe Messages::AudioTranscriptionJob do
       expect(Messages::AudioTranscriptionService).not_to receive(:new)
       described_class.perform_now(999_999)
     end
+
+    it 'retries a transient local provider failure through the native audio queue' do
+      allow(transcription_service).to receive(:perform).and_return(error_code: 'unavailable', retryable: true)
+      expect { described_class.perform_now(attachment_id) }.to have_enqueued_job(described_class).with(attachment_id)
+    end
+
+    it 'does not retry a terminal local schema or manifest failure' do
+      allow(transcription_service).to receive(:perform).and_return(error_code: 'unapproved_manifest', retryable: false)
+      expect { described_class.perform_now(attachment_id) }.not_to have_enqueued_job(described_class)
+    end
   end
 end

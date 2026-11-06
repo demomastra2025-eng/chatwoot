@@ -21,11 +21,13 @@ class Messages::AudioTranscriptionJob < ApplicationJob
     Rails.logger.warn("Discarding audio transcription job due to bad request: #{log_context}")
   end
   retry_on ActiveStorage::FileNotFoundError, wait: 2.seconds, attempts: 3
+  retry_on Telephony::VoiceCoreClient::RetryableError, wait: 10.seconds, attempts: 3
 
   def perform(attachment_id)
     attachment = Attachment.find_by(id: attachment_id)
     return if attachment.blank?
 
-    Messages::AudioTranscriptionService.new(attachment).perform
+    result = Messages::AudioTranscriptionService.new(attachment).perform
+    raise Telephony::VoiceCoreClient::RetryableError.new(result[:error_code], retryable: true) if result.is_a?(Hash) && result[:retryable]
   end
 end

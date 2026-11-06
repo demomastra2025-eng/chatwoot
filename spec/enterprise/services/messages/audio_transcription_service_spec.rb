@@ -157,6 +157,89 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
     end
   end
 
+  describe 'selected DEV VoiceCore provider' do
+    let(:service) { described_class.new(attachment) }
+    let(:adapter) { instance_double(Messages::VoiceCoreAttachmentTranscription) }
+    let(:local_result) do
+      { 'text' => 'Синтетическое голосовое сообщение',
+        'provenance' => { 'provider' => 'voicecore', 'model' => Telephony::VoiceCoreClient::APPROVED_MANIFEST_SHA256 } }
+    end
+
+    before do
+      attachment.file.attach(io: StringIO.new('OggSsynthetic'), filename: 'synthetic-voice', content_type: 'audio/opus')
+      allow(Telephony::VoiceCoreClient).to receive(:selected_for?).with(service.account).and_return(true)
+      allow(Messages::VoiceCoreAttachmentTranscription).to receive(:new).with(attachment).and_return(adapter)
+      allow(adapter).to receive(:perform).and_return(local_result)
+      allow(service.account).to receive(:captain_quota_available?).and_return(true)
+      allow(service.account).to receive(:increment_response_usage)
+      allow(service.message).to receive(:account).and_return(service.account)
+      allow(service.message).to receive(:send_update_event)
+      allow(Contacts::LanguageStatsService).to receive(:refresh!)
+      allow(ChatwootApp).to receive(:advanced_search_allowed?).and_return(false)
+      allow(Llm::Runtime).to receive(:transcribe)
+      allow(Llm::Runtime).to receive(:chat)
+      allow(service).to receive(:fetch_audio_file)
+      allow(Compliance::ExplicitAiConsentGate).to receive(:blocked?).and_return(false)
+    end
+
+    it 'stores local provenance alongside the text and preserves existing attachment metadata' do
+      attachment.update!(meta: { 'synthetic_marker' => 'preserve', 'transcription' => { 'synthetic_extra' => true } })
+      expect(service.perform).to eq(success: true, transcriptions: local_result['text'])
+      expect(attachment.reload.meta).to include('synthetic_marker' => 'preserve', 'transcribed_text' => local_result['text'])
+      expect(attachment.meta['transcription']).to include(local_result['provenance'].merge('synthetic_extra' => true))
+      expect(service.account).to have_received(:increment_response_usage).once
+      expect(service.message).to have_received(:send_update_event)
+      expect(Contacts::LanguageStatsService).to have_received(:refresh!)
+    end
+
+    it 'returns the native cache without another local inference or usage increment' do
+      service.perform
+      expect(service.perform).to eq(success: true, transcriptions: local_result['text'])
+      expect(adapter).to have_received(:perform).once
+      expect(service.account).to have_received(:increment_response_usage).once
+    end
+
+    it 'bypasses cloud download, conversion and paid transcription or enrichment' do
+      service.perform
+      expect(service).not_to have_received(:fetch_audio_file)
+      expect(Llm::Runtime).not_to have_received(:transcribe)
+      expect(Llm::Runtime).not_to have_received(:chat)
+    end
+
+    it 'preserves explicit AI consent before local inference and storage' do
+      allow(Compliance::ExplicitAiConsentGate).to receive(:blocked?).and_return(true)
+      expect(service.perform).to eq(error: 'AI consent required')
+      expect(adapter).not_to have_received(:perform)
+      expect(attachment.reload.meta).to be_blank
+      expect(service.account).not_to have_received(:increment_response_usage)
+    end
+
+    it 'preserves both the audio enabled flag and native quota before local inference' do
+      allow(service.account).to receive(:audio_transcriptions_enabled?).and_return(false)
+      expect(service.perform).to eq(error: 'Transcription limit exceeded')
+      allow(service.account).to receive(:audio_transcriptions_enabled?).and_return(true)
+      allow(service.account).to receive(:captain_quota_available?).and_return(false)
+      expect(service.perform).to eq(error: 'Transcription limit exceeded')
+      expect(adapter).not_to have_received(:perform)
+    end
+
+    it 'keeps local failures fixed and retryable when appropriate without paid fallback or usage' do
+      allow(adapter).to receive(:perform).and_raise(Telephony::VoiceCoreClient::Error.new('unavailable', retryable: true))
+      expect(service.perform).to eq(error: 'VoiceCore transcription unavailable', error_code: 'unavailable', retryable: true)
+      expect(attachment.reload.meta).to be_blank
+      expect(service.account).not_to have_received(:increment_response_usage)
+      expect(Llm::Runtime).not_to have_received(:transcribe)
+      expect(Llm::Runtime).not_to have_received(:chat)
+    end
+
+    it 'retains the native behavior of storing and charging nothing for an empty transcript' do
+      allow(adapter).to receive(:perform).and_return(local_result.merge('text' => ''))
+      expect(service.perform).to eq(success: true, transcriptions: '')
+      expect(attachment.reload.meta).to be_blank
+      expect(service.account).not_to have_received(:increment_response_usage)
+    end
+  end
+
   describe '#transcribe_audio' do
     let(:service) { described_class.new(attachment) }
 

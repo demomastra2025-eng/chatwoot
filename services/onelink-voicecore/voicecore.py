@@ -53,7 +53,8 @@ VOSK_FILES = (
 )
 DEMAND |= {f"{VOSK}/{f}" for f in VOSK_FILES}
 DEMUXERS = {"audio.wav": "wav", "audio.mp3": "mp3", "audio.ogg": "ogg",
-            "audio.m4a": "mov", "audio.flac": "flac"}
+            "audio.m4a": "mov", "audio.flac": "flac", "audio.aac": "aac",
+            "audio.webm": "matroska"}
 
 
 class Failure(Exception):
@@ -103,7 +104,7 @@ def validate_request(body, accounts):
         raise Failure("INVALID_JOB", 400)
     if not isinstance(body["audio_filename"], str) or body["audio_filename"] not in DEMUXERS:
         raise Failure("UNSUPPORTED_AUDIO", 415)
-    if body["is_phone_call"] is not True:
+    if type(body["is_phone_call"]) is not bool:
         raise Failure("INVALID_PHONE_FLAG", 400)
     mapping = body["channel_map"]
     if not isinstance(mapping, dict) or (mapping and (

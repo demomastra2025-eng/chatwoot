@@ -1,3 +1,5 @@
+# Keep the existing cloud orchestration and native attachment lifecycle together with the selected local branch.
+# rubocop:disable Metrics/ClassLength
 class Messages::AudioTranscriptionService < Llm::BaseAiService
   include Integrations::LlmInstrumentation
 
@@ -16,7 +18,7 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
 
   def perform
     return { error: 'Message not found' } if message.blank?
-    return { error: 'AI consent required' } if message.conversation && Compliance::ExplicitAiConsentGate.blocked?(message.conversation)
+    return { error: 'AI consent required' } if ai_consent_blocked?
     return { error: 'Transcription limit exceeded' } unless can_transcribe?
     return { success: true, transcriptions: cached_transcription } if cached_transcription.present?
     return unsupported_audio_format_result unless supported_attachment_format?
@@ -27,12 +29,23 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
       "attachment_id=#{attachment.id} message_id=#{message.id}"
     )
     { success: true, transcriptions: transcriptions }
+  rescue Telephony::VoiceCoreClient::Error => e
+    voicecore_error_result(e)
   rescue RubyLLM::UnauthorizedError, Faraday::UnauthorizedError
     Rails.logger.warn('Skipping audio transcription: LLM transcription provider configuration is invalid or disabled (401 Unauthorized).')
     { error: 'LLM transcription provider configuration is invalid or disabled (401)' }
   end
 
   private
+
+  def ai_consent_blocked?
+    message.conversation && Compliance::ExplicitAiConsentGate.blocked?(message.conversation)
+  end
+
+  def voicecore_error_result(error)
+    Rails.logger.warn("[VoiceCore] Audio transcription failed attachment_id=#{attachment.id} account_id=#{account.id} code=#{error.code}")
+    { error: 'VoiceCore transcription unavailable', error_code: error.code, retryable: error.retryable }
+  end
 
   def can_transcribe?
     return false unless account.audio_transcriptions_enabled?
@@ -50,6 +63,7 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
 
   def transcribe_audio
     return cached_transcription if cached_transcription.present?
+    return transcribe_with_voicecore if Telephony::VoiceCoreClient.selected_for?(account)
 
     temp_file_path = fetch_audio_file
     provider_file_path = audio_file_path_for_provider(temp_file_path)
@@ -61,6 +75,13 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     transcribed_text
   ensure
     remove_temp_files(temp_file_path, provider_file_path)
+  end
+
+  def transcribe_with_voicecore
+    result = Messages::VoiceCoreAttachmentTranscription.new(attachment).perform
+    @voicecore_provenance = result.fetch('provenance')
+    update_transcription(result.fetch('text'))
+    result.fetch('text')
   end
 
   def request_transcription(provider_file_path, observability)
@@ -168,7 +189,7 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
   def update_transcription(transcribed_text)
     return if transcribed_text.blank?
 
-    attachment.update!(meta: attachment.meta.to_h.merge('transcribed_text' => transcribed_text))
+    attachment.update!(meta: transcription_metadata(transcribed_text))
     refresh_contact_language_stats
     message.reload.send_update_event
     message.account.increment_response_usage
@@ -176,6 +197,15 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     return unless ChatwootApp.advanced_search_allowed?
 
     message.reindex
+  end
+
+  def transcription_metadata(text)
+    meta = attachment.meta.to_h.merge('transcribed_text' => text)
+    if @voicecore_provenance
+      existing = meta['transcription'].is_a?(Hash) ? meta['transcription'] : {}
+      meta['transcription'] = existing.merge(@voicecore_provenance)
+    end
+    meta
   end
 
   def refresh_contact_language_stats
@@ -204,3 +234,4 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     attachment.meta&.[]('transcribed_text').to_s.presence
   end
 end
+# rubocop:enable Metrics/ClassLength

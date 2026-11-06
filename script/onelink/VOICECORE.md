@@ -1,6 +1,6 @@
 # VoiceCore: изолированный DEV batch-ASR
 
-Адаптер предназначен для `Telephony::CallSession` и существующего voice_call сообщения. Он выключен по умолчанию. Новых настроек в интерфейсе, миграций или переключения глобальной LLM-модели нет. Запуск/выкладка этим файлом не разрешены.
+Адаптер предназначен для `Telephony::CallSession`/voice_call и нативных голосовых вложений `Messages::AudioTranscriptionService`. Он выключен по умолчанию. Новых настроек в интерфейсе, миграций или переключения глобальной LLM-модели нет. Запуск/выкладка этим файлом не разрешены.
 
 ## Deployment configuration
 
@@ -18,11 +18,11 @@
 
 Существующие account flag/quota/cache проверяются до нового inference. У выбранного account service обращается к VoiceCore **до** cloud normalization, probe и LLM enrichment. У выключенного feature/невыбранного account старый provider продолжает работать. У выбранного VoiceCore ошибка не включает платный cloud fallback.
 
-Источник берётся только из trusted CallSession. Локальный путь разрешается native `Storage::RecordingPaths` с account ID; legacy basename разрешён только через его tenant-scoped resolver. Remote key проверяется native `Storage::RecordingMetadata.local_key` до любого remote чтения. Поддерживаются account-first/provider-account storage layouts. Remote download передаётся chunk-by-chunk в ограниченный spool.
+Для звонка источник берётся только из trusted CallSession. Локальный путь разрешается native `Storage::RecordingPaths` с account ID; legacy basename разрешён только через его tenant-scoped resolver. Remote key проверяется native `Storage::RecordingMetadata.local_key` до любого remote чтения. Поддерживаются account-first/provider-account storage layouts. Remote download передаётся chunk-by-chunk в ограниченный spool.
 
 Configured spool root, account и job обязаны принадлежать текущему UID и иметь точный mode0700; существующие foreign/group/world-readable/writeable directories отвергаются без chmod/chown. Все ancestors проверяются без symlink. Rails удерживает nofollow directory/file descriptors и dev/inode/uid/mode identities до конца обработки, проверяет их перед записью, inference и очисткой. Подмена root/account/job/file либо прав/владельца даёт fixed error; cleanup пропускает удаление, а не следует подмене. После подмены остаётся собственный staged остаток для отдельной безопасной уборки.
 
-Rails создаёт private `<root>/<account_id>/<32hexjob>/audio.<ext>` (directory0700/file0600), сохраняя исходные байты/каналы. Расширения wav/mp3/ogg/m4a/flac, максимум100MiB. Runtime получает только account/job/фиксированное имя, доступ к spool только чтение; исходное storage не монтируется в runtime. Rails удаляет только свой job в ensure. Runtime обязан завершать worker/decode по deadline до client read deadline; аварийные остатки после process kill удаляются отдельной узкой TTL-процедурой перед повторным включением.
+Rails создаёт private `<root>/<account_id>/<32hexjob>/audio.<ext>` (directory0700/file0600), сохраняя исходные байты/каналы. Расширения wav/mp3/ogg/m4a/flac/aac/webm, максимум100MiB. Runtime получает только account/job/фиксированное имя, доступ к spool только чтение; исходное storage не монтируется в runtime. Rails удаляет только свой job в ensure. Runtime обязан завершать worker/decode по deadline до client read deadline; аварийные остатки после process kill удаляются отдельной узкой TTL-процедурой перед повторным включением.
 
 `POST /transcribe`, Content-Type application/json, Bearer token. Request≤16KiB:
 
@@ -30,7 +30,7 @@ Rails создаёт private `<root>/<account_id>/<32hexjob>/audio.<ext>` (direc
 {"schema":"onelink.voicecore.request.v1","account_id":101,"job_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","audio_filename":"audio.wav","channel_map":{"0":"operator","1":"client"},"is_phone_call":true}
 ```
 
-channel_map разрешается из native aliases; неизвестная/конфликтующая/неполная карта передаётся как `{}`. Явная zero-based0/1 и one-based1/2 различаются; смешанная0/1/2 не угадывается. Default operator/client по номеру канала отсутствует. Mono с явной стереокартой — ошибка формата, не повод молча менять роли.
+is_phone_call — только JSON boolean: true для звонка (default клиента), false для голосового сообщения. Строка «false» запрещена. channel_map разрешается из native aliases; неизвестная/конфликтующая/неполная карта передаётся как `{}`. Явная zero-based0/1 и one-based1/2 различаются; смешанная0/1/2 не угадывается. Default operator/client по номеру канала отсутствует. Mono с явной стереокартой — ошибка формата, не повод молча менять роли.
 
 Response≤2MiB со строго проверенными полями:
 
@@ -49,3 +49,13 @@ Transport: connect2s, write10s, read120s, overall130s, automatic HTTP retry0, re
 Целевые RSpec: `voice_core_client_spec`, `voice_core_recording_spool_spec`, `voice_core_recording_transcription_spec`, `call_recording_transcription_service_spec`, `call_transcript_spec`, job specs. Только synthetic bytes/fake HTTP/isolated DB. Отдельно проверяются runtime mono/stereo/reversed-map/no-speech/short-turn/overlap/codec/resource boundaries.
 
 Эти проверки не доказывают качество ASR. Blind audio/provenance/человеческие эталоны, WER/CER, ошибки ролей и latency требуют отдельной разрешённой проверки pinned inference. Старые обучающие JSON/транскрипты пациентов не копировать в Git. `/clinic/learn`, внешний арбитр, модельные downloads и egress в DEV runtime выключены сервером. PROD и live DEV остаются вне разрешения этого документа.
+
+## Голосовые сообщения
+
+`Telephony::VoiceCoreAudioSpool` — единственный владелец private lifecycle, FD/UID/mode/inode проверок, лимита chunk bytes и guarded cleanup. Тонкие `Telephony::VoiceCoreRecordingSpool` и `Messages::VoiceCoreAttachmentSpool` поставляют только источник. Attachment использует уже привязанный native Blob, account_id сверяется с message.account_id до staging; native Blob.download с блоком передаёт chunks сразу ограниченному writer. Нет URL/download по пользовательскому пути и нет оригинального имени файла в spool.
+
+Canonical MIME/extension берётся из существующего `Messages::AudioTranscriptionFile`; aliases oga→ogg, mpeg/mpga→mp3, mp4→m4a. AAC/WebM также сохраняют штатную поддержку; runtime применяет свой ограниченный decoder. Attachment не получает guessed operator/client map. Product text — plain turn texts, без выдуманных ролей/платной сводки.
+
+Локальная ветка находится после прежних consent/audio-enabled/quota/cache gates, перед fetch_audio_file/cloud normalization. Штатный update_transcription по-прежнему сохраняет текст, обновляет события/язык/поиск и ровно один раз вызывает существующий usage increment на новом непустом результате. В `Attachment.meta.transcription` добавляются только проверенные provider=voicecore/model=approved manifest SHA, остальные meta сохраняются. Исторические cloud-транскрипты без provenance не получают придуманную модель. Native missing-blob retry сохраняется; transient VoiceCore retry ограничен3 попытками. Empty transcript по прежней семантике ничего не сохраняет/не списывает. Нового тарифа/квоты/пользовательской настройки нет.
+
+Дополнительные focused specs: `spec/enterprise/services/messages/{voice_core_attachment_spool,voice_core_attachment_transcription,audio_transcription_service}_spec.rb`, `spec/enterprise/jobs/messages/audio_transcription_job_spec.rb`; вызовы fake/synthetic, без реальных сообщений и моделей.

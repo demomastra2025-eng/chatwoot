@@ -63,7 +63,7 @@ RSpec.describe Telephony::VoiceCoreRecordingSpool do
   end
 
   it 'enforces the byte cap while streaming and removes the partial job' do
-    stub_const('Telephony::VoiceCoreRecordingSpool::MAX_AUDIO_BYTES', 5)
+    stub_const('Telephony::VoiceCoreAudioSpool::MAX_AUDIO_BYTES', 5)
     expect { service.open { raise 'must not yield' } }.to raise_error(Telephony::VoiceCoreClient::Error) do |error|
       expect(error.code).to eq('audio_too_large')
     end
@@ -188,7 +188,7 @@ RSpec.describe Telephony::VoiceCoreRecordingSpool do
   end
 
   it 'enforces the cumulative remote byte limit and cleans up its own partial file' do
-    stub_const('Telephony::VoiceCoreRecordingSpool::MAX_AUDIO_BYTES', 5)
+    stub_const('Telephony::VoiceCoreAudioSpool::MAX_AUDIO_BYTES', 5)
     allow(Storage::RecordingPaths).to receive(:resolve).and_return(nil)
     allow(remote).to receive(:exist?).with(key).and_return(true)
     allow(remote).to receive(:download).with(key).and_yield('one').and_yield('two')
