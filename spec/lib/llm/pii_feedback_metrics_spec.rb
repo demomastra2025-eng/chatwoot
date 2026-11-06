@@ -154,7 +154,10 @@ RSpec.describe Llm::PiiFeedbackMetrics do
         perform_enqueued_jobs(only: Llm::PiiShadowAuditJob) do
           Llm::PiiShadowAuditJob.perform_now('Синтетикпределповторов', account_id: tenant_id)
         end
-      end.to raise_error(Llm::PiiShadowAuditor::StorageUnavailable)
+      end.to raise_error(Minitest::UnexpectedError) { |wrapper|
+        expect(wrapper).to be_instance_of(Minitest::UnexpectedError)
+        expect(wrapper.error).to be_instance_of(Llm::PiiShadowAuditor::StorageUnavailable)
+      }
       expect(auditor).to have_received(:redis_atomic_acquire_inflight).twice
       expect(counters).to include('audit_completed' => 0, 'audit_unavailable' => 2, 'audit_attempts' => 0)
     end
