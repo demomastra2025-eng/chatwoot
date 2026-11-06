@@ -34,13 +34,16 @@ class WhatsappWeb::ContactNameResolver
       PHONEBOOK_NAME_KEY => @payload[:phonebookName],
       PHONEBOOK_NAME_UPDATED_AT_KEY => @payload[:phonebookNameUpdatedAt]
     )
-    candidates << incoming if incoming
+    candidates << incoming.merge(incoming: true) if incoming
     candidates.min_by { |candidate| candidate_order(candidate) }
   end
 
   def candidate_order(candidate)
+    timestamp = candidate[:updated_at]
+    undated_stored = timestamp.nil? && !candidate[:incoming]
     # Match the provider's JavaScript string ordering, including surrogate pairs.
-    [-(candidate[:updated_at]&.to_f || 0), candidate[:name].encode(Encoding::UTF_16BE).unpack('n*')]
+    # Undated updates retain incoming precedence and stable stored-profile order.
+    [-(timestamp&.to_f || 0), undated_stored ? 1 : 0, timestamp ? candidate[:name].encode(Encoding::UTF_16BE).unpack('n*') : []]
   end
 
   def phonebook_candidate(data)

@@ -37,6 +37,21 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     expect(source.reload.channel_profile.display_name).to eq('New Alias')
   end
 
+  undated_name_orders = [%w[Alpha Zulu], %w[Zulu Alpha]]
+  [nil, 'not-a-timestamp'].each do |timestamp|
+    undated_name_orders.each do |first, second|
+      it "accepts an undated phonebook rename #{first} to #{second} with timestamp #{timestamp.inspect}", :aggregate_failures do
+        source = sync(phonebookName: first, phonebookNameUpdatedAt: timestamp)
+        sync(phonebookName: second, phonebookNameUpdatedAt: timestamp)
+
+        expect(source.contact.reload.name).to eq(second)
+        expect(source.reload.channel_profile.display_name).to eq(second)
+        expect(source.channel_profile.profile_data['phonebook_name']).to eq(second)
+        expect(source.channel_profile.profile_data).not_to have_key('phonebook_name_updated_at')
+      end
+    end
+  end
+
   [
     ['Alpha', 'Zulu', 'Alpha'],
     ["\uE000", "\u{1F600}", "\u{1F600}"],

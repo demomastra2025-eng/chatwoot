@@ -56,6 +56,27 @@ RSpec.describe WhatsappWeb::ContactNameResolver do
     end
   end
 
+  undated_name_orders = [%w[Alpha Zulu], %w[Zulu Alpha]]
+  [nil, 'not-a-timestamp'].each do |timestamp|
+    undated_name_orders.each do |stored, incoming|
+      it "preserves incoming and stored-order precedence without a valid date: #{timestamp.inspect}, #{stored} then #{incoming}",
+         :aggregate_failures do
+        first = { 'phonebook_name' => stored, 'phonebook_name_updated_at' => timestamp }
+        second = { 'phonebook_name' => incoming, 'phonebook_name_updated_at' => timestamp }
+        payload = { phonebookName: incoming, phonebookNameUpdatedAt: timestamp }
+
+        expect(resolve(payload, [first]).phonebook_attributes).to eq('phonebook_name' => incoming)
+        expect(resolve({}, [first, second]).phonebook_attributes).to eq('phonebook_name' => stored)
+      end
+    end
+  end
+
+  it 'preserves a dated name when the incoming timestamp is malformed' do
+    payload = { phonebookName: 'Alpha', phonebookNameUpdatedAt: 'not-a-timestamp' }
+
+    expect(resolve(payload, [stored_name]).phonebook_attributes).to eq(stored_name)
+  end
+
   it 'does not infer phonebook provenance from legacy name or pushName fields' do
     result = resolve({ name: 'Legacy Name', pushName: 'Profile Name' })
 
