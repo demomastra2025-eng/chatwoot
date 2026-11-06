@@ -22,6 +22,28 @@ RSpec.describe 'Contact search entry points', type: :request do
     payload.map { |item| item['id'] }
   end
 
+  it 'finds both Cyrillic and Latin names through all four contact search endpoints without tenant leaks' do
+    account.enable_features!('scheduling', 'scheduling_finance', 'companies')
+    cyrillic = create(:contact, account: account, name: 'Алмас', last_name: 'Оразов', middle_name: 'Нұрланұлы', contact_type: :lead)
+    latin = create(:contact, account: account, name: 'Almas', last_name: 'Orazov', middle_name: 'Nurlanuly', contact_type: :lead)
+    create(:contact, account: create(:account), name: 'Almas', last_name: 'Orazov', middle_name: 'Nurlanuly')
+    company = create(:company, account: account)
+    endpoints = {
+      'contacts/search' => :q, 'search/contacts' => :q, 'scheduling/contacts' => :search,
+      "companies/#{company.id}/contacts/search" => :q
+    }
+
+    queries = ['Almas', 'Алмас', 'Нұрланұлы Оразов Алмас', 'Nurlanuly Оразов Almas']
+    endpoints.each do |path, query_key|
+      queries.each do |query|
+        get "/api/v1/accounts/#{account.id}/#{path}", params: { query_key => query }, headers: headers, as: :json
+
+        expect(response).to have_http_status(:success), "#{path}: #{query}"
+        expect(returned_ids).to contain_exactly(cyrillic.id, latin.id), "#{path}: #{query}"
+      end
+    end
+  end
+
   describe 'GET /api/v1/accounts/:id/contacts/search' do
     def search(text)
       get "/api/v1/accounts/#{account.id}/contacts/search", params: { q: text }, headers: headers, as: :json

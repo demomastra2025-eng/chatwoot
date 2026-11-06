@@ -27,7 +27,7 @@ module Captain::Playground::ContactCompanyTools
     records = [caller].select do |record|
       (@args['email'].blank? || record['email'] == @args['email']) &&
         (@args['phone_number'].blank? || record['phone_number'] == @args['phone_number']) &&
-        (@args['name'].blank? || synthetic_ilike?(record['name'], @args['name']))
+        (@args['name'].blank? || Search::ContactNameQuery.new(@args['name']).matches?(record.values_at('name', 'last_name', 'middle_name')))
     end
     { filters: @args.slice('email', 'phone_number', 'name'), total_count: records.size,
       contacts: records.first(contact_company_limit).map { |record| native_contact_payload(record, Captain::Tools::Account::SearchContactsService) } }

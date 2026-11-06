@@ -63,7 +63,7 @@ RSpec.describe Captain::Playground::ContactCompanyTools, 'through the production
     end
   end
 
-  it 'searches only the caller with exact email/phone filters and the production ILIKE wildcard semantics' do
+  it 'searches only the caller with exact email/phone filters and literal name wildcards' do
     session.with_lock do |workspace|
       workspace.activate_agent!(assistant)
       caller = workspace.scenario.contact
@@ -71,11 +71,30 @@ RSpec.describe Captain::Playground::ContactCompanyTools, 'through the production
       expect(invoke(workspace, 'search_contacts', email: caller['email'], phone_number: caller['phone_number'], name: 'caller a_b%')['total_count']).to eq(1)
       expect(invoke(workspace, 'search_contacts', email: caller['email'].upcase)['total_count']).to eq(0)
       expect(invoke(workspace, 'search_contacts', phone_number: '77010000001')['total_count']).to eq(0)
-      expect(invoke(workspace, 'search_contacts', name: 'A\\_B\\%')['total_count']).to eq(1)
+      expect(invoke(workspace, 'search_contacts', name: 'A\\_B\\%')['total_count']).to eq(0)
       expect(invoke(workspace, 'search_contacts', name: 'A\\_C')['total_count']).to eq(0)
       expect(invoke(workspace, 'search_contacts', name: 'Тимур')['contacts']).to eq([])
       expect(wrapper(workspace, 'search_contacts').params_schema.fetch('properties')).not_to have_key('offset')
       expect(invoke(workspace, 'search_contacts', offset: 1)['success']).to be(false)
+    end
+  end
+
+  it 'uses native Cyrillic/Latin full-name matching and returns only the caller among collisions' do
+    session.with_lock do |workspace|
+      workspace.activate_agent!(assistant)
+      caller = workspace.scenario.contact
+      caller.merge!('name' => 'Алмас', 'last_name' => 'Киселёв', 'middle_name' => 'Нұрланұлы')
+      other = workspace.scenario.data['contacts'].find { |record| record != caller }
+      other['name'] = 'Almas'
+
+      ['Almas', 'алм', 'Nurlanuly Kiselev Almas', 'Киселев Алмас'].each do |query|
+        result = invoke(workspace, 'search_contacts', name: query)
+        expect(result['total_count']).to eq(1), query
+        expect(result['contacts'].first).to include('name' => 'Алмас', 'last_name' => 'Киселёв', 'middle_name' => 'Нұрланұлы',
+                                                    'display_full_name' => 'Алмас Киселёв Нұрланұлы')
+      end
+      expect(invoke(workspace, 'search_contacts', name: 'Almas.*')['total_count']).to eq(0)
+      expect(invoke(workspace, 'search_contacts', name: 'Missing Алмас')['total_count']).to eq(0)
     end
   end
 

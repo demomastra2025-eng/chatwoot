@@ -172,6 +172,66 @@ RSpec.describe Search::ContactQuery do
     end
   end
 
+  describe 'Cyrillic and Latin name spellings' do
+    it 'finds both scripts by full or partial first name without selecting a collision' do
+      cyrillic = create(:contact, account: account, name: 'Алмас')
+      latin = create(:contact, account: account, name: 'Almas')
+      create(:contact, account: create(:account), name: 'Almas')
+
+      %w[Алмас ALMAS алм alm Алmас].each do |query|
+        expect(described_class.new(query).apply(account.contacts).pluck(:id)).to contain_exactly(cyrillic.id, latin.id)
+      end
+    end
+
+    it 'matches surname, middle name and reordered tokens across scripts with е/ё' do
+      create(:contact, account: account, name: 'Алмас', last_name: 'Киселёв', middle_name: 'Нұрланұлы')
+      create(:contact, account: account, name: 'Almas', last_name: 'Orazov', middle_name: 'Nurlanuly')
+
+      aggregate_failures do
+        expect(found_names('Kiselev')).to eq(['Алмас'])
+        expect(found_names('Nurlanuly')).to contain_exactly('Алмас', 'Almas')
+        expect(found_names('Киселев Nurlanuly Almas')).to eq(['Алмас'])
+        expect(found_names('Нурланулы Оразов Алмас')).to eq(['Almas'])
+        expect(found_names('Kiselev Almas Missing')).to be_empty
+      end
+    end
+
+    it 'does not transliterate email or identifier values and preserves their original case policy' do
+      create(:contact, account: account, name: 'Unrelated', email: 'almas@example.test', identifier: 'Almas-external')
+
+      expect(found_names('Алмас')).to be_empty
+      expect(found_names('ALMAS')).to eq(['Unrelated'])
+      expect(found_names('almas-external', identifier_case_sensitive: true)).to be_empty
+    end
+
+    it 'escapes wildcard and regexp characters in every generated name pattern' do
+      create(:contact, account: account, name: 'Алмас (VIP) [1] %_\\')
+
+      aggregate_failures do
+        expect(found_names('Almas (VIP) [1] %_\\')).to eq(['Алмас (VIP) [1] %_\\'])
+        expect(found_names('Almas.*')).to be_empty
+        expect(found_names('Almas|.*')).to be_empty
+        expect(found_names('Almas%missing')).to be_empty
+      end
+    end
+
+    it 'uses indexed column predicates without transliterating the stored fields' do
+      sql = described_class.new('Almas Kiselev').apply(account.contacts).to_sql
+
+      expect(sql).to include('"contacts"."name" ILIKE', '"contacts"."last_name" ~*', '"contacts"."middle_name" ~*')
+      expect(sql).not_to match(/(?:LOWER|TRANSLATE|UNACCENT)\s*\(/i)
+    end
+
+    it 'keeps IIN identifier search visibility scoped to the requesting account user' do
+      create(:contact, account: account, name: 'Алмас', identifier: '940720300129')
+      restricted = instance_double(AccountUser, administrator?: false, custom_role_id: 123, permissions: ['contact_manage'])
+
+      expect(found_names('940720300129', account_user: restricted)).to be_empty
+      expect(found_names('940720300129', account_user: nil)).to eq(['Алмас'])
+      expect(found_names('Almas', account_user: restricted)).to eq(['Алмас'])
+    end
+  end
+
   describe 'text copied from somewhere else' do
     before { create(:contact, account: account, name: 'Иван Иванов', email: 'i@test.com') }
 

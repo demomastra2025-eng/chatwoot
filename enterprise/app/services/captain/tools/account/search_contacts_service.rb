@@ -3,17 +3,18 @@ class Captain::Tools::Account::SearchContactsService < Captain::Tools::Account::
     'search_contacts'
   end
 
-  description 'Search contacts by name, email, or phone number'
+  description 'Search contacts by partial name or full name in Cyrillic or Latin, email, or phone number. ' \
+              'A phone number is not required. If several contacts match, use the candidates to clarify which contact is intended.'
   param :email, type: :string, desc: 'Filter contacts by email', required: false
   param :phone_number, type: :string, desc: 'Filter contacts by phone number', required: false
-  param :name, type: :string, desc: 'Filter contacts by name (partial match)', required: false
+  param :name, type: :string, desc: 'Partial name or full name in any order, Cyrillic or Latin (for example, Алмас or Almas)', required: false
   param :limit, type: :number, desc: 'Maximum number of contacts to return', required: false
 
   def execute(email: nil, phone_number: nil, name: nil, limit: nil)
     contacts = (patient_scope ? patient_scope.contacts : account.contacts).order(:name, :id)
     contacts = contacts.where(email: email) if email.present?
     contacts = filter_by_phone(contacts, phone_number) if phone_number.present?
-    contacts = contacts.where('LOWER(name) ILIKE ?', "%#{name.to_s.downcase}%") if name.present?
+    contacts = Search::ContactNameQuery.new(name).apply(contacts) if name.present?
 
     total_count = contacts.count
     records = contacts.limit(parse_limit(limit)).map { |contact| contact_payload(contact) }
@@ -44,6 +45,9 @@ class Captain::Tools::Account::SearchContactsService < Captain::Tools::Account::
     {
       id: contact.id,
       name: contact.name,
+      last_name: contact.last_name,
+      middle_name: contact.middle_name,
+      display_full_name: contact.display_full_name,
       email: contact.email,
       phone_number: contact.phone_number,
       identifier: Scheduling::IinValidator.tokenize_or_sanitize_identifier(contact.identifier),
