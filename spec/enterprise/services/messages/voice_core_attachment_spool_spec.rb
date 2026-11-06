@@ -2,11 +2,11 @@ require 'rails_helper'
 require 'tmpdir'
 
 RSpec.describe Messages::VoiceCoreAttachmentSpool do
-  let(:message) { instance_double(Message, account_id: 101) }
-  let(:attachment) { instance_double(Attachment, account_id: 101, message: message, file: attached_file) }
-  let(:attached_file) { instance_double(ActiveStorage::Attached::One, attached?: true, blob: blob) }
+  # Native in-memory associations exercise Attached::One's delegated blob API without upload/database records.
+  let(:message) { Message.new(account_id: 101) }
+  let(:attachment) { Attachment.new(account_id: 101, message: message, file_type: :audio) }
   let(:blob) do
-    instance_double(ActiveStorage::Blob, content_type: 'audio/opus', filename: ActiveStorage::Filename.new('synthetic-upload-no-extension'))
+    ActiveStorage::Blob.new(content_type: 'audio/opus', filename: 'synthetic-upload-no-extension', byte_size: 13)
   end
   let(:directory) { Dir.mktmpdir('voicecore-attachment-spec-') }
   let(:spool_root) { File.join(directory, 'spool') }
@@ -18,6 +18,7 @@ RSpec.describe Messages::VoiceCoreAttachmentSpool do
   end
 
   before do
+    attachment.file_attachment = ActiveStorage::Attachment.new(name: 'file', record: attachment, blob: blob)
     allow(blob).to receive(:download).and_yield('OggS').and_yield('synthetic')
   end
 

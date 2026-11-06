@@ -39,19 +39,17 @@ RSpec.describe Telephony::VoiceCoreClient do
     result = client.transcribe(**request_args)
     expect(result['dialogue_turns'].first).to include('start_sec' => 0.2, 'end_sec' => 1.4)
     expect(request).to have_been_requested.once
-    expect(WebMock).to have_requested(:post, 'http://127.0.0.1:8095/transcribe').with do |sent|
-      data = JSON.parse(sent.body)
-      expect(data).to eq(request_args.stringify_keys.merge('schema' => described_class::REQUEST_SCHEMA, 'is_phone_call' => true))
-    end
+    expected = request_args.stringify_keys.merge('schema' => described_class::REQUEST_SCHEMA, 'is_phone_call' => true)
+    matcher = have_requested(:post, 'http://127.0.0.1:8095/transcribe').with { |sent| JSON.parse(sent.body) == expected }
+    expect(WebMock).to matcher
   end
 
   it 'sends an explicit boolean false for a voice note and refuses string booleans' do
     request = stub_response
     client.transcribe(**request_args, is_phone_call: false)
     expect(request).to have_been_requested.once
-    expect(WebMock).to have_requested(:post, 'http://127.0.0.1:8095/transcribe').with do |sent|
-      JSON.parse(sent.body)['is_phone_call'] == false
-    end
+    matcher = have_requested(:post, 'http://127.0.0.1:8095/transcribe').with { |sent| JSON.parse(sent.body)['is_phone_call'] == false }
+    expect(WebMock).to matcher
     expect { client.transcribe(**request_args, is_phone_call: 'false') }.to raise_error(described_class::Error)
   end
 

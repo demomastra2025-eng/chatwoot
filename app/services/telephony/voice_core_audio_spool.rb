@@ -47,30 +47,34 @@ class Telephony::VoiceCoreAudioSpool
     current = safe_directory(Pathname.new('/'))
     root.each_filename do |part|
       current = current.join(part)
-      safe_directory(current, private: current == root)
+      safe_directory(current, private: current == root, parent: @directory_handles.last)
     end
+    @root_handle = @directory_handles.last
 
     root
   end
 
   def prepare_directory!
     root = spool_root!
-    account_root = safe_directory(root.join(@account_id.to_s), private: true)
+    account_root = safe_directory(root.join(@account_id.to_s), private: true, parent: @root_handle)
+    @account_handle = @directory_handles.last
     candidate = account_root.join(job_id)
     assert_boundaries!
-    Dir.mkdir(candidate, 0o700)
-    safe_directory(candidate, private: true)
+    Dir.mkdir(fd_child(@account_handle, job_id), 0o700)
+    safe_directory(candidate, private: true, parent: @account_handle)
+    @job_handle = @directory_handles.last
     @directory = candidate
   end
 
-  def safe_directory(path, private: false)
+  def safe_directory(path, private: false, parent: nil)
     assert_boundaries!
+    anchored = parent ? fd_child(parent, path.basename.to_s) : path
     begin
-      Dir.mkdir(path, 0o700)
+      Dir.mkdir(anchored, 0o700)
     rescue Errno::EEXIST
       # Existing entries are validated, never chmod/chowned into the trust boundary.
     end
-    handle = File.open(path, File::RDONLY | File::NOFOLLOW)
+    handle = File.open(anchored, File::RDONLY | File::NOFOLLOW | File::NONBLOCK)
     @directory_handles << handle
     stat = handle.stat
     valid = stat.directory? && same_entry?(stat, File.lstat(path)) && (!private || private_entry?(stat, 0o700))
@@ -81,6 +85,13 @@ class Telephony::VoiceCoreAudioSpool
     @directories << [path, stat]
 
     path
+  end
+
+  def fd_child(parent, name)
+    valid = name.is_a?(String) && name.present? && %w[. ..].exclude?(name) && name.exclude?('/') && name.exclude?("\0")
+    raise Telephony::VoiceCoreClient::Error, 'unsafe_spool' unless valid
+
+    Pathname.new("/proc/self/fd/#{parent.fileno}/#{name}")
   end
 
   def write_audio(extension)
@@ -98,7 +109,7 @@ class Telephony::VoiceCoreAudioSpool
     @audio_filename = "audio#{extension}"
     @audio_path = @directory.join(audio_filename)
     assert_boundaries!
-    @audio_file = File.open(@audio_path, File::WRONLY | File::CREAT | File::EXCL | File::NOFOLLOW, 0o600)
+    @audio_file = File.open(fd_child(@job_handle, audio_filename), File::WRONLY | File::CREAT | File::EXCL | File::NOFOLLOW, 0o600)
     @audio_stat = @audio_file.stat
     raise Telephony::VoiceCoreClient::Error, 'unsafe_spool' unless @audio_stat.file? && private_entry?(@audio_stat, 0o600)
 
@@ -144,11 +155,11 @@ class Telephony::VoiceCoreAudioSpool
 
     assert_boundaries!
     if @audio_stat
-      File.unlink(@audio_path)
+      File.unlink(fd_child(@job_handle, audio_filename))
       @audio_stat = nil
     end
     assert_boundaries!
-    Dir.rmdir(@directory)
+    Dir.rmdir(fd_child(@account_handle, job_id))
   rescue Telephony::VoiceCoreClient::Error, SystemCallError
     Rails.logger.warn('[VoiceCore] Private spool identity changed; cleanup skipped')
   ensure

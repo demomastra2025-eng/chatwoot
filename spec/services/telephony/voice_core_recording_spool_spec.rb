@@ -1,5 +1,6 @@
 require 'rails_helper'
 require 'tmpdir'
+require 'timeout'
 
 RSpec.describe Telephony::VoiceCoreRecordingSpool do
   let(:account_id) { 101 }
@@ -101,7 +102,7 @@ RSpec.describe Telephony::VoiceCoreRecordingSpool do
       allow(File).to receive(:lstat).with(Pathname.new(target)).and_return(foreign_stat)
       allow(File).to receive(:open).and_wrap_original do |original, *args, &block|
         result = original.call(*args, &block)
-        allow(result).to receive(:stat).and_return(foreign_stat) if args.first.to_s == target
+        allow(result).to receive(:stat).and_return(foreign_stat) if File.realpath(args.first.to_s) == target
         result
       end
 
@@ -214,5 +215,86 @@ RSpec.describe Telephony::VoiceCoreRecordingSpool do
     expect { service.open { raise 'must not yield' } }.to raise_error(Telephony::VoiceCoreClient::Error)
     expect(File.binread(staged)).to eq('replacement sentinel')
     expect(File.size(staged.sub(File.dirname(staged), "#{File.dirname(staged)}-original"))).to eq(0)
+  end
+
+  %w[root account].each do |boundary|
+    it "rejects a FIFO #{boundary} without waiting for a writer or touching audio" do
+      target = spool_root
+      if boundary == 'account'
+        Dir.mkdir(spool_root, 0o700)
+        target = File.join(spool_root, account_id.to_s)
+      end
+      File.mkfifo(target, 0o600)
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      expect do
+        Timeout.timeout(1) { service.open { raise 'must not yield' } }
+      end.to raise_error(Telephony::VoiceCoreClient::Error)
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 0.5
+      expect(Storage::RecordingPaths).not_to have_received(:resolve)
+      expect(Storage::VoiceRecordingRemoteStorage).not_to have_received(:active_storage_service)
+    end
+  end
+
+  it 'anchors unlink to the held job directory when a writable ancestor swaps at the actual unlink boundary' do
+    File.chmod(0o777, directory)
+    staged = nil
+    swapped = false
+    allow(File).to receive(:unlink).and_wrap_original do |original, path|
+      if !swapped && File.basename(path) == 'audio.wav'
+        swapped = true
+        File.rename(spool_root, "#{spool_root}-original")
+        FileUtils.mkdir_p(File.dirname(staged), mode: 0o700)
+        File.binwrite(staged, 'foreign sentinel')
+      end
+      original.call(path)
+    end
+
+    service.open { |spool| staged = File.join(spool_root, account_id.to_s, spool.job_id, spool.audio_filename) }
+    expect(swapped).to be(true)
+    expect(File.binread(staged)).to eq('foreign sentinel')
+    expect(File.exist?(staged.sub(spool_root, "#{spool_root}-original"))).to be(false)
+  end
+
+  it 'anchors file creation when a parent swaps immediately before the actual file open' do
+    staged = nil
+    swapped = false
+    allow(File).to receive(:open).and_wrap_original do |original, *args, &block|
+      if !swapped && File.basename(args.first) == 'audio.wav' && args[1].is_a?(Integer) && args[1].anybits?(File::WRONLY)
+        swapped = true
+        staged = File.join(Dir.glob(File.join(spool_root, account_id.to_s, '*')).fetch(0), 'audio.wav')
+        File.rename(spool_root, "#{spool_root}-original")
+        FileUtils.mkdir_p(File.dirname(staged), mode: 0o700)
+      end
+      original.call(*args, &block)
+    end
+
+    expect { service.open { raise 'must not yield' } }.to raise_error(Telephony::VoiceCoreClient::Error)
+    expect(swapped).to be(true)
+    expect(File.exist?(staged)).to be(false)
+    expect(File.size(staged.sub(spool_root, "#{spool_root}-original"))).to eq(0)
+  end
+
+  it 'anchors rmdir to the held account directory when its parent swaps at the actual rmdir boundary' do
+    staged = nil
+    job = nil
+    swapped = false
+    allow(Dir).to receive(:rmdir).and_wrap_original do |original, path|
+      if !swapped && File.basename(path) == job
+        swapped = true
+        File.rename(spool_root, "#{spool_root}-original")
+        FileUtils.mkdir_p(File.dirname(staged), mode: 0o700)
+        File.binwrite(File.join(spool_root, 'foreign-sentinel'), 'preserve')
+      end
+      original.call(path)
+    end
+
+    service.open do |spool|
+      job = spool.job_id
+      staged = File.join(spool_root, account_id.to_s, job, spool.audio_filename)
+    end
+    expect(swapped).to be(true)
+    expect(File.directory?(File.dirname(staged))).to be(true)
+    expect(File.binread(File.join(spool_root, 'foreign-sentinel'))).to eq('preserve')
+    expect(File.exist?(File.dirname(staged).sub(spool_root, "#{spool_root}-original"))).to be(false)
   end
 end

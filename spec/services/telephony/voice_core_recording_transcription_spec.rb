@@ -30,8 +30,8 @@ RSpec.describe Telephony::VoiceCoreRecordingTranscription do
     [{ '0' => 'operator', '1' => 'client' }, { '1' => 'operator', '2' => 'client' }].each do |map|
       allow(session).to receive(:metadata).and_return('recording' => { 'channel_map' => map })
       described_class.new(session, client: client).perform
-      expect(client).to have_received(:transcribe).with(hash_including(channel_map: { '0' => 'operator', '1' => 'client' }))
     end
+    expect(client).to have_received(:transcribe).with(hash_including(channel_map: { '0' => 'operator', '1' => 'client' })).twice
     allow(session).to receive(:metadata).and_return('recording' => { 'channel_map' => { '0' => 'operator', '1' => 'client', '2' => 'operator' } })
     described_class.new(session, client: client).perform
     expect(client).to have_received(:transcribe).with(hash_including(channel_map: {}))
