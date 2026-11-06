@@ -2,6 +2,7 @@
 
 require 'securerandom'
 require_relative 'pii_name_lexicon'
+require_relative 'pii_feedback_metrics'
 require_relative 'open_router_workspace_policy'
 require_relative 'open_router_headers'
 require_relative 'budget_evaluator'
@@ -9,8 +10,8 @@ require_relative 'budget_evaluator'
 # Asynchronous shadow auditor & real-time telemetry for PII pseudonymization.
 #
 # Key safety guarantees:
-# 1. Zero hot-path I/O when OFF: `record_mask_pass!` updates in-memory counters only (0 sync Redis/DB calls
-#    when `PII_SHADOW_AUDIT_ENABLED` is false). When ON and candidate words require background audit, admission
+# 1. Zero hot-path I/O when OFF: `record_mask_pass!` performs no counter writes (0 sync Redis/DB calls
+#    when `PII_SHADOW_AUDIT_ENABLED` is false). When ON, every text check and admission
 #    uses a single atomic Redis Lua script (`ENQUEUE_ADMISSION_SCRIPT`).
 # 2. Fail-closed kill switch & admission: `record_mask_pass!`, `Llm::PiiShadowAuditJob`, and `audit_masked_message!`
 #    verify `shadow_audit_enabled?` before any enqueue or network dispatch, and fail closed (`false`) if Redis
@@ -29,7 +30,6 @@ require_relative 'budget_evaluator'
 #    only into a tenant-scoped quarantine until deterministically verified (e.g. at the booking tool boundary).
 # rubocop:disable Metrics/ModuleLength, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/AbcSize, Metrics/MethodLength, Metrics/ParameterLists, Style/GlobalVars
 module Llm::PiiShadowAuditor
-  STATS_REDIS_KEY = 'llm:pii_shadow_audit:stats:v2'
   DEDUP_REDIS_PREFIX = 'llm:pii_shadow_audit:dedup:v2'
   RATE_REDIS_PREFIX = 'llm:pii_shadow_audit:rate:v2'
   DEDUP_TTL_SECONDS = 3_600
@@ -42,26 +42,43 @@ module Llm::PiiShadowAuditor
   MAX_DEDUP_ENTRIES = 4_096
   MAX_AUDITS_PER_MINUTE_PER_ACCOUNT = 30
 
-  # KEYS: [1] enqueued_key, [2] audited_key, [3] rate_key
-  # ARGV: [1] max_per_min, [2] dedup_ttl, [3] rate_ttl
-  ENQUEUE_ADMISSION_SCRIPT = <<~LUA
+  # KEYS: enqueued, audited, rate, global stats, tenant stats.
+  # ARGV: cap, dedup TTL, rate TTL, eligibility, four mask counts, timestamp.
+  ENQUEUE_ADMISSION_SCRIPT = (Llm::PiiFeedbackMetrics::LUA_HELPER + <<~LUA).freeze
+    for i = 1, 3 do expect_type(KEYS[i], 'string') end
+    if not safe_integer(redis.call('GET', KEYS[3])) then error('PII feedback rate') end
+    for i = 5, 8 do validate_delta(ARGV[i]) end
+    count('text_checks', ARGV[5])
+    if tonumber(ARGV[6])+tonumber(ARGV[7])+tonumber(ARGV[8]) > 0 then count('checks_with_masked_pii', 1) end
+    count('masked_name_tokens', ARGV[6])
+    count('masked_phone_tokens', ARGV[7])
+    count('masked_iin_tokens', ARGV[8])
+    if ARGV[4] ~= 'eligible' then
+      count(ARGV[4], 1)
+      return 0
+    end
+    count('eligible_checks', 1)
     if redis.call('EXISTS', KEYS[1]) == 1 or redis.call('EXISTS', KEYS[2]) == 1 then
+      count('skipped_duplicate', 1)
       return 0
     end
     local current = tonumber(redis.call('GET', KEYS[3]) or '0')
     if current >= tonumber(ARGV[1]) then
+      count('skipped_rate', 1)
       return 0
     end
     redis.call('SET', KEYS[1], '1', 'EX', tonumber(ARGV[2]))
     local next_val = redis.call('INCR', KEYS[3])
-    if next_val == 1 then
-      redis.call('EXPIRE', KEYS[3], tonumber(ARGV[3]))
-    end
+    if next_val == 1 then redis.call('EXPIRE', KEYS[3], tonumber(ARGV[3])) end
+    count('admission_grants', 1)
     return 1
   LUA
 
   # KEYS: [1] enqueued_key, [2] rate_key
-  RELEASE_ENQUEUE_SCRIPT = <<~LUA
+  RELEASE_ENQUEUE_SCRIPT = (Llm::PiiFeedbackMetrics::LUA_GUARDS + <<~LUA).freeze
+    expect_type(KEYS[1], 'string')
+    expect_type(KEYS[2], 'string')
+    if not safe_integer(redis.call('GET', KEYS[2])) then error('PII feedback rate') end
     local removed = redis.call('DEL', KEYS[1])
     if removed == 1 then
       local current = tonumber(redis.call('GET', KEYS[2]) or '0')
@@ -82,16 +99,17 @@ module Llm::PiiShadowAuditor
     return 1
   LUA
 
-  # KEYS: [1] inflight_key, [2] audited_key
-  # ARGV: [1] lease_token, [2] dedup_ttl
-  COMPLETE_AUDIT_SCRIPT = <<~LUA
-    local owner = redis.call('GET', KEYS[1])
-    if ARGV[1] ~= '' and owner and owner ~= ARGV[1] then
-      return 0
-    end
+  # Completion and counters commit once, only for the live lease owner.
+  COMPLETE_AUDIT_SCRIPT = (Llm::PiiFeedbackMetrics::LUA_HELPER + <<~LUA).freeze
+    for i = 1, 3 do expect_type(KEYS[i], 'string') end
+    for i = 3, #ARGV-1, 2 do validate_delta(ARGV[i+1]) end
+    if redis.call('GET', KEYS[1]) ~= ARGV[1] or redis.call('EXISTS', KEYS[2]) == 1 then return 0 end
     redis.call('SET', KEYS[2], '1', 'EX', tonumber(ARGV[2]))
-    if ARGV[1] == '' or owner == ARGV[1] then
-      redis.call('DEL', KEYS[1])
+    redis.call('DEL', KEYS[1])
+    for i = 3, #ARGV-1, 2 do
+      local field = ARGV[i]
+      if field == 'audit_completed' and redis.call('EXISTS', KEYS[3]) == 0 then field = 'diagnostic_audits_completed' end
+      count(field, ARGV[i+1])
     end
     return 1
   LUA
@@ -135,10 +153,10 @@ module Llm::PiiShadowAuditor
     yes no ok okay thanks hello hi
   ].to_set.freeze
 
+  VERIFIED_NAME_CATEGORIES = { 'first_name' => :first_name, 'last_name' => :last_name, 'middle_name' => :patronymic }.freeze
+
   BudgetRequestStub = Struct.new(:feature_key, :account, :model, keyword_init: true)
 
-  @local_stats = Hash.new(0)
-  @pending_redis_increments = Hash.new(0)
   @enqueued_digests = Set.new
   @inflight_digests = Set.new
   @inflight_leases = {}
@@ -150,57 +168,67 @@ module Llm::PiiShadowAuditor
   module_function
 
   # Hot-path hook: 0 synchronous Redis or DB calls when shadow audit is OFF;
-  # 1 atomic Redis admission evaluation when shadow audit is ON and enqueueing.
+  # 1 atomic Redis admission/counter evaluation when shadow audit is ON.
   def record_mask_pass!(original_text, masked_text, account_id: nil, enqueue_async: true)
     return if original_text.blank?
 
     stripped = original_text.to_s.strip
     return if PROTOCOL_WORDS.include?(stripped.downcase)
 
-    name_tokens = masked_text.to_s.scan(/\[PII_NAME_[0-9A-F]{8}\]/).uniq.size
-    phone_tokens = masked_text.to_s.scan(/\[PII_PHONE_[0-9A-F]{8}\]/).uniq.size
-    iin_tokens = masked_text.to_s.scan(/\[IIN_TOKEN_[0-9A-F]{8}\]/).uniq.size
-    total_caught = name_tokens + phone_tokens + iin_tokens
+    return unless shadow_audit_enabled?
 
-    increment_stat_in_memory!(:messages_scanned, 1)
-    if total_caught.positive?
-      increment_stat_in_memory!(:messages_with_caught_pii, 1)
-      increment_stat_in_memory!(:caught_names_total, name_tokens) if name_tokens.positive?
-      increment_stat_in_memory!(:caught_phones_total, phone_tokens) if phone_tokens.positive?
-      increment_stat_in_memory!(:caught_iins_total, iin_tokens) if iin_tokens.positive?
-    end
-
-    return unless enqueue_async && shadow_audit_enabled?
-    return unless requires_shadow_audit?(masked_text)
-
-    enqueue_shadow_audit!(masked_text, account_id: account_id)
+    eff_account_id = resolve_effective_account_id(account_id)
+    counts = [1,
+              masked_text.to_s.scan(/\[PII_NAME_[0-9A-F]{8}\]/).uniq.size,
+              masked_text.to_s.scan(/\[PII_PHONE_[0-9A-F]{8}\]/).uniq.size,
+              masked_text.to_s.scan(/\[IIN_TOKEN_[0-9A-F]{8,10}\]/).uniq.size]
+    observe_unmasked_words!(masked_text, eff_account_id)
+    enqueue_shadow_audit!(masked_text, account_id: eff_account_id, mask_counts: counts, enqueue_async: enqueue_async)
   rescue StandardError
     nil
   end
 
-  # Deterministic Layer-1 verification at the booking tool boundary (`Verified: true`).
-  def record_tool_boundary_check!(raw_first_name: nil, raw_last_name: nil, raw_middle_name: nil, account_id: nil, session_contained_token: false)
-    eff_account_id = resolve_effective_account_id(account_id)
-    pairs = [
-      [raw_first_name, :first_name],
-      [raw_last_name, :last_name],
-      [raw_middle_name, :patronymic]
-    ]
+  # Bounded evidence in the existing request scope, not an async queue. HMAC only.
+  def observe_unmasked_words!(text, account_id)
+    return unless defined?(Llm::PiiSessionPseudonymizer) && Llm::PiiSessionPseudonymizer.active?
 
-    learned_any = false
-    pairs.each do |raw_val, cat|
-      word = raw_val.to_s.strip
-      next if word.blank? || word.include?('[PII_')
+    scope = Llm::PiiSessionPseudonymizer.current_scope
+    return unless scope[:account_id] == account_id
 
-      next if Llm::PiiNameLexicon.known_person_name_word?(word, account_id: eff_account_id)
+    words = (scope[:pii_feedback_unmasked_words] ||= Set.new)
+    extract_candidate_words(text).each do |word|
+      break if words.size >= 256
 
-      increment_stat_in_memory!(:missed_names_caught_at_tool_boundary, 1) unless session_contained_token
-      if eff_account_id.present? && Llm::PiiNameLexicon.learn_word!(word, category: cat, account_id: eff_account_id, verified: true)
-        increment_stat_in_memory!(:auto_learned_names_total, 1)
-        learned_any = true
+      words << Llm::PiiNameLexicon.send(:hmac_digest, Llm::PiiNameLexicon.normalize_word(word))
+    end
+  end
+
+  # Called only after all native existing-patient identity checks succeed.
+  # New cards and arbitrary LLM arguments are not proof of patient identity.
+  def record_verified_patient!(contact:, account_id:)
+    return false unless shadow_audit_enabled?
+    return false unless contact.is_a?(Contact) && contact.persisted? && contact.account_id == account_id
+
+    attrs = contact.custom_attributes.to_h
+    return false unless attrs['medelement_patient_code'].present? && Scheduling::IinValidator.valid?(attrs['medelement_iin'])
+    return false unless attrs['medelement_first_name'].present? && attrs['medelement_last_name'].present?
+
+    names = VERIFIED_NAME_CATEGORIES.keys.index_with { |key| attrs["medelement_#{key}"] }
+    counts = Hash.new(0)
+    names.each do |field, value|
+      category = VERIFIED_NAME_CATEGORIES[field]
+      next unless category
+
+      value.to_s.scan(/[[:alpha:]-]{2,}/).each do |word|
+        scope = Llm::PiiSessionPseudonymizer.current_scope if defined?(Llm::PiiSessionPseudonymizer)
+        digest = Llm::PiiNameLexicon.send(:hmac_digest, Llm::PiiNameLexicon.normalize_word(word))
+        if scope && scope[:account_id] == account_id && scope[:pii_feedback_unmasked_words]&.delete?(digest)
+          counts[:verified_boundary_unmasked_names] += 1
+        end
+        Llm::PiiNameLexicon.learn_word!(word, category: category, account_id: account_id, verified: true, feedback: true)
       end
     end
-    learned_any
+    Llm::PiiFeedbackMetrics.increment(account_id, counts)
   rescue StandardError
     false
   end
@@ -228,41 +256,55 @@ module Llm::PiiShadowAuditor
 
   def audit_masked_message!(masked_text, account_id: nil, account: nil, decision_client: nil, privacy_profile: nil,
                             runtime_preferences: nil, allow_when_disabled: false, raise_on_transient: false)
-    return { status: :disabled, missed: false, learned: [], quarantined: [] } unless shadow_audit_enabled? || allow_when_disabled
+    return audit_result(:disabled) unless shadow_audit_enabled? || allow_when_disabled
 
     eff_account_id = resolve_effective_account_id(account_id || account&.try(:id))
+    account = resolve_account_object(account, eff_account_id)
+    if eff_account_id.nil? || account.nil? || account.id != eff_account_id
+      Llm::PiiFeedbackMetrics.increment(eff_account_id, skipped_policy: 1)
+      return audit_result(:skipped_policy)
+    end
     candidates = extract_candidate_words(masked_text)
-    return { status: :skipped_no_candidates, missed: false, learned: [], quarantined: [] } if candidates.empty?
+    return audit_result(:skipped_no_candidates) if candidates.empty?
 
     msg_digest = message_dedup_digest(masked_text, account_id: eff_account_id)
     lease_token = "#{Process.pid}:#{Thread.current.object_id}:#{SecureRandom.hex(8)}"
     slot_acquired = acquire_inflight_audit!(msg_digest, lease_token: lease_token)
-    return { status: :deduplicated, missed: false, learned: [], quarantined: [] } unless slot_acquired
+    return audit_result(:deduplicated) unless slot_acquired
 
     audit_completed = false
-    increment_stat_in_memory!(:shadow_audits_run, 1)
-    flush_stats_to_redis!
+    return audit_result(:metrics_unavailable) unless Llm::PiiFeedbackMetrics.increment(eff_account_id, audit_attempts: 1)
 
-    questions = build_decision_questions(masked_text, candidates)
     response = invoke_decider(
-      masked_text, questions,
+      masked_text, build_decision_questions(masked_text, candidates),
       account_id: eff_account_id, account: account, decision_client: decision_client,
       privacy_profile: privacy_profile, runtime_preferences: runtime_preferences
     )
-    return { status: :decider_unavailable, missed: false, learned: [], quarantined: [] } unless response
+    unless response
+      Llm::PiiFeedbackMetrics.increment(eff_account_id, audit_unavailable: 1)
+      return audit_result(:decider_unavailable)
+    end
 
     res = process_decider_response!(response, candidates, account_id: eff_account_id)
-    mark_audited_digest!(msg_digest, lease_token: lease_token)
-    audit_completed = true
-    flush_stats_to_redis!
+    counts = { :audit_completed => 1, res.delete(:prediction_counter) => 1 }
+    audit_completed = mark_audited_digest!(msg_digest, lease_token: lease_token, account_id: eff_account_id, counts: counts)
+    return audit_result(:completion_unavailable) unless audit_completed
+
     res
   rescue StandardError => e
+    Llm::PiiFeedbackMetrics.increment(eff_account_id, e.is_a?(PolicyBlocked) ? { skipped_policy: 1 } : { audit_failed: 1 })
     raise if raise_on_transient && transient_decision_error?(e)
 
-    { status: :error, error_class: e.class.name, missed: false, learned: [], quarantined: [] }
+    audit_result(e.is_a?(PolicyBlocked) ? :skipped_policy : :error).merge(error_class: e.class.name)
   ensure
     release_inflight_audit!(msg_digest, lease_token: lease_token) if slot_acquired && !audit_completed
   end
+
+  def audit_result(status)
+    { status: status, missed: nil, learned: [], quarantined: [] }
+  end
+
+  class PolicyBlocked < StandardError; end
 
   def compile_decision_request_options(account_id: nil, account: nil, model: DEFAULT_DECIDER_MODEL,
                                        privacy_profile: nil, runtime_preferences: nil)
@@ -272,7 +314,7 @@ module Llm::PiiShadowAuditor
     budget_req = BudgetRequestStub.new(feature_key: FEATURE_KEY, account: resolved_acct, model: model)
     if defined?(Llm::BudgetEvaluator)
       decision = Llm::BudgetEvaluator.evaluate!(request: budget_req, model: model)
-      raise ArgumentError, "Budget blocked for #{FEATURE_KEY}" if decision.respond_to?(:blocked?) && decision.blocked?
+      raise PolicyBlocked, "Budget blocked for #{FEATURE_KEY}" if decision.respond_to?(:blocked?) && decision.blocked?
     end
 
     ws_policy = Llm::OpenRouterWorkspacePolicy.resolve(
@@ -289,7 +331,7 @@ module Llm::PiiShadowAuditor
     )
     if provider_prefs[:zdr] == true && defined?(Llm::OpenRouterDecisionClient) &&
        !Llm::OpenRouterDecisionClient.zdr_supported_model?(model)
-      raise ArgumentError, "Decision model #{model} does not satisfy ZDR policy"
+      raise PolicyBlocked, "Decision model #{model} does not satisfy ZDR policy"
     end
 
     built_headers = Llm::OpenRouterHeaders.build(
@@ -311,34 +353,12 @@ module Llm::PiiShadowAuditor
     }
   end
 
-  def stats
-    redis_stats = fetch_redis_stats
-    @stats_mutex.synchronize do
-      merged = @local_stats.dup
-      redis_stats.each { |k, v| merged[k.to_sym] = [merged[k.to_sym].to_i, v.to_i].max }
-      merged
-    end
-  end
-
-  def flush_stats_to_redis!
-    return unless defined?(Redis::Alfred)
-
-    deltas = @stats_mutex.synchronize do
-      next {} if @pending_redis_increments.empty?
-
-      snap = @pending_redis_increments.dup
-      @pending_redis_increments.clear
-      snap
-    end
-    deltas.each { |k, v| redis_hincrby(STATS_REDIS_KEY, k.to_s, v.to_i) if v.to_i.positive? }
-  rescue StandardError
-    nil
+  def stats(account_id: nil, global: false)
+    Llm::PiiFeedbackMetrics.summary(account_id: account_id, global: global)
   end
 
   def reset_stats!
     tracked = @stats_mutex.synchronize do
-      @local_stats.clear
-      @pending_redis_increments.clear
       @enqueued_digests.clear
       @inflight_digests.clear
       (@inflight_leases ||= {}).clear
@@ -348,7 +368,6 @@ module Llm::PiiShadowAuditor
       @tracked_redis_keys.clear
       keys
     end
-    redis_del(STATS_REDIS_KEY)
     (tracked + scan_auditor_redis_keys).uniq.each { |k| redis_del(k) }
   rescue StandardError
     nil
@@ -358,23 +377,28 @@ module Llm::PiiShadowAuditor
     ENV['PII_SHADOW_AUDIT_ENABLED'] == 'true'
   end
 
-  def enqueue_shadow_audit!(masked_text, account_id: nil)
+  def enqueue_shadow_audit!(masked_text, account_id: nil, mask_counts: [0, 0, 0, 0], enqueue_async: true)
     return false unless shadow_audit_enabled?
-    return false unless defined?(Llm::PiiShadowAuditJob)
 
     eff_account_id = resolve_effective_account_id(account_id)
+    eligibility = if !enqueue_async || eff_account_id.nil? || !defined?(Llm::PiiShadowAuditJob)
+                    'skipped_policy'
+                  elsif !requires_shadow_audit?(masked_text)
+                    'skipped_no_candidates'
+                  else
+                    'eligible'
+                  end
     msg_digest = message_dedup_digest(masked_text, account_id: eff_account_id)
     admitted_minute = current_minute_bucket
-    return false unless allow_enqueue_digest_and_rate?(msg_digest, eff_account_id, minute_bucket: admitted_minute)
+    return false unless allow_enqueue_digest_and_rate?(msg_digest, eff_account_id, minute_bucket: admitted_minute,
+                                                                                   mask_counts: mask_counts, eligibility: eligibility)
 
     begin
       job_res = Llm::PiiShadowAuditJob.perform_later(masked_text.to_s, account_id: eff_account_id)
-      unless enqueue_succeeded?(job_res)
-        release_enqueue_admission!(msg_digest, eff_account_id, minute_bucket: admitted_minute)
-        return false
-      end
+      raise 'Enqueue declined' unless enqueue_succeeded?(job_res)
     rescue StandardError
       release_enqueue_admission!(msg_digest, eff_account_id, minute_bucket: admitted_minute)
+      Llm::PiiFeedbackMetrics.increment(eff_account_id, enqueue_failed: 1)
       return false
     end
     true
@@ -397,7 +421,7 @@ module Llm::PiiShadowAuditor
     Llm::PiiNameLexicon.send(:hmac_digest, "shadow_dedup:#{account_id.to_i}:#{masked_text.to_s.strip}").unpack1('H*')
   end
 
-  def allow_enqueue_digest_and_rate?(msg_digest, account_id, minute_bucket: nil)
+  def allow_enqueue_digest_and_rate?(msg_digest, account_id, minute_bucket: nil, mask_counts: [0, 0, 0, 0], eligibility: 'eligible')
     now_min = minute_bucket || current_minute_bucket
     rate_key = "#{account_id.to_i}:#{now_min}"
     enq_rkey = "#{DEDUP_REDIS_PREFIX}:enqueued:#{msg_digest}"
@@ -405,10 +429,8 @@ module Llm::PiiShadowAuditor
     rate_rkey = "#{RATE_REDIS_PREFIX}:#{rate_key}"
 
     @stats_mutex.synchronize do
-      return false if @enqueued_digests.include?(msg_digest) || @audited_digests.include?(msg_digest)
-      return false if @rate_windows[rate_key].to_i >= MAX_AUDITS_PER_MINUTE_PER_ACCOUNT
-
-      admitted = redis_atomic_enqueue_admission(enq_rkey, aud_rkey, rate_rkey)
+      admitted = redis_atomic_enqueue_admission(enq_rkey, aud_rkey, rate_rkey, account_id: account_id, mask_counts: mask_counts,
+                                                                               eligibility: eligibility)
       return false unless admitted
 
       @enqueued_digests.clear if @enqueued_digests.size >= MAX_DEDUP_ENTRIES
@@ -444,8 +466,6 @@ module Llm::PiiShadowAuditor
     inf_rkey = "#{DEDUP_REDIS_PREFIX}:inflight:#{msg_digest}"
 
     @stats_mutex.synchronize do
-      return false if @audited_digests.include?(msg_digest) || @inflight_digests.include?(msg_digest)
-
       acquired = redis_atomic_acquire_inflight(inf_rkey, aud_rkey, token)
       return false unless acquired
 
@@ -474,13 +494,13 @@ module Llm::PiiShadowAuditor
     false
   end
 
-  def mark_audited_digest!(msg_digest, lease_token: nil)
+  def mark_audited_digest!(msg_digest, lease_token: nil, account_id: nil, counts: {})
     aud_rkey = "#{DEDUP_REDIS_PREFIX}:audited:#{msg_digest}"
     inf_rkey = "#{DEDUP_REDIS_PREFIX}:inflight:#{msg_digest}"
     @stats_mutex.synchronize do
       leases = (@inflight_leases ||= {})
       expected = lease_token.presence || leases[msg_digest].to_s
-      completed = redis_atomic_complete_audit(inf_rkey, aud_rkey, expected)
+      completed = redis_atomic_complete_audit(inf_rkey, aud_rkey, expected, account_id: account_id, counts: counts)
       return false unless completed
 
       @inflight_digests.delete(msg_digest)
@@ -560,7 +580,8 @@ module Llm::PiiShadowAuditor
   def process_decider_response!(response, candidates, account_id: nil)
     answers = response.respond_to?(:answers) ? response.answers.to_h : {}
     overall = answers['overall']
-    overall_flagged = overall && overall.choice.to_s != 'clean' && overall.confidence.to_f >= CONFIDENCE_THRESHOLD
+    overall_valid = overall && MESSAGE_CRITERIA.key?(overall.choice.to_s) && overall.confidence.to_f >= CONFIDENCE_THRESHOLD
+    overall_flagged = overall_valid && overall.choice.to_s != 'clean'
 
     quarantined = []
     if overall_flagged
@@ -572,21 +593,25 @@ module Llm::PiiShadowAuditor
         next unless category
 
         next unless Llm::PiiNameLexicon.quarantine_candidate!(
-          word, category: category, account_id: account_id, confidence: ans.confidence.to_f, source: 'decider'
+          word, category: category, account_id: account_id, confidence: ans.confidence.to_f, source: 'decider', feedback: true
         )
 
         quarantined << { word: word, category: category, confidence: ans.confidence.to_f }
       end
     end
 
-    if overall_flagged
-      increment_stat_in_memory!(:missed_pii_caught_by_decider, 1)
-      increment_stat_in_memory!(:quarantined_names_total, quarantined.size) if quarantined.any?
-    end
-
+    prediction_counter = if overall_flagged
+                           :decider_suspected_misses
+                         elsif overall_valid
+                           :decider_clean_predictions
+                         else
+                           :decider_unknown_predictions
+                         end
     {
       status: :completed,
-      missed: overall_flagged == true,
+      missed: nil,
+      suspected_miss: overall_flagged == true,
+      prediction_counter: prediction_counter,
       overall_choice: overall&.choice,
       learned: [],
       quarantined: quarantined
@@ -594,8 +619,10 @@ module Llm::PiiShadowAuditor
   end
 
   def resolve_effective_account_id(account_id)
-    return account_id if account_id.present?
-    return Llm::PiiSessionPseudonymizer.current_scope[:account_id] if defined?(Llm::PiiSessionPseudonymizer) && Llm::PiiSessionPseudonymizer.active?
+    return Llm::PiiFeedbackMetrics.account_id(account_id) if account_id.present?
+    if defined?(Llm::PiiSessionPseudonymizer) && Llm::PiiSessionPseudonymizer.active?
+      return Llm::PiiFeedbackMetrics.account_id(Llm::PiiSessionPseudonymizer.current_scope[:account_id])
+    end
 
     nil
   end
@@ -633,13 +660,6 @@ module Llm::PiiShadowAuditor
     defined?(Llm::OpenRouterDecisionClient::Error) && error.is_a?(Llm::OpenRouterDecisionClient::Error)
   end
 
-  def increment_stat_in_memory!(key, delta = 1)
-    @stats_mutex.synchronize do
-      @local_stats[key.to_sym] += delta.to_i
-      @pending_redis_increments[key.to_sym] += delta.to_i
-    end
-  end
-
   def redis_configured?
     (defined?($alfred) && $alfred.respond_to?(:with)) || defined?(Redis::Alfred)
   end
@@ -658,38 +678,37 @@ module Llm::PiiShadowAuditor
     end
   end
 
-  def redis_atomic_enqueue_admission(enq_rkey, aud_rkey, rate_rkey)
-    return true unless redis_configured?
-    return false unless defined?($alfred) && $alfred.respond_to?(:with)
+  def redis_atomic_enqueue_admission(enq_rkey, aud_rkey, rate_rkey, account_id:, mask_counts:, eligibility:)
+    keys = [enq_rkey, aud_rkey, rate_rkey] + Llm::PiiFeedbackMetrics.keys(account_id)
+    timestamp = Time.now.utc.iso8601
+    argv = [MAX_AUDITS_PER_MINUTE_PER_ACCOUNT, DEDUP_TTL_SECONDS, RATE_TTL_SECONDS, eligibility] + mask_counts + [timestamp]
+    Llm::PiiFeedbackMetrics.with_store do |conn|
+      return eval_redis_lua(conn, ENQUEUE_ADMISSION_SCRIPT, keys: keys, argv: argv).to_i == 1 if native_eval_supported?(conn)
+      return false unless Llm::PiiFeedbackMetrics.mock?(conn)
 
-    $alfred.with do |conn|
-      if native_eval_supported?(conn)
-        res = eval_redis_lua(
-          conn, ENQUEUE_ADMISSION_SCRIPT,
-          keys: [enq_rkey, aud_rkey, rate_rkey],
-          argv: [MAX_AUDITS_PER_MINUTE_PER_ACCOUNT.to_s, DEDUP_TTL_SECONDS.to_s, RATE_TTL_SECONDS.to_s]
-        )
-        return res.to_i == 1
-      elsif conn.respond_to?(:atomic)
-        return conn.atomic do |store|
-          next false if store[enq_rkey].present? || store[aud_rkey].present?
-
-          cur = store[rate_rkey].to_i
-          next false if cur >= MAX_AUDITS_PER_MINUTE_PER_ACCOUNT
-
-          store[enq_rkey] = '1'
-          store[rate_rkey] = (cur + 1).to_s
-          true
+      Llm::PiiFeedbackMetrics.mock_atomic(conn) do
+        checks, names, phones, iins = mask_counts
+        counts = { text_checks: checks, checks_with_masked_pii: (names + phones + iins).positive? ? 1 : 0,
+                   masked_name_tokens: names, masked_phone_tokens: phones, masked_iin_tokens: iins }
+        admitted = false
+        if eligibility == 'eligible'
+          counts[:eligible_checks] = 1
+          if conn.exists?(enq_rkey) || conn.exists?(aud_rkey)
+            counts[:skipped_duplicate] = 1
+          elsif conn.get(rate_rkey).to_i >= MAX_AUDITS_PER_MINUTE_PER_ACCOUNT
+            counts[:skipped_rate] = 1
+          else
+            conn.set(enq_rkey, '1', ex: DEDUP_TTL_SECONDS)
+            conn.incr(rate_rkey)
+            conn.expire(rate_rkey, RATE_TTL_SECONDS)
+            counts[:admission_grants] = 1
+            admitted = true
+          end
+        else
+          counts[eligibility.to_sym] = 1
         end
-      else
-        return false if conn.get(enq_rkey).present? || conn.get(aud_rkey).present?
-
-        cur = conn.get(rate_rkey).to_i
-        return false if cur >= MAX_AUDITS_PER_MINUTE_PER_ACCOUNT
-
-        conn.set(enq_rkey, '1', ex: DEDUP_TTL_SECONDS)
-        conn.set(rate_rkey, (cur + 1).to_s, ex: RATE_TTL_SECONDS)
-        true
+        Llm::PiiFeedbackMetrics.mock_count(conn, keys.last(2), counts, timestamp)
+        admitted
       end
     end
   rescue StandardError
@@ -773,33 +792,24 @@ module Llm::PiiShadowAuditor
     false
   end
 
-  def redis_atomic_complete_audit(inf_rkey, aud_rkey, token)
-    return true unless redis_configured?
-    return false unless defined?($alfred) && $alfred.respond_to?(:with)
+  def redis_atomic_complete_audit(inf_rkey, aud_rkey, token, account_id:, counts:)
+    enq_rkey = aud_rkey.sub(':audited:', ':enqueued:')
+    keys = [inf_rkey, aud_rkey, enq_rkey] + Llm::PiiFeedbackMetrics.keys(account_id)
+    timestamp = Time.now.utc.iso8601
+    argv = [token.to_s, DEDUP_TTL_SECONDS] + counts.stringify_keys.slice(*Llm::PiiFeedbackMetrics::FIELDS).to_a.flatten + [timestamp]
+    Llm::PiiFeedbackMetrics.with_store do |conn|
+      return eval_redis_lua(conn, COMPLETE_AUDIT_SCRIPT, keys: keys, argv: argv).to_i == 1 if native_eval_supported?(conn)
+      return false unless Llm::PiiFeedbackMetrics.mock?(conn)
 
-    $alfred.with do |conn|
-      if native_eval_supported?(conn)
-        res = eval_redis_lua(
-          conn, COMPLETE_AUDIT_SCRIPT,
-          keys: [inf_rkey, aud_rkey],
-          argv: [token.to_s, DEDUP_TTL_SECONDS.to_s]
-        )
-        return res.to_i == 1
-      elsif conn.respond_to?(:atomic)
-        return conn.atomic do |store|
-          owner = store[inf_rkey]
-          next false if token.present? && owner.present? && owner != token.to_s
-
-          store[aud_rkey] = '1'
-          store.delete(inf_rkey) if token.blank? || owner == token.to_s
-          true
-        end
-      else
-        owner = conn.get(inf_rkey)
-        return false if token.present? && owner.present? && owner != token.to_s
+      Llm::PiiFeedbackMetrics.mock_atomic(conn) do
+        next false if conn.get(inf_rkey) != token.to_s || conn.exists?(aud_rkey)
 
         conn.set(aud_rkey, '1', ex: DEDUP_TTL_SECONDS)
-        conn.del(inf_rkey) if token.blank? || owner == token.to_s
+        conn.del(inf_rkey)
+        if !conn.exists?(enq_rkey) && counts.key?(:audit_completed)
+          counts = counts.except(:audit_completed).merge(diagnostic_audits_completed: counts[:audit_completed])
+        end
+        Llm::PiiFeedbackMetrics.mock_count(conn, keys.last(2), counts, timestamp)
         true
       end
     end
@@ -827,24 +837,6 @@ module Llm::PiiShadowAuditor
     found
   rescue StandardError
     []
-  end
-
-  def redis_hincrby(key, field, delta)
-    if defined?(Redis::Alfred) && Redis::Alfred.respond_to?(:hincrby)
-      Redis::Alfred.hincrby(key, field, delta)
-    elsif defined?($alfred) && $alfred.respond_to?(:with)
-      $alfred.with { |conn| conn.hincrby(key, field, delta) }
-    end
-  rescue StandardError
-    nil
-  end
-
-  def fetch_redis_stats
-    return {} unless defined?(Redis::Alfred)
-
-    Redis::Alfred.hgetall(STATS_REDIS_KEY).to_h
-  rescue StandardError
-    {}
   end
 end
 # rubocop:enable Metrics/ModuleLength, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/AbcSize, Metrics/MethodLength, Metrics/ParameterLists, Style/GlobalVars

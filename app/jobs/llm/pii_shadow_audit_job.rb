@@ -8,7 +8,7 @@ class Llm::PiiShadowAuditJob < ApplicationJob
   end
 
   def perform(masked_text, account_id: nil, raise_on_transient: true)
-    return { status: :disabled, missed: false, learned: [], quarantined: [] } unless Llm::PiiShadowAuditor.shadow_audit_enabled?
+    return { status: :disabled, missed: nil, learned: [], quarantined: [] } unless Llm::PiiShadowAuditor.shadow_audit_enabled?
 
     Llm::PiiShadowAuditor.audit_masked_message!(
       masked_text,

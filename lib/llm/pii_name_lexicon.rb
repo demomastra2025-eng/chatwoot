@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
 require 'openssl'
+require 'securerandom'
 
 module Llm; end
+
+require_relative 'pii_feedback_metrics'
 
 # In-memory dictionary of unique first names (split into female, male, and international),
 # last names, and patronymics (RU/KK/LAT). Loads all unique names from Contact and
@@ -232,7 +235,7 @@ module Llm::PiiNameLexicon
 
   # Places an unverified candidate word (e.g., from async decider) into a tenant-scoped quarantine set.
   # Quarantined digests are NOT active in live masking until verified and promoted.
-  def quarantine_candidate!(word, category: :first_name, account_id: nil, confidence: 0.0, source: 'decider') # rubocop:disable Lint/UnusedMethodArgument
+  def quarantine_candidate!(word, category: :first_name, account_id: nil, confidence: 0.0, feedback: false, **_metadata) # rubocop:disable Lint/UnusedMethodArgument, Metrics/ParameterLists
     acct_id = resolve_account_id(account_id)
     return false if acct_id.nil?
 
@@ -244,14 +247,14 @@ module Llm::PiiNameLexicon
     cat_key = LEARNED_CATEGORIES.key?(category.to_sym) ? category.to_sym : :first_name
     r_key = "#{QUARANTINE_REDIS_PREFIX}:kv_#{key_ver}:acct_#{acct_id}:#{cat_key}"
 
+    added = persist_quarantined_digest!(r_key, hex_exact, account_id: acct_id, feedback: feedback)
+    return false unless added
+
     @lexicon_mutex.synchronize do
       q_set = (@quarantine_cache["#{key_ver}:#{acct_id}:#{cat_key}"] ||= Set.new)
-      return false if q_set.size >= MAX_QUARANTINED_PER_TENANT
-
       q_set << hex_exact
       @tracked_redis_keys << r_key
     end
-    redis_sadd(r_key, hex_exact)
     true
   rescue StandardError
     false
@@ -277,7 +280,9 @@ module Llm::PiiNameLexicon
     false
   end
 
-  def promote_quarantined_word!(word, category: :first_name, account_id: nil)
+  def promote_quarantined_word!(word, category: :first_name, account_id: nil, verified: false)
+    return false unless verified
+
     acct_id = resolve_account_id(account_id)
     return false if acct_id.nil?
     return false unless quarantined_candidate?(word, category: category, account_id: acct_id)
@@ -286,7 +291,7 @@ module Llm::PiiNameLexicon
   end
 
   # Adds a verified name digest strictly to the given tenant (account_id), never globally across tenants.
-  def learn_word!(word, category: :first_name, account_id: nil, verified: true)
+  def learn_word!(word, category: :first_name, account_id: nil, verified: false, feedback: false)
     return false unless verified
 
     acct_id = resolve_account_id(account_id)
@@ -301,7 +306,9 @@ module Llm::PiiNameLexicon
     stem = stem_word(norm)
     stem_hash = stem.length >= 3 ? hmac_digest(stem) : nil
 
-    persist_learned_digest!(key_ver, acct_id, category.to_sym, exact_hash, stem_hash)
+    added = persist_learned_digest!(key_ver, acct_id, category.to_sym, [exact_hash, stem_hash], feedback: feedback)
+    return false unless added
+
     inject_learned_into_tenant_ram!(key_ver, acct_id, target_keys, exact_hash, stem_hash)
     true
   end
@@ -511,25 +518,86 @@ module Llm::PiiNameLexicon
     rel.pluck(column)
   end
 
-  def persist_learned_digest!(key_ver, acct_id, category, exact_hash, stem_hash)
-    return unless defined?(Redis::Alfred)
+  # Bounded, cross-process uniqueness. Plaintext is never a Redis member/key.
+  def persist_quarantined_digest!(key, digest, account_id:, feedback:)
+    return false unless defined?($alfred) && $alfred.respond_to?(:with)
+
+    metric_keys = Llm::PiiFeedbackMetrics.keys(account_id)
+    argv = [digest, MAX_QUARANTINED_PER_TENANT, feedback ? '1' : '0', Time.now.utc.iso8601]
+    $alfred.with do |conn|
+      if Llm::PiiFeedbackMetrics.mock?(conn)
+        return Llm::PiiFeedbackMetrics.mock_atomic(conn) do
+          next false if conn.scard(key) >= MAX_QUARANTINED_PER_TENANT
+
+          result = conn.sadd(key, digest)
+          next false unless result == true || result == 1
+
+          Llm::PiiFeedbackMetrics.mock_count(conn, metric_keys, { new_quarantined_names: 1 }, argv.last) if feedback
+          true
+        end
+      end
+      script = Llm::PiiFeedbackMetrics::LUA_HELPER + <<~LUA
+        expect_type(KEYS[1], 'set')
+        if redis.call('SCARD', KEYS[1]) >= tonumber(ARGV[2]) then return 0 end
+        if redis.call('SADD', KEYS[1], ARGV[1]) == 0 then return 0 end
+        if ARGV[3] == '1' then count('new_quarantined_names', 1) end
+        return 1
+      LUA
+      Llm::PiiFeedbackMetrics.eval_script(conn, script, keys: [key] + metric_keys, argv: argv).to_i == 1
+    end
+  rescue StandardError
+    false
+  end
+
+  def persist_learned_digest!(key_ver, acct_id, category, digests, feedback: false)
+    exact_hash, stem_hash = digests
+    return false unless defined?($alfred) && $alfred.respond_to?(:with)
 
     exact_key = "#{LEARNED_REDIS_PREFIX}:kv_#{key_ver}:acct_#{acct_id}:#{category}:exact"
+    stem_key = "#{LEARNED_REDIS_PREFIX}:kv_#{key_ver}:acct_#{acct_id}:#{category}:stem"
     ver_key = "#{TENANT_VERSION_REDIS_PREFIX}:kv_#{key_ver}:acct_#{acct_id}"
-    @lexicon_mutex.synchronize do
-      @tracked_redis_keys << exact_key
-      @tracked_redis_keys << ver_key
-    end
+    quarantine_key = "#{QUARANTINE_REDIS_PREFIX}:kv_#{key_ver}:acct_#{acct_id}:#{category}"
+    @lexicon_mutex.synchronize { @tracked_redis_keys.merge([exact_key, stem_key, ver_key]) }
+    metric_keys = Llm::PiiFeedbackMetrics.keys(acct_id)
+    argv = [exact_hash.unpack1('H*'), stem_hash ? stem_hash.unpack1('H*') : '', MAX_LEARNED_PER_TENANT,
+            SecureRandom.hex(12), feedback ? '1' : '0', Time.now.utc.iso8601]
+    $alfred.with do |conn| # rubocop:disable Metrics/BlockLength
+      if Llm::PiiFeedbackMetrics.mock?(conn)
+        return Llm::PiiFeedbackMetrics.mock_atomic(conn) do
+          next false if conn.scard(exact_key) >= MAX_LEARNED_PER_TENANT
 
-    redis_sadd(exact_key, exact_hash.unpack1('H*'))
-    if stem_hash
-      stem_key = "#{LEARNED_REDIS_PREFIX}:kv_#{key_ver}:acct_#{acct_id}:#{category}:stem"
-      @lexicon_mutex.synchronize { @tracked_redis_keys << stem_key }
-      redis_sadd(stem_key, stem_hash.unpack1('H*'))
+          result = conn.sadd(exact_key, argv[0])
+          next false unless result == true || result == 1
+
+          conn.sadd(stem_key, argv[1]) unless argv[1].empty?
+          conn.set(ver_key, argv[3])
+          if feedback
+            counts = { verified_name_promotions: 1,
+                       verified_quarantine_promotions: conn.sismember(quarantine_key, argv[0]) ? 1 : 0 }
+            Llm::PiiFeedbackMetrics.mock_count(conn, metric_keys, counts, argv.last)
+          end
+          true
+        end
+      end
+      script = Llm::PiiFeedbackMetrics::LUA_HELPER + <<~LUA
+        expect_type(KEYS[1], 'set')
+        expect_type(KEYS[2], 'set')
+        expect_type(KEYS[3], 'string')
+        expect_type(KEYS[4], 'set')
+        if redis.call('SCARD', KEYS[1]) >= tonumber(ARGV[3]) then return 0 end
+        if redis.call('SADD', KEYS[1], ARGV[1]) == 0 then return 0 end
+        if ARGV[2] ~= '' then redis.call('SADD', KEYS[2], ARGV[2]) end
+        redis.call('SET', KEYS[3], ARGV[4])
+        if ARGV[5] == '1' then
+          count('verified_name_promotions', 1)
+          if redis.call('SISMEMBER', KEYS[4], ARGV[1]) == 1 then count('verified_quarantine_promotions', 1) end
+        end
+        return 1
+      LUA
+      Llm::PiiFeedbackMetrics.eval_script(conn, script, keys: [exact_key, stem_key, ver_key, quarantine_key] + metric_keys, argv: argv).to_i == 1
     end
-    Redis::Alfred.set(ver_key, Process.clock_gettime(Process::CLOCK_REALTIME).to_s)
   rescue StandardError
-    nil
+    false
   end
 
   def inject_learned_into_tenant_ram!(key_ver, acct_id, target_keys, exact_hash, stem_hash)
@@ -653,7 +721,7 @@ module Llm::PiiNameLexicon
                        :db_ready?, :merge_contact_unique_names!, :merge_medelement_json_names!,
                        :merge_appointment_unique_names!, :pluck_unique, :hmac_digest, :secret_material, :safe_key_version,
                        :resolve_account_id, :lookup_in_category?, :match_in_sets?, :persist_learned_digest!,
-                       :inject_learned_into_tenant_ram!, :tenant_learned_sets, :fetch_tenant_redis_version,
+                       :persist_quarantined_digest!, :inject_learned_into_tenant_ram!, :tenant_learned_sets, :fetch_tenant_redis_version,
                        :empty_tenant_sets, :load_tenant_sets_from_redis, :redis_sadd, :redis_smembers, :delete_redis_key!
 end
 # rubocop:enable Metrics/ModuleLength, Metrics/CollectionLiteralLength, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/AbcSize, Metrics/MethodLength, Style/GlobalVars

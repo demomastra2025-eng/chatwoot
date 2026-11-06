@@ -130,6 +130,13 @@ class Captain::Tools::Agent::PatientBookingContext
     raise ArgumentError, 'Patient name does not match the recorded IIN' unless policy.names_match?(identity, card)
 
     verify_recorded_birth_date!(card)
+    record_verified_patient(card)
+  end
+
+  def record_verified_patient(card)
+    return unless defined?(Llm::PiiShadowAuditor)
+
+    Llm::PiiShadowAuditor.record_verified_patient!(contact: card, account_id: assistant.account_id)
   end
 
   def verify_recorded_birth_date!(card)
