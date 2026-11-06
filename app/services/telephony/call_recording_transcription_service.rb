@@ -32,6 +32,8 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
     account.increment_response_usage
 
     { success: true, transcript: transcript }
+  rescue Telephony::VoiceCoreClient::Error => e
+    voicecore_error_result(e)
   rescue RubyLLM::UnauthorizedError, Faraday::UnauthorizedError
     Rails.logger.warn(
       '[TELEPHONY] Skipping call recording transcription: LLM provider configuration is invalid ' \
@@ -41,6 +43,11 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   end
 
   private
+
+  def voicecore_error_result(error)
+    Rails.logger.warn("[VoiceCore] Transcription failed account_id=#{account.id} call_session_id=#{call_session.id} code=#{error.code}")
+    { error: 'VoiceCore transcription unavailable', error_code: error.code, retryable: error.retryable }
+  end
 
   def can_transcribe?
     account.call_transcriptions_enabled? && account.call_analysis_quota_available?
@@ -92,6 +99,8 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   end
 
   def transcribe_recording
+    return transcribe_with_voicecore if Telephony::VoiceCoreClient.selected_for?(account)
+
     file_path, staged_remote_file = resolve_recording_file!
     provider_file_path = audio_file_path_for_provider(file_path)
     probe_audio!(file_path, provider_path: provider_file_path)
@@ -105,6 +114,12 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   ensure
     FileUtils.rm_f(provider_file_path) if provider_file_path.present? && provider_file_path != file_path
     FileUtils.rm_f(file_path) if staged_remote_file && file_path.present?
+  end
+
+  def transcribe_with_voicecore
+    @voicecore_result = Telephony::VoiceCoreRecordingTranscription.new(call_session).perform
+    @audio_probe = @voicecore_result.delete('audio_probe')
+    @voicecore_result.to_json
   end
 
   def probe_audio!(file_path, provider_path: file_path)
@@ -327,6 +342,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
                            'channels' => @audio_probe&.dig('channels') || recording['channels'],
                            'completed_at' => Time.current.iso8601)
     payload['billed_at'] = billed_at if billed_at.present?
+    payload.merge!(@voicecore_result.slice('voicecore', 'provider', 'model')) if @voicecore_result
     payload
   end
 

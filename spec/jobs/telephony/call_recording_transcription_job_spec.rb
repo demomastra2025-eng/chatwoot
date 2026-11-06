@@ -31,4 +31,22 @@ RSpec.describe Telephony::CallRecordingTranscriptionJob do
 
     expect { described_class.perform_now(call_session.id) }.to have_enqueued_job(described_class).with(call_session.id)
   end
+
+  it 'retries a local provider timeout without calling a different provider' do
+    allow(Telephony::CallRecordingTranscriptionService).to receive(:new).and_return(transcription_service)
+    allow(transcription_service).to receive(:perform).and_return(
+      error: 'VoiceCore transcription unavailable', error_code: 'unavailable', retryable: true
+    )
+
+    expect { described_class.perform_now(call_session.id) }.to have_enqueued_job(described_class).with(call_session.id)
+  end
+
+  it 'does not retry a terminal local schema or authentication error' do
+    allow(Telephony::CallRecordingTranscriptionService).to receive(:new).and_return(transcription_service)
+    allow(transcription_service).to receive(:perform).and_return(
+      error: 'VoiceCore transcription unavailable', error_code: 'invalid_response', retryable: false
+    )
+
+    expect { described_class.perform_now(call_session.id) }.not_to have_enqueued_job(described_class)
+  end
 end

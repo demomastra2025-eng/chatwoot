@@ -33,4 +33,22 @@ RSpec.describe Telephony::CallTranscript do
     expect(result['transcript_items'].size).to eq(2)
     expect(result['text']).to include('[00:02] Сотрудник: Добрый день')
   end
+
+  it 'preserves explicit unknown speakers, channels, overlap and subsecond start/end times' do
+    result = described_class.parse({ transcript_items: [
+      { speaker: 'unknown', channel: 0, start_sec: 0.25, end_sec: 1.5, text: 'Первый тест' },
+      { speaker: 'unknown', channel: 1, start_sec: 1.0, end_sec: 1.75, text: 'Второй тест' }
+    ] }.to_json)
+
+    expect(result['transcript_items']).to include(
+      hash_including('speaker' => 'unknown', 'speaker_label' => 'Говорящий', 'channel' => 0, 'start_sec' => 0.25, 'end_sec' => 1.5),
+      hash_including('speaker' => 'unknown', 'channel' => 1, 'start_sec' => 1.0, 'end_sec' => 1.75)
+    )
+    expect(result['text']).to eq("[00:00] Говорящий: Первый тест\n[00:01] Говорящий: Второй тест")
+    expect(described_class.parse(result['text'])['transcript_items'].pluck('speaker')).to eq(%w[unknown unknown])
+  end
+
+  it 'retains the legacy default for an unspecified speaker' do
+    expect(described_class.parse({ transcript_items: [{ text: 'Тест' }] }.to_json)['transcript_items'].first['speaker']).to eq('operator')
+  end
 end

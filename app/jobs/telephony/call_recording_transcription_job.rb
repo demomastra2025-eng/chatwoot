@@ -3,6 +3,7 @@ class Telephony::CallRecordingTranscriptionJob < ApplicationJob
 
   retry_on Telephony::CallRecordingTranscriptionService::RecordingNotFound, wait: 10.seconds, attempts: 3
   retry_on ActiveRecord::LockWaitTimeout, ActiveRecord::QueryCanceled, wait: :polynomially_longer, attempts: 5
+  retry_on Telephony::VoiceCoreClient::RetryableError, wait: 10.seconds, attempts: 3
 
   discard_on RubyLLM::BadRequestError do |job, error|
     Rails.logger.warn(
@@ -22,6 +23,7 @@ class Telephony::CallRecordingTranscriptionJob < ApplicationJob
     call_session = Telephony::CallSession.find_by(id: call_session_id)
     return if call_session.blank?
 
-    Telephony::CallRecordingTranscriptionService.new(call_session).perform
+    result = Telephony::CallRecordingTranscriptionService.new(call_session).perform
+    raise Telephony::VoiceCoreClient::RetryableError.new(result[:error_code], retryable: true) if result.is_a?(Hash) && result[:retryable]
   end
 end

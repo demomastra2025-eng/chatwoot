@@ -579,6 +579,8 @@ describe('VoiceCall bubble', () => {
       contentAttributes: ref({
         data: {
           status: 'completed',
+          recordingUrl:
+            '/api/v1/accounts/1/telephony/calls/call-1/recording.wav',
           transcriptItems: [
             {
               speaker: 'unknown',

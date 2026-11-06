@@ -258,6 +258,127 @@ class HttpContractTest(unittest.TestCase):
         self.assertIn(b"200", self.wire().split(b"\r\n")[0])
 
 
+class InputDeadlineTest(unittest.TestCase):
+    """Virtual clock and timer exercise slow input without sockets, sleeps or models."""
+    def run_handler(self, *, slow_headers=False, body_elapsed=0, auth=True, during_inference=None,
+                    method=b"POST", path=b"/transcribe", body_error=False):
+        clock, timers = [0.0], []
+        payload = vc.canonical(request())
+        auth_line = b"Authorization: Bearer " + b"x" * 32 + b"\r\n" if auth else b""
+        wire = (method + b" " + path + b" HTTP/1.0\r\n" + auth_line +
+                b"Content-Type: application/json\r\nContent-Length: " + str(len(payload)).encode() +
+                b"\r\n\r\n" + payload)
+
+        class TimerDouble:
+            def __init__(self, interval, callback):
+                self.interval, self.callback = interval, callback
+                self.started = self.cancelled = self.fired = False
+                self.joined = False
+                timers.append(self)
+
+            def start(self):
+                self.started = True
+
+            def cancel(self):
+                self.cancelled = True
+
+            def join(self):
+                self.joined = True
+
+            def fire(self):
+                if self.started and not self.cancelled and not self.fired:
+                    self.fired = True
+                    self.callback()
+
+        class DeadlineSocket(FakeSocket):
+            def __init__(self, data):
+                super().__init__(data)
+                self.shutdowns = []
+
+            def shutdown(self, how):
+                self.shutdowns.append(how)
+
+            def sendall(self, data):
+                if self.shutdowns:
+                    raise BrokenPipeError("synthetic expired connection")
+                super().sendall(data)
+
+        sock = DeadlineSocket(wire)
+        other_socket = DeadlineSocket(b"")
+
+        class DripReader(io.BytesIO):
+            def readline(self, limit=-1):
+                if slow_headers:
+                    clock[0] += 3.0  # Every increment is below the inactivity timeout.
+                    if clock[0] >= vc.INPUT_DEADLINE:
+                        timers[0].fire()
+                if sock.shutdowns:
+                    return b""
+                return super().readline(limit)
+
+            def read(self, length=-1):
+                if body_error:
+                    raise OSError("synthetic body disconnect")
+                clock[0] += body_elapsed
+                return super().read(length)
+
+        sock.reader = DripReader(wire)
+        worker = unittest.mock.Mock()
+        worker.version = "f" * 64
+        worker.transcribe.side_effect = lambda body: (
+            during_inference(timers[0], sock, clock) if during_inference else {"accepted": True})
+        with patch.object(vc.threading, "Timer", TimerDouble), \
+                patch.object(vc.time, "monotonic", side_effect=lambda: clock[0]):
+            vc.make_handler(worker, "x" * 32, {7})(sock, ("127.0.0.1", 1), object())
+        return worker, timers, sock, other_socket
+
+    def test_slow_header_trickle_expires_absolute_budget_and_own_socket_only(self):
+        worker, timers, sock, other = self.run_handler(slow_headers=True)
+        worker.transcribe.assert_not_called()
+        self.assertEqual(len(timers), 1)
+        self.assertEqual(timers[0].interval, 10)
+        self.assertTrue(timers[0].fired)
+        self.assertTrue(timers[0].cancelled)
+        self.assertTrue(timers[0].joined)
+        self.assertEqual(sock.shutdowns, [vc.socket.SHUT_RDWR])
+        self.assertEqual(other.shutdowns, [])
+
+    def test_late_timer_cannot_admit_body_past_monotonic_deadline(self):
+        worker, timers, sock, _ = self.run_handler(body_elapsed=11)
+        worker.transcribe.assert_not_called()
+        self.assertFalse(timers[0].fired)  # Timer delivery deliberately delayed.
+        self.assertTrue(timers[0].cancelled)
+        self.assertEqual(sock.shutdowns, [vc.socket.SHUT_RDWR])
+
+    def test_validated_body_cancels_timer_before_inference_and_racing_callback_safe(self):
+        def inference(timer, sock, clock):
+            self.assertTrue(timer.cancelled)
+            clock[0] = 100.0  # Inference has its own110s deadline.
+            timer.callback()  # Even a callback already scheduled before cancel is safe.
+            self.assertEqual(sock.shutdowns, [])
+            return {"accepted": True}
+        worker, timers, sock, _ = self.run_handler(body_elapsed=9, during_inference=inference)
+        worker.transcribe.assert_called_once()
+        self.assertEqual(sock.shutdowns, [])
+        self.assertTrue(timers[0].cancelled)
+
+    def test_unauthorized_input_always_cancels_timer_in_finish(self):
+        worker, timers, sock, _ = self.run_handler(auth=False, method=b"GET", path=b"/health")
+        worker.transcribe.assert_not_called()
+        self.assertTrue(timers[0].cancelled)
+        self.assertTrue(timers[0].joined)
+        timers[0].callback()
+        self.assertEqual(sock.shutdowns, [])
+
+    def test_body_disconnect_always_cancels_and_reaps_timer(self):
+        worker, timers, sock, _ = self.run_handler(body_error=True)
+        worker.transcribe.assert_not_called()
+        self.assertTrue(timers[0].cancelled)
+        self.assertTrue(timers[0].joined)
+        timers[0].callback()
+        self.assertEqual(sock.shutdowns, [])
+
+
 class WorkerContractTest(unittest.TestCase):
     def worker(self, response=("ok", {"synthetic": True})):
         worker = vc.Worker.__new__(vc.Worker)

@@ -3,8 +3,8 @@
 require 'open3'
 
 class Telephony::CallTranscript
-  LINE = /\A(?:\[(?<time>\d{1,2}:\d{2}(?::\d{2})?)\]\s*)?(?<role>Сотрудник|Оператор|Клиент|Operator|Client):\s*(?<text>.+)\z/i
-  LABELS = { 'operator' => 'Сотрудник', 'client' => 'Клиент' }.freeze
+  LINE = /\A(?:\[(?<time>\d{1,2}:\d{2}(?::\d{2})?)\]\s*)?(?<role>Сотрудник|Оператор|Клиент|Говорящий|Operator|Client):\s*(?<text>.+)\z/i
+  LABELS = { 'operator' => 'Сотрудник', 'client' => 'Клиент', 'unknown' => 'Говорящий' }.freeze
 
   def self.probe(path)
     stdout, _stderr, status = Open3.capture3(
@@ -103,6 +103,7 @@ class Telephony::CallTranscript
     return unless match
 
     speaker = match[:role].match?(/Клиент|Client/i) ? 'client' : 'operator'
+    speaker = 'unknown' if match[:role].casecmp?('Говорящий')
     timestamp = match[:time]
     { 'speaker' => speaker, 'speaker_label' => LABELS.fetch(speaker), 'timestamp' => timestamp,
       'start_sec' => timestamp && timestamp.split(':').map(&:to_i).reduce(0) { |seconds, part| (seconds * 60) + part },
@@ -120,7 +121,7 @@ class Telephony::CallTranscript
     seconds = seconds_for(item)
     timestamp = item['timestamp'].presence || timestamp_for(seconds)
     { 'speaker' => speaker, 'speaker_label' => LABELS.fetch(speaker), 'timestamp' => timestamp,
-      'start_sec' => seconds, 'text' => text }.compact
+      'start_sec' => seconds, 'end_sec' => item['end_sec'], 'channel' => item['channel'], 'text' => text }.compact
   end
 
   def self.normalize_array_item(raw)
@@ -129,22 +130,30 @@ class Telephony::CallTranscript
   end
 
   def self.speaker_for(value)
+    return 'unknown' if value.to_s == 'unknown'
+
     value.to_s.match?(/\Acl\z|client|caller|customer|contact|user|клиент/i) ? 'client' : 'operator'
   end
 
   def self.seconds_for(item)
     if item['start_sec'].present?
       val = item['start_sec']
-      return (val.is_a?(Array) ? val.first : val).to_i
+      val = val.first if val.is_a?(Array)
+      return numeric_seconds(val)
     end
     return if item['timestamp'].blank?
 
     item['timestamp'].to_s.split(':').map(&:to_i).reduce(0) { |total, part| (total * 60) + part }
   end
 
+  def self.numeric_seconds(value)
+    value.is_a?(Numeric) && value.finite? ? value : value.to_i
+  end
+
   def self.timestamp_for(seconds)
     return if seconds.nil?
 
+    seconds = seconds.to_i
     Kernel.format('%<minutes>02d:%<seconds>02d', minutes: seconds / 60, seconds: seconds % 60)
   end
 

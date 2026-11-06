@@ -327,4 +327,65 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
       'transcript_items' => []
     )
   end
+
+  describe 'selected DEV VoiceCore provider' do
+    let(:adapter) { instance_double(Telephony::VoiceCoreRecordingTranscription) }
+    let(:local_result) do
+      { 'text' => '[00:00] Говорящий: Тест',
+        'transcript_items' => [{ 'speaker' => 'unknown', 'channel' => 0, 'start_sec' => 0.2, 'end_sec' => 1.1, 'text' => 'Тест' }],
+        'summary' => '', 'outcome' => '', 'topics' => [],
+        'provider' => 'voicecore', 'model' => 'b' * 64,
+        'voicecore' => { 'channel_status' => 'mono', 'model_version' => 'b' * 64 },
+        'audio_probe' => { 'channels' => 1, 'duration_seconds' => 31 } }
+    end
+
+    before do
+      allow(Telephony::VoiceCoreClient).to receive(:selected_for?).with(account).and_return(true)
+      allow(Telephony::VoiceCoreRecordingTranscription).to receive(:new).with(call_session).and_return(adapter)
+      allow(adapter).to receive(:perform) { local_result.deep_dup }
+      allow(Llm::Runtime).to receive(:chat)
+      allow(Telephony::CallTranscript).to receive(:probe)
+      allow(Telephony::CallTranscript).to receive(:channel_activity)
+    end
+
+    it 'uses native storage/message without cloud normalization, probes or enrichment' do
+      described_class.new(call_session).perform
+      expect(Llm::Runtime).not_to have_received(:transcribe)
+      expect(Llm::Runtime).not_to have_received(:chat)
+      expect(Telephony::CallTranscript).not_to have_received(:probe)
+      expect(Telephony::CallTranscript).not_to have_received(:channel_activity)
+      metadata = call_session.reload.metadata.dig('recording', 'transcription')
+      expect(metadata).to include('provider' => 'voicecore', 'model' => 'b' * 64, 'source' => 'audio_transcription')
+      expect(metadata['transcript_items'].first).to include('speaker' => 'unknown', 'channel' => 0, 'start_sec' => 0.2, 'end_sec' => 1.1)
+      expect(voice_message.reload.content_attributes.dig('data', 'transcript_items')).to eq(metadata['transcript_items'])
+    end
+
+    it 'preserves native cache, force and one-time call metering' do
+      described_class.new(call_session).perform
+      described_class.new(call_session).perform
+      described_class.new(call_session, force: true).perform
+      expect(Accounts::AiUsageEvent.count).to eq(1)
+      expect(Accounts::MonthlyAiUsageService.new(account.reload).call_analysis_seconds_consumed).to eq(31)
+      expect(adapter).to have_received(:perform).twice
+    end
+
+    it 'returns a fixed local error without inference fallback or usage on failure' do
+      allow(adapter).to receive(:perform).and_raise(Telephony::VoiceCoreClient::Error.new('invalid_response'))
+      result = described_class.new(call_session).perform
+      expect(result).to eq(error: 'VoiceCore transcription unavailable', error_code: 'invalid_response', retryable: false)
+      expect(Llm::Runtime).not_to have_received(:transcribe)
+      expect(Llm::Runtime).not_to have_received(:chat)
+      expect(Accounts::AiUsageEvent.count).to eq(0)
+      expect(call_session.reload.metadata.dig('recording', 'transcription')).to be_nil
+    end
+
+    it 'keeps the native account flag and quota before local inference' do
+      account.update!(call_transcriptions: false)
+      expect(described_class.new(call_session).perform).to eq(error: 'Transcription not available')
+      account.update!(call_transcriptions: true)
+      allow(account).to receive(:call_analysis_quota_available?).and_return(false)
+      expect(described_class.new(call_session).perform).to eq(error: 'Transcription not available')
+      expect(adapter).not_to have_received(:perform)
+    end
+  end
 end

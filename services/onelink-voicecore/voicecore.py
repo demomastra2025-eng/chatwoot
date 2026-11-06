@@ -23,6 +23,7 @@ import stat
 import subprocess
 import tempfile
 import threading
+import time
 import unicodedata
 import wave
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -37,6 +38,7 @@ MAX_DURATION = 1800
 MAX_TEXT = 500_000
 DEADLINE = 110
 TOOL_TIMEOUT = 20
+INPUT_DEADLINE = 10
 GIGA = "sherpa-onnx-nemo-ctc-punct-giga-am-v3-russian-2025-12-16"
 SENSE = "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17"
 VOSK = "vosk-model-kz-0.42"
@@ -439,18 +441,69 @@ def make_handler(worker, token, accounts):
 
         def setup(self):
             super().setup()
-            self.connection.settimeout(10)
+            self.connection.settimeout(INPUT_DEADLINE)
+            self._input_lock = threading.Lock()
+            self._input_active = True
+            self._input_expired = False
+            self._input_deadline = time.monotonic() + INPUT_DEADLINE
+            self._input_timer = threading.Timer(INPUT_DEADLINE, self._expire_input)
+            self._input_timer.daemon = True
+            self._input_timer.start()
+
+        def _shutdown_input(self):
+            # Retain the socket object: a recycled raw descriptor must never be used.
+            try:
+                self.connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+        def _expire_input(self):
+            with self._input_lock:
+                if not self._input_active:
+                    return
+                self._input_active = False
+                self._input_expired = True
+            self._shutdown_input()
+
+        def _complete_input(self):
+            # The monotonic check also closes the gate if timer scheduling is late.
+            with self._input_lock:
+                expired = self._input_expired or time.monotonic() >= self._input_deadline
+                self._input_active = False
+                self._input_expired = expired
+            self._input_timer.cancel()
+            self._input_timer.join()
+            if expired:
+                self._shutdown_input()
+                raise Failure("REQUEST_TIMEOUT", 408)
+
+        def finish(self):
+            # Runs for unauthorized GETs, parse failures, EOF and body exceptions too.
+            with self._input_lock:
+                self._input_active = False
+            self._input_timer.cancel()
+            self._input_timer.join()  # Reap before the server releases this handler slot.
+            super().finish()
+
+        def handle(self):
+            try:
+                super().handle()
+            except OSError:
+                pass  # Deadline/disconnect errors must not log raw request tracebacks.
 
         def log_message(self, *_args):
             pass  # Never log jobs, transcripts, tokens, audio paths or bodies.
 
         def respond(self, status, body):
             payload = canonical(body)
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            except OSError:
+                pass  # An expired or disconnected socket cannot receive an error.
 
         def dispatch(self):
             try:
@@ -459,6 +512,7 @@ def make_handler(worker, token, accounts):
                         supplied[0].encode("utf-8"), f"Bearer {token}".encode("utf-8")):
                     raise Failure("UNAUTHORIZED", 401)
                 if self.command == "GET" and self.path in ("/health", "/ready", "/version"):
+                    self._complete_input()
                     ready = worker.poll_ready()
                     self.respond(200 if self.path != "/ready" or ready else 503,
                                  {"ready": ready, "schema": RESPONSE_SCHEMA,
@@ -483,6 +537,7 @@ def make_handler(worker, token, accounts):
                 if len(payload) != length:
                     raise Failure("TRUNCATED_BODY", 400)
                 body = validate_request(load_json(payload), accounts)
+                self._complete_input()
                 self.respond(200, worker.transcribe(body))
             except Failure as error:
                 self.respond(error.status, {"error": {"code": error.code}})

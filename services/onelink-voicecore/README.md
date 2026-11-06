@@ -54,7 +54,8 @@ dedicated user. These deployment controls are necessary and are not installed by
 this package; do not treat deleting cloud code as an OS-level network boundary.
 
 Limits: input100MiB/1800s/1–2channels/8–48kHz, JSON16KiB, response2MiB, one active
-inference, four bounded HTTP handlers, accept backlog1, request read10s and total
+inference, four bounded HTTP handlers, accept backlog1, absolute monotonic10s
+header+body read/validation budget (in addition to inactivity timeout), and total
 inference110s. Native decoder timeout terminates/reaps the worker process group,
 including ffmpeg, and marks not-ready until service restart; no automatic retry
 or paid fallback. These are operational limits, not latency promises.
