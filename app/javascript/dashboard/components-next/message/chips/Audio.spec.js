@@ -50,6 +50,8 @@ vi.mock('@chatwoot/utils', () => ({ downloadFile: vi.fn() }));
 
 import AudioChip from './Audio.vue';
 import { downloadFile } from '@chatwoot/utils';
+import { useAlert } from 'dashboard/composables';
+import { useAudioPlaybackState } from '../audioPlaybackState';
 
 const RECORDING_URL =
   '/api/v1/accounts/77/telephony/calls/sipuni%3Alocal%3Aabc/recording?recording_token=signed';
@@ -125,6 +127,108 @@ describe('Audio chip playback', () => {
       .spyOn(window.HTMLElement.prototype, 'clientWidth', 'get')
       .mockReturnValue(width);
   };
+
+  it.each([NaN, Infinity])(
+    'updates late native duration after metadata reported %s',
+    async initialDuration => {
+      withContainerWidth(0);
+      const chip = mountChip();
+      await playButton(chip).trigger('click');
+      await flushPromises();
+
+      const audio = chip.find('audio').element;
+      let nativeDuration = initialDuration;
+      Object.defineProperty(audio, 'duration', {
+        configurable: true,
+        get: () => nativeDuration,
+      });
+      await chip.find('audio').trigger('loadedmetadata');
+      const state = useAudioPlaybackState(chip.props('attachment').id);
+      expect(state.value.timeLabel).toBe('00:00 / 00:00');
+
+      nativeDuration = 20.76;
+      await chip.find('audio').trigger('durationchange');
+      expect(state.value.timeLabel).toBe('00:00 / 00:20');
+      nativeDuration = Infinity;
+      await chip.find('audio').trigger('durationchange');
+      expect(state.value.timeLabel).toBe('00:00 / 00:20');
+    }
+  );
+
+  it.each(['NotSupportedError', 'AbortError'])(
+    'explains a current native %s without exposing its message',
+    async errorName => {
+      withContainerWidth(0);
+      playSpy.mockRejectedValueOnce(
+        new DOMException('private media URL', errorName)
+      );
+      const chip = mountChip();
+      await playButton(chip).trigger('click');
+      await flushPromises();
+
+      expect(useAlert).toHaveBeenCalledExactlyOnceWith(
+        'CONVERSATION.REPLYBOX.TIP_AUDIORECORDER_ERROR'
+      );
+    }
+  );
+
+  it('plays the native fallback on the same click when waveform play rejects', async () => {
+    withContainerWidth(300);
+    const chip = mountChip();
+    await flushPromises();
+    const [waveSurfer] = waveSurferState.instances;
+    waveSurfer.handlers.ready(32.5);
+    waveSurfer.playPause.mockRejectedValueOnce(new Error('waveform failed'));
+    await playButton(chip).trigger('click');
+    await flushPromises();
+
+    expect(waveSurfer.destroy).toHaveBeenCalledTimes(1);
+    expect(playSpy).toHaveBeenCalledTimes(1);
+    expect(chip.find('audio').attributes('src')).toContain(
+      'recording_token=signed'
+    );
+  });
+
+  it.each([
+    ['native', 'URL change'],
+    ['native', 'unmount'],
+    ['waveform', 'URL change'],
+    ['waveform', 'unmount'],
+  ])('ignores a stale %s play rejection after %s', async (player, change) => {
+    withContainerWidth(player === 'native' ? 0 : 300);
+    const chip = mountChip();
+    await flushPromises();
+    let rejectPlay;
+    const pendingPlay = new Promise((resolve, reject) => {
+      rejectPlay = reject;
+    });
+    if (player === 'native') {
+      playSpy.mockReturnValueOnce(pendingPlay);
+    } else {
+      const [waveSurfer] = waveSurferState.instances;
+      waveSurfer.handlers.ready(32.5);
+      waveSurfer.playPause.mockReturnValueOnce(pendingPlay);
+    }
+    await playButton(chip).trigger('click');
+    await flushPromises();
+
+    if (change === 'URL change') {
+      await chip.setProps({
+        attachment: {
+          ...chip.props('attachment'),
+          dataUrl: '/synthetic/replacement.ogg',
+        },
+      });
+    } else {
+      chip.unmount();
+      wrapper = null;
+    }
+    rejectPlay(new DOMException('old source aborted', 'AbortError'));
+    await flushPromises();
+
+    expect(useAlert).not.toHaveBeenCalled();
+    expect(playSpy).toHaveBeenCalledTimes(player === 'native' ? 1 : 0);
+  });
 
   it('plays through the native audio element when the chip was mounted hidden', async () => {
     withContainerWidth(0);

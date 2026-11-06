@@ -125,6 +125,10 @@ const waveSurfer = ref(null);
 const isFallbackMode = ref(false);
 const hasNativeAudioFailed = ref(false);
 const waveformInitFrameId = ref(0);
+let playbackGeneration = 0;
+let isUnmounted = false;
+const isCurrentPlayback = generation =>
+  !isUnmounted && generation === playbackGeneration;
 
 const { uid } = getCurrentInstance();
 
@@ -188,8 +192,9 @@ const resetPlayerState = (muted = false) => {
   isMuted.value = muted;
 };
 
-const loadNativeAudio = async () => {
+const loadNativeAudio = async (generation = playbackGeneration) => {
   await nextTick();
+  if (!isCurrentPlayback(generation)) return;
 
   const audio = audioElement.value;
   if (!audio || !timeStampURL.value) return;
@@ -200,15 +205,15 @@ const loadNativeAudio = async () => {
   audio.load();
 };
 
-const activateNativeFallback = async () => {
-  if (isFallbackMode.value) return;
+const activateNativeFallback = async (generation = playbackGeneration) => {
+  if (!isCurrentPlayback(generation) || isFallbackMode.value) return;
 
   const muted = isMuted.value;
   isFallbackMode.value = true;
   clearPendingWaveformInit();
   destroyWaveform();
   resetPlayerState(muted);
-  await loadNativeAudio();
+  await loadNativeAudio(generation);
 };
 
 const onWaveformError = async () => {
@@ -300,6 +305,7 @@ const scheduleWaveformInit = () => {
 };
 
 watch(timeStampURL, () => {
+  playbackGeneration += 1;
   const muted = isMuted.value;
   isFallbackMode.value = false;
   hasNativeAudioFailed.value = false;
@@ -315,6 +321,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  isUnmounted = true;
+  playbackGeneration += 1;
   clearPendingWaveformInit();
   unloadNativeAudio();
   destroyWaveform();
@@ -385,14 +393,17 @@ const seek = event => {
   currentTime.value = nextTime;
 };
 
-const playNativeAudio = async () => {
+const playNativeAudio = async (generation = playbackGeneration) => {
+  if (!isCurrentPlayback(generation)) return;
   const audio = audioElement.value;
   if (!audio) return;
 
   try {
     await audio.play();
   } catch {
+    if (!isCurrentPlayback(generation)) return;
     isPlaying.value = false;
+    useAlert(t('CONVERSATION.REPLYBOX.TIP_AUDIORECORDER_ERROR'));
   }
 };
 
@@ -403,6 +414,7 @@ const playNativeAudio = async () => {
 // click in that window, play through the native <audio> element.
 const playBeforeWaveformReady = async () => {
   if (!timeStampURL.value) return;
+  const generation = playbackGeneration;
 
   emitter.emit('pause_playing_audio', uid);
 
@@ -410,12 +422,12 @@ const playBeforeWaveformReady = async () => {
     // The native source failed earlier (network blip, expired signed URL):
     // load it again from the current URL instead of replaying the dead one.
     hasNativeAudioFailed.value = false;
-    await loadNativeAudio();
+    await loadNativeAudio(generation);
   } else {
-    await activateNativeFallback();
+    await activateNativeFallback(generation);
   }
 
-  await playNativeAudio();
+  await playNativeAudio(generation);
 };
 
 const playOrPause = async () => {
@@ -427,10 +439,13 @@ const playOrPause = async () => {
   emitter.emit('pause_playing_audio', uid);
 
   if (waveSurfer.value && !isFallbackMode.value) {
+    const generation = playbackGeneration;
     try {
       await waveSurfer.value.playPause();
     } catch {
-      await activateNativeFallback();
+      if (!isCurrentPlayback(generation)) return;
+      await activateNativeFallback(generation);
+      await playNativeAudio(generation);
     }
     return;
   }
@@ -496,12 +511,19 @@ const downloadAudio = async () => {
   }
 };
 
+const onNativeAudioDurationChange = () => {
+  if (!isFallbackMode.value || !audioElement.value) return;
+
+  const nativeDuration = audioElement.value.duration;
+  if (Number.isFinite(nativeDuration) && nativeDuration > 0) {
+    duration.value = nativeDuration;
+  }
+};
+
 const onNativeAudioLoadedMetadata = () => {
   if (!isFallbackMode.value || !audioElement.value) return;
 
-  duration.value = Number.isFinite(audioElement.value.duration)
-    ? audioElement.value.duration
-    : 0;
+  onNativeAudioDurationChange();
   currentTime.value = audioElement.value.currentTime || 0;
   isAudioReady.value = true;
   isMuted.value = audioElement.value.muted;
@@ -632,6 +654,7 @@ watchEffect(() => {
       class="hidden"
       preload="metadata"
       @loadedmetadata="onNativeAudioLoadedMetadata"
+      @durationchange="onNativeAudioDurationChange"
       @timeupdate="onNativeAudioTimeUpdate"
       @play="onNativeAudioPlay"
       @pause="onNativeAudioPause"
