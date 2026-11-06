@@ -643,7 +643,8 @@ class Captain::ToolRegistry
         definition(
           id: 'search_contacts',
           title: 'Search Contacts',
-          description: 'Search contacts by name, email, or phone number',
+          description: 'Search contacts by partial name or full name in Cyrillic or Latin, email, or phone number. ' \
+                       'A phone number is not required. If several contacts match, use the candidates to clarify which contact is intended.',
           group_name: 'Contacts',
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,

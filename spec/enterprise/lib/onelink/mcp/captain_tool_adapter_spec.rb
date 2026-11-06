@@ -92,6 +92,22 @@ RSpec.describe Onelink::Mcp::CaptainToolAdapter do
   end
 
   describe '#tools' do
+    context 'when exposing the native contact search contract from the registry' do
+      let(:available_tools) { [Captain::ToolRegistry.definition_for('search_contacts').to_h] }
+
+      it 'advertises cross-script full names, optional phone and candidate clarification with the native input schema' do
+        tool = adapter.tools.fetch(0)
+        native_tool = Captain::Tools::Account::SearchContactsService.new(assistant, user: user)
+
+        expect(tool[:name]).to eq('search_contacts')
+        expect(tool[:description]).to start_with(native_tool.description)
+        expect(tool[:description]).to include('full name in Cyrillic or Latin', 'A phone number is not required', 'several contacts match')
+        expect(tool.dig(:inputSchema, 'properties').keys).to contain_exactly('email', 'phone_number', 'name', 'limit')
+        expect(tool.dig(:inputSchema, 'properties', 'name', 'description')).to include('Cyrillic or Latin')
+        expect(tool.dig(:inputSchema, 'required')).not_to include('phone_number')
+      end
+    end
+
     context 'when assistant tool access is not explicitly configured' do
       it 'uses the available tool catalog once instead of resolving it again through allowed_tools_for' do
         tool_names = adapter.tools.pluck(:name)
