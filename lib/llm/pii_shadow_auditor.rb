@@ -91,7 +91,9 @@ module Llm::PiiShadowAuditor
 
   # KEYS: [1] inflight_key, [2] audited_key
   # ARGV: [1] lease_token, [2] inflight_ttl
-  ACQUIRE_INFLIGHT_SCRIPT = <<~LUA
+  ACQUIRE_INFLIGHT_SCRIPT = (Llm::PiiFeedbackMetrics::LUA_GUARDS + <<~LUA).freeze
+    expect_type(KEYS[1], 'string')
+    expect_type(KEYS[2], 'string')
     if redis.call('EXISTS', KEYS[2]) == 1 or redis.call('EXISTS', KEYS[1]) == 1 then
       return 0
     end

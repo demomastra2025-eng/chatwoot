@@ -198,9 +198,15 @@ RSpec.describe Llm::PiiShadowAuditor, :pii_feedback_native do
     expect(auditor.audit_masked_message!(text, account: account)).to include(status: :storage_unavailable, missed: nil)
     expect(auditor).not_to have_received(:invoke_decider)
     expect(counters).to include('audit_unavailable' => 1, 'audit_completed' => 0, 'audit_attempts' => 0)
-    $alfred.with { |conn| conn.del(inflight_key) }
+    audited_key = "#{auditor::DEDUP_REDIS_PREFIX}:audited:#{digest}"
+    $alfred.with do |conn|
+      conn.del(inflight_key)
+      conn.hset(audited_key, 'wrong', 'type')
+    end
+    expect(auditor.audit_masked_message!(text, account: account)).to include(status: :storage_unavailable, missed: nil)
+    $alfred.with { |conn| conn.del(audited_key) }
     expect(auditor.audit_masked_message!(text, account: account)[:status]).to eq(:completed)
-    expect(counters).to include('audit_unavailable' => 1, 'audit_completed' => 1, 'audit_attempts' => 1)
+    expect(counters).to include('audit_unavailable' => 2, 'audit_completed' => 1, 'audit_attempts' => 1)
     expect(auditor.audit_masked_message!(text, account: account)[:status]).to eq(:deduplicated)
   end
 end

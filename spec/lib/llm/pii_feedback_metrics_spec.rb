@@ -124,38 +124,40 @@ RSpec.describe Llm::PiiFeedbackMetrics do
     expect(described_class.summary(account_id: tenant_id)[:completed_per_eligible_check]).to be_nil
   end
 
-  it 'retries a queued storage failure through ActiveJob and completes once after recovery' do
-    allow(Account).to receive(:find_by).with(id: tenant_id).and_return(account)
-    auditor.record_mask_pass!('Синтетикповторхранилища', 'Синтетикповторхранилища', account_id: tenant_id)
-    calls = 0
-    allow(auditor).to receive(:redis_atomic_acquire_inflight).and_wrap_original do |original, *args|
-      calls += 1
-      raise Llm::PiiShadowAuditor::StorageUnavailable, 'synthetic storage failure' if calls == 1
+  context 'with queued storage retries', type: :job do
+    it 'retries a queued storage failure through ActiveJob and completes once after recovery' do
+      allow(Account).to receive(:find_by).with(id: tenant_id).and_return(account)
+      auditor.record_mask_pass!('Синтетикповторхранилища', 'Синтетикповторхранилища', account_id: tenant_id)
+      calls = 0
+      allow(auditor).to receive(:redis_atomic_acquire_inflight).and_wrap_original do |original, *args|
+        calls += 1
+        raise Llm::PiiShadowAuditor::StorageUnavailable, 'synthetic storage failure' if calls == 1
 
-      original.call(*args)
-    end
-    allow(auditor).to receive(:invoke_decider).and_return(response('clean'))
-    clear_enqueued_jobs
-    perform_enqueued_jobs(only: Llm::PiiShadowAuditJob) do
-      Llm::PiiShadowAuditJob.perform_now('Синтетикповторхранилища', account_id: tenant_id)
-    end
-    expect(calls).to eq(2)
-    expect(auditor).to have_received(:invoke_decider).once
-    expect(counters).to include('audit_completed' => 1, 'audit_unavailable' => 1, 'audit_attempts' => 1)
-  end
-
-  it 'stops queued retries after two storage failures and never invokes the decider' do
-    allow(Account).to receive(:find_by).with(id: tenant_id).and_return(account)
-    allow(auditor).to receive(:redis_atomic_acquire_inflight).and_raise(Llm::PiiShadowAuditor::StorageUnavailable, 'synthetic storage failure')
-    expect(auditor).not_to receive(:invoke_decider)
-    clear_enqueued_jobs
-    expect do
-      perform_enqueued_jobs(only: Llm::PiiShadowAuditJob) do
-        Llm::PiiShadowAuditJob.perform_now('Синтетикпределповторов', account_id: tenant_id)
+        original.call(*args)
       end
-    end.to raise_error(Llm::PiiShadowAuditor::StorageUnavailable)
-    expect(auditor).to have_received(:redis_atomic_acquire_inflight).twice
-    expect(counters).to include('audit_completed' => 0, 'audit_unavailable' => 2, 'audit_attempts' => 0)
+      allow(auditor).to receive(:invoke_decider).and_return(response('clean'))
+      clear_enqueued_jobs
+      perform_enqueued_jobs(only: Llm::PiiShadowAuditJob) do
+        Llm::PiiShadowAuditJob.perform_now('Синтетикповторхранилища', account_id: tenant_id)
+      end
+      expect(calls).to eq(2)
+      expect(auditor).to have_received(:invoke_decider).once
+      expect(counters).to include('audit_completed' => 1, 'audit_unavailable' => 1, 'audit_attempts' => 1)
+    end
+
+    it 'stops queued retries after two storage failures and never invokes the decider' do
+      allow(Account).to receive(:find_by).with(id: tenant_id).and_return(account)
+      allow(auditor).to receive(:redis_atomic_acquire_inflight).and_raise(Llm::PiiShadowAuditor::StorageUnavailable, 'synthetic storage failure')
+      expect(auditor).not_to receive(:invoke_decider)
+      clear_enqueued_jobs
+      expect do
+        perform_enqueued_jobs(only: Llm::PiiShadowAuditJob) do
+          Llm::PiiShadowAuditJob.perform_now('Синтетикпределповторов', account_id: tenant_id)
+        end
+      end.to raise_error(Llm::PiiShadowAuditor::StorageUnavailable)
+      expect(auditor).to have_received(:redis_atomic_acquire_inflight).twice
+      expect(counters).to include('audit_completed' => 0, 'audit_unavailable' => 2, 'audit_attempts' => 0)
+    end
   end
 
   it 'never caches a partial learned snapshot or a fake version when Redis fails during loading' do
