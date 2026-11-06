@@ -333,6 +333,7 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
       allow(Llm::Models).to receive(:supports_audio_input?).with('openai/gpt-audio-mini', account: account).and_return(true)
       allow(Llm::OpenRouterAudioInput).to receive(:ffmpeg_path).and_return('/usr/bin/ffmpeg')
 
+      expect(Telephony::CallTranscript).to receive(:probe).with(a_string_ending_with('.ogg')).and_return({})
       expect(Open3).to receive(:capture3) do |*args|
         destination_file_path = args.last
         expect(args).to include('/usr/bin/ffmpeg', '-i')
