@@ -7,7 +7,8 @@ RSpec.describe Telephony::VoiceCoreRecordingTranscription do
   let(:client) { instance_double(Telephony::VoiceCoreClient) }
   let(:response) do
     { 'dialogue_turns' => [{ 'speaker' => 'client', 'channel' => 0, 'start_sec' => 0.25, 'end_sec' => 1.5, 'text' => 'Тест' }],
-      'language' => 'ru', 'duration_sec' => 2.0, 'channels' => 2, 'channel_status' => 'mapped', 'model_version' => 'b' * 64 }
+      'language' => 'ru', 'duration_sec' => 2.0, 'channels' => 2, 'channel_status' => 'mapped',
+      'model_version' => Telephony::VoiceCoreClient::APPROVED_MANIFEST_SHA256 }
   end
 
   before do
@@ -22,7 +23,7 @@ RSpec.describe Telephony::VoiceCoreRecordingTranscription do
     expect(client).to have_received(:transcribe).with(account_id: 101, job_id: 'a' * 32, audio_filename: 'audio.wav',
                                                       channel_map: { '0' => 'client', '1' => 'operator' })
     expect(result['transcript_items'].first).to include('speaker' => 'client', 'start_sec' => 0.25, 'end_sec' => 1.5, 'channel' => 0)
-    expect(result['voicecore']).to include('model_version' => 'b' * 64, 'channel_status' => 'mapped')
+    expect(result['voicecore']).to include('model_version' => Telephony::VoiceCoreClient::APPROVED_MANIFEST_SHA256, 'channel_status' => 'mapped')
   end
 
   it 'handles zero-based and one-based numeric maps without guessing mixed conventions' do

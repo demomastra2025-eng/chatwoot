@@ -8,6 +8,8 @@ require 'uri'
 class Telephony::VoiceCoreClient
   REQUEST_SCHEMA = 'onelink.voicecore.request.v1'
   RESPONSE_SCHEMA = 'onelink.voicecore.response.v1'
+  # SHA256 of canonical services/onelink-voicecore/model-manifest.json, independently approved with this package.
+  APPROVED_MANIFEST_SHA256 = '1f18b6338ccb72b202aa89c942b3989775dc93af137e201da21846a676b6095e'
   MAX_REQUEST_BYTES = 16.kilobytes
   MAX_RESPONSE_BYTES = 2.megabytes
   MAX_DURATION_SECONDS = 1800
@@ -122,6 +124,8 @@ class Telephony::VoiceCoreClient
 
   def validate_response!(data, payload)
     validate_response_shape!(data, payload)
+    raise Error, 'unapproved_manifest' unless data['model_version'] == APPROVED_MANIFEST_SHA256
+
     validate_channels!(data, payload[:channel_map])
     data['dialogue_turns'].each { |turn| validate_turn!(turn, data, payload[:channel_map]) }
     raise Error, 'invalid_response' if data['dialogue_turns'].empty? != data['text'].strip.empty?

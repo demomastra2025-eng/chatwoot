@@ -334,8 +334,8 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
       { 'text' => '[00:00] Говорящий: Тест',
         'transcript_items' => [{ 'speaker' => 'unknown', 'channel' => 0, 'start_sec' => 0.2, 'end_sec' => 1.1, 'text' => 'Тест' }],
         'summary' => '', 'outcome' => '', 'topics' => [],
-        'provider' => 'voicecore', 'model' => 'b' * 64,
-        'voicecore' => { 'channel_status' => 'mono', 'model_version' => 'b' * 64 },
+        'provider' => 'voicecore', 'model' => Telephony::VoiceCoreClient::APPROVED_MANIFEST_SHA256,
+        'voicecore' => { 'channel_status' => 'mono', 'model_version' => Telephony::VoiceCoreClient::APPROVED_MANIFEST_SHA256 },
         'audio_probe' => { 'channels' => 1, 'duration_seconds' => 31 } }
     end
 
@@ -355,7 +355,8 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
       expect(Telephony::CallTranscript).not_to have_received(:probe)
       expect(Telephony::CallTranscript).not_to have_received(:channel_activity)
       metadata = call_session.reload.metadata.dig('recording', 'transcription')
-      expect(metadata).to include('provider' => 'voicecore', 'model' => 'b' * 64, 'source' => 'audio_transcription')
+      expect(metadata).to include('provider' => 'voicecore', 'model' => Telephony::VoiceCoreClient::APPROVED_MANIFEST_SHA256,
+                                  'source' => 'audio_transcription')
       expect(metadata['transcript_items'].first).to include('speaker' => 'unknown', 'channel' => 0, 'start_sec' => 0.2, 'end_sec' => 1.1)
       expect(voice_message.reload.content_attributes.dig('data', 'transcript_items')).to eq(metadata['transcript_items'])
     end
@@ -377,6 +378,15 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
       expect(Llm::Runtime).not_to have_received(:chat)
       expect(Accounts::AiUsageEvent.count).to eq(0)
       expect(call_session.reload.metadata.dig('recording', 'transcription')).to be_nil
+    end
+
+    it 'does not persist or meter an unapproved manifest and never switches to paid inference' do
+      allow(adapter).to receive(:perform).and_raise(Telephony::VoiceCoreClient::Error.new('unapproved_manifest'))
+      expect(described_class.new(call_session).perform).to include(error_code: 'unapproved_manifest', retryable: false)
+      expect(call_session.reload.metadata.dig('recording', 'transcription')).to be_nil
+      expect(Accounts::AiUsageEvent.count).to eq(0)
+      expect(Llm::Runtime).not_to have_received(:transcribe)
+      expect(Llm::Runtime).not_to have_received(:chat)
     end
 
     it 'keeps the native account flag and quota before local inference' do

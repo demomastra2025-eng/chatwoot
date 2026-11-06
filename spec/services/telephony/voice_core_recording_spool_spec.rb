@@ -75,4 +75,144 @@ RSpec.describe Telephony::VoiceCoreRecordingSpool do
     expect { service.open { raise 'must not yield' } }.to raise_error(Telephony::VoiceCoreClient::Error)
     expect(File.exist?(File.join(File.dirname(spool_root), account_id.to_s))).to be(false)
   end
+
+  private_modes = [0o750, 0o770, 0o707]
+  %w[root account].each do |boundary|
+    private_modes.each do |mode|
+      it "rejects #{boundary} permissions #{mode.to_s(8)} without changing them or copying bytes" do
+        FileUtils.mkdir_p(spool_root, mode: 0o700)
+        target = boundary == 'root' ? spool_root : File.join(spool_root, account_id.to_s)
+        Dir.mkdir(target, 0o700) unless target == spool_root
+        File.chmod(mode, target)
+
+        expect { service.open { raise 'must not yield' } }.to raise_error(Telephony::VoiceCoreClient::Error)
+        expect(File.stat(target).mode & 0o7777).to eq(mode)
+        expect(Storage::RecordingPaths).not_to have_received(:resolve)
+      end
+    end
+
+    it "rejects a foreign-owned #{boundary} even when mode and path identities otherwise agree" do
+      FileUtils.mkdir_p(spool_root, mode: 0o700)
+      target = boundary == 'root' ? spool_root : File.join(spool_root, account_id.to_s)
+      Dir.mkdir(target, 0o700) unless target == spool_root
+      foreign_stat = File.lstat(target).dup
+      allow(foreign_stat).to receive(:uid).and_return(Process.uid + 1)
+      allow(File).to receive(:lstat).and_call_original
+      allow(File).to receive(:lstat).with(Pathname.new(target)).and_return(foreign_stat)
+      allow(File).to receive(:open).and_wrap_original do |original, *args, &block|
+        result = original.call(*args, &block)
+        allow(result).to receive(:stat).and_return(foreign_stat) if args.first.to_s == target
+        result
+      end
+
+      expect { service.open { raise 'must not yield' } }.to raise_error(Telephony::VoiceCoreClient::Error)
+      expect(Storage::RecordingPaths).not_to have_received(:resolve)
+      expect(Dir.children(target)).to be_empty
+    end
+  end
+
+  %w[root account job].each do |boundary|
+    it "refuses a replaced #{boundary} inode and preserves both replacement and displaced original" do
+      staged = nil
+      original = nil
+      expect do
+        service.open do |spool|
+          staged = File.join(spool_root, account_id.to_s, spool.job_id, spool.audio_filename)
+          target = { 'root' => spool_root, 'account' => File.dirname(staged, 2), 'job' => File.dirname(staged) }.fetch(boundary)
+          File.rename(target, "#{target}-original")
+          original = staged.sub(target, "#{target}-original")
+          FileUtils.mkdir_p(File.dirname(staged), mode: 0o700)
+          File.binwrite(staged, 'replacement sentinel')
+        end
+      end.to raise_error(Telephony::VoiceCoreClient::Error) { |error| expect(error.code).to eq('unsafe_spool') }
+      expect(File.binread(staged)).to eq('replacement sentinel')
+      expect(File.binread(original)).to eq('synthetic audio bytes')
+    end
+  end
+
+  it 'refuses a replaced file inode without deleting either file' do
+    staged = nil
+    expect do
+      service.open do |spool|
+        staged = File.join(spool_root, account_id.to_s, spool.job_id, spool.audio_filename)
+        File.rename(staged, "#{staged}-original")
+        File.open(staged, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |file| file.write('replacement sentinel') }
+      end
+    end.to raise_error(Telephony::VoiceCoreClient::Error)
+    expect(File.binread(staged)).to eq('replacement sentinel')
+    expect(File.binread("#{staged}-original")).to eq('synthetic audio bytes')
+  end
+
+  it 'does not follow a parent replaced with a symlink during cleanup' do
+    staged = nil
+    foreign = File.join(directory, 'foreign')
+    expect do
+      service.open do |spool|
+        staged = File.join(spool_root, account_id.to_s, spool.job_id, spool.audio_filename)
+        File.rename(spool_root, "#{spool_root}-original")
+        FileUtils.mkdir_p(File.join(foreign, account_id.to_s, spool.job_id), mode: 0o700)
+        File.binwrite(File.join(foreign, account_id.to_s, spool.job_id, spool.audio_filename), 'foreign sentinel')
+        File.symlink(foreign, spool_root)
+      end
+    end.to raise_error(Telephony::VoiceCoreClient::Error)
+    expect(File.symlink?(spool_root)).to be(true)
+    expect(File.binread(staged)).to eq('foreign sentinel')
+  end
+
+  it 'does not unlink a substituted file symlink or its foreign target' do
+    staged = nil
+    foreign = File.join(directory, 'foreign.wav')
+    File.binwrite(foreign, 'foreign sentinel')
+    expect do
+      service.open do |spool|
+        staged = File.join(spool_root, account_id.to_s, spool.job_id, spool.audio_filename)
+        File.rename(staged, "#{staged}-original")
+        File.symlink(foreign, staged)
+      end
+    end.to raise_error(Telephony::VoiceCoreClient::Error)
+    expect(File.symlink?(staged)).to be(true)
+    expect(File.binread(foreign)).to eq('foreign sentinel')
+    expect(File.binread("#{staged}-original")).to eq('synthetic audio bytes')
+  end
+
+  it 'refuses changed staged file permissions and skips cleanup rather than changing them' do
+    staged = nil
+    expect do
+      service.open do |spool|
+        staged = File.join(spool_root, account_id.to_s, spool.job_id, spool.audio_filename)
+        File.chmod(0o644, staged)
+      end
+    end.to raise_error(Telephony::VoiceCoreClient::Error)
+    expect(File.binread(staged)).to eq('synthetic audio bytes')
+    expect(File.stat(staged).mode & 0o7777).to eq(0o644)
+  end
+
+  it 'enforces the cumulative remote byte limit and cleans up its own partial file' do
+    stub_const('Telephony::VoiceCoreRecordingSpool::MAX_AUDIO_BYTES', 5)
+    allow(Storage::RecordingPaths).to receive(:resolve).and_return(nil)
+    allow(remote).to receive(:exist?).with(key).and_return(true)
+    allow(remote).to receive(:download).with(key).and_yield('one').and_yield('two')
+
+    expect { service.open { raise 'must not yield' } }.to raise_error(Telephony::VoiceCoreClient::Error) do |error|
+      expect(error.code).to eq('audio_too_large')
+    end
+    expect(Dir.glob(File.join(spool_root, account_id.to_s, '*'))).to be_empty
+  end
+
+  it 'checks boundaries again before writing a newly arrived remote chunk' do
+    allow(Storage::RecordingPaths).to receive(:resolve).and_return(nil)
+    allow(remote).to receive(:exist?).with(key).and_return(true)
+    staged = nil
+    allow(remote).to receive(:download) do |_key, &block|
+      staged = Dir.glob(File.join(spool_root, account_id.to_s, '*', 'audio.wav')).fetch(0)
+      File.rename(File.dirname(staged), "#{File.dirname(staged)}-original")
+      Dir.mkdir(File.dirname(staged), 0o700)
+      File.binwrite(staged, 'replacement sentinel')
+      block.call('must not be written')
+    end
+
+    expect { service.open { raise 'must not yield' } }.to raise_error(Telephony::VoiceCoreClient::Error)
+    expect(File.binread(staged)).to eq('replacement sentinel')
+    expect(File.size(staged.sub(File.dirname(staged), "#{File.dirname(staged)}-original"))).to eq(0)
+  end
 end

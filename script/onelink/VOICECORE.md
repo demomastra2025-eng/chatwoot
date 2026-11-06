@@ -20,6 +20,8 @@
 
 Источник берётся только из trusted CallSession. Локальный путь разрешается native `Storage::RecordingPaths` с account ID; legacy basename разрешён только через его tenant-scoped resolver. Remote key проверяется native `Storage::RecordingMetadata.local_key` до любого remote чтения. Поддерживаются account-first/provider-account storage layouts. Remote download передаётся chunk-by-chunk в ограниченный spool.
 
+Configured spool root, account и job обязаны принадлежать текущему UID и иметь точный mode0700; существующие foreign/group/world-readable/writeable directories отвергаются без chmod/chown. Все ancestors проверяются без symlink. Rails удерживает nofollow directory/file descriptors и dev/inode/uid/mode identities до конца обработки, проверяет их перед записью, inference и очисткой. Подмена root/account/job/file либо прав/владельца даёт fixed error; cleanup пропускает удаление, а не следует подмене. После подмены остаётся собственный staged остаток для отдельной безопасной уборки.
+
 Rails создаёт private `<root>/<account_id>/<32hexjob>/audio.<ext>` (directory0700/file0600), сохраняя исходные байты/каналы. Расширения wav/mp3/ogg/m4a/flac, максимум100MiB. Runtime получает только account/job/фиксированное имя, доступ к spool только чтение; исходное storage не монтируется в runtime. Rails удаляет только свой job в ensure. Runtime обязан завершать worker/decode по deadline до client read deadline; аварийные остатки после process kill удаляются отдельной узкой TTL-процедурой перед повторным включением.
 
 `POST /transcribe`, Content-Type application/json, Bearer token. Request≤16KiB:
@@ -33,10 +35,10 @@ channel_map разрешается из native aliases; неизвестная/�
 Response≤2MiB со строго проверенными полями:
 
 ```json
-{"schema":"onelink.voicecore.response.v1","account_id":101,"job_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","text":"Тест","dialogue_turns":[{"speaker":"unknown","channel":0,"start_sec":0.2,"end_sec":0.4,"text":"Тест"}],"language":"ru","duration_sec":2.0,"channels":1,"channel_status":"mono","model_version":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+{"schema":"onelink.voicecore.response.v1","account_id":101,"job_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","text":"Тест","dialogue_turns":[{"speaker":"unknown","channel":0,"start_sec":0.2,"end_sec":0.4,"text":"Тест"}],"language":"ru","duration_sec":2.0,"channels":1,"channel_status":"mono","model_version":"1f18b6338ccb72b202aa89c942b3989775dc93af137e201da21846a676b6095e"}
 ```
 
-model_version — SHA256 pinned runtime manifest. channels=1|2; channel_status=mono|mapped|unmapped; language=ru|kk|en|mixed|unknown. Числа времени finite,0≤start≤end≤duration(+0.1s tolerance), duration≤1800s. mapped speaker обязан совпадать с явной картой; mono/unmapped speaker=unknown. Короткие реплики и overlap сохраняются. Unsupported channel count, decoder failure и exception не являются пустым успехом. Валидная тишина — text пусто и dialogue_turns пустые с корректными probe metadata; Rails сохраняет нейтральную summary/no_answer без LLM.
+model_version — точный SHA256 утверждённого canonical runtime manifest: `1f18b6338ccb72b202aa89c942b3989775dc93af137e201da21846a676b6095e`. Rails сверяет его с `VoiceCoreClient::APPROVED_MANIFEST_SHA256`; другой64hex — terminal error до persistence/metering. Для нового manifest нужны review и обновление кода, нового customer knob нет. channels=1|2; channel_status=mono|mapped|unmapped; language=ru|kk|en|mixed|unknown. Числа времени finite,0≤start≤end≤duration(+0.1s tolerance), duration≤1800s. mapped speaker обязан совпадать с явной картой; mono/unmapped speaker=unknown. Короткие реплики и overlap сохраняются. Unsupported channel count, decoder failure и exception не являются пустым успехом. Валидная тишина — text пусто и dialogue_turns пустые с корректными probe metadata; Rails сохраняет нейтральную summary/no_answer без LLM.
 
 Transport: connect2s, write10s, read120s, overall130s, automatic HTTP retry0, redirects запрещены. Runtime process deadline110s и bounded concurrency — серверная политика. Busy429/unavailable503/deadline504 и network timeout дают ограниченный retry штатным job (3попытки); invalid schema/auth/path/config — terminal. Клиент не переносит raw error body в лог. Лимиты — консервативные границы первого DEV, не обещание измеренной скорости.
 

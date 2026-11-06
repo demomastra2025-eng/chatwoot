@@ -7,7 +7,7 @@ RSpec.describe Telephony::VoiceCoreClient do
   let(:payload) do
     { schema: described_class::RESPONSE_SCHEMA, account_id: 101, job_id: job_id, text: 'Тест',
       dialogue_turns: [{ speaker: 'operator', channel: 0, start_sec: 0.2, end_sec: 1.4, text: 'Тест' }],
-      language: 'ru', duration_sec: 2.0, channels: 2, channel_status: 'mapped', model_version: 'b' * 64 }
+      language: 'ru', duration_sec: 2.0, channels: 2, channel_status: 'mapped', model_version: Telephony::VoiceCoreClient::APPROVED_MANIFEST_SHA256 }
   end
 
   around do |example|
@@ -50,6 +50,14 @@ RSpec.describe Telephony::VoiceCoreClient do
     expect { client.transcribe(**request_args) }.to raise_error(described_class::Error) { |error| expect(error.code).to eq('invalid_response') }
     stub_response(payload.merge(job_id: 'c' * 32))
     expect { client.transcribe(**request_args) }.to raise_error(described_class::Error)
+  end
+
+  it 'rejects any other well-formed manifest without making the failure retryable' do
+    stub_response(payload.merge(model_version: 'b' * 64))
+    expect { client.transcribe(**request_args) }.to raise_error(described_class::Error) do |error|
+      expect(error.code).to eq('unapproved_manifest')
+      expect(error.retryable).to be(false)
+    end
   end
 
   it 'rejects fabricated roles, nonfinite/out of range turns, and unrecognized response fields' do
