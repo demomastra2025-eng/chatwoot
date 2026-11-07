@@ -110,8 +110,12 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def update
-    @contact.assign_attributes(contact_update_params)
-    @contact.save!
+    ActiveRecord::Base.transaction do
+      Contacts::PhoneIdentityLock.acquire!(account_id: Current.account.id)
+      @contact.reload
+      @contact.assign_attributes(contact_update_params)
+      @contact.save!
+    end
     process_avatar_from_url
   end
 
@@ -242,13 +246,18 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   def resolve_updated_display_preferences(merged_attributes)
     prefs = (merged_attributes[Contact::DISPLAY_PREFERENCES_KEY] || {}).deep_stringify_keys
-    if resolved_update_name.present? && resolved_update_name != @contact.name && prefs[Contact::PRIMARY_NAME_SOURCE_KEY].blank?
+    if resolved_update_name.present? && resolved_update_name != @contact.name && !explicit_primary_name_source?
       prefs[Contact::PRIMARY_NAME_SOURCE_KEY] = { 'kind' => Contact::DISPLAY_SOURCE_KIND_MANUAL }
     end
     if (permitted_params[:avatar].present? || params[:avatar_url].present?) && prefs[Contact::PRIMARY_AVATAR_SOURCE_KEY].blank?
       prefs[Contact::PRIMARY_AVATAR_SOURCE_KEY] = { 'kind' => Contact::DISPLAY_SOURCE_KIND_CONTACT_AVATAR }
     end
     prefs
+  end
+
+  def explicit_primary_name_source?
+    attributes = permitted_params[:additional_attributes].to_h.with_indifferent_access
+    attributes.dig(Contact::DISPLAY_PREFERENCES_KEY, Contact::PRIMARY_NAME_SOURCE_KEY).present?
   end
 
   def contact_create_params

@@ -11,6 +11,16 @@ class WhatsappWeb::ContactSyncService
     return if ignored_remote_jid?
     return if source_id.blank?
 
+    ActiveRecord::Base.transaction do
+      Contacts::PhoneIdentityLock.acquire!(account_id: channel.account_id)
+      @stored_name_profiles = {}
+      sync_contact
+    end
+  end
+
+  private
+
+  def sync_contact
     contact_inbox = find_or_create_contact_inbox
     return if contact_inbox.blank?
 
@@ -23,8 +33,6 @@ class WhatsappWeb::ContactSyncService
     retry_failed_provisional_messages(contact_inbox.contact)
     contact_inbox
   end
-
-  private
 
   def raw_remote_jid
     @raw_remote_jid ||= contact_payload[:remoteJid].to_s.presence
@@ -88,8 +96,10 @@ class WhatsappWeb::ContactSyncService
   end
 
   def display_name(contact = nil, profile: nil)
-    value = preferred_display_name || stored_provider_display_name(contact: contact, profile: profile) ||
-            resolved_phone_number(contact) || group_fallback_display_name || source_id
+    value = name_resolver(contact, profile: profile).display_name(
+      provider_name: preferred_display_name || stored_provider_display_name(contact: contact, profile: profile),
+      identity_name: resolved_phone_number(contact) || group_fallback_display_name || source_id
+    )
     value.to_s.truncate(100)
   end
 
@@ -108,9 +118,22 @@ class WhatsappWeb::ContactSyncService
       name: display_name,
       phone_number: phone_number,
       identifier: contact_identifier,
-      additional_attributes: additional_attributes,
+      additional_attributes: additional_attributes.merge(creation_display_preferences),
       avatar_url: profile_pic_url
     }.compact
+  end
+
+  def creation_display_preferences
+    {
+      Contact::DISPLAY_PREFERENCES_KEY => {
+        Contact::PRIMARY_NAME_SOURCE_KEY => {
+          'kind' => Contact::DISPLAY_SOURCE_KIND_CHANNEL_PROFILE,
+          'provider' => 'whatsapp_web',
+          'inbox_id' => channel.inbox.id,
+          'source_id' => source_id
+        }
+      }
+    }
   end
 
   def additional_attributes
@@ -147,12 +170,6 @@ class WhatsappWeb::ContactSyncService
           source: contact.display_source_for_contact_inbox(contact_inbox)
         )
       end
-    elsif contact_inbox.present? && should_initialize_primary_name_source?(contact) && whatsapp_primary_contact?(contact)
-      merged_attributes = contact.merge_display_source(
-        additional_attributes: merged_attributes,
-        key: Contact::PRIMARY_NAME_SOURCE_KEY,
-        source: contact.display_source_for_contact_inbox(contact_inbox)
-      )
     end
 
     updates[:additional_attributes] = merged_attributes if merged_attributes != current_attributes
@@ -229,6 +246,7 @@ class WhatsappWeb::ContactSyncService
 
   def whatsapp_channel_profile(contact = nil)
     profile = {
+      inbox_id: channel.inbox.id,
       identifier: contact_identifier,
       source_id: source_id.to_s,
       canonical_jid: canonical_remote_jid,
@@ -242,7 +260,33 @@ class WhatsappWeb::ContactSyncService
       provisional_whatsapp_identity: lid_only_identity?
     }.compact.deep_stringify_keys
 
-    merge_provider_display_name!(profile)
+    merge_provider_display_name!(profile).merge(name_resolver(contact).phonebook_attributes)
+  end
+
+  def name_resolver(contact = nil, profile: nil)
+    WhatsappWeb::ContactNameResolver.new(
+      payload: contact_payload,
+      stored_profiles: stored_name_profiles(contact) + [profile&.profile_data].compact,
+      group: group_remote_jid?
+    )
+  end
+
+  def stored_name_profiles(contact)
+    return [] if contact.blank?
+
+    @stored_name_profiles ||= {}
+    cache_key = [contact.id, @contact_inbox&.id]
+    return @stored_name_profiles[cache_key] if @stored_name_profiles.key?(cache_key)
+
+    aliases = identity_aliases_for(contact)
+    aliases << @contact_inbox.source_id if @contact_inbox&.contact_id == contact.id
+    @stored_name_profiles[cache_key] = ContactChannelProfile.where(
+      account_id: channel.account_id,
+      contact_id: contact.id,
+      inbox_id: channel.inbox.id,
+      provider: 'whatsapp_web',
+      source_id: aliases.compact.uniq
+    ).pluck(:profile_data)
   end
 
   def should_update_contact_identifier?(contact)
@@ -303,34 +347,31 @@ class WhatsappWeb::ContactSyncService
   end
 
   def should_replace_contact_name?(contact, contact_inbox:)
-    current_display_name = display_name(contact)
-    current_phone_number = resolved_phone_number(contact)
-
-    return false if current_display_name.blank?
-
-    replaceable_current_name =
-      contact.name.blank? ||
-      placeholder_display_name?(contact.name) ||
-      technical_identity_name?(contact.name, contact: contact) ||
-      contact.name == contact.phone_number ||
-      (current_phone_number.present? && contact.name == current_phone_number)
-
-    normalized_name = contact.name.to_s.gsub(/\D/, '')
-    normalized_phone = current_phone_number.to_s.gsub(/\D/, '')
-
-    replaceable_current_name ||=
-      current_phone_number.present? &&
-      normalized_name.present? &&
-      normalized_name == normalized_phone
+    return false if display_name(contact).blank?
 
     contact.name_updates_allowed_for?(
       contact_inbox: contact_inbox,
-      replaceable_current_name: replaceable_current_name
+      replaceable_current_name: replaceable_contact_name?(contact),
+      equivalent_contact_inbox: equivalent_name_contact_inbox(contact)
     )
   end
 
-  def should_initialize_primary_name_source?(contact)
-    contact.primary_name_source.blank? && contact.name.to_s.strip == display_name(contact).to_s.strip
+  def replaceable_contact_name?(contact)
+    contact.name.blank? || placeholder_display_name?(contact.name) || technical_identity_name?(contact.name, contact: contact) ||
+      contact.name == contact.phone_number || matches_phone_name?(contact.name, resolved_phone_number(contact))
+  end
+
+  def matches_phone_name?(name, phone)
+    return false if phone.blank?
+
+    normalized_name = name.to_s.gsub(/\D/, '')
+    normalized_name.present? && normalized_name == phone.to_s.gsub(/\D/, '')
+  end
+
+  def equivalent_name_contact_inbox(contact)
+    return unless resolved_lid_identity?
+
+    channel.inbox.contact_inboxes.find_by(contact_id: contact.id, source_id: lid_jid)
   end
 
   def should_replace_profile_display_name?(profile, contact:)
@@ -422,6 +463,8 @@ class WhatsappWeb::ContactSyncService
   end
 
   def resolved_channel_profile_display_name(contact, profile)
+    return display_name(contact, profile: profile) if name_resolver(contact, profile: profile).phonebook_attributes.present?
+
     return display_name(contact, profile: profile) if should_replace_profile_display_name?(profile, contact: contact)
 
     profile.display_name
@@ -656,10 +699,16 @@ class WhatsappWeb::ContactSyncService
   # Returns true only when the records were merged; the locked re-check can still refuse (a provider write that
   # started after the unlocked pre-check), and callers then keep the source contact and block the identity update.
   def merge_contact_records!(source_contact:, target_contact:)
-    Contacts::ChannelSyncMergeService.new(
+    result = Contacts::ChannelSyncMergeService.new(
       source_contact: source_contact,
-      target_contact: target_contact
-    ) { preferred_contact_name(target_contact, source_contact) }.perform
+      target_contact: target_contact,
+      name_source_inbox: channel.inbox
+    ) do
+      @stored_name_profiles = {}
+      preferred_contact_name(target_contact, source_contact)
+    end.perform
+    @stored_name_profiles = {} if result
+    result
   end
 
   def preferred_contact_name(target_contact, source_contact)

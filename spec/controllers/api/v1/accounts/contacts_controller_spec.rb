@@ -932,6 +932,57 @@ RSpec.describe 'Contacts API', type: :request do
         )
       end
 
+      it 'marks a name-only edit as manual when a channel was previously selected' do
+        inbox = create(:inbox, account: account)
+        source = create(:contact_inbox, contact: contact, inbox: inbox)
+        create(:contact_channel_profile, contact_inbox: source, display_name: contact.name)
+        contact.update!(additional_attributes: contact.merge_display_source(
+          additional_attributes: contact.additional_attributes,
+          key: Contact::PRIMARY_NAME_SOURCE_KEY,
+          source: contact.display_source_for_contact_inbox(source)
+        ))
+
+        patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
+              headers: admin.create_new_auth_token, params: { name: 'Manual Alias' }, as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(contact.reload.primary_name_source).to eq('kind' => 'manual')
+      end
+
+      it 'preserves an explicit channel selection submitted with its name' do
+        inbox = create(:inbox, account: account)
+        source = create(:contact_inbox, contact: contact, inbox: inbox)
+        create(:contact_channel_profile, contact_inbox: source, display_name: 'Selected Channel')
+        selected_source = contact.display_source_for_contact_inbox(source)
+
+        patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
+              headers: admin.create_new_auth_token,
+              params: { name: 'Selected Channel', additional_attributes: { display_preferences: { primary_name_source: selected_source } } },
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(contact.reload.primary_name_source).to eq(selected_source)
+      end
+
+      it 'keeps explicitly submitted source metadata authoritative rather than guessing intent from a changed name' do
+        inbox = create(:inbox, account: account)
+        source = create(:contact_inbox, contact: contact, inbox: inbox)
+        create(:contact_channel_profile, contact_inbox: source, display_name: contact.name)
+        attributes = contact.merge_display_source(
+          additional_attributes: contact.additional_attributes,
+          key: Contact::PRIMARY_NAME_SOURCE_KEY,
+          source: contact.display_source_for_contact_inbox(source)
+        )
+        contact.update!(additional_attributes: attributes)
+
+        patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
+              headers: admin.create_new_auth_token,
+              params: { name: '15550000011', additional_attributes: attributes }, as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(contact.reload.primary_name_source).to eq(attributes.dig('display_preferences', 'primary_name_source'))
+      end
+
       it 'prevents the update of contact of another account' do
         other_account = create(:account)
         other_contact = create(:contact, account: other_account)
