@@ -94,7 +94,10 @@ const syncStateFromContact = contactData => {
     phoneNumber = '',
     additionalAttributes = {},
   } = contactData || {};
-  const { firstName, lastName } = splitName(name || '');
+  // A parent echo must preserve the name parts the user is editing.
+  // Split again only for a different contact or an externally changed name.
+  const { firstName, lastName } =
+    id === state.id && name === state.name ? state : splitName(name || '');
   const {
     description = '',
     companyName = '',
