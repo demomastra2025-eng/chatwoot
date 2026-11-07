@@ -2253,6 +2253,7 @@ export default {
           v-model="message"
           :conversation-id="conversationId"
           :editor-id="editorStateId"
+          :focus-on-mount="false"
           class="input popover-prosemirror-menu"
           compact
           :is-private="isOnPrivateNote"

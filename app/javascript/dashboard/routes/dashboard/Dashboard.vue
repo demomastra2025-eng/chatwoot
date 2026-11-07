@@ -227,6 +227,12 @@ export default {
       @show-create-account-modal="openCreateAccountModal"
       @close-mobile-sidebar="closeMobileSidebar"
     />
+    <div
+      v-if="isMobileSidebarOpen"
+      data-testid="mobile-sidebar-backdrop"
+      class="fixed inset-0 z-30 bg-n-alpha-black2 md:hidden"
+      @click.stop.prevent="closeMobileSidebar"
+    />
 
     <main
       class="flex flex-1 h-full w-full min-h-0 px-0 overflow-hidden bg-n-surface-1"

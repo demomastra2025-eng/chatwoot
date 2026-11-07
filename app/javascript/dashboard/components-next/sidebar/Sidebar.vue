@@ -689,8 +689,10 @@ onMounted(async () => {
   ]);
 });
 
-const closeMobileSidebar = () => {
+const closeMobileSidebar = event => {
   if (!props.isMobileSidebarOpen) return;
+  event?.stopPropagation?.();
+  event?.preventDefault?.();
   emit('closeMobileSidebar');
 };
 

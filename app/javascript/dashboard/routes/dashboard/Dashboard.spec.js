@@ -98,6 +98,8 @@ describe('Dashboard call windows', () => {
   });
 
   it('shows the trial end date to account administrators only', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-28T10:00:00+05:00'));
     accountState.account = {
       custom_attributes: {
         plan_type: 'trial',
@@ -118,6 +120,7 @@ describe('Dashboard call windows', () => {
     expect(agentView.find('[data-testid="trial-active-banner"]').exists()).toBe(
       false
     );
+    vi.useRealTimers();
   });
 
   it('shows the standalone call cards only to employees without the phone widget', async () => {
@@ -150,5 +153,28 @@ describe('Dashboard call windows', () => {
       true
     );
     expect(wrapper.vm.trialTimer).toBeNull();
+  });
+
+  it('renders a mobile sidebar backdrop when open and closes the sidebar on tap without propagating clicks', async () => {
+    const wrapper = mountDashboard();
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="mobile-sidebar-backdrop"]').exists()
+    ).toBe(false);
+
+    wrapper.vm.toggleMobileSidebar();
+    await flushPromises();
+
+    const backdrop = wrapper.find('[data-testid="mobile-sidebar-backdrop"]');
+    expect(backdrop.exists()).toBe(true);
+
+    await backdrop.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.vm.isMobileSidebarOpen).toBe(false);
+    expect(
+      wrapper.find('[data-testid="mobile-sidebar-backdrop"]').exists()
+    ).toBe(false);
   });
 });

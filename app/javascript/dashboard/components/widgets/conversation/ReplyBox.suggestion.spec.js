@@ -53,7 +53,11 @@ const CopilotEditorSectionStub = {
   >{{ generatedContent }}</div>`,
 };
 const PassThroughStub = { inheritAttrs: false, template: '<slot />' };
-const MessageEditorStub = { template: '<div data-test="message-editor" />' };
+const MessageEditorStub = {
+  props: ['focusOnMount'],
+  template:
+    '<div data-test="message-editor" :data-focus-on-mount="String(focusOnMount)" />',
+};
 const ReplyBottomPanelStub = { template: '<div data-test="reply-panel" />' };
 
 const mockChat = ref(null);
@@ -236,6 +240,12 @@ describe('ReplyBox reply suggestion outcomes', () => {
   afterEach(() => {
     wrapper?.unmount();
     wrapper = null;
+  });
+
+  it('disables auto-focus on mount for the reply message editor when opening a conversation', async () => {
+    wrapper = await mountReplyBox();
+    expect(editor()).not.toBeNull();
+    expect(editor().getAttribute('data-focus-on-mount')).toBe('false');
   });
 
   it('renders a no_reply notice above the reply box, outside the editor', async () => {

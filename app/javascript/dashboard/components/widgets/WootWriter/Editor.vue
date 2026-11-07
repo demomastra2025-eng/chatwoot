@@ -480,7 +480,9 @@ function handleEmptyBodyWithSignature() {
 
   // Check if empty paragraph already exists to prevent duplicates when toggling signatures
   if (isEmptyParagraph(doc.firstChild)) {
-    focusEditorInputField('start');
+    if (props.focusOnMount) {
+      focusEditorInputField('start');
+    }
     return;
   }
 
@@ -491,7 +493,9 @@ function handleEmptyBodyWithSignature() {
   editorView.dispatch(paragraphTransaction);
 
   // Set the focus at the start of the input field
-  focusEditorInputField('start');
+  if (props.focusOnMount) {
+    focusEditorInputField('start');
+  }
 }
 
 function focusEditor(content) {
