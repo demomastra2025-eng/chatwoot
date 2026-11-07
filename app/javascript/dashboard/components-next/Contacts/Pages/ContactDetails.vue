@@ -267,15 +267,26 @@ const handleFormUpdate = updatedData => {
   const nameWasEdited =
     Object.prototype.hasOwnProperty.call(updatedData, 'name') &&
     updatedData.name !== contactData.value.name;
+  const additionalAttributes = [
+    contactData.value.additional_attributes,
+    contactData.value.additionalAttributes,
+    updatedData.additional_attributes,
+    updatedData.additionalAttributes,
+  ].reduce((merged, attributes) => {
+    const next = camelcaseKeys(attributes || {}, { deep: true });
+    return {
+      ...merged,
+      ...next,
+      displayPreferences: {
+        ...merged.displayPreferences,
+        ...next.displayPreferences,
+      },
+    };
+  }, {});
   Object.assign(contactData.value, updatedData);
+  contactData.value.additionalAttributes = additionalAttributes;
+  delete contactData.value.additional_attributes;
   if (nameWasEdited) {
-    contactData.value.additionalAttributes = camelcaseKeys(
-      contactData.value.additionalAttributes ||
-        contactData.value.additional_attributes ||
-        {},
-      { deep: true }
-    );
-    delete contactData.value.additional_attributes;
     updateLocalDisplayPreference('primaryNameSource', { kind: 'manual' });
   }
 };

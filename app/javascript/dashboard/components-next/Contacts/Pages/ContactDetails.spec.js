@@ -82,6 +82,79 @@ describe('ContactDetails name intent', () => {
     ).toEqual({ kind: 'manual' });
   });
 
+  it.each(['camel', 'snake'])(
+    'retains the avatar pin and unrelated metadata from %s attributes on a real-shaped form rename',
+    async representation => {
+      const avatarSource = {
+        kind: 'channel_profile',
+        contactInboxId: 11,
+        inboxId: 13,
+      };
+      const selectedContact = contact();
+      if (representation === 'camel') {
+        selectedContact.additionalAttributes = {
+          displayPreferences: {
+            primaryNameSource: selectedSource,
+            primaryAvatarSource: avatarSource,
+          },
+          unrelatedMetadata: { keep: 'recorded' },
+          description: 'Original biography',
+        };
+      } else {
+        delete selectedContact.additionalAttributes;
+        selectedContact.additional_attributes = {
+          display_preferences: {
+            primary_name_source: {
+              kind: 'channel_profile',
+              contact_inbox_id: 7,
+              inbox_id: 9,
+            },
+            primary_avatar_source: {
+              kind: 'channel_profile',
+              contact_inbox_id: 11,
+              inbox_id: 13,
+            },
+          },
+          unrelated_metadata: { keep: 'recorded' },
+          description: 'Original biography',
+        };
+      }
+      const wrapper = mountDetails({ selectedContact });
+      // ContactsForm emits stateWithoutNames, including only its own attribute fields.
+      wrapper.findComponent({ name: 'ContactsForm' }).vm.$emit('update', {
+        id: 17,
+        name: 'Manual Alias',
+        email: 'synthetic@example.invalid',
+        phoneNumber: '',
+        additionalAttributes: {
+          description: 'Edited biography',
+          companyName: 'Synthetic company',
+          countryCode: 'KZ',
+          country: 'Kazakhstan',
+          city: 'Astana',
+          socialProfiles: { telegram: 'synthetic_handle' },
+        },
+      });
+
+      const payload = await save(wrapper);
+
+      expect(payload.name).toBe('Manual Alias');
+      expect(payload.additional_attributes).toBeUndefined();
+      expect(payload.additionalAttributes.displayPreferences).toEqual({
+        primaryNameSource: { kind: 'manual' },
+        primaryAvatarSource: avatarSource,
+      });
+      expect(payload.additionalAttributes).toMatchObject({
+        unrelatedMetadata: { keep: 'recorded' },
+        description: 'Edited biography',
+        companyName: 'Synthetic company',
+        city: 'Astana',
+        socialProfiles: { telegram: 'synthetic_handle' },
+      });
+      expect(payload.email).toBe('synthetic@example.invalid');
+    }
+  );
+
   it('does not change the selected name source for another form field', async () => {
     const wrapper = mountDetails();
     wrapper.findComponent({ name: 'ContactsForm' }).vm.$emit('update', {
