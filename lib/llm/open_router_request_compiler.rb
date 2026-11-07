@@ -556,6 +556,7 @@ class Llm::OpenRouterRequestCompiler
   end
 
   def tool_flow?
+    return false if @tools == false
     return Array(@tools).present? unless @tools.nil?
 
     request_boolean(:requires_tools?) || Array(request_value(:tools)).present?
