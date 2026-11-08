@@ -3,7 +3,7 @@
 %>
 <%
   organization = account.organization
-  options = [[t('super_admin.accounts.organization.none_option'), '']] + SuperAdmin::OrganizationOptions.all
+  options = [[t('super_admin.accounts.organization.none'), '']] + SuperAdmin::OrganizationOptions.for_select
   confirm = t('super_admin.accounts.organization.confirm', account: account.name) if organization
 %>
 
