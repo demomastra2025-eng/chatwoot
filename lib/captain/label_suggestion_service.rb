@@ -6,7 +6,15 @@ class Captain::LabelSuggestionService < Captain::BaseTaskService
     cached_response = read_from_cache
     return cached_response if cached_response.present?
 
-    # Build content
+    if Llm::OpenRouterDecisionClient.supported_model?(task_model)
+      decision_response = perform_with_decision_model
+      if decision_response.present? && decision_response[:error].blank?
+        write_to_cache(decision_response)
+        return decision_response
+      end
+    end
+
+    # Build content for legacy chat fallback
     content = labels_with_messages
     return nil if content.blank?
 
@@ -30,6 +38,27 @@ class Captain::LabelSuggestionService < Captain::BaseTaskService
   end
 
   private
+
+  def perform_with_decision_model
+    return nil unless conversation.present?
+
+    smart_result = Captain::Labels::SmartTaggingService.new(
+      conversation: conversation,
+      model: task_model
+    ).perform
+    return nil if smart_result.blank?
+
+    {
+      message: Array(smart_result[:suggested]).join(', '),
+      auto_applied: Array(smart_result[:auto_applied]),
+      newly_applied: Array(smart_result[:newly_applied]),
+      suggested: Array(smart_result[:suggested]),
+      usage: smart_result[:usage]
+    }
+  rescue StandardError => e
+    Rails.logger.warn("[Captain::LabelSuggestionService] Decision model fallback: #{e.class}: #{e.message}")
+    nil
+  end
 
   def cache_key
     return nil unless conversation

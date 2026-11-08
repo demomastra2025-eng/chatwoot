@@ -33,6 +33,7 @@ class Llm::OpenRouterDecisionClient
   # choice / confidence / probabilities: the answer of a single question. For several questions, answers holds one Answer per
   # question; choice is then a summary of the chosen keys ("name=key ...", for the logs) and confidence the lowest confidence.
   Result = Struct.new(:choice, :confidence, :probabilities, :answers, :model, :provider, :request_id, :usage, keyword_init: true)
+  MultiResult = Result
 
   class Error < StandardError; end
 

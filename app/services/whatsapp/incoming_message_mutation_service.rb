@@ -56,7 +56,21 @@ class Whatsapp::IncomingMessageMutationService
     update_reactions(reactions, reaction)
     reaction_events[actor_id] = reaction_event_attributes
     persist_reactions(target, content_attributes, reactions, reaction_events)
+    resolve_confirmation_from_reaction(target, reaction)
     :applied
+  end
+
+  def resolve_confirmation_from_reaction(target, reaction)
+    return if outgoing_echo
+    return if reaction[:emoji].blank?
+    return unless defined?(Confirmations::ReactionResolver)
+
+    Confirmations::ReactionResolver.new(
+      target_message: target,
+      emoji: reaction[:emoji]
+    ).perform
+  rescue StandardError => e
+    Rails.logger.warn("[Whatsapp::IncomingMessageMutationService] Reaction confirmation skipped: #{e.class}: #{e.message}")
   end
 
   def persist_reactions(target, content_attributes, reactions, reaction_events)

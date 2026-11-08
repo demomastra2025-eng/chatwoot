@@ -4,7 +4,10 @@ class Llm::FeatureProfile
   FEATURE_ALIASES = {
     'assistant' => 'captain_agent',
     'captain' => 'captain_agent',
-    'help_center_search' => 'embedding'
+    'help_center_search' => 'embedding',
+    'appointment_disambiguation' => 'custom_guardrail',
+    'outbound_reply_classification' => 'inbound_triage',
+    'crm_deal_classification' => 'outcome_classification'
   }.freeze
 
   # A decision feature picks exactly one of the criteria it offers on the native Decisions endpoint (`decisions: true`);

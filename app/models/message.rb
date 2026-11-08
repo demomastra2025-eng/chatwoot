@@ -609,9 +609,22 @@ class Message < ApplicationRecord
     dispatch_create_events
     sync_related_touches
     execute_message_template_hooks
+    enqueue_smart_auto_tagging
     update_contact_activity(runtime_events: true)
     refresh_communication_thread
     send_reply
+  end
+
+  def enqueue_smart_auto_tagging
+    return unless defined?(Captain::Labels::SmartTaggingService)
+    return unless Captain::Labels::SmartTaggingService.meaningful_message?(self)
+    return unless Captain::Labels::SmartTaggingService.enabled_for_account?(account)
+
+    Captain::Labels::AutoTagConversationJob
+      .set(wait: 5.seconds)
+      .perform_later(conversation_id, trigger_message_id: id)
+  rescue StandardError => e
+    Rails.logger.warn("[Message] Smart auto-tagging enqueue skipped: #{e.class}: #{e.message}")
   end
 
   def refresh_contact_language_stats

@@ -9,6 +9,7 @@ class Api::V1::Accounts::Conversations::LabelsController < Api::V1::Accounts::Co
   end
 
   def change_labels(add:, remove:)
+    record_human_label_decisions!(add: add, remove: remove)
     Labels::UnifiedAssignmentService.new(
       contact: @conversation.contact,
       conversation: @conversation,
@@ -17,6 +18,24 @@ class Api::V1::Accounts::Conversations::LabelsController < Api::V1::Accounts::Co
     ).perform
     @conversation.reload
     @conversation.contact.reload
+  end
+
+  def record_human_label_decisions!(add:, remove:)
+    added_norm = Labels::UnifiedAssignmentService.normalize(add).map(&:downcase)
+    removed_norm = Labels::UnifiedAssignmentService.normalize(remove).map(&:downcase)
+    return if added_norm.empty? && removed_norm.empty?
+
+    attrs = @conversation.additional_attributes.to_h.deep_dup
+    existing_removed = Array(attrs['human_removed_labels']).map { |l| l.to_s.strip.downcase }
+    updated_removed = ((existing_removed - added_norm) + removed_norm).uniq
+    attrs['human_removed_labels'] = updated_removed
+
+    if attrs['ai_suggested_labels'].is_a?(Array)
+      touched = (added_norm + removed_norm).to_set
+      attrs['ai_suggested_labels'] = attrs['ai_suggested_labels'].reject { |l| touched.include?(l.to_s.strip.downcase) }
+    end
+
+    @conversation.update_columns(additional_attributes: attrs)
   end
 
   def current_label_list

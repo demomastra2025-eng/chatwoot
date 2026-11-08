@@ -198,8 +198,10 @@ class Llm::OpenRouterRuntime
 
   private
 
+  alias decide_many decide
+
   def decision_feature?(feature_key)
-    Llm::FeatureProfile.decision_feature?(feature_key)
+    Llm::FeatureProfile.decision_feature?(feature_key) || feature_key.to_s == 'label_suggestion'
   end
 
   def decide_with(request, model, position:, total:)

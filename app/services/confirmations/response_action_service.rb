@@ -41,9 +41,24 @@ class Confirmations::ResponseActionService
       with_automation_actor do
         Scheduling::Appointments::MutationGuard.ensure_assignable!({ status: 'confirmed' })
         appointment.update!(status: 'confirmed')
+        confirm_coalesced_appointments!
       end
       'appointment_confirmed'
     end
+  end
+
+  def confirm_coalesced_appointments!
+    coalesced_ids = Array(reminder.metadata.to_h['coalesced_appointment_ids']).map(&:to_i) - [appointment.id]
+    return if coalesced_ids.empty?
+
+    Scheduling::Appointment
+      .where(account_id: confirmation_request.account_id, id: coalesced_ids, status: 'scheduled')
+      .find_each do |sibling_apt|
+        sibling_apt.with_lock do
+          sibling_apt.reload
+          sibling_apt.update!(status: 'confirmed') if sibling_apt.status == 'scheduled'
+        end
+      end
   end
 
   def validate_appointment_context!

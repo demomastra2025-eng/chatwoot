@@ -13,7 +13,16 @@ class Reminders::AutoCancelOnIncomingService
   def perform
     return 0 unless Reminders::IncomingReplyCancellationService.customer_incoming_message?(message)
 
-    cancel_materialized_reminders! + cancel_deferred_steps!
+    cancelled = cancel_materialized_reminders! + cancel_deferred_steps!
+    if cancelled.positive?
+      Reminders::IncomingReplyDecisionService.new(
+        account: message.account,
+        conversation: message.conversation,
+        message: message,
+        cancelled_reminders_count: cancelled
+      ).apply_side_effects!
+    end
+    cancelled
   end
 
   private

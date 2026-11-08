@@ -63,6 +63,7 @@ class Llm::Runtime
       feature_request = build_request(request, **attributes)
       provider_runtime(account: feature_request.account).decide(feature_request)
     end
+    alias decide_many decide
 
     def metadata(generation_id:, provider: :openrouter, account: nil)
       provider_runtime(provider: provider, account: account).metadata(generation_id)

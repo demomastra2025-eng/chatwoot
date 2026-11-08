@@ -1,9 +1,9 @@
 <%#
-# The tariff presets plus the base and module cards of the plan
+# The 4 active tariff presets plus collapsed fine-grained module switches
 
-The commercial tariff presets (`tariff`) pick an approved package (modules + limits). Choosing «Конструктор модулей» (`tariff=""`)
-uses the base plus whichever modules (`modules[]`) are switched on below. Legacy archive tariffs (`basic`, `pro`, `max`) are hidden
-unless currently assigned to the account.
+The main grid shows only the 4 approved tariffs (`text_call`, `ai_agent_rop`, `voice_ai`, `enterprise`; legacy archive tariffs
+`basic`, `pro`, `max` are shown only if currently assigned to the account). Individual module switches live inside a collapsed
+details block so the screen stays focused on the 4 tariffs while keeping Custom fine-tuning accessible.
 
 ## Local variables:
 
@@ -13,8 +13,9 @@ unless currently assigned to the account.
 <% selected_tariff = local_assigns[:tariff].to_s %>
 <% visible_tariffs = Accounts::Plans.active_tariff_keys | ([selected_tariff] & Accounts::Plans.tariff_keys) %>
 <% if visible_tariffs.any? %>
-  <fieldset class="m-0 mb-3 min-w-0 border-0 p-0" data-testid="tariff-presets">
+  <fieldset class="m-0 mb-2 min-w-0 border-0 p-0" data-testid="tariff-presets">
     <legend class="mb-2 text-xs font-medium text-n-slate-11"><%= t('super_admin.plans.tariffs_heading') %></legend>
+    <%= radio_button_tag 'tariff', '', selected_tariff.blank?, id: 'plan-tariff-custom', class: 'sr-only', tabindex: -1, aria: { hidden: true } %>
     <div class="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-2.5">
       <% visible_tariffs.each do |key| %>
         <label class="admin-plan-card admin-plan-card--module cursor-pointer" for="plan-tariff-<%= key %>" data-tariff-card="<%= key %>">
@@ -26,13 +27,6 @@ unless currently assigned to the account.
           <span class="text-[13px] text-n-slate-11"><%= Accounts::Plans.tariff_description(key) %></span>
         </label>
       <% end %>
-      <label class="admin-plan-card cursor-pointer" for="plan-tariff-custom" data-tariff-card="custom">
-        <span class="flex items-start justify-between gap-2">
-          <span class="text-heading-3 text-n-slate-12"><%= t('super_admin.plans.tariffs_custom') %></span>
-          <%= radio_button_tag 'tariff', '', selected_tariff.blank?, id: 'plan-tariff-custom' %>
-        </span>
-        <span class="text-[13px] text-n-slate-11"><%= t('super_admin.plans.tariffs_custom_hint') %></span>
-      </label>
     </div>
   </fieldset>
   <script>
@@ -58,32 +52,43 @@ unless currently assigned to the account.
   </script>
 <% end %>
 
-<fieldset class="m-0 min-w-0 border-0 p-0">
-  <legend class="sr-only"><%= t('super_admin.clinic_card.plan.choose') %></legend>
-  <div class="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
-    <div class="admin-plan-card admin-plan-card--base" data-plan-card="base">
-      <div class="flex items-start justify-between gap-3">
-        <span class="text-heading-3 text-n-slate-12"><%= t('super_admin.plans.base.name') %></span>
-        <span class="admin-badge admin-badge--iris"><%= t('super_admin.clinic_card.plan.always_included') %></span>
-      </div>
-      <p class="m-0 text-[13px] text-n-slate-11"><%= t('super_admin.plans.base.description') %></p>
-    </div>
+<details class="admin-collapse" data-testid="plan-modules-collapse">
+  <summary>
+    <span class="flex min-w-0 flex-col gap-0.5">
+      <span class="text-sm font-medium text-n-slate-12">Дополнительные модули (Custom)</span>
+      <span class="text-xs text-n-slate-11">Ручное подключение модулей переводит тариф в статус Custom</span>
+    </span>
+    <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
+  </summary>
+  <div class="admin-collapse__body">
+    <fieldset class="m-0 min-w-0 border-0 p-0">
+      <legend class="sr-only"><%= t('super_admin.clinic_card.plan.choose') %></legend>
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
+        <div class="admin-plan-card admin-plan-card--base" data-plan-card="base">
+          <div class="flex items-start justify-between gap-3">
+            <span class="text-heading-3 text-n-slate-12"><%= t('super_admin.plans.base.name') %></span>
+            <span class="admin-badge admin-badge--iris"><%= t('super_admin.clinic_card.plan.always_included') %></span>
+          </div>
+          <p class="m-0 text-[13px] text-n-slate-11"><%= t('super_admin.plans.base.description') %></p>
+        </div>
 
-    <% Accounts::Plans.module_keys.each do |key| %>
-      <label class="admin-plan-card admin-plan-card--module" for="plan-module-<%= key %>" data-plan-card="<%= key %>">
-        <span class="flex items-start justify-between gap-3">
-          <span class="text-heading-3 text-n-slate-12"><%= Accounts::Plans.module_name(key) %></span>
-          <span class="admin-switch">
-            <%= check_box_tag 'modules[]', key, chosen.include?(key), id: "plan-module-#{key}", class: 'admin-switch__input' %>
-            <span class="admin-switch__track" aria-hidden="true"></span>
-            <span class="admin-switch__thumb" aria-hidden="true"></span>
-          </span>
-        </span>
-        <span class="text-[13px] text-n-slate-11"><%= t("super_admin.plans.modules.#{key}.description") %></span>
-        <span class="text-xs text-n-slate-10">
-          <%= t('super_admin.clinic_card.plan.includes', features: SuperAdmin::AccountFeaturesHelper.module_feature_labels(key).join(', ')) %>
-        </span>
-      </label>
-    <% end %>
+        <% Accounts::Plans.module_keys.each do |key| %>
+          <label class="admin-plan-card admin-plan-card--module" for="plan-module-<%= key %>" data-plan-card="<%= key %>">
+            <span class="flex items-start justify-between gap-3">
+              <span class="text-heading-3 text-n-slate-12"><%= Accounts::Plans.module_name(key) %></span>
+              <span class="admin-switch">
+                <%= check_box_tag 'modules[]', key, chosen.include?(key), id: "plan-module-#{key}", class: 'admin-switch__input' %>
+                <span class="admin-switch__track" aria-hidden="true"></span>
+                <span class="admin-switch__thumb" aria-hidden="true"></span>
+              </span>
+            </span>
+            <span class="text-[13px] text-n-slate-11"><%= t("super_admin.plans.modules.#{key}.description") %></span>
+            <span class="text-xs text-n-slate-10">
+              <%= t('super_admin.clinic_card.plan.includes', features: SuperAdmin::AccountFeaturesHelper.module_feature_labels(key).join(', ')) %>
+            </span>
+          </label>
+        <% end %>
+      </div>
+    </fieldset>
   </div>
-</fieldset>
+</details>

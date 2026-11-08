@@ -46,10 +46,21 @@ class SuperAdmin::AccountPlanState
     Accounts::Plans.known_modules(attributes[Accounts::ApplyPlan::MODULES_KEY])
   end
 
-  def label
+  def custom?
+    assigned? && tariff.present? && (drifted? || modules.sort != Accounts::Plans.tariff_modules(tariff).sort)
+  end
+
+  def base_label
     return I18n.t('super_admin.plans.not_assigned') unless assigned?
 
     tariff ? Accounts::Plans.plan_label(modules, tariff: tariff) : Accounts::Plans.plan_label(modules)
+  end
+
+  def label
+    return I18n.t('super_admin.plans.not_assigned') unless assigned?
+    return 'Custom' if custom?
+
+    base_label
   end
 
   def version
@@ -155,8 +166,13 @@ class SuperAdmin::AccountPlanState
   def chips
     list = []
     if assigned?
-      lead = tariff ? Accounts::Plans.tariff_name(tariff) : I18n.t('super_admin.plans.base.name')
-      list << Chip.new(text: lead, tone: :iris)
+      if custom?
+        list << Chip.new(text: 'Custom', tone: :amber)
+        list << Chip.new(text: Accounts::Plans.tariff_name(tariff), tone: :iris)
+      else
+        lead = tariff ? Accounts::Plans.tariff_name(tariff) : I18n.t('super_admin.plans.base.name')
+        list << Chip.new(text: lead, tone: :iris)
+      end
       modules.each { |key| list << Chip.new(text: Accounts::Plans.module_name(key), tone: :slate) }
     end
     list << trial_chip if trial_state != :none

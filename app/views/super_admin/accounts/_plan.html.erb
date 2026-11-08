@@ -37,7 +37,14 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
       <h2 class="admin-block__title" id="plan-title"><%= t('super_admin.clinic_card.plan.title') %></h2>
       <p class="admin-block__hint"><%= t('super_admin.clinic_card.plan.hint') %></p>
     </div>
-    <span class="admin-badge <%= state.assigned? ? 'admin-badge--iris' : 'admin-badge--quiet' %>" data-testid="plan-label"><%= state.label %></span>
+    <% badge_tone = if !state.assigned?
+                      'admin-badge--quiet'
+                    elsif state.custom?
+                      'admin-badge--amber'
+                    else
+                      'admin-badge--iris'
+                    end %>
+    <span class="admin-badge <%= badge_tone %>" data-testid="plan-label"><%= state.label %></span>
   </div>
 
   <% unless state.assigned? %>
@@ -52,7 +59,7 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
   <% if state.drifted? %>
     <div class="admin-notice admin-notice--amber" data-testid="plan-drift">
       <span class="flex min-w-0 flex-col gap-0.5">
-        <span class="font-medium"><%= t('super_admin.plans.drift.summary', extra: drift[:extra].size, missing: drift[:missing].size, plan: state.label) %></span>
+        <span class="font-medium"><%= t('super_admin.plans.drift.summary', extra: drift[:extra].size, missing: drift[:missing].size, plan: state.base_label) %></span>
         <% if drift[:extra].any? %>
           <span class="text-[13px]"><%= t('super_admin.plans.drift.extra', features: drift[:extra].map { |name| feature_label.call(name) }.sort.join(', ')) %></span>
         <% end %>

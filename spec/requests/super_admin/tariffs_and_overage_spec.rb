@@ -124,5 +124,30 @@ RSpec.describe 'Approved 2026-10 OneLink tariffs and non-blocking AI overages', 
       expect(response.body).to include('Pro (архив)')
       expect(response.body).not_to match(/₸|тенге|KZT|\bруб\b/i)
     end
+
+    it 'displays only the 4 active tariff cards and switches the plan label to Custom when fine-tuning adds features' do
+      allow(ChatwootApp).to receive(:chatwoot_cloud?).and_return(true)
+      sign_in(super_admin, scope: :super_admin)
+
+      Accounts::ApplyPlan.new(account: account, tariff: 'text_call', actor: super_admin).call
+      get "/super_admin/accounts/#{account.id}"
+      expect(response).to have_http_status(:ok)
+
+      doc = Nokogiri::HTML5(response.body)
+      tariff_cards = doc.css('[data-testid="tariff-presets"] [data-tariff-card]').map { |el| el['data-tariff-card'] }
+      expect(tariff_cards).to eq(%w[text_call ai_agent_rop voice_ai enterprise])
+      expect(doc.at_css('[data-testid="plan-label"]').text.strip).to eq('Текст + Звонок')
+
+      # Toggle an extra feature via Fine-Tuning: the tariff immediately becomes Custom
+      account.enable_features!('sla')
+      state = SuperAdmin::AccountPlanState.new(account.reload)
+      expect(state).to be_custom
+      expect(state.label).to eq('Custom')
+      expect(state.chips.first.text).to eq('Custom')
+
+      get "/super_admin/accounts/#{account.id}"
+      doc_after = Nokogiri::HTML5(response.body)
+      expect(doc_after.at_css('[data-testid="plan-label"]').text.strip).to eq('Custom')
+    end
   end
 end

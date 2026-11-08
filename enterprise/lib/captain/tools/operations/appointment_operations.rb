@@ -339,10 +339,23 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   end
 
   def require_patient_confirmation!(appointment, confirmed)
+    verify_appointment_disambiguation!(appointment) if actor.is_a?(Captain::Assistant)
     return unless actor.is_a?(Captain::Assistant) && Captain::Tools::Agent::AppointmentAccess.other_patient?(appointment, conversation)
     return if confirmed == true
 
     raise ArgumentError, 'Confirm the specific patient, doctor, appointment time and requested change before applying it'
+  end
+
+  def verify_appointment_disambiguation!(appointment, action_name: :cancel_or_reschedule)
+    disambiguation = ::Captain::Appointments::TargetDisambiguationService.new(
+      account: account,
+      conversation: conversation,
+      target_appointment: appointment,
+      action_type: action_name
+    ).perform
+    return if disambiguation.confirmed?
+
+    raise ArgumentError, disambiguation.clarification_message
   end
 
   def explicit_appointments_scope(conversation_appointments)

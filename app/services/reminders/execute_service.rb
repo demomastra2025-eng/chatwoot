@@ -161,10 +161,12 @@ class Reminders::ExecuteService
     sender = generated_payload[:assistant].presence || reminder.message_sender
     confirmation_request = Reminders::ConfirmationRequestService.new(reminder: reminder, conversation: conversation).perform
     template_params = rendered_template_params(conversation, sender, confirmation_request)
+    base_content = generated_payload[:content].presence || reminder.renderable_body(conversation: conversation, sender: sender)
+    content = reminder.channel_template? ? base_content : same_day_batcher.decorate_content(base_content)
 
     {
       sender: sender,
-      content: generated_payload[:content].presence || reminder.renderable_body(conversation: conversation, sender: sender),
+      content: content,
       captain_trace: generated_payload[:captain_trace],
       template_params: template_params,
       confirmation_request: confirmation_request
@@ -188,9 +190,14 @@ class Reminders::ExecuteService
         delivery_policy: delivery_policy
       )
       update_resolved_targets!(conversation)
+      same_day_batcher.coalesce!(message: message)
       @execution_updated_at = reminder.updated_at
       message
     end
+  end
+
+  def same_day_batcher
+    @same_day_batcher ||= Reminders::SameDayAppointmentBatcher.new(reminder: reminder)
   end
 
   # Re-checked under the appointment and touch locks: a primary number that appeared or disappeared after the
@@ -543,7 +550,9 @@ class Reminders::ExecuteService
   def rendered_template_params(conversation, sender, confirmation_request)
     return reminder.template_params unless reminder.channel_template?
 
-    params = reminder.renderable_template_params(conversation: conversation, sender: sender)
+    params = same_day_batcher.decorate_template_params(
+      reminder.renderable_template_params(conversation: conversation, sender: sender)
+    )
     if confirmation_request.present?
       params = Reminders::ConfirmationTemplateParamsService.new(
         reminder: reminder,
