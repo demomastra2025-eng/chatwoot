@@ -72,7 +72,7 @@
                         initial_tariff: active_tariff.to_s, preview_url: plan_preview_super_admin_account_path(account) } do %>
     <%= render 'plan_cards', chosen: chosen, tariff: active_tariff %>
 
-    <div data-plan-preview aria-live="polite" hidden></div>
+    <div data-plan-preview aria-live="polite" hidden class="hidden"></div>
 
     <noscript>
       <p class="admin-block__note"><%= t('super_admin.clinic_card.plan.no_script') %></p>
@@ -145,27 +145,8 @@
         hint.hidden = false;
         return;
       }
-      var query = new URLSearchParams();
-      query.append('fragment', '1');
-      if (tariff) query.append('tariff', tariff);
-      modules.forEach(function (module) { query.append('modules[]', module); });
-      var current = (requestId += 1);
-      fetch(form.getAttribute('data-preview-url') + '?' + query.toString(), {
-        credentials: 'same-origin',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
-      })
-        .then(function (response) { return response.ok ? response.text() : Promise.reject(response.status); })
-        .then(function (html) {
-          if (current !== requestId) return;
-          box.innerHTML = html;
-          box.hidden = false;
-          hint.hidden = true;
-        })
-        .catch(function () {
-          if (current !== requestId) return;
-          box.hidden = true;
-          hint.hidden = false;
-        });
+      box.hidden = true;
+      hint.hidden = false;
     }
 
     form.addEventListener('change', function (event) {
@@ -173,7 +154,7 @@
       if (event.target.name === 'tariff') {
         applyTariffModules(event.target);
         sync();
-      } else if (event.target.name === 'modules[]') {
+      } else if (event.target.name === 'modules[]' || event.target.hasAttribute('data-base-module-checkbox')) {
         var customRadio = form.querySelector('input[name="tariff"][value=""]');
         if (customRadio) customRadio.checked = true;
         sync();
