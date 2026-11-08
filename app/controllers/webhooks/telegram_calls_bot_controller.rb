@@ -86,11 +86,20 @@ class Webhooks::TelegramCallsBotController < ApplicationController
   end
 
   def toggle_bindings_line!(chat_id:, tg_user_id:, on_line:)
+    return unless acquire_toggle_debounce_lock?(tg_user_id: tg_user_id, on_line: on_line)
+
     bindings = connected_bindings(tg_user_id, include_disabled: !on_line)
     return reply_unlinked(chat_id) if bindings.empty?
 
     bindings.each { |binding| toggle_single_binding!(chat_id: chat_id, binding: binding, on_line: on_line) }
     reply_status(chat_id: chat_id, tg_user_id: tg_user_id)
+  end
+
+  def acquire_toggle_debounce_lock?(tg_user_id:, on_line:)
+    key = "telegram_calls:toggle_debounce:#{tg_user_id}:#{on_line ? 'on' : 'off'}"
+    Redis::Alfred.set(key, '1', nx: true, ex: 3).present?
+  rescue StandardError
+    true
   end
 
   def toggle_single_binding!(chat_id:, binding:, on_line:)
@@ -204,10 +213,11 @@ class Webhooks::TelegramCallsBotController < ApplicationController
   end
 
   def connected_bindings(tg_user_id, include_disabled: false)
-    bindings = Telephony::TelegramOperatorBinding.connected.includes(:account, :user).where(telegram_user_id: tg_user_id).to_a
-    return bindings if include_disabled
-
-    bindings.select { |binding| TelegramCalls::Config.enabled_for?(binding.account) }
+    bindings = Telephony::TelegramOperatorBinding.connected.includes(:account, :user)
+                                                 .where(telegram_user_id: tg_user_id)
+                                                 .order(verified_at: :desc, id: :desc).to_a
+    scoped = include_disabled ? bindings : bindings.select { |binding| TelegramCalls::Config.enabled_for?(binding.account) }
+    scoped.first(1)
   end
 
   def reply_unlinked(chat_id)

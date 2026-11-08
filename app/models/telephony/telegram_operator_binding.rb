@@ -136,19 +136,26 @@ class Telephony::TelegramOperatorBinding < ApplicationRecord
   def apply_telegram_identity!(from:, chat_id:)
     data = from.to_h.stringify_keys
     tg_id = data['id'].to_s
+    inherited_phone = phone_number.presence || existing_verified_phone_for(tg_id)
     release_conflicting_account_bindings!(tg_id)
     update!(
       telegram_user_id: tg_id, telegram_chat_id: chat_id.to_s,
       username: data['username'].presence, first_name: data['first_name'].presence,
-      last_name: data['last_name'].presence, verified_at: Time.current,
-      link_token_digest: nil, link_token_expires_at: nil
+      last_name: data['last_name'].presence, phone_number: inherited_phone,
+      verified_at: Time.current, link_token_digest: nil, link_token_expires_at: nil
     )
+  end
+
+  def existing_verified_phone_for(tg_id)
+    return if tg_id.blank?
+
+    self.class.where(telegram_user_id: tg_id).where.not(phone_number: [nil, '']).pick(:phone_number)
   end
 
   def release_conflicting_account_bindings!(tg_id)
     return if tg_id.blank?
 
-    self.class.where(account_id: account_id, telegram_user_id: tg_id)
+    self.class.where(telegram_user_id: tg_id)
         .where.not(id: id)
         .find_each(&:disconnect!)
   end
