@@ -1,18 +1,18 @@
 <%#
 # Pricing & Capabilities Comparison Matrix (`_plan_cards.html.erb`)
 
-A clean SaaS comparison matrix built with CSS grid (avoids Administrate's `td:first-child { padding-left: 0 }`):
+A real HTML table with explicit cell padding (`style="padding-left: 1.25rem;"` on the first column to override Administrate's `td:first-child { padding-left: 0 }`):
 - Top header row: 4 tariff columns (`Текст + Звонок`, `ИИ-Агент + ИИ-РОП`, `Голосовой ИИ-Агент`, `Enterprise`)
-  with a selection checkmark in the column header.
+  with a selection checkmark in the column header (only the active tariff shows the checkmark).
 - Left column: all 8 separated product modules:
-  1. Каналы и почта (WhatsApp, Instagram, TikTok, Facebook, виджет, e-mail)
-  2. Диалоги и автоматизация (Быстрые ответы, макросы, автоматизации, отчёты)
-  3. CRM и расписание (Сделки, компании, задачи, расписание приёмов)
-  4. Телефония и звонки (SIP-телефония, звонки WhatsApp, голосовые сообщения)
-  5. ИИ-агенты (ИИ-ассистенты, запись на приём, база знаний)
-  6. Контроль качества (SLA, журнал аудита, заметки к оценкам клиентов)
+  1. Каналы и почта (WhatsApp, Instagram, TikTok, Facebook, виджет на сайт, e-mail)
+  2. Диалоги и автоматизация (Быстрые ответы, макросы, правила автоматизации, аналитика и отчёты)
+  3. CRM и расписание (Сделки, компании, задачи и расписание записи на приём)
+  4. Телефония и звонки (Звонки, запись разговоров, звонки в WhatsApp и голосовые сообщения)
+  5. ИИ-агенты (Агенты, которые отвечают клиентам, записывают на встречу и ищут ответы в базе знаний)
+  6. Контроль качества (SLA, журнал аудита и оценки клиентов с заметками)
   7. Рассылки (Массовые рассылки клиентам в WhatsApp и других каналах)
-  8. Расширения (Свои инструменты ИИ, интеграция с CRM, без брендинга)
+  8. Расширения (Свои инструменты агента, интеграция с CRM, обязательные поля диалога, без брендинга)
 - Clicking any tariff column selects it and checks its modules; toggling any module checkbox clears the tariff selection checkmark.
 
 ## Local variables:
@@ -34,31 +34,60 @@ A clean SaaS comparison matrix built with CSS grid (avoids Administrate's `td:fi
     {
       key: 'base_channels',
       title: 'Каналы и почта',
-      description: 'WhatsApp, Instagram, TikTok, Facebook, виджет на сайт, e-mail',
-      features: %w[channel_website channel_email inbound_emails channel_facebook channel_instagram channel_tiktok]
+      description: 'WhatsApp, Instagram, TikTok, Facebook, виджет на сайт, e-mail'
     },
     {
       key: 'base_chats',
       title: 'Диалоги и автоматизация',
-      description: 'Быстрые ответы, макросы, правила автоматизации, аналитика и отчёты',
-      features: %w[auto_resolve_conversations macros canned_responses automations integrations reports]
+      description: 'Быстрые ответы, макросы, правила автоматизации, аналитика и отчёты'
     },
     {
       key: 'base_crm',
       title: 'CRM и расписание',
-      description: 'Сделки, компании, задачи и расписание записи на приём',
-      features: %w[crm companies crm_deals crm_tasks scheduling]
+      description: 'Сделки, компании, задачи и расписание записи на приём'
     },
     {
       key: 'base_telephony',
       title: 'Телефония и звонки',
-      description: 'Звонки, запись разговоров, звонки в WhatsApp и голосовые сообщения',
-      features: %w[channel_voice whatsapp_call voice_recorder]
+      description: 'Звонки, запись разговоров, звонки в WhatsApp и голосовые сообщения'
     }
   ]
 
   ordered_addon_keys = %w[ai_agents quality broadcasts extensions] & Accounts::Plans.module_keys
 %>
+
+<style>
+  [data-tariff-matrix] table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  [data-tariff-matrix] th:first-child,
+  [data-tariff-matrix] td:first-child {
+    padding-left: 1.25rem !important;
+    padding-right: 1rem !important;
+    width: 38%;
+  }
+  [data-tariff-matrix] th:not(:first-child),
+  [data-tariff-matrix] td:not(:first-child) {
+    padding: 0 !important;
+    width: <%= (62.0 / [visible_tariffs.size, 1].max).round(2) %>%;
+    text-align: center;
+    vertical-align: middle;
+  }
+  [data-tariff-matrix] [data-tariff-check] .i-lucide-check {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  [data-tariff-matrix] [data-tariff-card][data-selected="true"] [data-tariff-check] {
+    border-color: rgb(var(--solid-blue, 37 99 235));
+    background-color: rgb(var(--solid-blue, 37 99 235));
+    color: #fff;
+  }
+  [data-tariff-matrix] [data-tariff-card][data-selected="true"] [data-tariff-check] .i-lucide-check {
+    opacity: 1;
+  }
+</style>
 
 <div class="overflow-x-auto rounded-xl border border-n-weak bg-n-solid-1" data-tariff-matrix>
   <%= radio_button_tag 'tariff', '', selected_tariff.blank?, id: 'plan-tariff-custom', class: 'sr-only', tabindex: -1, aria: { hidden: true } %>
@@ -68,41 +97,42 @@ A clean SaaS comparison matrix built with CSS grid (avoids Administrate's `td:fi
     <span class="admin-badge admin-badge--iris"><%= t('super_admin.clinic_card.plan.always_included') %></span>
   </div>
 
-  <div class="min-w-[44rem]" data-testid="tariff-presets">
-    <%# Header row %>
-    <div class="grid grid-cols-[minmax(16rem,1.8fr)_repeat(<%= visible_tariffs.size %>,minmax(6.5rem,1fr))] border-b border-n-weak bg-n-solid-2/60">
-      <div class="flex items-end px-5 py-3.5">
-        <span class="text-xs font-semibold uppercase tracking-wider text-n-slate-10">Модули и возможности</span>
-      </div>
-      <% visible_tariffs.each do |key| %>
-        <% is_selected = selected_tariff == key %>
-        <div class="border-l border-n-weak transition-colors <%= 'bg-n-blue-2/40' if is_selected %>" data-tariff-col="<%= key %>">
-          <label class="flex h-full cursor-pointer flex-col items-center justify-between gap-2 px-3 py-3.5 text-center font-normal transition-colors hover:bg-n-alpha-1"
-                 for="plan-tariff-<%= key %>"
-                 data-tariff-card="<%= key %>"
-                 data-selected="<%= is_selected %>">
-            <%= radio_button_tag 'tariff', key, is_selected, id: "plan-tariff-#{key}",
-                                 class: 'sr-only',
-                                 data: { tariff_modules: Accounts::Plans.tariff_modules(key).to_json } %>
-            <span class="flex size-5 items-center justify-center rounded-full border transition-colors <%= is_selected ? 'border-n-blue-9 bg-n-blue-9 text-white shadow-sm' : 'border-n-strong bg-n-solid-1 text-transparent' %>"
-                  data-tariff-check
-                  aria-hidden="true">
-              <span class="i-lucide-check size-3.5"></span>
-            </span>
-            <span class="text-[13px] font-semibold leading-tight text-n-slate-12"><%= Accounts::Plans.tariff_name(key) %></span>
-            <% if (q = tariff_quotas[key]) %>
-              <span class="text-[11px] font-normal leading-tight text-n-slate-10"><%= q[:agents] %><br><%= q[:storage] %></span>
-            <% end %>
-          </label>
-        </div>
-      <% end %>
-    </div>
+  <table class="min-w-[44rem] text-left text-xs" data-testid="tariff-presets">
+    <thead>
+      <tr class="border-b border-n-weak bg-n-solid-2/60">
+        <th scope="col" class="py-3.5 align-bottom">
+          <span class="text-xs font-semibold uppercase tracking-wider text-n-slate-10">Модули и возможности</span>
+        </th>
+        <% visible_tariffs.each do |key| %>
+          <% is_selected = selected_tariff == key %>
+          <th scope="col" class="border-l border-n-weak align-top transition-colors <%= 'bg-n-blue-2/40' if is_selected %>" data-tariff-col="<%= key %>">
+            <label class="flex h-full w-full cursor-pointer flex-col items-center justify-between gap-1.5 px-2.5 py-3.5 text-center font-normal transition-colors hover:bg-n-alpha-1"
+                   for="plan-tariff-<%= key %>"
+                   data-tariff-card="<%= key %>"
+                   data-selected="<%= is_selected %>">
+              <%= radio_button_tag 'tariff', key, is_selected, id: "plan-tariff-#{key}",
+                                   class: 'sr-only',
+                                   data: { tariff_modules: Accounts::Plans.tariff_modules(key).to_json } %>
+              <span class="flex size-5 items-center justify-center rounded-full border border-n-strong bg-n-solid-1 transition-colors"
+                    data-tariff-check
+                    aria-hidden="true">
+                <span class="i-lucide-check size-3.5"></span>
+              </span>
+              <span class="text-[13px] font-semibold leading-tight text-n-slate-12"><%= Accounts::Plans.tariff_name(key) %></span>
+              <% if (q = tariff_quotas[key]) %>
+                <span class="text-[11px] font-normal leading-tight text-n-slate-10"><%= q[:agents] %><br><%= q[:storage] %></span>
+              <% end %>
+            </label>
+          </th>
+        <% end %>
+      </tr>
+    </thead>
 
-    <%# Rows 1..4: Separated Base Modules (Каналы, Диалоги, CRM, Телефония) %>
-    <div class="divide-y divide-n-weak">
+    <tbody class="divide-y divide-n-weak">
+      <%# Rows 1..4: Separated Base Modules (Каналы и почта, Диалоги и автоматизация, CRM и расписание, Телефония и звонки) %>
       <% base_module_rows.each do |row| %>
-        <div class="grid grid-cols-[minmax(16rem,1.8fr)_repeat(<%= visible_tariffs.size %>,minmax(6.5rem,1fr))] transition-colors hover:bg-n-alpha-1/40" data-base-module-row="<%= row[:key] %>">
-          <div class="flex items-center justify-between gap-3 px-5 py-3">
+        <tr class="transition-colors hover:bg-n-alpha-1/40" data-base-module-row="<%= row[:key] %>">
+          <td class="py-3">
             <label class="flex w-full cursor-pointer items-center justify-between gap-3 font-normal" for="plan-base-<%= row[:key] %>">
               <span class="flex min-w-0 flex-col gap-0.5">
                 <span class="text-[13px] font-medium text-n-slate-12"><%= row[:title] %></span>
@@ -114,27 +144,27 @@ A clean SaaS comparison matrix built with CSS grid (avoids Administrate's `td:fi
                      data-base-module-checkbox="<%= row[:key] %>"
                      class="size-4 shrink-0 cursor-pointer rounded border-n-strong accent-n-blue-9">
             </label>
-          </div>
+          </td>
           <% visible_tariffs.each do |t_key| %>
             <% is_selected = selected_tariff == t_key %>
-            <div class="flex items-center justify-center border-l border-n-weak px-3 py-3 transition-colors <%= 'bg-n-blue-2/25' if is_selected %>" data-tariff-col="<%= t_key %>">
-              <label for="plan-tariff-<%= t_key %>" class="inline-flex h-full w-full cursor-pointer items-center justify-center">
+            <td class="border-l border-n-weak transition-colors <%= 'bg-n-blue-2/25' if is_selected %>" data-tariff-col="<%= t_key %>">
+              <label for="plan-tariff-<%= t_key %>" class="flex h-full w-full cursor-pointer items-center justify-center py-3">
                 <span class="inline-flex size-5 items-center justify-center rounded-full bg-n-teal-3/70 text-n-teal-11" aria-label="Включено в тариф">
                   <span class="i-lucide-check size-3.5"></span>
                 </span>
               </label>
-            </div>
+            </td>
           <% end %>
-        </div>
+        </tr>
       <% end %>
 
       <%# Rows 5..8: Add-on Modules (ИИ-агенты, Контроль качества, Рассылки, Расширения) %>
       <% ordered_addon_keys.each do |mod_key| %>
         <% is_checked = chosen.include?(mod_key) %>
-        <div class="grid grid-cols-[minmax(16rem,1.8fr)_repeat(<%= visible_tariffs.size %>,minmax(6.5rem,1fr))] transition-colors hover:bg-n-alpha-1/40"
-             data-plan-card="<%= mod_key %>"
-             data-checked="<%= is_checked %>">
-          <div class="flex items-center justify-between gap-3 px-5 py-3">
+        <tr class="transition-colors hover:bg-n-alpha-1/40"
+            data-plan-card="<%= mod_key %>"
+            data-checked="<%= is_checked %>">
+          <td class="py-3">
             <label class="flex w-full cursor-pointer items-center justify-between gap-3 font-normal" for="plan-module-<%= mod_key %>">
               <span class="flex min-w-0 flex-col gap-0.5">
                 <span class="text-[13px] font-medium text-n-slate-12"><%= Accounts::Plans.module_name(mod_key) %></span>
@@ -146,12 +176,12 @@ A clean SaaS comparison matrix built with CSS grid (avoids Administrate's `td:fi
               <%= check_box_tag 'modules[]', mod_key, is_checked, id: "plan-module-#{mod_key}",
                                 class: 'size-4 shrink-0 cursor-pointer rounded border-n-strong accent-n-blue-9' %>
             </label>
-          </div>
+          </td>
           <% visible_tariffs.each do |t_key| %>
             <% included_in_tariff = Accounts::Plans.tariff_modules(t_key).include?(mod_key) %>
             <% is_selected = selected_tariff == t_key %>
-            <div class="flex items-center justify-center border-l border-n-weak px-3 py-3 transition-colors <%= 'bg-n-blue-2/25' if is_selected %>" data-tariff-col="<%= t_key %>">
-              <label for="plan-tariff-<%= t_key %>" class="inline-flex h-full w-full cursor-pointer items-center justify-center">
+            <td class="border-l border-n-weak transition-colors <%= 'bg-n-blue-2/25' if is_selected %>" data-tariff-col="<%= t_key %>">
+              <label for="plan-tariff-<%= t_key %>" class="flex h-full w-full cursor-pointer items-center justify-center py-3">
                 <% if included_in_tariff %>
                   <span class="inline-flex size-5 items-center justify-center rounded-full bg-n-teal-3/70 text-n-teal-11" aria-label="Включено в тариф">
                     <span class="i-lucide-check size-3.5"></span>
@@ -160,12 +190,12 @@ A clean SaaS comparison matrix built with CSS grid (avoids Administrate's `td:fi
                   <span class="text-sm text-n-slate-8" aria-label="Не входит">—</span>
                 <% end %>
               </label>
-            </div>
+            </td>
           <% end %>
-        </div>
+        </tr>
       <% end %>
-    </div>
-  </div>
+    </tbody>
+  </table>
 </div>
 
 <script>
@@ -182,22 +212,12 @@ A clean SaaS comparison matrix built with CSS grid (avoids Administrate's `td:fi
         var active = !!(radio && radio.checked);
         if (active && radio.value) activeTariff = radio.value;
         card.setAttribute('data-selected', active ? 'true' : 'false');
-        var check = card.querySelector('[data-tariff-check]');
-        if (check) {
-          check.classList.toggle('border-n-blue-9', active);
-          check.classList.toggle('bg-n-blue-9', active);
-          check.classList.toggle('text-white', active);
-          check.classList.toggle('shadow-sm', active);
-          check.classList.toggle('border-n-strong', !active);
-          check.classList.toggle('bg-n-solid-1', !active);
-          check.classList.toggle('text-transparent', !active);
-        }
       });
 
       Array.prototype.forEach.call(form.querySelectorAll('[data-tariff-col]'), function (cell) {
         var colKey = cell.getAttribute('data-tariff-col');
         var isColActive = colKey && colKey === activeTariff;
-        if (cell.parentElement && cell.parentElement.classList.contains('bg-n-solid-2/60')) {
+        if (cell.tagName === 'TH') {
           cell.classList.toggle('bg-n-blue-2/40', !!isColActive);
         } else {
           cell.classList.toggle('bg-n-blue-2/25', !!isColActive);
