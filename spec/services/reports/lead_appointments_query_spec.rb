@@ -120,4 +120,146 @@ RSpec.describe Reports::LeadAppointmentsQuery do
     expect(report).to include(leads_count: 1, booked_leads_count: 0, appointments_count: 0, appointments_without_contact_count: 1)
     expect(report[:attribution_breakdown].first[:source]).to eq('unknown')
   end
+
+  it 'splits cancelled/removed appointments into rescheduled, early_cancelled, and true_no_show, and computes net_attendance_rate, KZT finance, full funnel, and WhatsApp touches' do
+    contact = create(:contact, account: account)
+    repeat_contact = create(:contact, account: account)
+    incoming(repeat_contact, at: first_at - 3.days)
+    incoming(repeat_contact, at: first_at + 5.minutes)
+    incoming(contact, at: first_at)
+
+    service = create(:scheduling_service, account: account, name: 'Приём терапевта', base_price: 12_000)
+
+    # 1. Completed appointment (15,000 KZT)
+    completed_apt = provider_visit(
+      contact,
+      service: service,
+      service_amount: 15_000,
+      starts_at: first_at + 2.hours,
+      ends_at: first_at + 150.minutes,
+      status: 'completed',
+      attendance_confirmed_at: now
+    )
+
+    # 2. Rescheduled appointment (cancelled, but same contact has completed_apt within ±7 days; 15,000 KZT saved)
+    provider_visit(
+      contact,
+      service: service,
+      service_amount: 15_000,
+      starts_at: first_at + 3.hours,
+      ends_at: first_at + 210.minutes,
+      status: 'cancelled',
+      custom_attributes: {
+        medelement_reception_code: SecureRandom.uuid,
+        medelement_removed_at: (first_at + 1.hour).iso8601
+      }
+    )
+
+    # 3. Early cancelled appointment for repeat_contact (removed > 1 hour before starts_at, no replacement)
+    provider_visit(
+      repeat_contact,
+      service: service,
+      service_amount: 10_000,
+      starts_at: first_at + 5.hours,
+      ends_at: first_at + 330.minutes,
+      status: 'cancelled',
+      custom_attributes: {
+        medelement_reception_code: SecureRandom.uuid,
+        medelement_removed_at: (first_at + 2.hours).iso8601
+      }
+    )
+
+    # 4. True no-show appointment (removed < 1 hour before starts_at, no replacement; 12,000 KZT lost)
+    no_show_contact = create(:contact, account: account)
+    incoming(no_show_contact, at: first_at + 10.minutes)
+    provider_visit(
+      no_show_contact,
+      service: service,
+      service_amount: 12_000,
+      starts_at: first_at + 4.hours,
+      ends_at: first_at + 270.minutes,
+      status: 'cancelled',
+      custom_attributes: {
+        medelement_reception_code: SecureRandom.uuid,
+        medelement_removed_at: (first_at + 210.minutes).iso8601
+      }
+    )
+
+    # WhatsApp touches for completed_apt
+    create(
+      :reminder,
+      account: account,
+      remindable: completed_apt,
+      status: :completed,
+      completed_at: first_at + 30.minutes,
+      scheduled_at: first_at + 30.minutes,
+      template_params: { 'name' => 'booking_reminder_1d' }
+    )
+    create(
+      :reminder,
+      account: account,
+      remindable: completed_apt,
+      status: :completed,
+      completed_at: first_at + 45.minutes,
+      scheduled_at: first_at + 45.minutes,
+      template_params: { 'name' => 'booking_reminder_2h' }
+    )
+    create(
+      :reminder,
+      account: account,
+      remindable: completed_apt,
+      status: :completed,
+      completed_at: first_at + 160.minutes,
+      scheduled_at: first_at + 160.minutes,
+      template_params: { 'name' => 'booking_feedback_request' }
+    )
+
+    result = report
+    expect(result).to include(
+      leads_count: 2,
+      repeat_contacts_count: 1,
+      attended_appointments_count: 1,
+      rescheduled_appointments_count: 1,
+      early_cancelled_appointments_count: 0,
+      true_no_show_appointments_count: 1,
+      net_attendance_rate_percent: 50.0,
+      completed_revenue_kzt: 15_000,
+      rescheduled_saved_revenue_kzt: 15_000,
+      true_no_show_lost_revenue_kzt: 12_000
+    )
+
+    expect(result[:all_contacts_funnel]).to include(
+      contacts_count: 3,
+      booked_contacts_count: 3,
+      attended_contacts_count: 1,
+      primary_contacts_count: 2,
+      repeat_contacts_count: 1
+    )
+
+    expect(result[:schedule_breakdown]).to include(
+      total_appointments_count: 4,
+      completed_count: 1,
+      rescheduled_count: 1,
+      early_cancelled_count: 1,
+      true_no_show_count: 1,
+      completed_revenue_kzt: 15_000,
+      rescheduled_saved_revenue_kzt: 15_000,
+      true_no_show_lost_revenue_kzt: 12_000,
+      net_attendance_rate_percent: 50.0
+    )
+
+    expect(result[:whatsapp_touches]).to include(
+      total_sent_count: 3,
+      reminder_1d_sent_count: 1,
+      reminder_1d_confirmed_count: 1,
+      reminder_1d_confirmation_rate_percent: 100.0,
+      reminder_2h_sent_count: 1,
+      review_request_sent_count: 1
+    )
+
+    exec_report = Reports::MonthlyExecutiveReportService.new(account: account, target_month: '2026-10', now: now).perform
+    expect(exec_report[:period_key]).to eq('2026-10')
+    expect(exec_report[:summary_text]).to include('Состоявшиеся приёмы: 1 (на сумму 15 000 ₸)')
+    expect(account.reload.custom_attributes.dig('monthly_executive_reports', '2026-10', 'period_label')).to eq('Октябрь 2026 г.')
+  end
 end

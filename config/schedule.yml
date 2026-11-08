@@ -370,3 +370,10 @@ billing_dunning_job:
   class: 'Billing::DunningJob'
   queue: scheduled_jobs
   active_job: true
+
+# Monthly on the 1st at 03:00 UTC (08:00 Asia/Almaty): generates the 2-sheet Executive Report and summary for active clinic accounts.
+monthly_executive_reports_job:
+  cron: '0 3 1 * *'
+  class: 'Reports::MonthlyExecutiveReportsJob'
+  queue: scheduled_jobs
+  active_job: true

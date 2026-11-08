@@ -4,17 +4,21 @@ import { useI18n } from 'vue-i18n';
 import ReportMetricCard from './ReportMetricCard.vue';
 
 const props = defineProps({
-  report: { type: Object, default: () => ({}) },
+  report: { type: Object, required: true },
   loading: { type: Boolean, default: false },
 });
+
 const { t, locale } = useI18n();
 const number = value =>
   new Intl.NumberFormat(locale.value).format(Number(value || 0));
+const kzt = value =>
+  `${new Intl.NumberFormat(locale.value).format(Number(value || 0))} ₸`;
 const percent = value =>
   new Intl.NumberFormat(locale.value, {
     style: 'percent',
     maximumFractionDigits: 1,
   }).format(Number(value || 0) / 100);
+
 const metrics = computed(() => [
   {
     key: 'leads',
@@ -41,7 +45,16 @@ const metrics = computed(() => [
     label: t('CRM.LEAD_CONVERSION.ATTENDANCE_CONVERSION'),
     value: percent(props.report.attendance_conversion_percent),
   },
+  {
+    key: 'net_attendance_rate',
+    label: t('CRM.LEAD_CONVERSION.NET_ATTENDANCE_RATE'),
+    value: percent(
+      props.report.schedule_breakdown?.net_attendance_rate_percent ??
+        props.report.net_attendance_rate_percent
+    ),
+  },
 ]);
+
 const counts = computed(() => [
   {
     key: 'appointments',
@@ -57,6 +70,21 @@ const counts = computed(() => [
     key: 'attended',
     label: t('CRM.LEAD_CONVERSION.ATTENDED_APPOINTMENTS'),
     value: props.report.attended_appointments_count,
+  },
+  {
+    key: 'rescheduled',
+    label: t('CRM.LEAD_CONVERSION.RESCHEDULED_APPOINTMENTS'),
+    value: props.report.rescheduled_appointments_count,
+  },
+  {
+    key: 'early_cancelled',
+    label: t('CRM.LEAD_CONVERSION.EARLY_CANCELLED_APPOINTMENTS'),
+    value: props.report.early_cancelled_appointments_count,
+  },
+  {
+    key: 'true_no_show',
+    label: t('CRM.LEAD_CONVERSION.TRUE_NO_SHOW_APPOINTMENTS'),
+    value: props.report.true_no_show_appointments_count,
   },
   {
     key: 'cancelled',
@@ -79,6 +107,12 @@ const counts = computed(() => [
     value: props.report.won_deals_count,
   },
 ]);
+
+const allFunnel = computed(() => props.report.all_contacts_funnel || null);
+const scheduleBreakdown = computed(
+  () => props.report.schedule_breakdown || null
+);
+const whatsappTouches = computed(() => props.report.whatsapp_touches || null);
 const rows = computed(() => props.report.attribution_breakdown || []);
 </script>
 
@@ -117,6 +151,104 @@ const rows = computed(() => props.report.attribution_breakdown || []);
         </dd>
       </div>
     </dl>
+
+    <div
+      v-if="allFunnel || scheduleBreakdown || whatsappTouches"
+      class="mt-5 grid grid-cols-1 gap-4 border-t border-n-weak pt-4 lg:grid-cols-3"
+    >
+      <div
+        v-if="allFunnel"
+        class="rounded-lg bg-n-solid-1 p-4 outline outline-1 outline-n-weak"
+        data-testid="all-contacts-funnel"
+      >
+        <h3 class="m-0 mb-2 text-xs font-semibold uppercase tracking-wider text-n-slate-10">
+          {{ $t('CRM.LEAD_CONVERSION.ALL_FUNNEL_TITLE') }}
+        </h3>
+        <dl class="m-0 flex flex-col gap-1.5 text-xs">
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-n-slate-11">{{ $t('CRM.LEAD_CONVERSION.ALL_CONTACTS') }}</dt>
+            <dd class="m-0 font-semibold text-n-slate-12">{{ number(allFunnel.contacts_count) }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-n-slate-11">{{ $t('CRM.LEAD_CONVERSION.ALL_BOOKED') }}</dt>
+            <dd class="m-0 font-semibold text-n-slate-12">
+              {{ number(allFunnel.booked_contacts_count) }} ({{ percent(allFunnel.booking_conversion_percent) }})
+            </dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-n-slate-11">{{ $t('CRM.LEAD_CONVERSION.ALL_ATTENDED') }}</dt>
+            <dd class="m-0 font-semibold text-n-slate-12">
+              {{ number(allFunnel.attended_contacts_count) }} ({{ percent(allFunnel.attendance_conversion_percent) }})
+            </dd>
+          </div>
+          <div class="flex items-center justify-between gap-2 border-t border-n-weak pt-1.5">
+            <dt class="text-n-slate-10">{{ $t('CRM.LEAD_CONVERSION.PRIMARY_VS_REPEAT') }}</dt>
+            <dd class="m-0 text-n-slate-11">
+              {{ number(allFunnel.primary_contacts_count) }} / {{ number(allFunnel.repeat_contacts_count) }}
+            </dd>
+          </div>
+        </dl>
+      </div>
+
+      <div
+        v-if="scheduleBreakdown"
+        class="rounded-lg bg-n-solid-1 p-4 outline outline-1 outline-n-weak"
+        data-testid="schedule-finance-breakdown"
+      >
+        <h3 class="m-0 mb-2 text-xs font-semibold uppercase tracking-wider text-n-slate-10">
+          {{ $t('CRM.LEAD_CONVERSION.FINANCE_TITLE') }}
+        </h3>
+        <dl class="m-0 flex flex-col gap-1.5 text-xs">
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-n-slate-11">{{ $t('CRM.LEAD_CONVERSION.COMPLETED_REVENUE') }}</dt>
+            <dd class="m-0 font-semibold text-n-teal-11">{{ kzt(scheduleBreakdown.completed_revenue_kzt) }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-n-slate-11">{{ $t('CRM.LEAD_CONVERSION.RESCHEDULED_REVENUE') }}</dt>
+            <dd class="m-0 font-semibold text-n-blue-11">{{ kzt(scheduleBreakdown.rescheduled_saved_revenue_kzt) }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-n-slate-11">{{ $t('CRM.LEAD_CONVERSION.LOST_NO_SHOW_REVENUE') }}</dt>
+            <dd class="m-0 font-semibold text-n-ruby-11">{{ kzt(scheduleBreakdown.true_no_show_lost_revenue_kzt) }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2 border-t border-n-weak pt-1.5">
+            <dt class="text-n-slate-10">{{ $t('CRM.LEAD_CONVERSION.NET_ATTENDANCE_RATE') }}</dt>
+            <dd class="m-0 font-semibold text-n-slate-12">{{ percent(scheduleBreakdown.net_attendance_rate_percent) }}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div
+        v-if="whatsappTouches"
+        class="rounded-lg bg-n-solid-1 p-4 outline outline-1 outline-n-weak"
+        data-testid="whatsapp-touches-summary"
+      >
+        <h3 class="m-0 mb-2 text-xs font-semibold uppercase tracking-wider text-n-slate-10">
+          {{ $t('CRM.LEAD_CONVERSION.TOUCHES_TITLE') }}
+        </h3>
+        <dl class="m-0 flex flex-col gap-1.5 text-xs">
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-n-slate-11">{{ $t('CRM.LEAD_CONVERSION.REMINDER_1D') }}</dt>
+            <dd class="m-0 font-semibold text-n-slate-12">
+              {{ number(whatsappTouches.reminder_1d_sent_count) }} ({{ percent(whatsappTouches.reminder_1d_confirmation_rate_percent) }})
+            </dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-n-slate-11">{{ $t('CRM.LEAD_CONVERSION.REMINDER_2H') }}</dt>
+            <dd class="m-0 font-semibold text-n-slate-12">{{ number(whatsappTouches.reminder_2h_sent_count) }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <dt class="text-n-slate-11">{{ $t('CRM.LEAD_CONVERSION.REVIEW_REQUEST') }}</dt>
+            <dd class="m-0 font-semibold text-n-slate-12">{{ number(whatsappTouches.review_request_sent_count) }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-2 border-t border-n-weak pt-1.5">
+            <dt class="text-n-slate-10">{{ $t('CRM.LEAD_CONVERSION.TOUCHES_TOTAL') }}</dt>
+            <dd class="m-0 font-semibold text-n-slate-12">{{ number(whatsappTouches.total_sent_count) }}</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+
     <p class="mb-0 mt-4 text-xs leading-5 text-n-slate-10">
       {{ $t('CRM.LEAD_CONVERSION.OUTCOMES_HELP') }}
     </p>
