@@ -1,12 +1,13 @@
 <%#
-# Unified Tariff + Capabilities Matrix (`_plan_cards.html.erb`)
+# Pricing & Capabilities Comparison Matrix (`_plan_cards.html.erb`)
 
-- Vertical list of the 4 tariff presets (`text_call`, `ai_agent_rop`, `voice_ai`, `enterprise`)
-  with a checkmark indicator when a tariff preset is active.
-- Horizontal row of capability checkboxes (`ai_agents`, `broadcasts`, `quality`, `extensions`).
-- Clicking a tariff preset automatically lights up its capability checkboxes.
-- Manually toggling any capability checkbox clears the checkmark on the tariff preset (making it Custom
-  without displaying a separate "Custom" option in the selector).
+A classic SaaS pricing matrix table:
+- Top header row: 4 tariff columns (`Текст + Звонок`, `ИИ-Агент + ИИ-РОП`, `Голосовой ИИ-Агент`, `Enterprise`)
+  with a selection checkmark in the column header.
+- Left column: capability rows (from base capabilities active on all tariffs to progressive add-on modules).
+- Matrix cells: visual indicators (`✓` / `—`) showing how each subsequent tariff includes more capabilities.
+- Interactive checkboxes (`modules[]`): clicking a tariff header column automatically checks/unchecks the capabilities;
+  manually toggling any capability checkbox clears the tariff header checkmark (switching to Custom without showing a "Custom" badge).
 
 ## Local variables:
 
@@ -15,67 +16,113 @@
 %>
 <% selected_tariff = local_assigns[:tariff].to_s %>
 <% visible_tariffs = Accounts::Plans.active_tariff_keys | ([selected_tariff] & Accounts::Plans.tariff_keys) %>
+<%
+  tariff_quotas = {
+    'text_call' => { agents: '5 операторов', storage: '5 ГБ', ai: '—', calls: '—' },
+    'ai_agent_rop' => { agents: '7 операторов', storage: '10 ГБ', ai: '1 000 / мес', calls: '1 000 мин' },
+    'voice_ai' => { agents: '10 операторов', storage: '25 ГБ', ai: '2 000 / мес', calls: '2 000 мин' },
+    'enterprise' => { agents: 'Без лимита', storage: 'Без лимита', ai: 'Без лимита', calls: 'Без лимита' }
+  }
+  ordered_module_rows = %w[ai_agents quality broadcasts extensions] & Accounts::Plans.module_keys
+%>
 
-<div class="flex flex-col gap-4" data-tariff-matrix>
-  <% if visible_tariffs.any? %>
-    <fieldset class="m-0 min-w-0 border-0 p-0" data-testid="tariff-presets">
-      <legend class="mb-2 text-xs font-semibold uppercase tracking-wider text-n-slate-10">Тариф</legend>
-      <%= radio_button_tag 'tariff', '', selected_tariff.blank?, id: 'plan-tariff-custom', class: 'sr-only', tabindex: -1, aria: { hidden: true } %>
-      <div class="flex flex-col gap-2">
+<div class="overflow-x-auto rounded-xl border border-n-weak bg-n-solid-1" data-tariff-matrix>
+  <%= radio_button_tag 'tariff', '', selected_tariff.blank?, id: 'plan-tariff-custom', class: 'sr-only', tabindex: -1, aria: { hidden: true } %>
+
+  <div class="hidden" data-plan-card="base" aria-hidden="true">
+    <span class="text-heading-3 text-n-slate-12"><%= t('super_admin.plans.base.name') %></span>
+    <span class="admin-badge admin-badge--iris"><%= t('super_admin.clinic_card.plan.always_included') %></span>
+  </div>
+
+  <table class="w-full min-w-[42rem] border-collapse text-left text-xs" data-testid="tariff-presets">
+    <thead>
+      <tr class="border-b border-n-weak bg-n-solid-2/60">
+        <th scope="col" class="w-[34%] px-4 py-3.5 align-bottom">
+          <span class="text-xs font-semibold uppercase tracking-wider text-n-slate-10">Возможности</span>
+        </th>
         <% visible_tariffs.each do |key| %>
           <% is_selected = selected_tariff == key %>
-          <label class="group flex cursor-pointer items-center justify-between gap-3 rounded-xl bg-n-solid-1 px-4 py-3 font-normal outline outline-1 -outline-offset-1 transition-all <%= is_selected ? 'outline-2 outline-n-blue-9 bg-n-blue-2/40' : 'outline-n-weak hover:outline-n-strong' %>"
-                 for="plan-tariff-<%= key %>"
-                 data-tariff-card="<%= key %>"
-                 data-selected="<%= is_selected %>">
-            <span class="flex min-w-0 items-center gap-3">
+          <th scope="col" class="w-[16.5%] border-l border-n-weak p-0 align-top transition-colors <%= 'bg-n-blue-2/40' if is_selected %>" data-tariff-col="<%= key %>">
+            <label class="flex h-full cursor-pointer flex-col items-center justify-between gap-2 px-3 py-3.5 text-center font-normal transition-colors hover:bg-n-alpha-1"
+                   for="plan-tariff-<%= key %>"
+                   data-tariff-card="<%= key %>"
+                   data-selected="<%= is_selected %>">
               <%= radio_button_tag 'tariff', key, is_selected, id: "plan-tariff-#{key}",
                                    class: 'sr-only',
                                    data: { tariff_modules: Accounts::Plans.tariff_modules(key).to_json } %>
-              <span class="flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors <%= is_selected ? 'border-n-blue-9 bg-n-blue-9 text-white' : 'border-n-strong bg-n-solid-2 text-transparent' %>"
+              <span class="flex size-5 items-center justify-center rounded-full border transition-colors <%= is_selected ? 'border-n-blue-9 bg-n-blue-9 text-white shadow-sm' : 'border-n-strong bg-n-solid-1 text-transparent' %>"
                     data-tariff-check
                     aria-hidden="true">
                 <span class="i-lucide-check size-3.5"></span>
               </span>
-              <span class="flex min-w-0 flex-col gap-0.5">
-                <span class="text-sm font-semibold text-n-slate-12"><%= Accounts::Plans.tariff_name(key) %></span>
-                <span class="text-xs text-n-slate-11"><%= Accounts::Plans.tariff_description(key) %></span>
-              </span>
-            </span>
-          </label>
+              <span class="text-[13px] font-semibold leading-tight text-n-slate-12"><%= Accounts::Plans.tariff_name(key) %></span>
+              <% if (q = tariff_quotas[key]) %>
+                <span class="text-[11px] font-normal leading-tight text-n-slate-10"><%= q[:agents] %> · <%= q[:storage] %></span>
+              <% end %>
+            </label>
+          </th>
         <% end %>
-      </div>
-    </fieldset>
-  <% end %>
+      </tr>
+    </thead>
 
-  <fieldset class="m-0 min-w-0 border-0 p-0" data-testid="plan-modules-matrix">
-    <legend class="mb-2 text-xs font-semibold uppercase tracking-wider text-n-slate-10">Возможности</legend>
-    <div class=" hidden" data-plan-card="base" aria-hidden="true">
-      <span class="text-heading-3 text-n-slate-12"><%= t('super_admin.plans.base.name') %></span>
-      <span class="admin-badge admin-badge--iris"><%= t('super_admin.clinic_card.plan.always_included') %></span>
-    </div>
-    <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-      <% Accounts::Plans.module_keys.each do |key| %>
-        <% is_checked = chosen.include?(key) %>
-        <label class="flex cursor-pointer items-center justify-between gap-2.5 rounded-xl bg-n-solid-1 px-3.5 py-3 font-normal outline outline-1 -outline-offset-1 transition-all <%= is_checked ? 'outline-2 outline-n-blue-9 bg-n-blue-2/40' : 'outline-n-weak hover:outline-n-strong' %>"
-               for="plan-module-<%= key %>"
-               data-plan-card="<%= key %>"
-               data-checked="<%= is_checked %>">
-          <span class="flex min-w-0 flex-col gap-0.5">
-            <span class="text-xs font-semibold text-n-slate-12"><%= Accounts::Plans.module_name(key) %></span>
-            <span class="hidden text-[11px] text-n-slate-10">
-              <%= t('super_admin.clinic_card.plan.includes', features: SuperAdmin::AccountFeaturesHelper.module_feature_labels(key).join(', ')) %>
+    <tbody class="divide-y divide-n-weak">
+      <%# Row 1: Base platform capabilities (always included in all 4 tariffs) %>
+      <tr class="bg-n-solid-1/50">
+        <td class="px-4 py-3">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex min-w-0 flex-col gap-0.5">
+              <span class="text-[13px] font-medium text-n-slate-12">Чаты, CRM, запись и телефония</span>
+              <span class="text-[11px] text-n-slate-10">WhatsApp, Instagram, виджет, расписание, сделки, звонки</span>
+            </div>
+            <input type="checkbox" checked disabled class="size-4 shrink-0 rounded border-n-strong accent-n-blue-9 opacity-80" aria-label="Базовые возможности всегда включены">
+          </div>
+        </td>
+        <% visible_tariffs.each do |t_key| %>
+          <% is_selected = selected_tariff == t_key %>
+          <td class="border-l border-n-weak px-3 py-3 text-center transition-colors <%= 'bg-n-blue-2/25' if is_selected %>" data-tariff-col="<%= t_key %>">
+            <span class="inline-flex size-5 items-center justify-center rounded-full bg-n-teal-3/70 text-n-teal-11" aria-label="Включено">
+              <span class="i-lucide-check size-3.5"></span>
             </span>
-          </span>
-          <span class="admin-switch shrink-0">
-            <%= check_box_tag 'modules[]', key, is_checked, id: "plan-module-#{key}", class: 'admin-switch__input' %>
-            <span class="admin-switch__track" aria-hidden="true"></span>
-            <span class="admin-switch__thumb" aria-hidden="true"></span>
-          </span>
-        </label>
+          </td>
+        <% end %>
+      </tr>
+
+      <%# Rows 2..5: Progressive capability modules (1 -> 2 -> 4 across tariffs) %>
+      <% ordered_module_rows.each do |mod_key| %>
+        <% is_checked = chosen.include?(mod_key) %>
+        <tr class="transition-colors hover:bg-n-alpha-1/40" data-plan-card="<%= mod_key %>" data-checked="<%= is_checked %>">
+          <td class="px-4 py-3">
+            <label class="flex cursor-pointer items-center justify-between gap-2 font-normal" for="plan-module-<%= mod_key %>">
+              <span class="flex min-w-0 flex-col gap-0.5">
+                <span class="text-[13px] font-medium text-n-slate-12"><%= Accounts::Plans.module_name(mod_key) %></span>
+                <span class="text-[11px] text-n-slate-10"><%= t("super_admin.plans.modules.#{mod_key}.description") %></span>
+                <span class="hidden">
+                  <%= t('super_admin.clinic_card.plan.includes', features: SuperAdmin::AccountFeaturesHelper.module_feature_labels(mod_key).join(', ')) %>
+                </span>
+              </span>
+              <%= check_box_tag 'modules[]', mod_key, is_checked, id: "plan-module-#{mod_key}",
+                                class: 'size-4 shrink-0 cursor-pointer rounded border-n-strong accent-n-blue-9' %>
+            </label>
+          </td>
+          <% visible_tariffs.each do |t_key| %>
+            <% included_in_tariff = Accounts::Plans.tariff_modules(t_key).include?(mod_key) %>
+            <% is_selected = selected_tariff == t_key %>
+            <td class="border-l border-n-weak px-3 py-3 text-center transition-colors <%= 'bg-n-blue-2/25' if is_selected %>" data-tariff-col="<%= t_key %>">
+              <label for="plan-tariff-<%= t_key %>" class="inline-flex h-full w-full cursor-pointer items-center justify-center">
+                <% if included_in_tariff %>
+                  <span class="inline-flex size-5 items-center justify-center rounded-full bg-n-teal-3/70 text-n-teal-11" aria-label="Включено в тариф">
+                    <span class="i-lucide-check size-3.5"></span>
+                  </span>
+                <% else %>
+                  <span class="text-sm text-n-slate-8" aria-label="Не входит">—</span>
+                <% end %>
+              </label>
+            </td>
+          <% end %>
+        </tr>
       <% end %>
-    </div>
-  </fieldset>
+    </tbody>
+  </table>
 </div>
 
 <script>
@@ -86,34 +133,38 @@
     form.dataset.planMatrixVisualBound = '1';
 
     function refreshVisualState() {
+      var activeTariff = '';
       Array.prototype.forEach.call(form.querySelectorAll('[data-tariff-card]'), function (card) {
         var radio = card.querySelector('input[name="tariff"]');
         var active = !!(radio && radio.checked);
+        if (active && radio.value) activeTariff = radio.value;
         card.setAttribute('data-selected', active ? 'true' : 'false');
-        card.classList.toggle('outline-2', active);
-        card.classList.toggle('outline-n-blue-9', active);
-        card.classList.toggle('bg-n-blue-2/40', active);
-        card.classList.toggle('outline-n-weak', !active);
         var check = card.querySelector('[data-tariff-check]');
         if (check) {
           check.classList.toggle('border-n-blue-9', active);
           check.classList.toggle('bg-n-blue-9', active);
           check.classList.toggle('text-white', active);
+          check.classList.toggle('shadow-sm', active);
           check.classList.toggle('border-n-strong', !active);
-          check.classList.toggle('bg-n-solid-2', !active);
+          check.classList.toggle('bg-n-solid-1', !active);
           check.classList.toggle('text-transparent', !active);
         }
       });
 
-      Array.prototype.forEach.call(form.querySelectorAll('[data-plan-card]'), function (card) {
-        var box = card.querySelector('input[name="modules[]"]');
+      Array.prototype.forEach.call(form.querySelectorAll('[data-tariff-col]'), function (cell) {
+        var colKey = cell.getAttribute('data-tariff-col');
+        var isColActive = colKey && colKey === activeTariff;
+        if (cell.tagName === 'TH') {
+          cell.classList.toggle('bg-n-blue-2/40', !!isColActive);
+        } else {
+          cell.classList.toggle('bg-n-blue-2/25', !!isColActive);
+        }
+      });
+
+      Array.prototype.forEach.call(form.querySelectorAll('[data-plan-card]'), function (row) {
+        var box = row.querySelector('input[name="modules[]"]');
         if (!box) return;
-        var checked = !!box.checked;
-        card.setAttribute('data-checked', checked ? 'true' : 'false');
-        card.classList.toggle('outline-2', checked);
-        card.classList.toggle('outline-n-blue-9', checked);
-        card.classList.toggle('bg-n-blue-2/40', checked);
-        card.classList.toggle('outline-n-weak', !checked);
+        row.setAttribute('data-checked', box.checked ? 'true' : 'false');
       });
     }
 
