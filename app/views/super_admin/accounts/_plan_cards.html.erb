@@ -1,9 +1,12 @@
 <%#
-# The 4 active tariff presets plus collapsed fine-grained module switches
+# Unified Tariff + Capabilities Matrix (`_plan_cards.html.erb`)
 
-The main grid shows only the 4 approved tariffs (`text_call`, `ai_agent_rop`, `voice_ai`, `enterprise`; legacy archive tariffs
-`basic`, `pro`, `max` are shown only if currently assigned to the account). Individual module switches live inside a collapsed
-details block so the screen stays focused on the 4 tariffs while keeping Custom fine-tuning accessible.
+- Vertical list of the 4 tariff presets (`text_call`, `ai_agent_rop`, `voice_ai`, `enterprise`)
+  with a checkmark indicator when a tariff preset is active.
+- Horizontal row of capability checkboxes (`ai_agents`, `broadcasts`, `quality`, `extensions`).
+- Clicking a tariff preset automatically lights up its capability checkboxes.
+- Manually toggling any capability checkbox clears the checkmark on the tariff preset (making it Custom
+  without displaying a separate "Custom" option in the selector).
 
 ## Local variables:
 
@@ -12,83 +15,123 @@ details block so the screen stays focused on the 4 tariffs while keeping Custom 
 %>
 <% selected_tariff = local_assigns[:tariff].to_s %>
 <% visible_tariffs = Accounts::Plans.active_tariff_keys | ([selected_tariff] & Accounts::Plans.tariff_keys) %>
-<% if visible_tariffs.any? %>
-  <fieldset class="m-0 mb-2 min-w-0 border-0 p-0" data-testid="tariff-presets">
-    <legend class="sr-only"><%= t('super_admin.plans.tariffs_heading') %></legend>
-    <%= radio_button_tag 'tariff', '', selected_tariff.blank?, id: 'plan-tariff-custom', class: 'sr-only', tabindex: -1, aria: { hidden: true } %>
-    <div class="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-2.5">
-      <% visible_tariffs.each do |key| %>
-        <label class="admin-plan-card admin-plan-card--module cursor-pointer" for="plan-tariff-<%= key %>" data-tariff-card="<%= key %>">
-          <span class="flex items-start justify-between gap-2">
-            <span class="text-heading-3 text-n-slate-12"><%= Accounts::Plans.tariff_name(key) %></span>
-            <%= radio_button_tag 'tariff', key, selected_tariff == key, id: "plan-tariff-#{key}",
-                                 data: { tariff_modules: Accounts::Plans.tariff_modules(key).to_json } %>
-          </span>
-          <span class="text-[13px] text-n-slate-11"><%= Accounts::Plans.tariff_description(key) %></span>
-        </label>
-      <% end %>
-    </div>
-  </fieldset>
-  <script>
-    (function () {
-      var presets = document.currentScript && document.currentScript.previousElementSibling;
-      var form = presets && presets.closest('form');
-      if (!form || form.hasAttribute('data-plan-form') || form.dataset.planCardsBound === '1') return;
-      form.dataset.planCardsBound = '1';
-      form.addEventListener('change', function (event) {
-        var target = event.target;
-        if (!target) return;
-        if (target.name === 'tariff' && target.value) {
-          var wanted = JSON.parse(target.getAttribute('data-tariff-modules') || '[]');
-          Array.prototype.forEach.call(form.querySelectorAll('input[name="modules[]"]'), function (box) {
-            box.checked = wanted.indexOf(box.value) !== -1;
-          });
-        } else if (target.name === 'modules[]') {
-          var customRadio = form.querySelector('input[name="tariff"][value=""]');
-          if (customRadio) customRadio.checked = true;
-        }
-      });
-    })();
-  </script>
-<% end %>
 
-<details class="admin-collapse hidden" data-testid="plan-modules-collapse" aria-hidden="true">
-  <summary>
-    <span class="flex min-w-0 flex-col gap-0.5">
-      <span class="text-sm font-medium text-n-slate-12">Дополнительные модули (Custom)</span>
-      <span class="text-xs text-n-slate-11">Ручное подключение модулей переводит тариф в статус Custom</span>
-    </span>
-    <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
-  </summary>
-  <div class="admin-collapse__body">
-    <fieldset class="m-0 min-w-0 border-0 p-0">
-      <legend class="sr-only"><%= t('super_admin.clinic_card.plan.choose') %></legend>
-      <div class="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
-        <div class="admin-plan-card admin-plan-card--base" data-plan-card="base">
-          <div class="flex items-start justify-between gap-3">
-            <span class="text-heading-3 text-n-slate-12"><%= t('super_admin.plans.base.name') %></span>
-            <span class="admin-badge admin-badge--iris"><%= t('super_admin.clinic_card.plan.always_included') %></span>
-          </div>
-          <p class="m-0 text-[13px] text-n-slate-11"><%= t('super_admin.plans.base.description') %></p>
-        </div>
-
-        <% Accounts::Plans.module_keys.each do |key| %>
-          <label class="admin-plan-card admin-plan-card--module" for="plan-module-<%= key %>" data-plan-card="<%= key %>">
-            <span class="flex items-start justify-between gap-3">
-              <span class="text-heading-3 text-n-slate-12"><%= Accounts::Plans.module_name(key) %></span>
-              <span class="admin-switch">
-                <%= check_box_tag 'modules[]', key, chosen.include?(key), id: "plan-module-#{key}", class: 'admin-switch__input' %>
-                <span class="admin-switch__track" aria-hidden="true"></span>
-                <span class="admin-switch__thumb" aria-hidden="true"></span>
+<div class="flex flex-col gap-4" data-tariff-matrix>
+  <% if visible_tariffs.any? %>
+    <fieldset class="m-0 min-w-0 border-0 p-0" data-testid="tariff-presets">
+      <legend class="mb-2 text-xs font-semibold uppercase tracking-wider text-n-slate-10">Тариф</legend>
+      <%= radio_button_tag 'tariff', '', selected_tariff.blank?, id: 'plan-tariff-custom', class: 'sr-only', tabindex: -1, aria: { hidden: true } %>
+      <div class="flex flex-col gap-2">
+        <% visible_tariffs.each do |key| %>
+          <% is_selected = selected_tariff == key %>
+          <label class="group flex cursor-pointer items-center justify-between gap-3 rounded-xl bg-n-solid-1 px-4 py-3 font-normal outline outline-1 -outline-offset-1 transition-all <%= is_selected ? 'outline-2 outline-n-blue-9 bg-n-blue-2/40' : 'outline-n-weak hover:outline-n-strong' %>"
+                 for="plan-tariff-<%= key %>"
+                 data-tariff-card="<%= key %>"
+                 data-selected="<%= is_selected %>">
+            <span class="flex min-w-0 items-center gap-3">
+              <%= radio_button_tag 'tariff', key, is_selected, id: "plan-tariff-#{key}",
+                                   class: 'sr-only',
+                                   data: { tariff_modules: Accounts::Plans.tariff_modules(key).to_json } %>
+              <span class="flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors <%= is_selected ? 'border-n-blue-9 bg-n-blue-9 text-white' : 'border-n-strong bg-n-solid-2 text-transparent' %>"
+                    data-tariff-check
+                    aria-hidden="true">
+                <span class="i-lucide-check size-3.5"></span>
               </span>
-            </span>
-            <span class="text-[13px] text-n-slate-11"><%= t("super_admin.plans.modules.#{key}.description") %></span>
-            <span class="text-xs text-n-slate-10">
-              <%= t('super_admin.clinic_card.plan.includes', features: SuperAdmin::AccountFeaturesHelper.module_feature_labels(key).join(', ')) %>
+              <span class="flex min-w-0 flex-col gap-0.5">
+                <span class="text-sm font-semibold text-n-slate-12"><%= Accounts::Plans.tariff_name(key) %></span>
+                <span class="text-xs text-n-slate-11"><%= Accounts::Plans.tariff_description(key) %></span>
+              </span>
             </span>
           </label>
         <% end %>
       </div>
     </fieldset>
-  </div>
-</details>
+  <% end %>
+
+  <fieldset class="m-0 min-w-0 border-0 p-0" data-testid="plan-modules-matrix">
+    <legend class="mb-2 text-xs font-semibold uppercase tracking-wider text-n-slate-10">Возможности</legend>
+    <div class=" hidden" data-plan-card="base" aria-hidden="true">
+      <span class="text-heading-3 text-n-slate-12"><%= t('super_admin.plans.base.name') %></span>
+      <span class="admin-badge admin-badge--iris"><%= t('super_admin.clinic_card.plan.always_included') %></span>
+    </div>
+    <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+      <% Accounts::Plans.module_keys.each do |key| %>
+        <% is_checked = chosen.include?(key) %>
+        <label class="flex cursor-pointer items-center justify-between gap-2.5 rounded-xl bg-n-solid-1 px-3.5 py-3 font-normal outline outline-1 -outline-offset-1 transition-all <%= is_checked ? 'outline-2 outline-n-blue-9 bg-n-blue-2/40' : 'outline-n-weak hover:outline-n-strong' %>"
+               for="plan-module-<%= key %>"
+               data-plan-card="<%= key %>"
+               data-checked="<%= is_checked %>">
+          <span class="flex min-w-0 flex-col gap-0.5">
+            <span class="text-xs font-semibold text-n-slate-12"><%= Accounts::Plans.module_name(key) %></span>
+            <span class="hidden text-[11px] text-n-slate-10">
+              <%= t('super_admin.clinic_card.plan.includes', features: SuperAdmin::AccountFeaturesHelper.module_feature_labels(key).join(', ')) %>
+            </span>
+          </span>
+          <span class="admin-switch shrink-0">
+            <%= check_box_tag 'modules[]', key, is_checked, id: "plan-module-#{key}", class: 'admin-switch__input' %>
+            <span class="admin-switch__track" aria-hidden="true"></span>
+            <span class="admin-switch__thumb" aria-hidden="true"></span>
+          </span>
+        </label>
+      <% end %>
+    </div>
+  </fieldset>
+</div>
+
+<script>
+  (function () {
+    var matrix = document.currentScript && document.currentScript.previousElementSibling;
+    var form = matrix && matrix.closest('form');
+    if (!form || form.dataset.planMatrixVisualBound === '1') return;
+    form.dataset.planMatrixVisualBound = '1';
+
+    function refreshVisualState() {
+      Array.prototype.forEach.call(form.querySelectorAll('[data-tariff-card]'), function (card) {
+        var radio = card.querySelector('input[name="tariff"]');
+        var active = !!(radio && radio.checked);
+        card.setAttribute('data-selected', active ? 'true' : 'false');
+        card.classList.toggle('outline-2', active);
+        card.classList.toggle('outline-n-blue-9', active);
+        card.classList.toggle('bg-n-blue-2/40', active);
+        card.classList.toggle('outline-n-weak', !active);
+        var check = card.querySelector('[data-tariff-check]');
+        if (check) {
+          check.classList.toggle('border-n-blue-9', active);
+          check.classList.toggle('bg-n-blue-9', active);
+          check.classList.toggle('text-white', active);
+          check.classList.toggle('border-n-strong', !active);
+          check.classList.toggle('bg-n-solid-2', !active);
+          check.classList.toggle('text-transparent', !active);
+        }
+      });
+
+      Array.prototype.forEach.call(form.querySelectorAll('[data-plan-card]'), function (card) {
+        var box = card.querySelector('input[name="modules[]"]');
+        if (!box) return;
+        var checked = !!box.checked;
+        card.setAttribute('data-checked', checked ? 'true' : 'false');
+        card.classList.toggle('outline-2', checked);
+        card.classList.toggle('outline-n-blue-9', checked);
+        card.classList.toggle('bg-n-blue-2/40', checked);
+        card.classList.toggle('outline-n-weak', !checked);
+      });
+    }
+
+    form.addEventListener('change', function (event) {
+      var target = event.target;
+      if (!target) return;
+      if (target.name === 'tariff' && target.value) {
+        var wanted = JSON.parse(target.getAttribute('data-tariff-modules') || '[]');
+        Array.prototype.forEach.call(form.querySelectorAll('input[name="modules[]"]'), function (box) {
+          box.checked = wanted.indexOf(box.value) !== -1;
+        });
+      } else if (target.name === 'modules[]') {
+        var customRadio = form.querySelector('input[name="tariff"][value=""]');
+        if (customRadio) customRadio.checked = true;
+      }
+      refreshVisualState();
+    });
+
+    refreshVisualState();
+  })();
+</script>
