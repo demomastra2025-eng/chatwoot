@@ -126,19 +126,19 @@ basic facts, organization, maintenance.
 
       <%= render 'users', account: account, page: page %>
 
-      <%# Who from the super admins entered this account, and as whom: collapsed, the last 20. %>
-      <%= render 'super_admin/shared/impersonation_history', entries: SuperAdmin::ImpersonationHistory.for_account(account), scope: :account %>
-
       <div class="hidden" aria-hidden="true">
+        <%= render 'super_admin/shared/impersonation_history', entries: SuperAdmin::ImpersonationHistory.for_account(account), scope: :account %>
         <%= render 'technical', account: account, state: state %>
       </div>
     </div>
 
     <div class="flex min-w-0 flex-col gap-5">
-      <%= render 'trial', account: account, state: state %>
-      <%= render 'info', account: account, state: state %>
-      <%= render 'organization', account: account %>
-      <%= render 'maintenance', account: account %>
+      <section class="admin-block flex flex-col gap-3">
+        <%= render 'info', account: account, state: state %>
+        <%= render 'organization', account: account %>
+        <%= render 'trial', account: account, state: state %>
+        <%= render 'maintenance', account: account %>
+      </section>
     </div>
   </div>
 </section>

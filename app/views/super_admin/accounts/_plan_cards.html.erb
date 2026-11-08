@@ -14,7 +14,7 @@ details block so the screen stays focused on the 4 tariffs while keeping Custom 
 <% visible_tariffs = Accounts::Plans.active_tariff_keys | ([selected_tariff] & Accounts::Plans.tariff_keys) %>
 <% if visible_tariffs.any? %>
   <fieldset class="m-0 mb-2 min-w-0 border-0 p-0" data-testid="tariff-presets">
-    <legend class="mb-2 text-xs font-medium text-n-slate-11"><%= t('super_admin.plans.tariffs_heading') %></legend>
+    <legend class="sr-only"><%= t('super_admin.plans.tariffs_heading') %></legend>
     <%= radio_button_tag 'tariff', '', selected_tariff.blank?, id: 'plan-tariff-custom', class: 'sr-only', tabindex: -1, aria: { hidden: true } %>
     <div class="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-2.5">
       <% visible_tariffs.each do |key| %>

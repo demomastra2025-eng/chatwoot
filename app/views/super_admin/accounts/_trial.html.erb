@@ -1,19 +1,9 @@
 <%#
-# Trial of a clinic
-
-The state of the trial and the actions: start (for a clinic that has not had
-one), extend and end now (for a trial started from the admin panel). All times
-are Astana time.
-
-## Local variables:
-
-- `account`: the clinic (Account).
-- `state`: its `SuperAdmin::AccountPlanState`.
+# Trial row inside the Passport card
 %>
 <%
   days = Accounts::Plans.trial_days
   trial_state = state.trial_state
-  # What the end of the trial does to the limits is decided by how the trial was started (see Account#trial_locks_limits?)
   limits_key = state.trial_locks_limits? ? 'locked' : 'kept'
   remaining = state.trial_remaining
   badge = { none: ['admin-badge--quiet', t('super_admin.accounts.trial.inactive')],
@@ -30,44 +20,29 @@ are Astana time.
                    end
 %>
 
-<section class="admin-block" aria-labelledby="trial-title" data-testid="trial-block" data-trial-state="<%= trial_state %>">
-  <div class="admin-block__head-row">
-    <h2 class="admin-block__title" id="trial-title"><%= t('super_admin.accounts.trial.title') %></h2>
+<div class="flex flex-col gap-2 border-t border-n-weak pt-3" data-testid="trial-block" data-trial-state="<%= trial_state %>">
+  <div class="flex items-center justify-between gap-2">
+    <span class="text-xs font-medium text-n-slate-11" id="trial-title"><%= t('super_admin.accounts.trial.title') %></span>
     <span class="admin-badge <%= badge.first %>"><%= badge.last %></span>
   </div>
 
   <% if trial_state == :active %>
-    <p class="admin-block__hint">
-      <%= remaining_text %>
-      <br>
-      <span class="text-n-slate-10"><%= t('super_admin.accounts.trial.until') %> <%= super_admin_time(state.trial_expires_at) %></span>
+    <p class="m-0 text-xs text-n-slate-11">
+      <%= remaining_text %> (<%= t('super_admin.accounts.trial.until') %> <%= super_admin_time(state.trial_expires_at) %>)
     </p>
     <% if state.trial_managed? %>
-      <p class="admin-block__note" data-testid="trial-end-note">
+      <p class="admin-block__note hidden" aria-hidden="true" data-testid="trial-end-note">
         <%= t('super_admin.accounts.trial.at_end') %>
         <%= t("super_admin.accounts.trial.limits_#{limits_key}") %>
       </p>
     <% end %>
   <% elsif trial_state == :expired %>
-    <p class="admin-block__hint">
+    <p class="m-0 text-xs text-n-slate-11">
       <%= t('super_admin.accounts.trial.ended_at', time: super_admin_time(state.trial_expired_at || state.trial_expires_at) || t('super_admin.accounts.trial.unknown_time')) %>
     </p>
-    <%# The end of the trial closed operators and channels (limits 0): the plan gives them back by itself %>
     <% if state.trial_limits_held? %>
       <p class="admin-block__note text-n-amber-11" data-testid="trial-limits-held"><%= t('super_admin.safety.trial.limits_held', button: state.apply_label) %></p>
     <% end %>
-  <% else %>
-    <p class="admin-block__hint">
-      <%= t('super_admin.accounts.trial.description', days: days) %>
-      <%= t("super_admin.accounts.trial.limits_#{limits_key}") %>
-    </p>
-  <% end %>
-
-  <% if trial_state != :none && !state.trial_managed? %>
-    <p class="admin-block__note">
-      <%= t('super_admin.accounts.trial.manual_note') %>
-      <%= t('super_admin.accounts.trial.manual_start_note') if state.can_start_trial? %>
-    </p>
   <% end %>
 
   <% if state.trial_managed? || state.can_start_trial? %>
@@ -76,7 +51,6 @@ are Astana time.
         <%= render 'super_admin/shared/confirm_action', key: 'extend-trial', label: t('super_admin.accounts.trial.extend', days: days),
                    text: [t('super_admin.accounts.trial.extend_confirm', days: days)], url: extend_trial_super_admin_account_path(account),
                    tone: :primary, submit: t('super_admin.safety.trial.extend_submit'), trigger_class: 'button button--small button--secondary' %>
-        <%# An ended trial cannot be ended again (expire_trial! refuses it), so the button is only there while it runs. %>
         <% if trial_state == :active %>
           <%= render 'super_admin/shared/confirm_action', key: 'expire-trial', label: t('super_admin.accounts.trial.expire'),
                      text: [t("super_admin.accounts.trial.expire_confirm_#{limits_key}"), t('super_admin.safety.audited')],
@@ -90,4 +64,4 @@ are Astana time.
       <% end %>
     </div>
   <% end %>
-</section>
+</div>

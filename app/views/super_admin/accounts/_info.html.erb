@@ -1,26 +1,30 @@
 <%#
-# Basic facts of a clinic
-
-A short key/value block of the side column: language (as text: the platform is Russian only for now), time zone,
-creation date and when the plan was applied. All times are Astana time.
-
-## Local variables:
-
-- `account`: the clinic (Account).
-- `state`: its `SuperAdmin::AccountPlanState`.
+# Passport of a clinic: compact key/value facts and inline rename
 %>
 <%
   rows = [
-    [t('super_admin.clinic_card.info.locale'), LanguageField.name_of(account.locale)],
-    [t('super_admin.clinic_card.info.timezone'), SuperAdmin::AccountTimezones.label_for(account.reporting_timezone).presence || t('super_admin.clinic_card.info.timezone_default')],
     [t('super_admin.clinic_card.info.created'), super_admin_time(account.created_at)]
   ]
-  # The version of the plan is a technical number: it is under «Для разработчика» (see `_technical`)
   rows << [t('super_admin.clinic_card.info.plan_applied'), super_admin_time(state.applied_at).presence || '—'] if state.assigned?
 %>
 
-<section class="admin-block" aria-labelledby="info-title" data-testid="info-block">
-  <h2 class="admin-block__title" id="info-title"><%= t('super_admin.clinic_card.info.title') %></h2>
+<div class="flex flex-col gap-2" data-testid="info-block">
+  <div class="flex items-center justify-between gap-2">
+    <h2 class="admin-block__title m-0" id="info-title">Паспорт аккаунта</h2>
+    <details class="relative">
+      <summary class="cursor-pointer list-none text-xs font-medium text-n-brand hover:underline">Переименовать</summary>
+      <%= form_with url: super_admin_account_path(account), method: :patch, local: true, class: 'mt-2 flex flex-col gap-2 rounded-lg bg-n-slate-2 p-2.5' do %>
+        <%= hidden_field_tag :return_to, 'card', id: nil %>
+        <%= render 'super_admin/accounts/form_state', account: account %>
+        <%= label_tag 'account_name_inline', 'Название аккаунта', class: 'sr-only' %>
+        <%= text_field_tag 'account[name]', account.name, id: 'account_name_inline', required: true %>
+        <div class="flex justify-end">
+          <%= submit_tag t('super_admin.shell.save'), name: nil, class: 'button button--small' %>
+        </div>
+      <% end %>
+    </details>
+  </div>
+
   <dl class="admin-kv">
     <% rows.each do |key, value| %>
       <div class="admin-kv__row">
@@ -29,17 +33,4 @@ creation date and when the plan was applied. All times are Astana time.
       </div>
     <% end %>
   </dl>
-
-  <details class="mt-1 border-t border-n-weak pt-2.5">
-    <summary class="cursor-pointer text-xs font-medium text-n-brand">Переименовать аккаунт</summary>
-    <%= form_with url: super_admin_account_path(account), method: :patch, local: true, class: 'mt-2 flex flex-col gap-2' do %>
-      <%= hidden_field_tag :return_to, 'card', id: nil %>
-      <%= render 'super_admin/accounts/form_state', account: account %>
-      <%= label_tag 'account_name_inline', 'Название аккаунта', class: 'text-xs text-n-slate-11' %>
-      <%= text_field_tag 'account[name]', account.name, id: 'account_name_inline', required: true %>
-      <div class="admin-block__footer">
-        <%= submit_tag t('super_admin.shell.save'), name: nil, class: 'button button--small' %>
-      </div>
-    <% end %>
-  </details>
-</section>
+</div>
