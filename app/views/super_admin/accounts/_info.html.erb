@@ -29,4 +29,17 @@ creation date and when the plan was applied. All times are Astana time.
       </div>
     <% end %>
   </dl>
+
+  <details class="mt-1 border-t border-n-weak pt-2.5">
+    <summary class="cursor-pointer text-xs font-medium text-n-brand">Переименовать аккаунт</summary>
+    <%= form_with url: super_admin_account_path(account), method: :patch, local: true, class: 'mt-2 flex flex-col gap-2' do %>
+      <%= hidden_field_tag :return_to, 'card', id: nil %>
+      <%= render 'super_admin/accounts/form_state', account: account %>
+      <%= label_tag 'account_name_inline', 'Название аккаунта', class: 'text-xs text-n-slate-11' %>
+      <%= text_field_tag 'account[name]', account.name, id: 'account_name_inline', required: true %>
+      <div class="admin-block__footer">
+        <%= submit_tag t('super_admin.shell.save'), name: nil, class: 'button button--small' %>
+      </div>
+    <% end %>
+  </details>
 </section>

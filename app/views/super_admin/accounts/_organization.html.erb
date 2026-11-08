@@ -32,15 +32,18 @@ posts to `link_organization`; changing or unlinking asks first. The plan, limits
     <p class="admin-block__note" data-testid="account-organization"><%= t('super_admin.accounts.organization.empty') %></p>
   <% end %>
 
-  <%= form_with url: link_organization_super_admin_account_path(account), method: :post, local: true, class: 'flex flex-col gap-2' do %>
-    <div class="flex flex-col gap-1.5">
-      <%= label_tag :organization_id, t('super_admin.accounts.organization.select_label'), class: 'text-xs text-n-slate-11' %>
-      <%= select_tag :organization_id, options_for_select(options, organization&.id.to_s) %>
-      <%# What this page shows: a save that finds the account in another organization is refused. %>
-      <%= hidden_field_tag :expected_organization_id, organization&.id.to_s, id: nil %>
-    </div>
-    <div class="admin-block__footer">
-      <%= submit_tag t('super_admin.shell.save'), name: nil, class: 'button', data: { confirm: confirm }.compact %>
-    </div>
-  <% end %>
+  <details class="mt-1 border-t border-n-weak pt-2.5">
+    <summary class="cursor-pointer text-xs font-medium text-n-brand">Изменить организацию</summary>
+    <%= form_with url: link_organization_super_admin_account_path(account), method: :post, local: true, class: 'mt-2 flex flex-col gap-2' do %>
+      <div class="flex flex-col gap-1.5">
+        <%= label_tag :organization_id, t('super_admin.accounts.organization.select_label'), class: 'text-xs text-n-slate-11' %>
+        <%= select_tag :organization_id, options_for_select(options, organization&.id.to_s) %>
+        <%# What this page shows: a save that finds the account in another organization is refused. %>
+        <%= hidden_field_tag :expected_organization_id, organization&.id.to_s, id: nil %>
+      </div>
+      <div class="admin-block__footer">
+        <%= submit_tag t('super_admin.shell.save'), name: nil, class: 'button button--small', data: { confirm: confirm }.compact %>
+      </div>
+    <% end %>
+  </details>
 </section>

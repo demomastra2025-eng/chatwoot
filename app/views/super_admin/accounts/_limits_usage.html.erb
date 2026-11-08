@@ -26,10 +26,31 @@ go into the limits that follow it), where the storage goes and the buttons that 
   limit_rows = SuperAdmin::LimitRows.new(account, usage: usage, state: @limit_form&.state, problems: @limit_form&.problems)
 %>
 
-<section class="admin-block" aria-labelledby="usage-title" data-testid="usage-block">
-  <div class="admin-block__head">
-    <h2 class="admin-block__title" id="usage-title"><%= t('super_admin.clinic_card.usage.title') %></h2>
-    <p class="admin-block__hint"><%= t('super_admin.clinic_card.usage.hint') %></p>
+<% editing_limits = @limit_form&.problems&.any? ? 'true' : 'false' %>
+<style>
+  [data-testid="usage-block"][data-limits-editing="false"] .admin-limit__choices,
+  [data-testid="usage-block"][data-limits-editing="false"] .admin-limit__value,
+  [data-testid="usage-block"][data-limits-editing="false"] .admin-limit__hint,
+  [data-testid="usage-block"][data-limits-editing="false"] #limits-form > .admin-block__footer,
+  [data-testid="usage-block"][data-limits-editing="false"] [data-testid="limit-sync"],
+  [data-testid="usage-block"][data-limits-editing="false"] [data-testid="counter-resets"] {
+    display: none !important;
+  }
+  [data-testid="usage-block"][data-limits-editing="false"] .admin-limits {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 0.75rem;
+  }
+</style>
+<section class="admin-block" aria-labelledby="usage-title" data-testid="usage-block" data-limits-editing="<%= editing_limits %>">
+  <div class="admin-block__head-row">
+    <div class="admin-block__head">
+      <h2 class="admin-block__title" id="usage-title"><%= t('super_admin.clinic_card.usage.title') %></h2>
+      <p class="admin-block__hint"><%= t('super_admin.clinic_card.usage.hint') %></p>
+    </div>
+    <button type="button" class="button button--small button--secondary" data-limits-edit-toggle onclick="var s=this.closest('[data-testid=usage-block]'); var open=s.getAttribute('data-limits-editing')==='true'; s.setAttribute('data-limits-editing', open ? 'false' : 'true'); this.textContent = open ? 'Изменить лимиты и счётчики' : 'Скрыть настройку лимитов';">
+      <%= editing_limits == 'true' ? 'Скрыть настройку лимитов' : 'Изменить лимиты и счётчики' %>
+    </button>
   </div>
 
   <%# The tokens say what the page was drawn from: a limit that somebody changed meanwhile is not overwritten (SuperAdmin::AccountFormState) %>

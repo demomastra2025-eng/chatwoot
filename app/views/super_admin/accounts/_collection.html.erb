@@ -134,7 +134,7 @@ the bar (the `form` attribute), the tick in the header ticks the whole page.
           </td>
 
           <td class="text-end">
-            <%= link_to(t('administrate.actions.edit'), [:edit, namespace, account], class: 'action-edit') if authorized_action?(account, :edit) %>
+            <%= link_to('Открыть', super_admin_account_path(account), class: 'action-edit') %>
           </td>
         </tr>
       <% end %>

@@ -230,7 +230,7 @@ RSpec.describe 'Super Admin clinic list', type: :request do
 
       get '/super_admin/accounts'
 
-      expect(cell(account, 7).at_css('a')['href']).to eq("/super_admin/accounts/#{account.id}/edit")
+      expect(cell(account, 7).at_css('a')['href']).to eq("/super_admin/accounts/#{account.id}")
     end
   end
 

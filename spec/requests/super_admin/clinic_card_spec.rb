@@ -86,7 +86,7 @@ RSpec.describe 'Super Admin clinic card', type: :request do
 
       open_card
 
-      expect(text(page.at_css("a[href='#{card_path}/edit']"))).to eq('Редактировать')
+      expect(page.at_css("a[href='#{card_path}/edit']")).to be_nil
       enter = page.at_css("form[action='#{card_path}/impersonate']")
       expect(enter['method']).to eq('post')
       expect(text(enter)).to eq('Войти в аккаунт')

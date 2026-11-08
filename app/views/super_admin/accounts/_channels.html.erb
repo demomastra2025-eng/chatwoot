@@ -22,9 +22,15 @@ are already connected keep working.
   }
 %>
 
-<section class="admin-card" aria-labelledby="account-channels-title" data-testid="channels-block">
-  <h2 class="admin-card__title" id="account-channels-title"><%= t('super_admin.channels.account.title') %></h2>
-  <p class="m-0 px-5 pt-3 text-body-main text-n-slate-11"><%= t('super_admin.channels.account.description') %></p>
+<details class="admin-collapse" aria-labelledby="account-channels-title" data-testid="channels-block">
+  <summary>
+    <span class="flex min-w-0 flex-col gap-0.5">
+      <h2 class="m-0 text-heading-2 text-n-slate-12" id="account-channels-title"><%= t('super_admin.channels.account.title') %></h2>
+      <span class="text-body-main text-n-slate-11"><%= t('super_admin.channels.account.description') %></span>
+    </span>
+    <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
+  </summary>
+  <div class="admin-collapse__body p-0">
 
   <%= form_with url: channel_overrides_super_admin_account_path(account), method: :post, local: true do %>
     <div class="admin-card--table mt-2">
@@ -76,4 +82,5 @@ are already connected keep working.
       <%= submit_tag t('super_admin.channels.save'), name: nil, class: 'button' %>
     </div>
   <% end %>
-</section>
+  </div>
+</details>
