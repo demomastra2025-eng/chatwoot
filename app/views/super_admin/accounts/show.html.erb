@@ -115,39 +115,23 @@ basic facts, organization, maintenance.
 
       <% if ChatwootApp.enterprise? %>
         <%= render 'limits_usage', account: account, usage: SuperAdmin::AccountUsage.new(account) %>
-        <%# The model of the agents, their number and the key of OpenRouter: what the account does with the AI %>
-        <%= render 'ai', account: account %>
+        <div class="hidden" aria-hidden="true">
+          <%= render 'ai', account: account %>
+        </div>
       <% end %>
 
-      <%= render 'channels', account: account %>
-
-      <details class="admin-collapse" id="fine-tuning" data-testid="fine-tuning-block">
-        <summary>
-          <span class="flex min-w-0 flex-col gap-0.5">
-            <span class="text-heading-2 text-n-slate-12"><%= t('super_admin.fine_tuning.title') %></span>
-            <span class="text-body-main text-n-slate-11"><%= t('super_admin.fine_tuning.hint') %></span>
-          </span>
-          <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
-        </summary>
-        <div class="admin-collapse__body">
-          <%= form_with url: super_admin_account_path(account), method: :patch, local: true, class: 'flex flex-col gap-5' do %>
-            <%# Only the switches are posted: the update does not re-send the name, so it cannot undo a rename made elsewhere. %>
-            <%= render 'fine_tuning', account: account %>
-            <div class="admin-block__footer sticky bottom-0 z-10 border-t border-n-weak bg-n-solid-2 py-3">
-              <%= submit_tag t('super_admin.shell.save'), name: nil, class: 'button' %>
-            </div>
-          <% end %>
-        </div>
-      </details>
-
-      <%= render 'service_flags', account: account %>
+      <div class="hidden" aria-hidden="true">
+        <%= render 'channels', account: account %>
+      </div>
 
       <%= render 'users', account: account, page: page %>
 
       <%# Who from the super admins entered this account, and as whom: collapsed, the last 20. %>
       <%= render 'super_admin/shared/impersonation_history', entries: SuperAdmin::ImpersonationHistory.for_account(account), scope: :account %>
 
-      <%= render 'technical', account: account, state: state %>
+      <div class="hidden" aria-hidden="true">
+        <%= render 'technical', account: account, state: state %>
+      </div>
     </div>
 
     <div class="flex min-w-0 flex-col gap-5">

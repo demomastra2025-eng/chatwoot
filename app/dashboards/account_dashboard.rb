@@ -153,18 +153,29 @@ class AccountDashboard < Administrate::BaseDashboard
   #     open: ->(resources) { resources.where(open: true) }
   #   }.freeze
   #
-  # The plan filters follow the plans registry: accounts with no plan, with the base plan, and one filter per module.
-  MODULE_FILTERS = Accounts::Plans.module_keys.to_h do |module_key|
+  # The plan filters follow the 4 approved tariffs plus Custom and unassigned.
+  TARIFF_FILTERS = Accounts::Plans.active_tariff_keys.to_h do |tariff_key|
+    mods_json = Accounts::Plans.tariff_modules(tariff_key).to_json
     [
-      :"module_#{module_key}",
-      ->(resources) { resources.where("custom_attributes->'plan_modules' @> ?::jsonb", [module_key].to_json) }
+      :"tariff_#{tariff_key}",
+      lambda do |resources|
+        resources.where(
+          "custom_attributes->>'plan' IS NOT NULL AND ("           "custom_attributes->>'plan_tariff' = :key OR ("           "custom_attributes->>'plan_tariff' IS NULL AND "           "COALESCE(custom_attributes->'plan_modules', '[]'::jsonb) @> :mods::jsonb AND "           ":mods::jsonb @> COALESCE(custom_attributes->'plan_modules', '[]'::jsonb)))",
+          key: tariff_key, mods: mods_json
+        )
+      end
     ]
   end.freeze
 
   PLAN_FILTERS = {
     no_plan: ->(resources) { resources.where("custom_attributes->>'plan' IS NULL") },
-    plan_base: ->(resources) { resources.where("custom_attributes->>'plan' = ?", Accounts::Plans::BASE_KEY) },
-    **MODULE_FILTERS
+    **TARIFF_FILTERS,
+    tariff_custom: lambda do |resources|
+      custom_ids = resources.where("custom_attributes->>'plan' IS NOT NULL").select do |acc|
+        SuperAdmin::AccountPlanState.new(acc).custom?
+      end.map(&:id)
+      resources.where(id: custom_ids)
+    end
   }.freeze
 
   # The order is the order of the segmented control above the list:

@@ -91,7 +91,7 @@ the bar (the `form` attribute), the tick in the header ticks the whole page.
               <% row.plan.chips.each do |chip| %>
                 <span class="admin-badge admin-badge--<%= chip.tone %>"><%= chip.text %></span>
               <% end %>
-              <% if row.plan.drifted? %>
+              <% if row.plan.drifted? && !row.plan.custom? %>
                 <span class="text-xs text-n-amber-11" title="<%= t('super_admin.plans.drift.title') %>"><%= t('super_admin.plans.drift.short') %></span>
               <% end %>
             </div>

@@ -41,19 +41,36 @@ class SuperAdmin::AccountPlanState
     Accounts::Plans.stored_tariff(attributes[Accounts::ApplyPlan::TARIFF_KEY])
   end
 
+  def inferred_tariff
+    return unless assigned?
+
+    Accounts::Plans.active_tariff_keys.find do |key|
+      Accounts::Plans.tariff_modules(key).sort == modules.sort
+    end
+  end
+
+  def effective_tariff
+    tariff || inferred_tariff
+  end
+
   # The modules that were chosen and still exist in the registry, in registry order
   def modules
     Accounts::Plans.known_modules(attributes[Accounts::ApplyPlan::MODULES_KEY])
   end
 
   def custom?
-    assigned? && tariff.present? && (drifted? || modules.sort != Accounts::Plans.tariff_modules(tariff).sort)
+    return false unless assigned?
+
+    effective_tariff.nil? ||
+      drifted? ||
+      modules.sort != Accounts::Plans.tariff_modules(effective_tariff).sort ||
+      Accounts::LimitSettings.marks_in(attributes).any?
   end
 
   def base_label
     return I18n.t('super_admin.plans.not_assigned') unless assigned?
 
-    tariff ? Accounts::Plans.plan_label(modules, tariff: tariff) : Accounts::Plans.plan_label(modules)
+    effective_tariff ? Accounts::Plans.tariff_name(effective_tariff) : 'Custom'
   end
 
   def label
@@ -162,18 +179,15 @@ class SuperAdmin::AccountPlanState
 
   # ---------------------------------------------------------------------- chips
 
-  # The plan column of the list: base + modules, or «Не назначен», plus the trial
+  # The plan column of the list: one tariff chip (or Custom), or «Не назначен», plus the trial
   def chips
     list = []
     if assigned?
       if custom?
         list << Chip.new(text: 'Custom', tone: :amber)
-        list << Chip.new(text: Accounts::Plans.tariff_name(tariff), tone: :iris)
       else
-        lead = tariff ? Accounts::Plans.tariff_name(tariff) : I18n.t('super_admin.plans.base.name')
-        list << Chip.new(text: lead, tone: :iris)
+        list << Chip.new(text: Accounts::Plans.tariff_name(effective_tariff), tone: :iris)
       end
-      modules.each { |key| list << Chip.new(text: Accounts::Plans.module_name(key), tone: :slate) }
     end
     list << trial_chip if trial_state != :none
     list << Chip.new(text: I18n.t('super_admin.plans.not_assigned'), tone: :quiet) if list.empty?

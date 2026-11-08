@@ -18,7 +18,7 @@ the plan says there is nothing to do. The notes under the list say what stays an
           else 'current'
           end
 %>
-<div class="admin-limit-sync" data-testid="limit-sync" data-state="<%= state %>">
+<div class="admin-limit-sync hidden" aria-hidden="true" data-testid="limit-sync" data-state="<%= state %>">
   <div class="flex flex-col gap-1">
     <h3 class="m-0 text-heading-3 text-n-slate-12"><%= t('super_admin.limits.sync.title') %></h3>
     <p class="admin-block__note"><%= t('super_admin.limits.sync.hint') %></p>

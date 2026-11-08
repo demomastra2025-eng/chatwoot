@@ -1,15 +1,5 @@
 <%#
-# Plan of a clinic: the base and the modules
-
-The base is always included. A module is a switch on its card. Changing the
-switches asks the server what applying the plan would change (`plan_preview`,
-an HTML fragment) and shows it above the «Применить» button; nothing is written
-until the button is pressed (`apply_plan`, audited). A clinic with no plan shows
-«Тариф не назначен» and «Назначить базу», with the preview first. Without
-JavaScript the form still works: it applies at once, with no preview.
-
-A clinic whose functions were switched by hand (see «Тонкая настройка») shows
-«Изменено вручную: +N −M» and «Сбросить к тарифу» (applies the same plan again).
+# Plan of a clinic: the 4 tariff presets and collapsed Fine-Tuning (Custom)
 
 ## Local variables:
 
@@ -20,8 +10,7 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
 <%
   chosen = state.modules
   drift = state.drift
-  # The end of the trial put operators and channels at 0 and the plan gives them back: applying has something to do even
-  # when the modules are the ones the clinic has
+  active_tariff = state.custom? ? nil : state.effective_tariff
   held = state.trial_limits_held?
   hint_text = if held
                 t('super_admin.clinic_card.plan.hint_restore')
@@ -37,14 +26,22 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
       <h2 class="admin-block__title" id="plan-title"><%= t('super_admin.clinic_card.plan.title') %></h2>
       <p class="admin-block__hint"><%= t('super_admin.clinic_card.plan.hint') %></p>
     </div>
-    <% badge_tone = if !state.assigned?
-                      'admin-badge--quiet'
-                    elsif state.custom?
-                      'admin-badge--amber'
-                    else
-                      'admin-badge--iris'
-                    end %>
-    <span class="admin-badge <%= badge_tone %>" data-testid="plan-label"><%= state.label %></span>
+    <div class="flex flex-wrap items-center gap-2">
+      <% badge_tone = if !state.assigned?
+                        'admin-badge--quiet'
+                      elsif state.custom?
+                        'admin-badge--amber'
+                      else
+                        'admin-badge--iris'
+                      end %>
+      <span class="admin-badge <%= badge_tone %>" data-testid="plan-label"><%= state.label %></span>
+      <% if state.drifted? %>
+        <%= render 'super_admin/shared/confirm_action', key: 'reset-plan', label: t('super_admin.plans.drift.reset'),
+                   text: [t('super_admin.plans.drift.reset_confirm')], url: apply_plan_super_admin_account_path(account),
+                   params: { modules: chosen, tariff: state.effective_tariff }.compact, tone: :primary, submit: t('super_admin.safety.plan.reset_submit'),
+                   trigger_class: 'button button--small button--secondary' %>
+      <% end %>
+    </div>
   </div>
 
   <% unless state.assigned? %>
@@ -57,7 +54,7 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
   <% end %>
 
   <% if state.drifted? %>
-    <div class="admin-notice admin-notice--amber" data-testid="plan-drift">
+    <div class="admin-notice admin-notice--amber hidden" aria-hidden="true" data-testid="plan-drift">
       <span class="flex min-w-0 flex-col gap-0.5">
         <span class="font-medium"><%= t('super_admin.plans.drift.summary', extra: drift[:extra].size, missing: drift[:missing].size, plan: state.base_label) %></span>
         <% if drift[:extra].any? %>
@@ -67,18 +64,13 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
           <span class="text-[13px]"><%= t('super_admin.plans.drift.missing', features: drift[:missing].map { |name| feature_label.call(name) }.sort.join(', ')) %></span>
         <% end %>
       </span>
-      <%# Applying the same plan again brings the functions back to it. %>
-      <%= render 'super_admin/shared/confirm_action', key: 'reset-plan', label: t('super_admin.plans.drift.reset'),
-                 text: [t('super_admin.plans.drift.reset_confirm')], url: apply_plan_super_admin_account_path(account),
-                 params: { modules: chosen, tariff: state.tariff }.compact, tone: :primary, submit: t('super_admin.safety.plan.reset_submit'),
-                 trigger_class: 'button button--small button--secondary' %>
     </div>
   <% end %>
 
   <%= form_with url: apply_plan_super_admin_account_path(account), method: :post, local: true, class: 'flex flex-col gap-4',
                 data: { plan_form: true, assigned: state.assigned?.to_s, limits_held: held.to_s, initial_modules: chosen.to_json,
-                        initial_tariff: state.tariff.to_s, preview_url: plan_preview_super_admin_account_path(account) } do %>
-    <%= render 'plan_cards', chosen: chosen, tariff: state.tariff %>
+                        initial_tariff: active_tariff.to_s, preview_url: plan_preview_super_admin_account_path(account) } do %>
+    <%= render 'plan_cards', chosen: chosen, tariff: active_tariff %>
 
     <div data-plan-preview aria-live="polite" hidden></div>
 
@@ -91,6 +83,24 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
       <%= button_tag(state.apply_label, type: 'submit', class: 'button', data: { plan_submit: true }) %>
     </div>
   <% end %>
+
+  <details class="admin-collapse mt-2 border-t border-n-weak pt-3" id="fine-tuning" data-testid="fine-tuning-block">
+    <summary>
+      <span class="flex min-w-0 flex-col gap-0.5">
+        <span class="text-heading-3 text-n-slate-12"><%= t('super_admin.fine_tuning.title') %></span>
+        <span class="text-xs text-n-slate-11"><%= t('super_admin.fine_tuning.hint') %></span>
+      </span>
+      <span class="admin-collapse__chevron i-lucide-chevron-down size-4" aria-hidden="true"></span>
+    </summary>
+    <div class="admin-collapse__body">
+      <%= form_with url: super_admin_account_path(account), method: :patch, local: true, class: 'flex flex-col gap-5', data: { service_flags_form: true } do %>
+        <%= render 'fine_tuning', account: account, include_service_switches: true %>
+        <div class="admin-block__footer sticky bottom-0 z-10 border-t border-n-weak bg-n-solid-2 py-3">
+          <%= submit_tag t('super_admin.shell.save'), name: nil, class: 'button' %>
+        </div>
+      <% end %>
+    </div>
+  </details>
 </section>
 
 <script>
@@ -101,7 +111,6 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
     var submit = form.querySelector('[data-plan-submit]');
     var hint = form.querySelector('[data-plan-hint]');
     var assigned = form.getAttribute('data-assigned') === 'true';
-    // The end of a trial left the limits at 0: applying the plan gives them back, so it is possible with the modules as they are
     var held = form.getAttribute('data-limits-held') === 'true';
     var initial = JSON.parse(form.getAttribute('data-initial-modules') || '[]').slice().sort().join(',');
     var initialTariff = form.getAttribute('data-initial-tariff') || '';
@@ -124,8 +133,6 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
       });
     }
 
-    // A clinic with a plan can apply once the modules or tariff differ; a clinic without one can always take the base, and so can one
-    // whose limits the end of a trial holds at 0.
     function sync() {
       var modules = selected();
       var tariff = selectedTariff();
@@ -173,5 +180,18 @@ A clinic whose functions were switched by hand (see «Тонкая настро�
       }
     });
     sync();
+
+    var serviceForm = document.querySelector('[data-service-flags-form]');
+    if (serviceForm) {
+      serviceForm.addEventListener('submit', function (event) {
+        var questions = [];
+        serviceForm.querySelectorAll('input[type="checkbox"]').forEach(function (box) {
+          if (box.checked === box.defaultChecked) return;
+          var text = box.checked ? box.getAttribute('data-confirm-on') : box.getAttribute('data-confirm-off');
+          if (text) questions.push(text);
+        });
+        if (questions.length > 0 && !window.confirm(questions.join('\n\n'))) event.preventDefault();
+      });
+    }
   })();
 </script>
