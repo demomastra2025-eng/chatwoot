@@ -49,15 +49,15 @@ RSpec.describe 'Api::V1::OwnerFinance API', type: :request do
       expect(response.parsed_body).not_to have_key('owner_finance_enabled')
     end
 
-    it 'exposes owner_finance_enabled: true to the direct owner and conforms to OpenAPI profile schema' do
+    it 'keeps regular operator profile clean without owner_finance_enabled (moved to /super_admin/owner_finance)' do
       get '/api/v1/profile', headers: owner_user.create_new_auth_token, as: :json
       expect(response).to have_http_status(:ok)
       expect(response).to conform_schema(200)
-      expect(response.parsed_body['owner_finance_enabled']).to be(true)
+      expect(response.parsed_body).not_to have_key('owner_finance_enabled')
     end
   end
 
-  describe 'Full Owner CRUD, vendor auto-learning, and personal tombstone flow' do
+  describe 'Full Owner CRUD, CEO summary blocks, system telemetry, and personal tombstone flow' do
     let(:owner_headers) { owner_user.create_new_auth_token }
 
     it 'creates accounts and contracts with auto-synced expiry deadlines' do
@@ -83,6 +83,14 @@ RSpec.describe 'Api::V1::OwnerFinance API', type: :request do
       get '/api/v1/owner_finance/dashboard', params: { year: 2026, month: 10 }, headers: owner_headers, as: :json
       expect(response.parsed_body.dig('kpis', 'total_balance_kzt')).to eq(3_500_000.0)
       expect(response.parsed_body['deadlines'].size).to eq(1)
+    end
+
+    it 'returns 4 CEO summary blocks and system telemetry in the dashboard payload' do
+      get '/api/v1/owner_finance/dashboard', params: { year: 2026, month: 11 }, headers: owner_headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['kpis']).to include('revenue_plan_kzt', 'net_margin_pct', 'break_even_kzt', 'net_working_capital_kzt')
+      expect(response.parsed_body['ceo_summary']).to include('top_5_expenses', 'cash_gap_radar')
+      expect(response.parsed_body['system_telemetry']).to include('updated_at')
     end
 
     it 'imports CSV statements, learns business vendors, and destroys hidden personal purchases' do

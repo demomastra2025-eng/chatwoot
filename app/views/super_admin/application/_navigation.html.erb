@@ -28,6 +28,7 @@ Resources that nobody placed in a group land in "Дополнительно".
     searches
     account_bulk_actions
     clients
+    owner_finances
   ]
 
   primary_nav_items = Administrate::Namespace.new(namespace).resources.filter_map do |resource|
@@ -82,6 +83,9 @@ Resources that nobody placed in a group land in "Дополнительно".
   <div id="super-admin-menu" class="hidden max-h-[70vh] min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2.5 pb-3 md:flex md:max-h-none">
     <%= render layout: 'nav_group', locals: { id: 'nav-group-clinics', title: t('super_admin.navigation.groups.clinics') } do %>
       <%= render 'nav_item', icon: 'i-lucide-layout-dashboard', url: super_admin_root_path, label: t('super_admin.navigation.items.dashboard'), active: super_admin_nav_active?(:dashboard) %>
+      <% if OwnerFinance::AccessPolicy.allowed?(current_super_admin) %>
+        <%= render 'nav_item', icon: 'i-lucide-wallet', url: super_admin_owner_finance_path, label: 'Финансы и сроки', active: super_admin_nav_active?(:owner_finances) %>
+      <% end %>
       <% if resource_urls['organizations'] %>
         <%= render 'nav_item', icon: 'i-lucide-landmark', url: resource_urls['organizations'], label: t('super_admin.navigation.items.organizations'), active: super_admin_nav_active?(:organizations) %>
       <% end %>

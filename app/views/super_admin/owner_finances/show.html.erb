@@ -1,0 +1,641 @@
+<% content_for(:title) { 'Финансы, сроки и инфраструктура' } %>
+<%
+  manifest_path = Rails.root.join('public/vite/.vite/manifest.json')
+  manifest = File.exist?(manifest_path) ? JSON.parse(File.read(manifest_path)) : {}
+  page_entry = manifest['dashboard/routes/dashboard/ownerFinance/pages/OwnerFinancePage.vue'] || {}
+  imports_map = Array(page_entry['imports']).each_with_object({}) { |k, h| h[k.sub(/-[^-]+\.js\z/, '')] = k }
+  page_js = page_entry['file'] ? "/vite/#{page_entry['file']}" : nil
+  vue_js = imports_map['_vue.esm-bundler'] ? "/vite/#{manifest.dig(imports_map['_vue.esm-bundler'], 'file')}" : nil
+  i18n_js = imports_map['_vue-i18n'] ? "/vite/#{manifest.dig(imports_map['_vue-i18n'], 'file')}" : nil
+  global_js = imports_map['_globalConfig'] ? "/vite/#{manifest.dig(imports_map['_globalConfig'], 'file')}" : nil
+  extra_css = Array(page_entry['imports']).flat_map { |k| Array(manifest.dig(k, 'css')) }.uniq.map { |c| "/vite/#{c}" }
+%>
+<% content_for(:vue_entry) do %>
+  <% extra_css.each do |css_href| %>
+    <link rel="stylesheet" href="<%= css_href %>">
+  <% end %>
+  <style>
+    .ceo-cockpit-wrap {
+      font-variant-numeric: tabular-nums;
+      padding: 20px 24px 4px 24px;
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .ceo-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .ceo-section-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #334155;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .ceo-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .ceo-badge-ok { background: #dcfce7; color: #166534; }
+    .ceo-badge-warn { background: #fef3c7; color: #92400e; }
+    .ceo-badge-crit { background: #fee2e2; color: #991b1b; }
+    .ceo-badge-neutral { background: #e2e8f0; color: #334155; }
+    .ceo-grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    @media (max-width: 1280px) {
+      .ceo-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 680px) {
+      .ceo-grid-4 { grid-template-columns: 1fr; }
+    }
+    .ceo-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
+    }
+    .ceo-card:hover {
+      border-color: #cbd5e1;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+    }
+    .ceo-card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .ceo-card-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #64748b;
+    }
+    .ceo-card-metric {
+      font-size: 24px;
+      font-weight: 700;
+      color: #0f172a;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+    .ceo-card-sub {
+      font-size: 12px;
+      color: #475569;
+      margin-top: 4px;
+    }
+    .ceo-chart-box {
+      height: 64px;
+      width: 100%;
+      margin: 10px 0 6px 0;
+      position: relative;
+    }
+    .ceo-kv-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #f1f5f9;
+      font-size: 12px;
+    }
+    .ceo-kv-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: #334155;
+    }
+    .ceo-kv-val {
+      font-weight: 600;
+      color: #0f172a;
+    }
+    .ceo-progress-track {
+      width: 100%;
+      height: 6px;
+      background: #f1f5f9;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .ceo-progress-bar {
+      height: 100%;
+      border-radius: 999px;
+      transition: width 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .ceo-capsule-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 8px;
+    }
+    .ceo-capsule-pill {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: #f1f5f9;
+      color: #334155;
+      font-weight: 500;
+    }
+    .ceo-capsule-pill.active {
+      background: #dbeafe;
+      color: #1e40af;
+      font-weight: 600;
+    }
+  </style>
+<% end %>
+
+<div id="owner-finance-toast" class="fixed right-5 top-5 z-50 hidden max-w-md rounded-xl border border-n-weak bg-n-solid-3 px-4 py-3 text-sm font-medium text-n-slate-12 shadow-lg"></div>
+
+<div id="ceo-owner-cockpit" class="ceo-cockpit-wrap">
+  <div class="ceo-section-header">
+    <div class="ceo-section-title">
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;"></span>
+      <span>Инфраструктура PROD в реальном времени (24ч Prometheus + Sidekiq)</span>
+      <span id="ceo-telemetry-updated" class="ceo-badge ceo-badge-neutral">Загрузка...</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button type="button" id="ceo-refresh-telemetry-btn" style="font-size:12px;font-weight:600;padding:5px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;cursor:pointer;">Обновить метрики</button>
+      <a href="/super_admin/monitoring" style="font-size:12px;font-weight:600;padding:5px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#2563eb;text-decoration:none;">Открыть Grafana / Мониторинг →</a>
+    </div>
+  </div>
+
+  <div class="ceo-grid-4" id="ceo-infra-grid">
+    <div class="ceo-card" id="card-infra-cpu">
+      <div>
+        <div class="ceo-card-head">
+          <span class="ceo-card-label">Процессор (CPU)</span>
+          <span class="ceo-badge ceo-badge-ok" id="cpu-badge">—</span>
+        </div>
+        <div class="ceo-card-metric" id="cpu-metric">— %</div>
+        <div class="ceo-card-sub" id="cpu-sub">Загрузка ядер...</div>
+      </div>
+      <div class="ceo-chart-box" id="cpu-chart"></div>
+      <div class="ceo-kv-list">
+        <div class="ceo-kv-row"><span>Средняя за 24ч</span><span class="ceo-kv-val" id="cpu-avg">—</span></div>
+        <div class="ceo-kv-row"><span>Пик за 24ч</span><span class="ceo-kv-val" id="cpu-max">—</span></div>
+      </div>
+    </div>
+
+    <div class="ceo-card" id="card-infra-ram">
+      <div>
+        <div class="ceo-card-head">
+          <span class="ceo-card-label">Память (RAM)</span>
+          <span class="ceo-badge ceo-badge-ok" id="ram-badge">—</span>
+        </div>
+        <div class="ceo-card-metric" id="ram-metric">— %</div>
+        <div class="ceo-card-sub" id="ram-sub">— из — ГБ</div>
+      </div>
+      <div class="ceo-chart-box" id="ram-chart"></div>
+      <div class="ceo-kv-list">
+        <div class="ceo-kv-row"><span>Свободно сейчас</span><span class="ceo-kv-val" id="ram-avail">—</span></div>
+        <div class="ceo-kv-row"><span>Пик за 24ч</span><span class="ceo-kv-val" id="ram-max">—</span></div>
+      </div>
+    </div>
+
+    <div class="ceo-card" id="card-infra-queues">
+      <div>
+        <div class="ceo-card-head">
+          <span class="ceo-card-label">Очереди Sidekiq & Redis</span>
+          <span class="ceo-badge ceo-badge-ok" id="queues-badge">—</span>
+        </div>
+        <div class="ceo-card-metric" id="queues-metric">0 в очереди</div>
+        <div class="ceo-card-sub" id="queues-sub">В работе: — потоков · Задержка: 0 сек</div>
+      </div>
+      <div class="ceo-chart-box" id="queues-chart"></div>
+      <div class="ceo-kv-list">
+        <div class="ceo-kv-row"><span>Отложено / Повторы</span><span class="ceo-kv-val" id="queues-sched">—</span></div>
+        <div class="ceo-kv-row"><span>Нагрузка Redis</span><span class="ceo-kv-val" id="queues-redis">— оп/с</span></div>
+      </div>
+      <div class="ceo-capsule-grid" id="queues-capsules"></div>
+    </div>
+
+    <div class="ceo-card" id="card-infra-disk">
+      <div>
+        <div class="ceo-card-head">
+          <span class="ceo-card-label">Дисковое пространство</span>
+          <span class="ceo-badge ceo-badge-ok" id="disk-badge">—</span>
+        </div>
+        <div class="ceo-card-metric" id="disk-metric">— %</div>
+        <div class="ceo-card-sub" id="disk-sub">Система (/): — из — ГБ</div>
+      </div>
+      <div class="ceo-chart-box" id="disk-chart"></div>
+      <div class="ceo-kv-list">
+        <div class="ceo-kv-row"><span>Свободно на /</span><span class="ceo-kv-val" id="disk-root-avail">—</span></div>
+        <div class="ceo-kv-row"><span>Раздел Docker (/var/lib/docker)</span><span class="ceo-kv-val" id="disk-docker-val">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ceo-section-header" style="margin-top:4px;">
+    <div class="ceo-section-title">
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2563eb;"></span>
+      <span>Сводная панель собственника (ОПиУ План/Факт · Баланс · ФОТ · Радар ДДС 30 дней)</span>
+      <span id="ceo-period-badge" class="ceo-badge ceo-badge-neutral">Текущий период</span>
+    </div>
+  </div>
+
+  <div class="ceo-grid-4" id="ceo-finance-grid">
+    <!-- Блок 1: ОПиУ План/Факт, Рентабельность, Точка безубыточности -->
+    <div class="ceo-card">
+      <div>
+        <div class="ceo-card-head">
+          <span class="ceo-card-label">1. ОПиУ: Выручка и Рентабельность</span>
+          <span class="ceo-badge ceo-badge-ok" id="pnl-margin-badge">Маржа —%</span>
+        </div>
+        <div class="ceo-card-metric" id="pnl-rev-metric">— ₸</div>
+        <div class="ceo-card-sub" id="pnl-plan-sub">План месяца (MRR + этапы): — ₸</div>
+        <div class="ceo-progress-track">
+          <div class="ceo-progress-bar" id="pnl-plan-bar" style="width:0%;background:#2563eb;"></div>
+        </div>
+      </div>
+      <div class="ceo-kv-list">
+        <div class="ceo-kv-row"><span>Чистая прибыль (P&L)</span><span class="ceo-kv-val" id="pnl-profit-val">— ₸</span></div>
+        <div class="ceo-kv-row"><span>Точка безубыточности</span><span class="ceo-kv-val" id="pnl-breakeven-val">— ₸</span></div>
+        <div class="ceo-kv-row"><span>Статус безубыточности</span><span class="ceo-kv-val" id="pnl-breakeven-status">—</span></div>
+      </div>
+    </div>
+
+    <!-- Блок 2: Управленческий баланс -->
+    <div class="ceo-card">
+      <div>
+        <div class="ceo-card-head">
+          <span class="ceo-card-label">2. Управленческий баланс</span>
+          <span class="ceo-badge ceo-badge-neutral" id="bal-status-badge">Чистый капитал</span>
+        </div>
+        <div class="ceo-card-metric" id="bal-nwc-metric">— ₸</div>
+        <div class="ceo-card-sub">Собственный оборотный капитал (Активы − Долги)</div>
+      </div>
+      <div class="ceo-kv-list">
+        <div class="ceo-kv-row"><span>Деньги на бизнес-счетах</span><span class="ceo-kv-val" id="bal-cash-val">— ₸</span></div>
+        <div class="ceo-kv-row"><span>Дебиторка (нам должны)</span><span class="ceo-kv-val" style="color:#16a34a;" id="bal-ar-val">+0 ₸</span></div>
+        <div class="ceo-kv-row"><span>Кредиторка и комиссия МИС</span><span class="ceo-kv-val" style="color:#dc2626;" id="bal-ap-val">−0 ₸</span></div>
+      </div>
+    </div>
+
+    <!-- Блок 3: ФОТ и Топ-5 расходов -->
+    <div class="ceo-card">
+      <div>
+        <div class="ceo-card-head">
+          <span class="ceo-card-label">3. Контроль ФОТ и Топ-5 затрат</span>
+          <span class="ceo-badge ceo-badge-ok" id="payroll-badge">ФОТ —%</span>
+        </div>
+        <div class="ceo-card-metric" id="payroll-metric">— ₸</div>
+        <div class="ceo-card-sub" id="payroll-sub">Доля ФОТ от выручки (норма до 35%)</div>
+      </div>
+      <div class="ceo-kv-list" id="top5-expenses-list">
+        <div class="ceo-kv-row"><span>Загрузка статей расходов...</span><span class="ceo-kv-val">—</span></div>
+      </div>
+    </div>
+
+    <!-- Блок 4: ДДС и Радар кассовых разрывов 30 дней -->
+    <div class="ceo-card">
+      <div>
+        <div class="ceo-card-head">
+          <span class="ceo-card-label">4. ДДС и Радар разрывов (30 дн)</span>
+          <span class="ceo-badge ceo-badge-ok" id="cashgap-badge">Без разрывов</span>
+        </div>
+        <div class="ceo-card-metric" id="cashflow-proj-metric">— ₸</div>
+        <div class="ceo-card-sub">Прогноз остатка через 30 дней (с учётом MRR и обязательств)</div>
+      </div>
+      <div class="ceo-kv-list">
+        <div class="ceo-kv-row"><span>Чистый денежный поток месяца</span><span class="ceo-kv-val" id="cashflow-net-val">— ₸</span></div>
+        <div class="ceo-kv-row"><span>Ожидаемый приток / отток (30д)</span><span class="ceo-kv-val" id="cashflow-io-val">— / —</span></div>
+        <div class="ceo-kv-row"><span>Мин. точка баланса (30д)</span><span class="ceo-kv-val" id="cashflow-min-val">— ₸</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="owner-finance-superadmin-app" class="min-h-screen w-full"></div>
+
+<% if page_js && vue_js && i18n_js && global_js %>
+<script type="module">
+  import { i as createApp } from '<%= vue_js %>';
+  import { c as createI18n } from '<%= i18n_js %>';
+  import { e as emitter } from '<%= global_js %>';
+  import OwnerFinancePage from '<%= page_js %>';
+
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+  const fmtKzt = val => {
+    const num = Number(val || 0);
+    return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(Math.round(num)) + ' ₸';
+  };
+
+  function renderSvgAreaChart(containerId, series, colorHex, maxCeil = null) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    const pts = Array.isArray(series) && series.length > 1 ? series : [{ v: 0 }, { v: 0 }];
+    const vals = pts.map(p => Number(p.v || 0));
+    const minV = 0;
+    const rawMax = Math.max(...vals, 1);
+    const maxV = maxCeil ? Math.max(rawMax, maxCeil) : rawMax * 1.15;
+    const w = 280;
+    const h = 60;
+    const pad = 4;
+    const coords = vals.map((v, idx) => {
+      const x = (idx / Math.max(vals.length - 1, 1)) * w;
+      const clamped = Math.min(Math.max(v, minV), maxV);
+      const y = h - pad - ((clamped - minV) / Math.max(maxV - minV, 1)) * (h - pad * 2);
+      return [x.toFixed(1), y.toFixed(1)];
+    });
+    const linePath = 'M ' + coords.map(c => c.join(',')).join(' L ');
+    const areaPath = `${linePath} L ${w},${h} L 0,${h} Z`;
+    const gradId = `grad-${containerId}`;
+    el.innerHTML = `
+      <svg viewBox="0 0 ${w} ${h}" width="100%" height="100%" preserveAspectRatio="none" style="overflow:visible;">
+        <defs>
+          <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${colorHex}" stop-opacity="0.28"/>
+            <stop offset="100%" stop-color="${colorHex}" stop-opacity="0.02"/>
+          </linearGradient>
+        </defs>
+        <path d="${areaPath}" fill="url(#${gradId})" />
+        <path d="${linePath}" fill="none" stroke="${colorHex}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    `;
+  }
+
+  function setBadgeTone(el, tone, text) {
+    if (!el) return;
+    el.className = 'ceo-badge ' + (tone === 'crit' ? 'ceo-badge-crit' : tone === 'warn' ? 'ceo-badge-warn' : tone === 'ok' ? 'ceo-badge-ok' : 'ceo-badge-neutral');
+    el.textContent = text;
+  }
+
+  function updateCockpitFromDashboard(data) {
+    if (!data) return;
+    const k = data.kpis || {};
+    const ceo = data.ceo_summary || {};
+    const tel = data.system_telemetry || {};
+    const p = data.period || {};
+
+    const periodBadge = document.getElementById('ceo-period-badge');
+    if (periodBadge && p.year) {
+      periodBadge.textContent = p.month ? `Период: ${String(p.month).padStart(2, '0')}.${p.year}` : `Весь ${p.year} год`;
+    }
+
+    // 1. Telemetry
+    if (tel.cpu) {
+      const cpuPct = Number(tel.cpu.current_pct || 0);
+      const cpuTone = cpuPct >= 85 ? 'crit' : cpuPct >= 65 ? 'warn' : 'ok';
+      setBadgeTone(document.getElementById('cpu-badge'), cpuTone, `${tel.cpu.cores || 32} ядер · LA ${tel.cpu.load1 ?? 0}`);
+      document.getElementById('cpu-metric').textContent = `${cpuPct.toFixed(1)} %`;
+      document.getElementById('cpu-sub').textContent = cpuPct < 50 ? 'Штатная нагрузка процессора' : 'Повышенная нагрузка CPU';
+      document.getElementById('cpu-avg').textContent = `${Number(tel.cpu.avg_24h_pct || 0).toFixed(1)} %`;
+      document.getElementById('cpu-max').textContent = `${Number(tel.cpu.max_24h_pct || 0).toFixed(1)} %`;
+      renderSvgAreaChart('cpu-chart', tel.cpu.series, cpuTone === 'crit' ? '#dc2626' : cpuTone === 'warn' ? '#d97706' : '#10b981', 25);
+    }
+
+    if (tel.ram) {
+      const ramPct = Number(tel.ram.current_pct || 0);
+      const ramTone = ramPct >= 88 ? 'crit' : ramPct >= 75 ? 'warn' : 'ok';
+      setBadgeTone(document.getElementById('ram-badge'), ramTone, `${ramPct.toFixed(1)}% занято`);
+      document.getElementById('ram-metric').textContent = `${ramPct.toFixed(1)} %`;
+      document.getElementById('ram-sub').textContent = `Занято ${tel.ram.used_gb} из ${tel.ram.total_gb} ГБ`;
+      document.getElementById('ram-avail').textContent = `${tel.ram.avail_gb} ГБ`;
+      document.getElementById('ram-max').textContent = `${Number(tel.ram.max_24h_pct || 0).toFixed(1)} %`;
+      renderSvgAreaChart('ram-chart', tel.ram.series, ramTone === 'crit' ? '#dc2626' : ramTone === 'warn' ? '#d97706' : '#3b82f6', 50);
+    }
+
+    if (tel.queues) {
+      const q = tel.queues;
+      const enq = Number(q.enqueued || 0);
+      const lat = Number(q.max_latency_sec || 0);
+      const qTone = lat >= 60 || enq >= 100 ? 'crit' : lat >= 15 || enq >= 25 ? 'warn' : 'ok';
+      setBadgeTone(document.getElementById('queues-badge'), qTone, `${q.processes_count || 7} капсул · ${q.busy || 0}/${q.concurrency_total || 52} потоков`);
+      document.getElementById('queues-metric').textContent = `${enq} в очереди`;
+      document.getElementById('queues-sub').textContent = `Активно в работе: ${q.busy || 0} · Макс. задержка: ${lat} сек`;
+      document.getElementById('queues-sched').textContent = `${q.scheduled || 0} отлож. / ${q.retries || 0} повт.`;
+      document.getElementById('queues-redis').textContent = `${q.redis_ops_sec || 0} оп/сек`;
+      renderSvgAreaChart('queues-chart', q.series, '#8b5cf6', 200);
+
+      const capWrap = document.getElementById('queues-capsules');
+      if (capWrap && Array.isArray(q.capsules)) {
+        capWrap.innerHTML = q.capsules.map(c => {
+          const shortQueue = (c.queues && c.queues[0]) ? c.queues[0].replace(/_realtime|_inbound|_provider_commands/g, '') : c.tag;
+          const isBusy = Number(c.busy || 0) > 0;
+          return `<span class="ceo-capsule-pill ${isBusy ? 'active' : ''}">${shortQueue}: ${c.busy}/${c.concurrency}</span>`;
+        }).join('');
+      }
+    }
+
+    if (tel.disk && tel.disk.root) {
+      const dRoot = tel.disk.root;
+      const dDock = tel.disk.docker;
+      const dPct = Number(dRoot.used_pct || 0);
+      const dTone = dPct >= 85 ? 'crit' : dPct >= 70 ? 'warn' : 'ok';
+      setBadgeTone(document.getElementById('disk-badge'), dTone, dPct < 70 ? 'В норме' : 'Внимание');
+      document.getElementById('disk-metric').textContent = `${dPct.toFixed(1)} %`;
+      document.getElementById('disk-sub').textContent = `Система (/): ${dRoot.used_gb} из ${dRoot.total_gb} ГБ`;
+      document.getElementById('disk-root-avail').textContent = `${dRoot.avail_gb} ГБ свободно`;
+      document.getElementById('disk-docker-val').textContent = dDock ? `${dDock.used_pct}% (${dDock.used_gb} / ${dDock.total_gb} ГБ)` : '—';
+      renderSvgAreaChart('disk-chart', tel.disk.series, '#0ea5e9', 100);
+    }
+
+    const updEl = document.getElementById('ceo-telemetry-updated');
+    if (updEl) {
+      const nowStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      updEl.textContent = `Обновлено в ${nowStr}`;
+    }
+
+    // 2. Finance Block 1: P&L Plan/Fact & Break-even
+    const rev = Number(k.month_revenue_kzt || 0);
+    const planRev = Number(k.revenue_plan_kzt || k.live_contracts_mrr_kzt || 0);
+    const planPct = Number(k.revenue_plan_pct || (planRev > 0 ? (rev / planRev * 100) : 0));
+    const marginPct = Number(k.net_margin_pct || 0);
+    const profit = Number(k.month_net_profit_kzt || 0);
+    const breakEven = Number(k.break_even_kzt || 0);
+    const beDelta = Number(k.break_even_delta_kzt || (rev - breakEven));
+
+    setBadgeTone(document.getElementById('pnl-margin-badge'), marginPct >= 25 ? 'ok' : marginPct >= 0 ? 'warn' : 'crit', `Рентабельность ${marginPct.toFixed(1)}%`);
+    document.getElementById('pnl-rev-metric').textContent = fmtKzt(rev);
+    document.getElementById('pnl-plan-sub').textContent = `План: ${fmtKzt(planRev)} · Выполнено ${planPct.toFixed(1)}%`;
+    const planBar = document.getElementById('pnl-plan-bar');
+    if (planBar) planBar.style.width = `${Math.min(Math.max(planPct, 2), 100)}%`;
+    document.getElementById('pnl-profit-val').textContent = fmtKzt(profit);
+    document.getElementById('pnl-breakeven-val').textContent = fmtKzt(breakEven);
+    const beStatusEl = document.getElementById('pnl-breakeven-status');
+    if (beStatusEl) {
+      if (beDelta >= 0) {
+        beStatusEl.style.color = '#16a34a';
+        beStatusEl.textContent = `Пройдена (+${fmtKzt(beDelta)})`;
+      } else {
+        beStatusEl.style.color = '#d97706';
+        beStatusEl.textContent = `Осталось ${fmtKzt(Math.abs(beDelta))}`;
+      }
+    }
+
+    // Finance Block 2: Working Capital Balance
+    const nwc = Number(k.net_working_capital_kzt || 0);
+    const cashBal = Number(k.total_balance_kzt || 0);
+    const ar = Number(k.accounts_receivable_kzt || 0);
+    const ap = Number(k.accounts_payable_kzt || 0);
+    setBadgeTone(document.getElementById('bal-status-badge'), nwc >= 0 ? 'ok' : 'warn', nwc >= 0 ? 'Баланс положительный' : 'Обязательства > Активов');
+    document.getElementById('bal-nwc-metric').textContent = fmtKzt(nwc);
+    document.getElementById('bal-cash-val').textContent = fmtKzt(cashBal);
+    document.getElementById('bal-ar-val').textContent = `+${fmtKzt(ar)}`;
+    document.getElementById('bal-ap-val').textContent = `−${fmtKzt(ap)}`;
+
+    // Finance Block 3: Payroll & Top-5 Expenses
+    const payrollKzt = Number(k.payroll_kzt || 0);
+    const payrollPct = Number(k.payroll_share_pct || 0);
+    const pTone = payrollPct > 50 ? 'crit' : payrollPct > 35 ? 'warn' : 'ok';
+    setBadgeTone(document.getElementById('payroll-badge'), pTone, `Доля ФОТ ${payrollPct.toFixed(1)}%`);
+    document.getElementById('payroll-metric').textContent = fmtKzt(payrollKzt);
+    const top5El = document.getElementById('top5-expenses-list');
+    const top5 = Array.isArray(ceo.top_5_expenses) ? ceo.top_5_expenses : (data.expense_breakdown || []).slice(0, 5);
+    if (top5El) {
+      if (!top5.length) {
+        top5El.innerHTML = '<div class="ceo-kv-row"><span>Затрат за период пока нет</span><span class="ceo-kv-val">0 ₸</span></div>';
+      } else {
+        top5El.innerHTML = top5.map(item => {
+          const shareExp = item.share_of_expenses_pct !== undefined ? `${item.share_of_expenses_pct}%` : '';
+          return `<div class="ceo-kv-row"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.label}</span><span class="ceo-kv-val">${fmtKzt(item.amount_kzt)} ${shareExp ? `<small style="color:#64748b;">(${shareExp})</small>` : ''}</span></div>`;
+        }).join('');
+      }
+    }
+
+    // Finance Block 4: Cashflow & 30d Cash Gap Radar
+    const proj30 = Number(k.projected_balance_30d_kzt || (cashBal + Number(k.expected_inflow_30d_kzt || 0) - Number(k.committed_outflow_30d_kzt || 0)));
+    const netCf = Number(k.net_cashflow_kzt || 0);
+    const radar = ceo.cash_gap_radar || {};
+    const hasGap = Boolean(radar.has_gap);
+    setBadgeTone(
+      document.getElementById('cashgap-badge'),
+      hasGap ? 'crit' : proj30 >= 0 ? 'ok' : 'warn',
+      hasGap ? `Разрыв ${radar.first_gap_date}` : 'Кассовых разрывов нет'
+    );
+    document.getElementById('cashflow-proj-metric').textContent = fmtKzt(proj30);
+    document.getElementById('cashflow-net-val').textContent = (netCf >= 0 ? '+' : '') + fmtKzt(netCf);
+    document.getElementById('cashflow-io-val').textContent = `+${fmtKzt(k.expected_inflow_30d_kzt)} / −${fmtKzt(k.committed_outflow_30d_kzt)}`;
+    const minVal = radar.min_balance_30d_kzt !== undefined ? radar.min_balance_30d_kzt : proj30;
+    const minEl = document.getElementById('cashflow-min-val');
+    if (minEl) {
+      minEl.style.color = Number(minVal) < 0 ? '#dc2626' : '#0f172a';
+      minEl.textContent = `${fmtKzt(minVal)}${radar.min_balance_date ? ` (${radar.min_balance_date})` : ''}`;
+    }
+  }
+
+  async function request(method, url, { params, data, headers } = {}) {
+    let fullUrl = url;
+    if (params && typeof params === 'object') {
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') qs.append(k, String(v));
+      });
+      const q = qs.toString();
+      if (q) fullUrl += (fullUrl.includes('?') ? '&' : '?') + q;
+    }
+    const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
+    const reqHeaders = {
+      Accept: 'application/json',
+      'X-CSRF-Token': csrfToken,
+      ...(headers || {}),
+    };
+    if (isFormData) {
+      delete reqHeaders['Content-Type'];
+    } else if (data !== undefined) {
+      reqHeaders['Content-Type'] = 'application/json';
+    }
+    const res = await fetch(fullUrl, {
+      method,
+      credentials: 'same-origin',
+      headers: reqHeaders,
+      body: data === undefined ? undefined : isFormData ? data : JSON.stringify(data),
+    });
+    const text = await res.text();
+    let parsed = null;
+    try {
+      parsed = text ? JSON.parse(text) : {};
+    } catch {
+      parsed = { message: text };
+    }
+    if (!res.ok) {
+      const err = new Error(parsed?.error || parsed?.message || 'HTTP ' + res.status);
+      err.response = { status: res.status, data: parsed };
+      throw err;
+    }
+    if (method === 'GET' && fullUrl.includes('/api/v1/owner_finance/dashboard')) {
+      try { updateCockpitFromDashboard(parsed); } catch (e) { console.warn(e); }
+    }
+    return { data: parsed, status: res.status };
+  }
+
+  window.axios = {
+    get: (url, config = {}) => request('GET', url, { params: config.params, headers: config.headers }),
+    post: (url, data, config = {}) => request('POST', url, { data, params: config.params, headers: config.headers }),
+    patch: (url, data, config = {}) => request('PATCH', url, { data, params: config.params, headers: config.headers }),
+    put: (url, data, config = {}) => request('PUT', url, { data, params: config.params, headers: config.headers }),
+    delete: (url, config = {}) => request('DELETE', url, { params: config.params, headers: config.headers }),
+  };
+
+  document.getElementById('ceo-refresh-telemetry-btn')?.addEventListener('click', () => {
+    request('GET', '/api/v1/owner_finance/dashboard');
+  });
+
+  try {
+    const initialData = <%= raw(OwnerFinance::DashboardQueryService.new.perform.to_json) %>;
+    updateCockpitFromDashboard(initialData);
+  } catch (e) {
+    console.warn('Initial cockpit render error:', e);
+  }
+
+  if (emitter && typeof emitter.on === 'function') {
+    let toastTimer = null;
+    emitter.on('newToastMessage', payload => {
+      const el = document.getElementById('owner-finance-toast');
+      if (!el) return;
+      el.textContent = payload?.message || String(payload || '');
+      el.classList.remove('hidden');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.add('hidden'), 4500);
+    });
+  }
+
+  const i18n = createI18n({
+    legacy: false,
+    locale: 'ru',
+    fallbackLocale: 'ru',
+    messages: {
+      ru: {
+        DIALOG: {
+          BUTTONS: {
+            CLOSE: 'Закрыть',
+            CANCEL: 'Отмена',
+            CONFIRM: 'Подтвердить',
+          },
+        },
+      },
+    },
+  });
+
+  const app = createApp(OwnerFinancePage);
+  app.config.globalProperties.$store = {
+    getters: {
+      'accounts/isRTL': false,
+    },
+  };
+  app.use(i18n);
+  app.mount('#owner-finance-superadmin-app');
+</script>
+<% end %>

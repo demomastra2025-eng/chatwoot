@@ -1208,6 +1208,7 @@ Rails.application.routes.draw do
       get 'logs', to: redirect('/super_admin/monitoring?tab=logs')
       get 'instance_status', to: redirect('/super_admin/monitoring?tab=status')
       resource :captain_observability, only: [:show], controller: 'captain_observability'
+      resource :owner_finance, only: [:show], controller: 'owner_finances'
 
       resource :settings, only: [:show] do
         get :refresh, on: :collection

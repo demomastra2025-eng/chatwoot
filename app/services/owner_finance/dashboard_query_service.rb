@@ -16,7 +16,6 @@ class OwnerFinance::DashboardQueryService
     collections = load_collections
     period_range = build_period_range
     period_pnl_tx = OwnerFinance::TransactionRecord.in_pnl.where(occurred_on: period_range)
-
     build_payload(collections, period_range, period_pnl_tx)
   end
 
@@ -32,9 +31,20 @@ class OwnerFinance::DashboardQueryService
   end
 
   def build_payload(col, period_range, period_pnl_tx)
+    exp_breakdown = build_expense_breakdown(period_pnl_tx)
+    series_12m = build_monthly_series
+    ceo_builder = build_ceo_builder(col, period_range)
+    kpis_data = compute_kpis(col, period_pnl_tx, exp_breakdown, series_12m, ceo_builder)
+    core_payload(col, period_range, exp_breakdown, series_12m).merge(
+      kpis: kpis_data,
+      ceo_summary: ceo_builder.build_summary(kpis_data: kpis_data, exp_breakdown: exp_breakdown),
+      system_telemetry: OwnerFinance::SystemTelemetryService.new.perform
+    )
+  end
+
+  def core_payload(col, period_range, exp_breakdown, series_12m)
     {
       period: { year: @year, month: @month, reference_date: @reference_date.iso8601 },
-      kpis: compute_kpis(col, period_pnl_tx),
       accounts: col[:accounts].map { |acc| OwnerFinance::RecordSerializer.account(acc) },
       deadlines: col[:deadlines].map { |item| OwnerFinance::RecordSerializer.deadline(item, @reference_date) },
       contracts: serialized_contracts(col[:contracts]),
@@ -42,11 +52,18 @@ class OwnerFinance::DashboardQueryService
       transactions: serialized_confirmed(period_range),
       transactions_total_count: confirmed_scope(period_range).count,
       obligations: col[:obligations].map { |item| OwnerFinance::RecordSerializer.obligation(item) },
-      expense_breakdown: build_expense_breakdown(period_pnl_tx),
-      monthly_series: build_monthly_series,
+      expense_breakdown: exp_breakdown,
+      monthly_series: series_12m,
       category_options: CATEGORY_LABELS_RU.map { |code, label| { code: code, label: label } },
       sync_states: serialized_sync_states
     }
+  end
+
+  def build_ceo_builder(col, period_range)
+    OwnerFinance::CeoMetricsBuilder.new(
+      col: col, period_range: period_range, reference_date: @reference_date,
+      month: @month, confirmed_scope: confirmed_scope(period_range)
+    )
   end
 
   def serialized_contracts(contracts)
@@ -54,11 +71,12 @@ class OwnerFinance::DashboardQueryService
     contracts.map { |item| OwnerFinance::RecordSerializer.contract(item, onelink_map[item.onelink_account_id]) }
   end
 
-  def compute_kpis(col, period_pnl_tx)
+  def compute_kpis(col, period_pnl_tx, exp_breakdown, series_12m, ceo_builder)
     pnl = compute_period_pnl(period_pnl_tx)
     cash = compute_cash_horizon(col)
     radar = compute_radar_counts(col[:deadlines])
-    pnl.merge(cash).merge(radar).merge(
+    ceo_extra = ceo_builder.build_kpis(pnl: pnl, cash: cash, exp_breakdown: exp_breakdown, series_12m: series_12m)
+    pnl.merge(cash).merge(radar).merge(ceo_extra).merge(
       needs_review_count: OwnerFinance::TransactionRecord.needs_review.count,
       hidden_personal_count: OwnerFinance::PersonalTombstone.count
     )
@@ -69,11 +87,7 @@ class OwnerFinance::DashboardQueryService
     expenses = period_pnl_tx.where(direction: 'expense', pnl_treatment: 'pnl').sum(:amount_kzt).to_d
     refunds = period_pnl_tx.where(pnl_treatment: 'expense_refund').sum(:amount_kzt).to_d
     net_exp = [expenses - refunds, BigDecimal(0)].max
-    {
-      month_revenue_kzt: revenue.to_f,
-      month_expenses_kzt: net_exp.to_f,
-      month_net_profit_kzt: (revenue - net_exp).to_f
-    }
+    { month_revenue_kzt: revenue.to_f, month_expenses_kzt: net_exp.to_f, month_net_profit_kzt: (revenue - net_exp).to_f }
   end
 
   def compute_cash_horizon(col)
@@ -83,21 +97,17 @@ class OwnerFinance::DashboardQueryService
     inflow = mrr + expected_extra_inflow_30d(col[:deadlines], col[:obligations])
     {
       total_balance_kzt: total_bal.to_f, committed_outflow_30d_kzt: committed.to_f,
-      free_cash_kzt: (total_bal - committed).to_f, expected_inflow_30d_kzt: inflow.to_f,
-      live_contracts_mrr_kzt: mrr.to_f
+      free_cash_kzt: (total_bal - committed).to_f, expected_inflow_30d_kzt: inflow.to_f, live_contracts_mrr_kzt: mrr.to_f
     }
   end
 
   def committed_outflow_30d(deadlines, obligations)
     horizon_end = @reference_date + 31.days
-    deadline_sum_within(deadlines, horizon_end, OUTFLOW_PAYER_MODES) +
-      payable_obligation_sum_within(obligations, horizon_end)
+    deadline_sum_within(deadlines, horizon_end, OUTFLOW_PAYER_MODES) + payable_obligation_sum_within(obligations, horizon_end)
   end
 
   def deadline_sum_within(deadlines, horizon_end, payer_modes)
-    deadlines.select do |item|
-      item.status == 'active' && item.due_on <= horizon_end && payer_modes.include?(item.payer_mode)
-    end.sum(&:amount_kzt).to_d
+    deadlines.select { |item| item.status == 'active' && item.due_on <= horizon_end && payer_modes.include?(item.payer_mode) }.sum(&:amount_kzt).to_d
   end
 
   def payable_obligation_sum_within(obligations, horizon_end)
@@ -115,11 +125,7 @@ class OwnerFinance::DashboardQueryService
   def compute_radar_counts(deadlines)
     urgent = deadlines.select { |item| item.status == 'active' && item.days_left(@reference_date) <= 14 }
     rebill = urgent.select { |item| item.payer_mode == 'rebill_client' }
-    {
-      urgent_deadlines_count: urgent.size,
-      rebill_soon_count: rebill.size,
-      rebill_soon_kzt: rebill.sum(&:amount_kzt).to_f
-    }
+    { urgent_deadlines_count: urgent.size, rebill_soon_count: rebill.size, rebill_soon_kzt: rebill.sum(&:amount_kzt).to_f }
   end
 
   def serialized_needs_review
@@ -140,11 +146,7 @@ class OwnerFinance::DashboardQueryService
 
   def serialized_sync_states
     OwnerFinance::SyncState.all.each_with_object({}) do |state, acc|
-      acc[state.sync_key] = {
-        status: state.sync_status,
-        last_synced_at: state.last_synced_at&.iso8601,
-        summary: state.summary
-      }
+      acc[state.sync_key] = { status: state.sync_status, last_synced_at: state.last_synced_at&.iso8601, summary: state.summary }
     end
   end
 
@@ -172,11 +174,8 @@ class OwnerFinance::DashboardQueryService
 
   def build_monthly_series
     year_range = Date.new(@year, 1, 1)..Date.new(@year, 12, 31)
-    rows = OwnerFinance::TransactionRecord
-           .in_pnl
-           .where(occurred_on: year_range)
-           .group('EXTRACT(MONTH FROM occurred_on)::int', :direction, :pnl_treatment)
-           .sum(:amount_kzt)
+    rows = OwnerFinance::TransactionRecord.in_pnl.where(occurred_on: year_range)
+                                          .group('EXTRACT(MONTH FROM occurred_on)::int', :direction, :pnl_treatment).sum(:amount_kzt)
     (1..12).map { |mon| build_month_point(rows, mon) }
   end
 

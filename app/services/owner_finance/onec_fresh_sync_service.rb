@@ -8,8 +8,10 @@ class OwnerFinance::OnecFreshSyncService
   DEFAULT_BASE_URL = 'https://1cfresh.kz/a/ea141/211858/odata/standard.odata'
   DEFAULT_AUTH_FILE = '/root/1cfresh_auth.json'
   GENERIC_MERCHANT_REGEX = /\A(1С Платёж|Банковский ордер 1С)/
+  OWNER_COUNTERPARTY_KEY = '08935528-e48d-11f0-908d-525400961c95'
   EXTRA_TRANSFER_PATTERNS = [
-    'подотчет', 'подотчёт', 'собственных средств', 'на личную карту', 'доход ип'
+    'подотчет', 'подотчёт', 'собственных средств', 'на личную карту', 'доход ип',
+    'со своего kaspi gold', 'на счет в kaspi pay'
   ].freeze
 
   def initialize(days_back: 45)
@@ -46,9 +48,10 @@ class OwnerFinance::OnecFreshSyncService
     since_iso = (OwnerFinance.today_almaty - @days_back.days).strftime('%Y-%m-%dT00:00:00')
     incoming = fetch_odata(creds, odata_doc_query('Document_ПлатежноеПоручениеВходящее', since_iso))
     outgoing = fetch_odata(creds, odata_doc_query('Document_ПлатежноеПоручениеИсходящее', since_iso))
-    upserted = persist_docs(incoming, outgoing)
+    orders_out = fetch_odata(creds, odata_doc_query('Document_ПлатежныйОрдерСписаниеДенежныхСредств', since_iso))
+    upserted = persist_docs(incoming, outgoing + orders_out)
     summary = {
-      incoming_fetched: incoming.size, outgoing_fetched: outgoing.size,
+      incoming_fetched: incoming.size, outgoing_fetched: outgoing.size + orders_out.size,
       transactions_upserted: upserted, synced_at: Time.current.iso8601
     }
     OwnerFinance::SyncState.record!('onec_fresh', status: 'ok', summary: summary)
@@ -56,7 +59,8 @@ class OwnerFinance::OnecFreshSyncService
   end
 
   def odata_doc_query(entity_name, since_iso)
-    "#{entity_name}?$format=json&$filter=Posted%20eq%20true%20and%20Date%20ge%20datetime'#{since_iso}'&$orderby=Date%20desc&$top=200"
+    encoded_entity = URI.encode_www_form_component(entity_name)
+    "#{encoded_entity}?$format=json&$filter=Posted%20eq%20true%20and%20Date%20ge%20datetime'#{since_iso}'&$orderby=Date%20desc&$top=200"
   end
 
   def persist_docs(incoming, outgoing)
@@ -170,7 +174,7 @@ class OwnerFinance::OnecFreshSyncService
 
   def bank_doc_attributes(doc, direction, amount)
     purpose = doc['НазначениеПлатежа'].to_s.strip
-    transfer = accountable_transfer?(direction, purpose)
+    transfer = accountable_transfer?(direction, purpose, doc)
     {
       occurred_on: Date.parse(doc['Date'].to_s),
       direction: transfer ? 'transfer' : direction,
@@ -193,20 +197,23 @@ class OwnerFinance::OnecFreshSyncService
   def default_1c_merchant(doc, transfer)
     return 'Подотчётный перевод (Счёт ИП ↔ Карта)' if transfer
 
-    doc['Номер'].present? ? "1С Платёж №#{doc['Номер']}" : 'Банковский ордер 1С'
+    num = (doc['Number'] || doc['Номер']).to_s.strip
+    num.present? ? "1С Платёж №#{num}" : 'Банковский ордер 1С'
   end
 
-  def accountable_transfer?(direction, purpose)
-    return false unless direction == 'expense'
+  def accountable_transfer?(direction, purpose, doc = {})
+    return true if doc['Контрагент_Key'].to_s == OWNER_COUNTERPARTY_KEY
 
     low = purpose.downcase
     patterns = OwnerFinance::StatementImportService::ACCOUNTABLE_TRANSFER_PATTERNS + EXTRA_TRANSFER_PATTERNS
-    patterns.any? { |pat| low.include?(pat) }
+    return true if patterns.any? { |pat| low.include?(pat) }
+
+    direction == 'expense' && patterns.any? { |pat| low.include?(pat) }
   end
 
   def infer_1c_category(purpose)
     low = purpose.downcase
-    return 'taxes_and_fees' if low.match?(/налог|соц|пенсион|осми|кнп/)
+    return 'taxes_and_fees' if low.match?(/налог|соц|пенсион|осми|осмс|кнп|ндс\(без ндс\)/)
     return 'servers_and_cloud' if low.match?(/хостинг|сервер|домен|интернет-компания ps/)
     return 'partner_commissions' if low.match?(/медэлемент|партнер|комисси/)
     return 'payroll_and_contractors' if low.match?(/зарплат|оплат.*услуг.*разработ/)
