@@ -13,7 +13,7 @@ import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import CaptainPaywall from 'dashboard/components-next/captain/pageComponents/Paywall.vue';
 import ResponseCard from 'dashboard/components-next/captain/assistant/ResponseCard.vue';
 import KnowledgeGraphCloud from 'dashboard/components-next/captain/assistant/KnowledgeGraphCloud.vue';
-import KnowledgeBaseTabs from 'dashboard/routes/dashboard/captain/components/KnowledgeBaseTabs.vue';
+import KnowledgeBaseTabs from 'dashboard/components-next/captain/pageComponents/knowledgeBase/KnowledgeBaseTabs.vue';
 import ResponsePageEmptyState from 'dashboard/components-next/captain/pageComponents/emptyStates/ResponsePageEmptyState.vue';
 import FeatureSpotlightPopover from 'dashboard/components-next/feature-spotlight/FeatureSpotlightPopover.vue';
 import LimitBanner from 'dashboard/components-next/captain/pageComponents/response/LimitBanner.vue';
