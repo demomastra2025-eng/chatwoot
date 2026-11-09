@@ -93,6 +93,151 @@ describe('TelephonySettings', () => {
     );
   });
 
+  it('applies unified call routing across all connected phone types (Virtual PBX and WhatsApp Calling)', async () => {
+    inboxesRef.value = [
+      {
+        id: 42,
+        name: 'Sipuni Main',
+        channel_type: 'Channel::Voice',
+        provider: 'sipuni',
+        phone_number: '+77001112233',
+      },
+      {
+        id: 43,
+        name: 'Altel Wazo',
+        channel_type: 'Channel::Voice',
+        provider: 'wazo',
+        phone_number: '+77085012233',
+      },
+      {
+        id: 55,
+        name: 'WhatsApp Cloud Calls',
+        channel_type: 'Channel::Whatsapp',
+        provider: 'whatsapp_cloud',
+        phone_number: '+77019998877',
+        provider_config: {
+          calling_enabled: true,
+        },
+      },
+    ];
+
+    getVirtualPbxStatusMock.mockImplementation(inboxId =>
+      Promise.resolve({
+        payload: {
+          ui_config: {
+            inbox_id: inboxId,
+            configuration_version: inboxId === 42 ? 5 : 2,
+            channel: {
+              provider_kind: inboxId === 42 ? 'sipuni' : 'wazo',
+              display_phone_number:
+                inboxId === 42 ? '+77001112233' : '+77085012233',
+            },
+            routing: {
+              mode: 'operator',
+              fallback_mode: 'reject',
+              operator_distribution_mode: 'broadcast',
+              max_call_duration_seconds: 1800,
+            },
+            employees: [],
+            permissions: {
+              editable: true,
+              remote_commit_allowed: inboxId === 43,
+            },
+          },
+        },
+      })
+    );
+
+    updateVirtualPbxChannelMock.mockResolvedValue({ payload: { errors: [] } });
+    provisionVirtualPbxChannelMock.mockResolvedValue({ payload: {} });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const phonePills = wrapper.findAll(
+      '[data-testid="telephony-routing-phone-pill"]'
+    );
+    expect(phonePills).toHaveLength(3);
+
+    await wrapper
+      .find('[data-testid="telephony-routing-group-name"]')
+      .setValue('Отдел продаж');
+    await wrapper
+      .find('[data-testid="telephony-routing-group-strategy"]')
+      .setValue('round_robin');
+    const operatorBtns = wrapper.findAll(
+      '[data-testid="telephony-routing-group-operator"]'
+    );
+    await operatorBtns[0].trigger('click');
+
+    await wrapper
+      .find('[data-testid="telephony-save-routing"]')
+      .trigger('click');
+    await flushPromises();
+
+    expect(updateVirtualPbxChannelMock).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({
+        expected_configuration_version: 5,
+        routing: expect.objectContaining({
+          operator_distribution_mode: 'targeted',
+          call_routing: expect.objectContaining({
+            inbound: expect.objectContaining({
+              groups: [
+                expect.objectContaining({
+                  name: 'Отдел продаж',
+                  strategy: 'round_robin',
+                  user_ids: [7],
+                }),
+              ],
+            }),
+          }),
+        }),
+      }),
+      { dryRun: false, remoteCommit: false }
+    );
+
+    expect(updateVirtualPbxChannelMock).toHaveBeenCalledWith(
+      43,
+      expect.objectContaining({
+        expected_configuration_version: 2,
+        routing: expect.objectContaining({
+          operator_distribution_mode: 'targeted',
+          call_routing: expect.objectContaining({
+            inbound: expect.objectContaining({
+              routing_authority: 'onelink',
+            }),
+          }),
+        }),
+      }),
+      { dryRun: false, remoteCommit: false }
+    );
+
+    expect(storeDispatchMock).toHaveBeenCalledWith(
+      'inboxes/updateInbox',
+      expect.objectContaining({
+        id: 55,
+        formData: false,
+        channel: expect.objectContaining({
+          provider_config: expect.objectContaining({
+            calling_enabled: true,
+            call_routing: expect.objectContaining({
+              inbound: expect.objectContaining({
+                groups: [
+                  expect.objectContaining({
+                    name: 'Отдел продаж',
+                    strategy: 'round_robin',
+                    user_ids: [7],
+                  }),
+                ],
+              }),
+            }),
+          }),
+        }),
+      })
+    );
+  });
+
   it('consolidates all connected voice phones and saves employee line assignments', async () => {
     inboxesRef.value = [
       {
@@ -168,6 +313,8 @@ describe('TelephonySettings', () => {
     const wrapper = mountPage();
     await flushPromises();
 
+    await wrapper.find('[data-testid="telephony-tab-lines"]').trigger('click');
+
     const cards = wrapper.findAll('[data-testid="telephony-phone-card"]');
     expect(cards).toHaveLength(2);
     expect(cards[0].text()).toContain('Sipuni Main');
@@ -175,7 +322,6 @@ describe('TelephonySettings', () => {
     expect(cards[1].text()).toContain('Altel Wazo');
     expect(cards[1].text()).toContain('+77085012233');
 
-    // Add a line on the Wazo phone (second card) and save
     await cards[1]
       .find('[data-testid="telephony-add-profile"]')
       .trigger('click');
