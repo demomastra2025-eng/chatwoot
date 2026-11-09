@@ -494,6 +494,19 @@ class Integrations::Medelement::ContactResolverService
     preferred_contact if linked_code == patient_code.to_s || merged_codes.include?(patient_code.to_s)
   end
 
+  def contact_meaningful_state(contact)
+    [
+      contact.name,
+      contact.respond_to?(:last_name) ? contact.last_name : nil,
+      contact.respond_to?(:middle_name) ? contact.middle_name : nil,
+      contact.email,
+      contact.phone_number,
+      contact.identifier,
+      contact.additional_attributes.to_h,
+      contact.custom_attributes.to_h.except('medelement_last_synced_at', 'medelement_batch_considered_at', 'medelement_patient_lookup_at')
+    ]
+  end
+
   def primary_patient_code_for(contact, incoming_patient_code)
     existing_code = contact.custom_attributes.to_h['medelement_patient_code'].to_s.presence
     merged_codes = Array(contact.custom_attributes.to_h['medelement_merged_patient_codes']).map(&:to_s)
@@ -503,6 +516,7 @@ class Integrations::Medelement::ContactResolverService
   end
 
   def persist_patient_contact!(contact:, patient:, identity:, phone_conflict_comment:)
+    before_state = contact_meaningful_state(contact)
     assigned_phone = assignable_provider_phone(contact, patient, phone_conflict_comment)
     primary_phone = Integrations::Medelement::PhoneNumber.normalize(assigned_phone.presence || contact.phone_number)
 
@@ -529,8 +543,9 @@ class Integrations::Medelement::ContactResolverService
       'secondary_phones' => secondary_phones(contact, patient, primary_phone)
     ).compact
     update_shared_phone_owner!(contact, patient)
+    meaningful_change = !contact.persisted? || contact_meaningful_state(contact) != before_state
     contact.save!
-    contact.dispatch_shared_phone_update_event if Current.executed_by.nil?
+    contact.dispatch_shared_phone_update_event if Current.executed_by.nil? && meaningful_change
     if phone_conflict_comment.present?
       record_phone_conflict(identity[:patient_code], contact, phone_conflict_comment, provider_phone: provider_phones(patient).first)
     end

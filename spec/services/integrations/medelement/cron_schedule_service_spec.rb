@@ -40,13 +40,7 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
         status: 'enabled'
       )
     )
-    expect(Sidekiq::Cron::Job).to have_received(:create).with(
-      hash_including(
-        name: "integrations_medelement_hook_#{hook.id}_contacts",
-        cron: config.contacts_sync_cron_expression,
-        args: [hook.id, %w[contacts]]
-      )
-    )
+    expect(Sidekiq::Cron::Job).to have_received(:destroy).with("integrations_medelement_hook_#{hook.id}_contacts")
     expect(Sidekiq::Cron::Job).to have_received(:create).with(
       hash_including(
         name: "integrations_medelement_hook_#{hook.id}_catalog",
@@ -189,10 +183,10 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
 
   it 'attempts every schedule when one cron job cannot be created' do
     hook = build_stubbed(:integrations_hook, :medelement, account: account)
-    allow(Sidekiq::Cron::Job).to receive(:create).and_return(false, true, true, true, true, true)
+    allow(Sidekiq::Cron::Job).to receive(:create).and_return(false, true, true, true, true)
 
     expect(described_class.new(hook: hook).sync!).to be(false)
-    expect(Sidekiq::Cron::Job).to have_received(:create).exactly(6).times
+    expect(Sidekiq::Cron::Job).to have_received(:create).exactly(5).times
   end
 
   it 'carries the catalog offset into the next hour for an explicit custom time' do

@@ -65,6 +65,7 @@ class Integrations::Medelement::CronScheduleService
 
     job_names.each { |name| Sidekiq::Cron::Job.destroy(name) }
     Sidekiq::Cron::Job.destroy(legacy_job_name)
+    Sidekiq::Cron::Job.destroy(job_name('contacts'))
   end
 
   def jobs
@@ -97,6 +98,7 @@ class Integrations::Medelement::CronScheduleService
     return true unless self.class.cron_enabled?
 
     Sidekiq::Cron::Job.destroy(legacy_job_name)
+    Sidekiq::Cron::Job.destroy(job_name('contacts'))
     unless delta_enabled?
       Sidekiq::Cron::Job.destroy(job_name('receptions_delta'))
       Sidekiq::Cron::Job.destroy(job_name('receptions_delta_night'))
@@ -135,7 +137,6 @@ class Integrations::Medelement::CronScheduleService
     result = [
       { key: 'realtime', phases: REALTIME_PHASES, cron: configuration.receptions_sync_cron_expression },
       { key: 'operational', phases: OPERATIONAL_PHASES, cron: configuration.sync_cron_expression },
-      { key: 'contacts', phases: CONTACT_PHASES, cron: configuration.contacts_sync_cron_expression },
       { key: 'catalog', phases: CATALOG_PHASES, cron: configuration.catalog_sync_cron_expression }
     ]
     return result unless delta_enabled?
@@ -175,7 +176,7 @@ class Integrations::Medelement::CronScheduleService
   def job_names
     (
       schedules.map { |schedule| job_name(schedule.fetch(:key)) } +
-      [job_name('receptions_delta'), job_name('receptions_delta_night')]
+      [job_name('contacts'), job_name('receptions_delta'), job_name('receptions_delta_night')]
     ).uniq
   end
 

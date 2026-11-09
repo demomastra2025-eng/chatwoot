@@ -92,12 +92,19 @@ class HookJob < MutexApplicationJob
   end
 
   def process_medelement_integration(hook, event_name, event_data)
-    return unless ['contact.created', 'contact.updated'].include?(event_name)
+    return unless ['contact.created', 'contact.updated', 'message.created'].include?(event_name)
     return unless hook.feature_allowed?
 
-    contact = event_data[:contact]
+    contact = medelement_event_contact(event_name, event_data)
     return if Integrations::Medelement::PatientEnrichmentService.fresh_or_ineligible?(contact)
 
     Integrations::Medelement::PatientEnrichmentJob.enqueue(hook.id, contact.id)
+  end
+
+  def medelement_event_contact(event_name, event_data)
+    return event_data[:contact] unless event_name == 'message.created'
+
+    message = event_data[:message]
+    message.conversation&.contact if message&.incoming?
   end
 end

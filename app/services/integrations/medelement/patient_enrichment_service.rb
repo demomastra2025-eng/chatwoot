@@ -9,10 +9,22 @@ class Integrations::Medelement::PatientEnrichmentService
     return true if normalized_phone.blank?
 
     attributes = contact.custom_attributes.to_h
+    return true if recently_synced?(attributes)
+
     expected_fp = Digest::SHA256.hexdigest(normalized_phone)
     return false unless attributes['medelement_patient_phone_fingerprint'] == expected_fp
 
-    Time.zone.parse(attributes['medelement_patient_lookup_at'].to_s) >= FRESHNESS_WINDOW.ago
+    recent_timestamp?(attributes['medelement_patient_lookup_at'])
+  end
+
+  def self.recently_synced?(attributes)
+    attributes['medelement_patient_code'].to_s.present? && recent_timestamp?(attributes['medelement_last_synced_at'])
+  end
+
+  def self.recent_timestamp?(value)
+    return false if value.blank?
+
+    Time.zone.parse(value.to_s) >= FRESHNESS_WINDOW.ago
   rescue ArgumentError, TypeError
     false
   end
@@ -28,6 +40,7 @@ class Integrations::Medelement::PatientEnrichmentService
     ensure_contact_scope!(contact)
     phone = Integrations::Medelement::PhoneNumber.new(contact.phone_number)
     return contact if lookup_fresh?(contact, phone)
+    return refresh_linked_patient(contact, phone) if linked_patient_code(contact).present?
 
     patients = client.search_patients_by_phone(phone_number: phone.e164)
     return mark!(contact, phone, 'not_found') if patients.empty?
@@ -70,13 +83,21 @@ class Integrations::Medelement::PatientEnrichmentService
         .exists?
   end
 
+  def linked_patient_code(contact)
+    contact.custom_attributes.to_h['medelement_patient_code'].to_s.presence
+  end
+
+  def refresh_linked_patient(contact, phone)
+    resolved = resolver.sync_patient!(linked_patient_code(contact), preferred_contact: contact)
+    mark!(resolved || contact.reload, phone, 'matched')
+  end
+
   def lookup_fresh?(contact, phone)
     attributes = contact.custom_attributes.to_h
+    return true if self.class.recently_synced?(attributes)
     return false unless attributes['medelement_patient_phone_fingerprint'] == fingerprint(phone)
 
-    Time.zone.parse(attributes['medelement_patient_lookup_at'].to_s) >= FRESHNESS_WINDOW.ago
-  rescue ArgumentError, TypeError
-    false
+    self.class.recent_timestamp?(attributes['medelement_patient_lookup_at'])
   end
 
   def mark!(contact, phone, status)

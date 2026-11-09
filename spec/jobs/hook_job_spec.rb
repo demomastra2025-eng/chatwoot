@@ -211,6 +211,28 @@ RSpec.describe HookJob do
         .with(medelement_hook.id, contact.id)
     end
 
+    it 'enqueues enrichment when an incoming message arrives and contact card is stale' do
+      conversation = create(:conversation, account: account, contact: contact)
+      message = create(:message, account: account, conversation: conversation, sender: contact, message_type: :incoming)
+
+      described_class.perform_now(medelement_hook, 'message.created', message: message)
+
+      expect(Integrations::Medelement::PatientEnrichmentJob)
+        .to have_received(:enqueue)
+        .with(medelement_hook.id, contact.id)
+    end
+
+    it 'skips enrichment when the contact card was synced recently' do
+      contact.update!(custom_attributes: {
+                        'medelement_patient_code' => '12345',
+                        'medelement_last_synced_at' => 1.hour.ago.iso8601
+                      })
+
+      described_class.perform_now(medelement_hook, 'contact.updated', contact: contact)
+
+      expect(Integrations::Medelement::PatientEnrichmentJob).not_to have_received(:enqueue)
+    end
+
     it 'ignores unrelated events' do
       described_class.perform_now(medelement_hook, 'conversation.created', contact: contact)
 

@@ -64,7 +64,7 @@ class HookListener < BaseListener
       'google_translate' => ['message.created'],
       'leadsquared' => ['contact.updated', 'conversation.created', 'conversation.resolved'],
       'macrocrm' => ['message.created'],
-      'medelement' => ['contact.created', 'contact.updated']
+      'medelement' => ['contact.created', 'contact.updated', 'message.created']
     }
 
     return false unless supported_events_map.key?(hook.app_id)
