@@ -298,7 +298,7 @@ crm_appointment_stage_due_job:
   active_job: true
 
 accounts_storage_breakdown_refresh_job:
-  cron: '37 * * * *'
+  cron: '15 4 * * * Asia/Almaty'
   class: 'Accounts::StorageBreakdownRefreshJob'
   queue: low
 

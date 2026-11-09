@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class Accounts::StorageOverviewService
-  REFRESH_INTERVAL = 5.minutes
+  REFRESH_INTERVAL = 24.hours
   PENDING_REFRESH_TTL = 5.minutes
   PENDING_REFRESH_KEY = 'account:%<account_id>s:storage_overview_pending_v2'
   SNAPSHOT_KEY = 'account:%<account_id>s:storage_overview_v1'

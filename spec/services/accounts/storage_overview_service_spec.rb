@@ -276,9 +276,11 @@ RSpec.describe Accounts::StorageOverviewService do
   ensure
     travel_back
   end
-  it 'sweeps accounts in batches with MGET and only enqueues refreshes for stale accounts' do
+  it 'sweeps accounts in batches with MGET and only enqueues refreshes for stale accounts with file changes' do
     fresh_account = create(:account)
     stale_account = create(:account)
+    empty_account = create(:account)
+    create(:message, account: stale_account).attachments.create!(account_id: stale_account.id, file_type: :image)
     described_class.new(account: fresh_account).refresh!
 
     expect do
@@ -289,5 +291,6 @@ RSpec.describe Accounts::StorageOverviewService do
                                   .select { |j| j[:job] == Accounts::StorageBreakdownRefreshJob }
                                   .flat_map { |j| j[:args] }
     expect(enqueued_ids).not_to include(fresh_account.id)
+    expect(enqueued_ids).not_to include(empty_account.id)
   end
 end
