@@ -344,6 +344,7 @@ describe('Sidebar', () => {
       'Agents',
       'Channels',
       'Knowledge Base',
+      'Documents',
       'Tools',
       'AI Settings',
     ];
@@ -384,6 +385,7 @@ describe('Sidebar', () => {
         'captain_agents_index',
         'captain_channels_index',
         'captain_assistants_responses_index',
+        'captain_assistants_documents_index',
         'captain_tools_index',
         'captain_ai_settings_index',
       ]);
@@ -425,6 +427,7 @@ describe('Sidebar', () => {
       expect(navigationChildNames(sidebarGroup(wrapper, 'Captain'))).toEqual([
         'Agents',
         'Knowledge Base',
+        'Documents',
         'Tools',
       ]);
     });

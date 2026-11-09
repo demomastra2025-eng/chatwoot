@@ -23,7 +23,6 @@ import DocumentAccessDialog from 'dashboard/components-next/captain/pageComponen
 import DocumentPageEmptyState from 'dashboard/components-next/captain/pageComponents/emptyStates/DocumentPageEmptyState.vue';
 import FeatureSpotlightPopover from 'dashboard/components-next/feature-spotlight/FeatureSpotlightPopover.vue';
 import LimitBanner from 'dashboard/components-next/captain/pageComponents/document/LimitBanner.vue';
-import KnowledgeBaseTabs from 'dashboard/components-next/captain/pageComponents/knowledgeBase/KnowledgeBaseTabs.vue';
 
 const route = useRoute();
 const store = useStore();
@@ -253,7 +252,7 @@ watch(
 
 <template>
   <PageLayout
-    :header-title="$t('CAPTAIN.KNOWLEDGE_BASE.HEADER')"
+    :header-title="$t('CAPTAIN.DOCUMENTS.HEADER')"
     :button-label="$t('CAPTAIN.DOCUMENTS.ADD_NEW')"
     :button-policy="['administrator']"
     :total-count="documentsMeta.totalCount"
@@ -266,10 +265,6 @@ watch(
     @update:current-page="onPageChange"
     @click="handleCreateDocument"
   >
-    <template #controls>
-      <KnowledgeBaseTabs />
-    </template>
-
     <template #subHeader>
       <Policy :permissions="['administrator']">
         <BulkSelectBar

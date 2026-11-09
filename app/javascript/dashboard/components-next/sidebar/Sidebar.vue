@@ -1172,9 +1172,15 @@ const menuItems = computed(() => {
             activeOn: [
               'captain_assistants_responses_index',
               'captain_assistants_responses_pending',
-              'captain_assistants_documents_index',
             ],
             to: accountScopedRoute('captain_assistants_responses_index'),
+          },
+          {
+            name: 'Documents',
+            visibilityKey: 'Captain:Documents',
+            label: t('CAPTAIN.NAV.DOCUMENTS'),
+            activeOn: ['captain_assistants_documents_index'],
+            to: accountScopedRoute('captain_assistants_documents_index'),
           },
           {
             name: 'Tools',

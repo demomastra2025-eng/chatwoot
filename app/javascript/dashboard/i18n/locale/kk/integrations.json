@@ -1842,7 +1842,18 @@
           "PREPARATION": "Дайындық және талдаулар",
           "LOCATION": "Мекенжай мен кабинеттер",
           "GENERAL": "Жалпы білім"
-        }
+        },
+        "REHEAT_PHYSICS": "Граф серпіні",
+        "FIT_VIEW": "Экранға сыйдыру",
+        "FULLSCREEN": "Толық экран",
+        "EXIT_FULLSCREEN": "Кішірейту",
+        "EDGES_COUNT": "Байланыстар: {count}",
+        "SOURCES_COUNT": "Дереккөздер: {count}",
+        "DRAG_HINT": "Түйіндерді сүйреңіз • Масштабтау • Ашу үшін басыңыз",
+        "COPY_ANSWER": "Жауапты көшіру",
+        "COPIED": "Көшірілді",
+        "SIMILAR_NODES": "Мағыналық байланысқан білімдер",
+        "ENGINE_BADGE": "D3-Force Physics"
       }
     },
     "KNOWLEDGE_VISIBILITY": {
@@ -3228,7 +3239,8 @@
       "SETTINGS": "Баптаулар",
       "LOGS": "Логтар",
       "LOGS_AGENT_FILTER": "Агент: {name}",
-      "LOGS_AGENT_FILTER_CLEAR": "Агент сүзгісін алып тастау"
+      "LOGS_AGENT_FILTER_CLEAR": "Агент сүзгісін алып тастау",
+      "DOCUMENTS": "Құжаттар"
     }
   }
 }
