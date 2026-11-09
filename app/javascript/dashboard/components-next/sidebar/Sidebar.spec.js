@@ -342,12 +342,10 @@ describe('Sidebar', () => {
   describe('AI group', () => {
     const ADMIN_AI_ITEMS = [
       'Agents',
-      'Sandbox',
       'Channels',
       'Knowledge Base',
       'Tools',
       'AI Settings',
-      'Observability',
     ];
 
     const captainChild = (wrapper, name) =>
@@ -384,12 +382,10 @@ describe('Sidebar', () => {
         ADMIN_AI_ITEMS.map(name => captainChild(wrapper, name).to.name)
       ).toEqual([
         'captain_agents_index',
-        'captain_playground_index',
         'captain_channels_index',
         'captain_assistants_responses_index',
         'captain_tools_index',
         'captain_ai_settings_index',
-        'captain_observability_index',
       ]);
       ADMIN_AI_ITEMS.forEach(name =>
         expect(captainChild(wrapper, name).to.params).not.toHaveProperty(
@@ -428,7 +424,6 @@ describe('Sidebar', () => {
 
       expect(navigationChildNames(sidebarGroup(wrapper, 'Captain'))).toEqual([
         'Agents',
-        'Sandbox',
         'Knowledge Base',
         'Tools',
       ]);

@@ -2663,6 +2663,32 @@
       "TABS": {
         "FAQS": "FAQ",
         "DOCUMENTS": "Documents"
+      },
+      "GRAPH": {
+        "VIEW_GRAPH": "Knowledge Cloud",
+        "VIEW_LIST": "List",
+        "ALL_TOPICS": "All topics",
+        "CENTER_HUB": "AI Knowledge Base",
+        "NODES_COUNT": "Nodes: {count}",
+        "CLUSTERS_COUNT": "Clusters: {count}",
+        "ZOOM_IN": "Zoom in",
+        "ZOOM_OUT": "Zoom out",
+        "ZOOM_RESET": "Reset zoom",
+        "READ_ONLY_BADGE": "Read-only (auto-generated from documents)",
+        "QUESTION_LABEL": "Question",
+        "ANSWER_LABEL": "AI Answer",
+        "SOURCE_LABEL": "Source",
+        "CLUSTER_LABEL": "Cluster",
+        "RELATED_QUESTIONS": "Related nodes in cluster",
+        "SELECT_NODE_HINT": "Click any node in the graph cloud to inspect its answer and connections.",
+        "TOPICS": {
+          "PRICING": "Pricing & Fees",
+          "DOCTORS": "Doctors & Specialists",
+          "BOOKING": "Booking & Schedule",
+          "PREPARATION": "Preparation & Labs",
+          "LOCATION": "Locations & Rooms",
+          "GENERAL": "General Knowledge"
+        }
       }
     },
     "KNOWLEDGE_VISIBILITY": {

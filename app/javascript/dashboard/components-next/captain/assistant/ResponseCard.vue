@@ -101,12 +101,6 @@ const statusAction = computed(() => {
 const menuItems = computed(() => [
   ...statusAction.value,
   {
-    label: t('CAPTAIN.RESPONSES.OPTIONS.EDIT_RESPONSE'),
-    value: 'edit',
-    action: 'edit',
-    icon: 'i-lucide-pencil-line',
-  },
-  {
     label: t('CAPTAIN.RESPONSES.OPTIONS.DELETE_RESPONSE'),
     value: 'delete',
     action: 'delete',
@@ -342,20 +336,6 @@ const handleDocumentableClick = () => {
             class="hover:!no-underline"
             @click="
               handleAssistantAction({ action: 'approve', value: 'approve' })
-            "
-          />
-          <Button
-            :label="$t('CAPTAIN.RESPONSES.OPTIONS.EDIT_RESPONSE')"
-            icon="i-lucide-pencil-line"
-            sm
-            slate
-            link
-            class="hover:!no-underline"
-            @click="
-              handleAssistantAction({
-                action: 'edit',
-                value: 'edit',
-              })
             "
           />
           <Button

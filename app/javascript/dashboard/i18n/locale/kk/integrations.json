@@ -1817,6 +1817,32 @@
       "TABS": {
         "FAQS": "FAQ",
         "DOCUMENTS": "Documents"
+      },
+      "GRAPH": {
+        "VIEW_GRAPH": "Білім бұлты",
+        "VIEW_LIST": "Тізім",
+        "ALL_TOPICS": "Барлық тақырыптар",
+        "CENTER_HUB": "ЖИ Білім базасы",
+        "NODES_COUNT": "Түйіндер: {count}",
+        "CLUSTERS_COUNT": "Кластерлер: {count}",
+        "ZOOM_IN": "Жақындату",
+        "ZOOM_OUT": "Алыстату",
+        "ZOOM_RESET": "Масштабты қалпына келтіру",
+        "READ_ONLY_BADGE": "Тек оқу үшін (құжаттардан автогенерация)",
+        "QUESTION_LABEL": "Сұрақ",
+        "ANSWER_LABEL": "ЖИ жауабы",
+        "SOURCE_LABEL": "Дереккөз",
+        "CLUSTER_LABEL": "Кластер",
+        "RELATED_QUESTIONS": "Кластердегі байланысты сұрақтар",
+        "SELECT_NODE_HINT": "Толық жауап пен байланыстарды көру үшін графтағы кез келген түйінді басыңыз.",
+        "TOPICS": {
+          "PRICING": "Бағалар мен прайс",
+          "DOCTORS": "Мамандар мен дәрігерлер",
+          "BOOKING": "Жазылу және кесте",
+          "PREPARATION": "Дайындық және талдаулар",
+          "LOCATION": "Мекенжай мен кабинеттер",
+          "GENERAL": "Жалпы білім"
+        }
       }
     },
     "KNOWLEDGE_VISIBILITY": {

@@ -71,7 +71,7 @@ const agentRoutes = [
   },
   {
     path: frontendURL('accounts/:accountId/captain/playground'),
-    component: PlaygroundIndex,
+    redirect: redirectToAgents,
     name: 'captain_playground_index',
     meta,
   },
@@ -89,7 +89,7 @@ const agentRoutes = [
   },
   {
     path: frontendURL('accounts/:accountId/captain/observability'),
-    component: ObservabilityIndex,
+    redirect: redirectToAgents,
     name: 'captain_observability_index',
     meta: {
       permissions: ['administrator'],

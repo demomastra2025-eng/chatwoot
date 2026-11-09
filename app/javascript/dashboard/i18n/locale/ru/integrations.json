@@ -2439,6 +2439,32 @@
       "TABS": {
         "FAQS": "FAQ",
         "DOCUMENTS": "Документы"
+      },
+      "GRAPH": {
+        "VIEW_GRAPH": "Облако знаний",
+        "VIEW_LIST": "Список",
+        "ALL_TOPICS": "Все темы",
+        "CENTER_HUB": "База знаний ИИ",
+        "NODES_COUNT": "Узлов: {count}",
+        "CLUSTERS_COUNT": "Кластеров: {count}",
+        "ZOOM_IN": "Приблизить",
+        "ZOOM_OUT": "Отдалить",
+        "ZOOM_RESET": "Сбросить масштаб",
+        "READ_ONLY_BADGE": "Только чтение (автогенерация из документов)",
+        "QUESTION_LABEL": "Вопрос",
+        "ANSWER_LABEL": "Ответ ИИ",
+        "SOURCE_LABEL": "Источник",
+        "CLUSTER_LABEL": "Кластер",
+        "RELATED_QUESTIONS": "Связанные узлы в кластере",
+        "SELECT_NODE_HINT": "Нажмите на любой узел в облаке графа, чтобы открыть полный ответ и связи.",
+        "TOPICS": {
+          "PRICING": "Стоимость и прайс",
+          "DOCTORS": "Специалисты и врачи",
+          "BOOKING": "Запись и расписание",
+          "PREPARATION": "Подготовка и анализы",
+          "LOCATION": "Адреса и кабинеты",
+          "GENERAL": "Общие знания"
+        }
       }
     },
     "KNOWLEDGE_VISIBILITY": {

@@ -107,14 +107,14 @@ describe('captain routes', () => {
     it.each([
       [`${BASE}/agents`, 'captain_agents_index'],
       [`${BASE}/agents/2`, 'captain_agent_show'],
-      [`${BASE}/playground`, 'captain_playground_index'],
+      [`${BASE}/playground`, 'captain_agents_index'],
       [`${BASE}/channels`, 'captain_channels_index'],
       [`${BASE}/settings`, 'captain_ai_settings_index'],
       [`${BASE}/faqs`, 'captain_assistants_responses_index'],
       [`${BASE}/faqs/pending`, 'captain_assistants_responses_pending'],
       [`${BASE}/documents`, 'captain_assistants_documents_index'],
       [`${BASE}/tools`, 'captain_tools_index'],
-      [`${BASE}/observability`, 'captain_observability_index'],
+      [`${BASE}/observability`, 'captain_agents_index'],
     ])('opens %s as the page %s', async (path, name) => {
       const route = await open(path);
 
@@ -179,10 +179,10 @@ describe('captain routes', () => {
       }
     );
 
-    it('opens the shared «Песочница» page from the former per-agent playground page', async () => {
+    it('redirects the former per-agent playground page to the agents gallery', async () => {
       const route = await open(`${BASE}/2/playground?source=legacy`);
 
-      expect(route.name).toBe('captain_playground_index');
+      expect(route.name).toBe('captain_agents_index');
       expect(route.query).toEqual({ source: 'legacy' });
     });
 
@@ -253,7 +253,7 @@ describe('captain routes', () => {
         params: { accountId: '1', assistantId: '2' },
       });
 
-      expect(route.name).toBe('captain_playground_index');
+      expect(route.name).toBe('captain_agents_index');
     });
 
     it.each([

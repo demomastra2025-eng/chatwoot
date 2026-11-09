@@ -491,7 +491,7 @@ addClientLanguage(event) {
 
         <woot-loading-state v-if="uiFlags.isFetchingItem" />
 
-        <div v-if="accountRecord?.id" class="border-t border-n-weak py-6">
+        <div v-if="accountRecord?.id">
           <AccountId />
         </div>
 

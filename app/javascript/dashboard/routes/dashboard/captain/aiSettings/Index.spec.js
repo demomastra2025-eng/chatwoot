@@ -175,7 +175,6 @@ const reasonRows = (wrapper, list) =>
 const SECTION_IDS = [
   'understanding',
   'handoff',
-  'knowledge',
   'speed',
   'safety',
 ];
@@ -287,7 +286,6 @@ describe('Captain AI settings page', () => {
     }));
     const wrapper = await mountPage();
 
-    await switchIn(wrapper, 'knowledge-faq-from-resolved').trigger('click');
     await wrapper.get('#ai-settings-sensitive_info_action').setValue('flag');
     expect(saveButton(wrapper).attributes('disabled')).toBeUndefined();
 
@@ -295,9 +293,9 @@ describe('Captain AI settings page', () => {
 
     expect(testState.save).toHaveBeenCalledTimes(1);
     expect(testState.save).toHaveBeenCalledWith({
-      faq: { generate_from_resolved: true },
       safety: {
         moderation_enabled: true,
+        require_explicit_ai_consent: false,
         prompt_injection_action: 'block',
         sensitive_info_action: 'flag',
         custom_rules: [

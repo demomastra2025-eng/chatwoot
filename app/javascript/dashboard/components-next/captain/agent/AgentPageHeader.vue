@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import CaptainAssistantAPI from 'dashboard/api/captain/assistant';
@@ -35,7 +35,6 @@ const emit = defineEmits(['update:draft', 'save', 'deleted']);
 
 const { t } = useI18n();
 const route = useRoute();
-const router = useRouter();
 const store = useStore();
 const { setActive, isToggling } = useAgentActiveToggle();
 const agents = useMapGetter('captainAssistants/getRecords');
@@ -179,12 +178,6 @@ const avatarSrc = computed(
 
 const menuItems = computed(() => [
   {
-    label: t('CAPTAIN.AGENT_PAGE.MENU.LOGS'),
-    value: 'logs',
-    action: 'logs',
-    icon: 'i-lucide-scroll-text',
-  },
-  {
     label: t('CAPTAIN.AGENT_PAGE.MENU.DELETE'),
     value: 'delete',
     action: 'delete',
@@ -192,18 +185,8 @@ const menuItems = computed(() => [
   },
 ]);
 
-const logsRoute = computed(() => ({
-  name: 'captain_observability_index',
-  params: { accountId: accountId.value },
-  query: { assistant_id: props.assistant?.id },
-}));
-
 const handleMenuAction = ({ action }) => {
   showMenu.value = false;
-  if (action === 'logs') {
-    router.push(logsRoute.value);
-    return;
-  }
   if (action === 'delete') deleteDialogRef.value?.open();
 };
 </script>

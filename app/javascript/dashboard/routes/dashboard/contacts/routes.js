@@ -43,7 +43,10 @@ export const routes = [
       {
         path: 'active',
         name: 'contacts_dashboard_active',
-        component: ContactsIndex,
+        redirect: to => ({
+          name: 'contacts_dashboard_index',
+          params: { accountId: to.params.accountId },
+        }),
         meta: commonMeta,
       },
     ],

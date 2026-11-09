@@ -75,13 +75,6 @@ const openAgent = agent => {
   });
 };
 
-const openSandbox = () => {
-  router.push({
-    name: 'captain_playground_index',
-    params: { accountId: route.params.accountId },
-  });
-};
-
 const askSwitchOff = (text, action) => {
   switchOffText.value = text;
   pendingSwitchOff.value = action;
@@ -186,15 +179,6 @@ onMounted(() => {
           v-if="agents.length"
           class="flex flex-wrap items-center justify-end gap-2"
         >
-          <Button
-            :label="t('CAPTAIN.NAV.SANDBOX')"
-            icon="i-lucide-message-circle"
-            color="slate"
-            variant="faded"
-            size="sm"
-            data-testid="agents-open-sandbox"
-            @click="openSandbox"
-          />
           <Button
             v-if="isAdmin"
             :label="

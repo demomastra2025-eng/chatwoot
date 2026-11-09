@@ -27,7 +27,6 @@ import Banner from 'dashboard/components-next/banner/Banner.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
 import UnderstandingSection from 'dashboard/components-next/captain/aiSettings/UnderstandingSection.vue';
 import HandoffSection from 'dashboard/components-next/captain/aiSettings/HandoffSection.vue';
-import KnowledgeSection from 'dashboard/components-next/captain/aiSettings/KnowledgeSection.vue';
 import ResponseSpeedSection from 'dashboard/components-next/captain/aiSettings/ResponseSpeedSection.vue';
 import SafetySection from 'dashboard/components-next/captain/aiSettings/SafetySection.vue';
 
@@ -305,11 +304,6 @@ onBeforeUnmount(() => {
           v-model="draft.handoff"
           :errors="fieldErrors"
           :show-errors="showValidation"
-          :disabled="isSaving"
-        />
-        <KnowledgeSection
-          v-model="draft.faq"
-          :errors="fieldErrors"
           :disabled="isSaving"
         />
         <ResponseSpeedSection

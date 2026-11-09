@@ -61,11 +61,8 @@ describe CaptainListener do
         assistant.save!
       end
 
-      it 'generates and deduplicates FAQs even if the agent did not select FAQ lookup' do
-        expect(Captain::Llm::ConversationFaqService)
-          .to receive(:new)
-          .with(assistant, conversation)
-          .and_return(instance_double(Captain::Llm::ConversationFaqService, generate_and_deduplicate: false))
+      it 'does not generate FAQs from resolved conversations' do
+        expect(Captain::Llm::ConversationFaqService).not_to receive(:new)
         expect(Captain::Llm::ContactNotesService).not_to receive(:new)
 
         listener.conversation_resolved(event)
@@ -79,13 +76,11 @@ describe CaptainListener do
         Captain::Conversation::AgentSession.new(conversation: conversation).update_routing(actor_id: specialist.id)
       end
 
-      it 'uses the specialist knowledge ownership with account FAQ generation enabled' do
+      it 'does not generate FAQs from resolved conversations even when specialist is active' do
         Captain::AccountSettings.new(account).update!('faq' => { 'generate_from_resolved' => true })
         assistant.update!(config: { feature_memory: false, feature_faq: false })
         expect(Captain::Llm::ContactNotesService).not_to receive(:new)
-        expect(Captain::Llm::ConversationFaqService)
-          .to receive(:new).with(specialist, conversation)
-          .and_return(instance_double(Captain::Llm::ConversationFaqService, generate_and_deduplicate: false))
+        expect(Captain::Llm::ConversationFaqService).not_to receive(:new)
 
         listener.conversation_resolved(event)
       end

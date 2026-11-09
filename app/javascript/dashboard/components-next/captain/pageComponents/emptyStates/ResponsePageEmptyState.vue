@@ -18,16 +18,12 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['click', 'clearFilters']);
+const emit = defineEmits(['clearFilters']);
 
 const isApproved = computed(() => props.variant === 'approved');
 const isPending = computed(() => props.variant === 'pending');
 
 const { isOnChatwootCloud } = useAccount();
-const onClick = () => {
-  emit('click');
-};
-
 const onClearFilters = () => {
   emit('clearFilters');
 };
@@ -56,13 +52,7 @@ const onClearFilters = () => {
     <template #actions>
       <div class="flex flex-col items-center gap-3">
         <Button
-          v-if="isApproved"
-          :label="$t('CAPTAIN.RESPONSES.ADD_NEW')"
-          icon="i-lucide-plus"
-          @click="onClick"
-        />
-        <Button
-          v-else-if="isPending && hasActiveFilters"
+          v-if="isPending && hasActiveFilters"
           :label="$t('CAPTAIN.RESPONSES.EMPTY_STATE.CLEAR_SEARCH')"
           variant="link"
           size="sm"

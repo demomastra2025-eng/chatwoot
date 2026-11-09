@@ -1154,13 +1154,6 @@ const menuItems = computed(() => {
             activeOn: ['captain_agents_index', 'captain_agent_show'],
             to: accountScopedRoute('captain_agents_index'),
           },
-          {
-            name: 'Sandbox',
-            visibilityKey: 'Captain:Sandbox',
-            label: t('CAPTAIN.NAV.SANDBOX'),
-            activeOn: ['captain_playground_index'],
-            to: accountScopedRoute('captain_playground_index'),
-          },
           ...(checkPermissions(['administrator'])
             ? [
                 {
@@ -1199,13 +1192,6 @@ const menuItems = computed(() => {
                   activeOn: ['captain_ai_settings_index'],
                   to: accountScopedRoute('captain_ai_settings_index'),
                 },
-                {
-                  name: 'Observability',
-                  visibilityKey: 'Captain:Observability',
-                  label: t('CAPTAIN.NAV.LOGS'),
-                  activeOn: ['captain_observability_index'],
-                  to: accountScopedRoute('captain_observability_index'),
-                },
               ]
             : []),
         ],
@@ -1232,13 +1218,6 @@ const menuItems = computed(() => {
               { page: 1, search: undefined }
             ),
             activeOn: ['contacts_dashboard_index', 'contacts_edit'],
-          },
-          {
-            name: 'Active',
-            visibilityKey: 'Contacts:Active',
-            label: t('SIDEBAR.ACTIVE'),
-            to: accountScopedRoute('contacts_dashboard_active'),
-            activeOn: ['contacts_dashboard_active'],
           },
           {
             name: 'Duplicates',
