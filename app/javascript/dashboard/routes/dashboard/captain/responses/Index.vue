@@ -5,7 +5,8 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { debounce } from '@chatwoot/utils';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
-import { useAccount } from 'dashboard/composables/useAccount';
+import SchedulingResourcesAPI from 'dashboard/api/scheduling/resources';
+import SchedulingServicesAPI from 'dashboard/api/scheduling/services';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -14,15 +15,33 @@ import CaptainPaywall from 'dashboard/components-next/captain/pageComponents/Pay
 import ResponseCard from 'dashboard/components-next/captain/assistant/ResponseCard.vue';
 import KnowledgeGraphCloud from 'dashboard/components-next/captain/assistant/KnowledgeGraphCloud.vue';
 import ResponsePageEmptyState from 'dashboard/components-next/captain/pageComponents/emptyStates/ResponsePageEmptyState.vue';
-import FeatureSpotlightPopover from 'dashboard/components-next/feature-spotlight/FeatureSpotlightPopover.vue';
 import LimitBanner from 'dashboard/components-next/captain/pageComponents/response/LimitBanner.vue';
 
 const store = useStore();
-const { isOnChatwootCloud } = useAccount();
 const uiFlags = useMapGetter('captainResponses/getUIFlags');
 const responseMeta = useMapGetter('captainResponses/getMeta');
 const responses = useMapGetter('captainResponses/getRecords');
-const isFetching = computed(() => uiFlags.value.fetchingList);
+
+const doctors = ref([]);
+const services = ref([]);
+const serviceStats = ref([]);
+const isFetchingClinicData = ref(false);
+
+const isFetching = computed(
+  () =>
+    uiFlags.value.fetchingList &&
+    !responses.value.length &&
+    !doctors.value.length &&
+    !services.value.length &&
+    isFetchingClinicData.value
+);
+
+const isGraphEmpty = computed(
+  () =>
+    !responses.value.length &&
+    !doctors.value.length &&
+    !services.value.length
+);
 
 const searchQuery = ref('');
 const viewMode = ref('graph');
@@ -67,6 +86,29 @@ const fetchResponses = (page = 1) => {
   store.dispatch('captainResponses/get', filterParams);
 };
 
+const fetchClinicGraphData = async () => {
+  isFetchingClinicData.value = true;
+  try {
+    const [resourcesRes, servicesRes] = await Promise.all([
+      SchedulingResourcesAPI.get({ include_service_stats: true }).catch(
+        () => null
+      ),
+      SchedulingServicesAPI.get().catch(() => null),
+    ]);
+    doctors.value = Array.isArray(resourcesRes?.data?.payload)
+      ? resourcesRes.data.payload
+      : [];
+    serviceStats.value = Array.isArray(resourcesRes?.data?.meta?.service_stats)
+      ? resourcesRes.data.meta.service_stats
+      : [];
+    services.value = Array.isArray(servicesRes?.data?.payload)
+      ? servicesRes.data.payload
+      : [];
+  } finally {
+    isFetchingClinicData.value = false;
+  }
+};
+
 const onPageChange = page => {
   fetchResponses(page);
 };
@@ -93,6 +135,7 @@ watch(
 
 onMounted(() => {
   initializeFromURL();
+  fetchClinicGraphData();
 });
 </script>
 
@@ -102,25 +145,16 @@ onMounted(() => {
     :current-page="responseMeta.page"
     :header-title="$t('CAPTAIN.NAV.KNOWLEDGE')"
     :is-fetching="isFetching"
-    :is-empty="!responses.length"
+    :is-empty="viewMode === 'list' ? !responses.length : isGraphEmpty"
     :show-know-more="false"
     :content-width="viewMode === 'graph' ? 'full' : 'default'"
     :full-bleed="viewMode === 'graph'"
-    :show-pagination-footer="viewMode === 'list' && !isFetching && !!responses.length"
+    :show-pagination-footer="
+      viewMode === 'list' && !isFetching && !!responses.length
+    "
     :feature-flag="FEATURE_FLAGS.CAPTAIN"
     @update:current-page="onPageChange"
   >
-    <template #knowMore>
-      <FeatureSpotlightPopover
-        :button-label="$t('CAPTAIN.HEADER_KNOW_MORE')"
-        :title="$t('CAPTAIN.RESPONSES.EMPTY_STATE.FEATURE_SPOTLIGHT.TITLE')"
-        :note="$t('CAPTAIN.RESPONSES.EMPTY_STATE.FEATURE_SPOTLIGHT.NOTE')"
-        :hide-actions="!isOnChatwootCloud"
-        fallback-thumbnail="/assets/images/dashboard/captain/faqs-popover-light.svg"
-        fallback-thumbnail-dark="/assets/images/dashboard/captain/faqs-popover-dark.svg"
-      />
-    </template>
-
     <template #search>
       <div class="flex gap-3 justify-between w-full items-center">
         <Input
@@ -172,6 +206,10 @@ onMounted(() => {
       <KnowledgeGraphCloud
         v-if="viewMode === 'graph'"
         :responses="responses"
+        :doctors="doctors"
+        :services="services"
+        :service-stats="serviceStats"
+        :search-query="searchQuery"
         @navigate="handleNavigationAction"
       />
 
