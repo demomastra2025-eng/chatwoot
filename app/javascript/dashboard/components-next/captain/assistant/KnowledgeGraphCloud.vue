@@ -1,13 +1,23 @@
 <script setup>
-import { computed, ref, shallowRef, watch, onBeforeUnmount } from 'vue';
+import {
+  computed,
+  ref,
+  shallowRef,
+  watch,
+  onMounted,
+  onBeforeUnmount,
+  nextTick,
+} from 'vue';
 import { useI18n } from 'vue-i18n';
+import * as THREE from 'three';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import SpriteText from 'three-spritetext';
 import {
   forceSimulation,
   forceLink,
   forceManyBody,
   forceCollide,
   forceCenter,
-  forceRadial,
 } from 'd3-force';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -51,10 +61,10 @@ const CLUSTER_RULES = [
     ],
     palette: {
       stroke: '#10b981',
-      fill: 'rgba(16, 185, 129, 0.16)',
-      glow: 'rgba(16, 185, 129, 0.35)',
+      fill: 'rgba(16, 185, 129, 0.22)',
       chip: 'bg-n-teal-3/70 text-n-teal-11 border-n-teal-6',
       dot: '#10b981',
+      emissive: '#059669',
     },
   },
   {
@@ -83,10 +93,10 @@ const CLUSTER_RULES = [
     ],
     palette: {
       stroke: '#3b82f6',
-      fill: 'rgba(59, 130, 246, 0.16)',
-      glow: 'rgba(59, 130, 246, 0.35)',
+      fill: 'rgba(59, 130, 246, 0.22)',
       chip: 'bg-n-blue-3/70 text-n-blue-11 border-n-blue-6',
       dot: '#3b82f6',
+      emissive: '#2563eb',
     },
   },
   {
@@ -113,11 +123,11 @@ const CLUSTER_RULES = [
       'часы',
     ],
     palette: {
-      stroke: '#8b5cf6',
-      fill: 'rgba(139, 92, 246, 0.16)',
-      glow: 'rgba(139, 92, 246, 0.35)',
+      stroke: '#a855f7',
+      fill: 'rgba(168, 85, 247, 0.22)',
       chip: 'bg-n-violet-3/70 text-n-violet-11 border-n-violet-6',
-      dot: '#8b5cf6',
+      dot: '#a855f7',
+      emissive: '#7e22ce',
     },
   },
   {
@@ -143,10 +153,10 @@ const CLUSTER_RULES = [
     ],
     palette: {
       stroke: '#f59e0b',
-      fill: 'rgba(245, 158, 11, 0.16)',
-      glow: 'rgba(245, 158, 11, 0.35)',
+      fill: 'rgba(245, 158, 11, 0.22)',
       chip: 'bg-n-amber-3/70 text-n-amber-11 border-n-amber-6',
       dot: '#f59e0b',
+      emissive: '#d97706',
     },
   },
   {
@@ -171,10 +181,10 @@ const CLUSTER_RULES = [
     ],
     palette: {
       stroke: '#ec4899',
-      fill: 'rgba(236, 72, 153, 0.16)',
-      glow: 'rgba(236, 72, 153, 0.35)',
+      fill: 'rgba(236, 72, 153, 0.22)',
       chip: 'bg-n-ruby-3/70 text-n-ruby-11 border-n-ruby-6',
       dot: '#ec4899',
+      emissive: '#db2777',
     },
   },
 ];
@@ -185,10 +195,10 @@ const DEFAULT_CLUSTER = {
   icon: 'i-lucide-sparkles',
   palette: {
     stroke: '#06b6d4',
-    fill: 'rgba(6, 182, 212, 0.16)',
-    glow: 'rgba(6, 182, 212, 0.35)',
+    fill: 'rgba(6, 182, 212, 0.22)',
     chip: 'bg-n-slate-3 text-n-slate-12 border-n-slate-6',
     dot: '#06b6d4',
+    emissive: '#0891b2',
   },
 };
 
@@ -222,8 +232,7 @@ const STOP_WORDS = new Set([
 ]);
 
 const classifyResponse = item => {
-  const haystack =
-    `${item?.question || ''} ${item?.answer || ''} ${item?.documentable?.name || ''}`.toLowerCase();
+  const haystack = `${item?.question || ''} ${item?.answer || ''} ${item?.documentable?.name || ''}`.toLowerCase();
   const matched = CLUSTER_RULES.find(rule =>
     rule.keywords.some(keyword => haystack.includes(keyword))
   );
@@ -262,20 +271,19 @@ const selectedNodeId = ref(null);
 const hoveredNodeId = ref(null);
 const isFullscreen = ref(false);
 const copiedAnswer = ref(false);
+const autoOrbit = ref(true);
+const bloomEnabled = ref(true);
+const webglReady = ref(false);
 
-// Camera pan & zoom state
-const zoom = ref(1);
-const panX = ref(0);
-const panY = ref(0);
-const isPanning = ref(false);
-const panStart = ref({ x: 0, y: 0, panX: 0, panY: 0 });
-const draggedNodeId = ref(null);
-const svgRef = ref(null);
+const stageContainerRef = ref(null);
+const graph3dInstance = shallowRef(null);
+const bloomPassRef = shallowRef(null);
+const orbitAngleRef = ref(0);
+const orbitRafRef = ref(null);
+const resizeObserverRef = shallowRef(null);
 
-// Reactive D3 simulation snapshot
 const simNodes = ref([]);
 const simEdges = ref([]);
-const simulationRef = shallowRef(null);
 
 const normalizedItems = computed(() =>
   (props.responses || []).map((item, index) => {
@@ -291,7 +299,7 @@ const normalizedItems = computed(() =>
       rawId: item.id ?? index,
       raw: item,
       question,
-      shortQuestion: truncateText(question, 32),
+      shortQuestion: truncateText(question, 34),
       answer,
       clusterKey: cluster.key,
       clusterLabel: t(`CAPTAIN.KNOWLEDGE_BASE.GRAPH.TOPICS.${cluster.i18nKey}`),
@@ -341,46 +349,41 @@ const documentSourcesCount = computed(() => {
   return docs.size;
 });
 
-const buildAndRunD3ForceGraph = () => {
-  if (simulationRef.value) {
-    simulationRef.value.stop();
-    simulationRef.value = null;
-  }
-
+const buildGraphTopology = () => {
   const items = visibleItems.value;
   if (!items.length) {
     simNodes.value = [];
     simEdges.value = [];
-    return;
+    return { nodes: [], links: [] };
   }
 
   const nodes = [];
   const links = [];
 
-  // 1. Core AI Knowledge Hub
-  const showCore =
-    activeClusterKey.value === 'all' && clusters.value.length > 1;
+  const showCore = activeClusterKey.value === 'all' && clusters.value.length > 1;
   if (showCore) {
     nodes.push({
       id: 'core-hub',
       kind: 'core',
       label: t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.CENTER_HUB'),
-      radius: 32,
+      radius: 26,
+      val: 34,
       x: CENTER_X,
       y: CENTER_Y,
-      fx: CENTER_X,
-      fy: CENTER_Y,
+      z: 0,
+      fx: 0,
+      fy: 0,
+      fz: 0,
       palette: {
-        stroke: '#3b82f6',
-        fill: 'rgba(59, 130, 246, 0.22)',
-        glow: 'rgba(59, 130, 246, 0.45)',
-        dot: '#3b82f6',
+        stroke: '#38bdf8',
+        fill: 'rgba(56, 189, 248, 0.25)',
+        dot: '#38bdf8',
+        emissive: '#0284c7',
       },
       degree: clusters.value.length,
     });
   }
 
-  // 2. Semantic Cluster Hubs
   const activeClusters =
     activeClusterKey.value === 'all'
       ? clusters.value
@@ -390,21 +393,31 @@ const buildAndRunD3ForceGraph = () => {
   activeClusters.forEach((cluster, idx) => {
     const angle =
       (idx / Math.max(activeClusters.length, 1)) * Math.PI * 2 - Math.PI / 2;
-    const orbit = showCore ? 175 : 0;
+    const orbit = showCore ? 160 : 0;
     const cx = CENTER_X + Math.cos(angle) * orbit;
     const cy = CENTER_Y + Math.sin(angle) * orbit;
+    const cz = ((idx % 3) - 1) * 48;
     const clusterNodeId = `cluster-${cluster.key}`;
-    clusterAnchors.set(cluster.key, { x: cx, y: cy, angle, id: clusterNodeId });
+    clusterAnchors.set(cluster.key, {
+      x: cx,
+      y: cy,
+      z: cz,
+      angle,
+      id: clusterNodeId,
+    });
 
     nodes.push({
       id: clusterNodeId,
       kind: 'cluster',
       clusterKey: cluster.key,
-      label: cluster.label,
+      label: `${cluster.label} (${cluster.count})`,
+      shortLabel: cluster.label,
       count: cluster.count,
-      radius: Math.min(26, 18 + Math.sqrt(cluster.count) * 2.2),
+      radius: Math.min(22, 15 + Math.sqrt(cluster.count) * 2),
+      val: 18 + cluster.count * 1.5,
       x: cx,
       y: cy,
+      z: cz,
       palette: cluster.palette,
       degree: cluster.count,
     });
@@ -416,23 +429,23 @@ const buildAndRunD3ForceGraph = () => {
         target: clusterNodeId,
         kind: 'backbone',
         stroke: cluster.palette.stroke,
-        distance: 170,
+        distance: 135,
         strength: 0.85,
       });
     }
   });
 
-  // 3. FAQ Knowledge Nodes
   items.forEach((item, idx) => {
     const anchor = clusterAnchors.get(item.clusterKey) || {
       x: CENTER_X,
       y: CENTER_Y,
+      z: 0,
       angle: 0,
       id: `cluster-${item.clusterKey}`,
     };
     const spreadAngle =
-      anchor.angle + ((idx % 9) - 4) * 0.24 + ((idx * 0.61803398875) % 0.5);
-    const dist = 85 + (idx % 4) * 32;
+      anchor.angle + ((idx % 9) - 4) * 0.25 + (idx * 0.61803398875) % 0.5;
+    const dist = 80 + (idx % 4) * 28;
 
     nodes.push({
       id: item.id,
@@ -446,10 +459,12 @@ const buildAndRunD3ForceGraph = () => {
       docName: item.docName,
       raw: item.raw,
       palette: item.palette,
-      radius: 9,
+      radius: 8.5,
+      val: 7,
       degree: 1,
       x: anchor.x + Math.cos(spreadAngle) * dist,
       y: anchor.y + Math.sin(spreadAngle) * dist,
+      z: anchor.z + ((idx % 5) - 2) * 32,
     });
 
     links.push({
@@ -458,12 +473,11 @@ const buildAndRunD3ForceGraph = () => {
       target: item.id,
       kind: 'topic',
       stroke: item.palette.stroke,
-      distance: 92 + (idx % 3) * 18,
-      strength: 0.65,
+      distance: 78 + (idx % 3) * 16,
+      strength: 0.7,
     });
   });
 
-  // 4. Semantic Cross-Links between FAQ nodes (TF/Token Jaccard similarity)
   const degreeCounter = new Map();
   for (let i = 0; i < items.length; i += 1) {
     let bestPeer = null;
@@ -483,8 +497,8 @@ const buildAndRunD3ForceGraph = () => {
         kind: 'semantic',
         similarity: bestScore,
         stroke: items[i].palette.stroke,
-        distance: 110,
-        strength: 0.22,
+        distance: 95,
+        strength: 0.25,
       });
       degreeCounter.set(items[i].id, (degreeCounter.get(items[i].id) || 1) + 1);
       degreeCounter.set(bestPeer.id, (degreeCounter.get(bestPeer.id) || 1) + 1);
@@ -495,113 +509,465 @@ const buildAndRunD3ForceGraph = () => {
     if (n.kind === 'faq') {
       const deg = degreeCounter.get(n.id) || 1;
       n.degree = deg;
-      n.radius = Math.min(15, 7.5 + deg * 1.6);
+      n.radius = Math.min(13.5, 7 + deg * 1.4);
+      n.val = 5 + deg * 2.2;
     }
   });
 
-  // 5. Configure D3-Force Simulation
-  const sim = forceSimulation(nodes)
+  // Settled 2D layout for instant fallback & deterministic tests
+  const sim2dNodes = nodes.map(n => ({ ...n, fx: undefined, fy: undefined }));
+  const sim2dLinks = links.map(l => ({ ...l }));
+  const sim = forceSimulation(sim2dNodes)
     .force(
       'link',
-      forceLink(links)
+      forceLink(sim2dLinks)
         .id(d => d.id)
-        .distance(d => d.distance || 100)
-        .strength(d => d.strength || 0.5)
+        .distance(d => d.distance || 90)
     )
-    .force(
-      'charge',
-      forceManyBody().strength(d => {
-        if (d.kind === 'core') return -650;
-        if (d.kind === 'cluster') return -420;
-        return -150;
-      })
-    )
-    .force(
-      'collide',
-      forceCollide()
-        .radius(d => {
-          if (d.kind === 'core') return d.radius + 26;
-          if (d.kind === 'cluster') return d.radius + 22;
-          return d.radius + 16;
-        })
-        .iterations(3)
-    )
-    .force('center', forceCenter(CENTER_X, CENTER_Y).strength(0.06))
-    .force(
-      'radial',
-      forceRadial(
-        d => {
-          if (d.kind === 'core') return 0;
-          if (d.kind === 'cluster') return showCore ? 175 : 0;
-          return showCore ? 265 : 145;
-        },
-        CENTER_X,
-        CENTER_Y
-      ).strength(d => (d.kind === 'cluster' ? 0.35 : 0.12))
-    )
-    .alphaDecay(0.035);
+    .force('charge', forceManyBody().strength(-180))
+    .force('collide', forceCollide().radius(d => d.radius + 14))
+    .force('center', forceCenter(CENTER_X, CENTER_Y))
+    .stop();
+  sim.tick(90);
 
-  // Pre-warm 130 ticks synchronously so initial mount & unit tests have settled physics
-  sim.tick(130);
+  simNodes.value = sim2dNodes.map(n => ({
+    ...n,
+    x: Math.max(48, Math.min(VIEWPORT_WIDTH - 48, n.x || CENTER_X)),
+    y: Math.max(42, Math.min(VIEWPORT_HEIGHT - 42, n.y || CENTER_Y)),
+  }));
+  simEdges.value = sim2dLinks.map(l => ({
+    id: l.id,
+    kind: l.kind,
+    stroke: l.stroke,
+    sourceId: typeof l.source === 'object' ? l.source.id : l.source,
+    targetId: typeof l.target === 'object' ? l.target.id : l.target,
+    x1: typeof l.source === 'object' ? l.source.x : CENTER_X,
+    y1: typeof l.source === 'object' ? l.source.y : CENTER_Y,
+    x2: typeof l.target === 'object' ? l.target.x : CENTER_X,
+    y2: typeof l.target === 'object' ? l.target.y : CENTER_Y,
+  }));
 
-  const syncSnapshot = () => {
-    simNodes.value = nodes.map(n => ({
-      ...n,
-      x: Math.max(48, Math.min(VIEWPORT_WIDTH - 48, n.x || CENTER_X)),
-      y: Math.max(42, Math.min(VIEWPORT_HEIGHT - 42, n.y || CENTER_Y)),
-    }));
-    simEdges.value = links.map(l => ({
-      id: l.id,
-      kind: l.kind,
-      stroke: l.stroke,
-      sourceId: typeof l.source === 'object' ? l.source.id : l.source,
-      targetId: typeof l.target === 'object' ? l.target.id : l.target,
-      x1: typeof l.source === 'object' ? l.source.x : CENTER_X,
-      y1: typeof l.source === 'object' ? l.source.y : CENTER_Y,
-      x2: typeof l.target === 'object' ? l.target.x : CENTER_X,
-      y2: typeof l.target === 'object' ? l.target.y : CENTER_Y,
-    }));
-  };
+  // Return fresh 3D graph objects centered at (0,0,0) for Three.js ForceGraph3D
+  const nodes3d = nodes.map(n => ({
+    ...n,
+    x: (n.x - CENTER_X) * 0.7,
+    y: (n.y - CENTER_Y) * 0.7,
+    z: n.z || 0,
+  }));
+  const links3d = links.map(l => ({
+    ...l,
+    source: typeof l.source === 'object' ? l.source.id : l.source,
+    target: typeof l.target === 'object' ? l.target.id : l.target,
+  }));
 
-  syncSnapshot();
+  return { nodes: nodes3d, links: links3d };
+};
 
-  sim.on('tick', () => {
-    syncSnapshot();
+const buildNodeThreeObject = node => {
+  const group = new THREE.Group();
+  const isSelected =
+    node.kind === 'faq' && selectedNode.value?.rawId === node.rawId;
+
+  const baseRadius =
+    node.kind === 'core'
+      ? 13
+      : node.kind === 'cluster'
+        ? 8.5
+        : isSelected
+          ? 5.8
+          : 4.2;
+
+  const sphereGeo = new THREE.SphereGeometry(baseRadius, 28, 28);
+  const sphereMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(isSelected ? '#ffffff' : node.palette.dot),
+    emissive: new THREE.Color(node.palette.dot),
+    emissiveIntensity:
+      node.kind === 'core'
+        ? 1.4
+        : node.kind === 'cluster'
+          ? 1.05
+          : isSelected
+            ? 1.5
+            : 0.75,
+    roughness: 0.18,
+    metalness: 0.35,
+  });
+  const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+  group.add(sphereMesh);
+
+  // Outer translucent energy halo for core, clusters, and selected FAQ node
+  if (node.kind === 'core' || node.kind === 'cluster' || isSelected) {
+    const haloGeo = new THREE.SphereGeometry(baseRadius * 1.55, 24, 24);
+    const haloMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(node.palette.dot),
+      transparent: true,
+      opacity: isSelected ? 0.28 : 0.16,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    group.add(new THREE.Mesh(haloGeo, haloMat));
+  }
+
+  // Orbital ring around Core Hub
+  if (node.kind === 'core') {
+    const ringGeo = new THREE.TorusGeometry(baseRadius * 1.9, 0.45, 16, 64);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color('#38bdf8'),
+      transparent: true,
+      opacity: 0.55,
+      blending: THREE.AdditiveBlending,
+    });
+    const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+    ringMesh.rotation.x = Math.PI / 2.6;
+    group.add(ringMesh);
+  }
+
+  // Crisp 3D billboard text sprite below sphere
+  const sprite = new SpriteText(node.label || '');
+  sprite.color =
+    node.kind === 'core'
+      ? '#f8fafc'
+      : node.kind === 'cluster'
+        ? '#f1f5f9'
+        : isSelected
+          ? '#ffffff'
+          : '#cbd5e1';
+  sprite.textHeight =
+    node.kind === 'core'
+      ? 5.2
+      : node.kind === 'cluster'
+        ? 4.2
+        : isSelected
+          ? 3.6
+          : 2.9;
+  sprite.fontWeight =
+    node.kind === 'faq' && !isSelected ? '500' : '700';
+  sprite.fontFace = 'Inter, system-ui, -apple-system, sans-serif';
+  sprite.backgroundColor =
+    node.kind !== 'faq' || isSelected
+      ? 'rgba(15, 23, 42, 0.82)'
+      : 'rgba(15, 23, 42, 0.48)';
+  sprite.padding = node.kind !== 'faq' || isSelected ? 2.2 : 1.4;
+  sprite.borderRadius = 4;
+  if (isSelected || node.kind === 'cluster') {
+    sprite.borderWidth = 0.5;
+    sprite.borderColor = node.palette.dot;
+  }
+  sprite.position.set(0, -(baseRadius + 6.5), 0);
+  group.add(sprite);
+
+  return group;
+};
+
+const addStarfieldToScene = scene => {
+  if (!scene || scene.getObjectByName('onelink-starfield')) return;
+  const starCount = 420;
+  const positions = new Float32Array(starCount * 3);
+  const colors = new Float32Array(starCount * 3);
+  const palette = [
+    new THREE.Color('#38bdf8'),
+    new THREE.Color('#818cf8'),
+    new THREE.Color('#c084fc'),
+    new THREE.Color('#34d399'),
+  ];
+
+  for (let i = 0; i < starCount; i += 1) {
+    const r = 280 + Math.random() * 520;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+    positions[i * 3 + 2] = r * Math.cos(phi);
+
+    const c = palette[i % palette.length];
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const mat = new THREE.PointsMaterial({
+    size: 2.1,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.55,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
   });
 
-  // Stop background timer after pre-warming; user drag or reheat button restarts it
-  sim.stop();
-  simulationRef.value = sim;
+  const stars = new THREE.Points(geo, mat);
+  stars.name = 'onelink-starfield';
+  scene.add(stars);
+
+  const ambient = new THREE.AmbientLight(0xffffff, 1.35);
+  ambient.name = 'onelink-ambient';
+  scene.add(ambient);
+
+  const pointLight = new THREE.PointLight(0x60a5fa, 2.8, 900);
+  pointLight.position.set(80, 120, 160);
+  scene.add(pointLight);
+};
+
+const flyToNode3D = node => {
+  const fg = graph3dInstance.value;
+  if (!fg || !node || typeof node.x !== 'number') return;
+  autoOrbit.value = false;
+  const distance = 135;
+  const distRatio =
+    1 + distance / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
+  fg.cameraPosition(
+    {
+      x: (node.x || 0) * distRatio,
+      y: (node.y || 0) * distRatio,
+      z: (node.z || 0) * distRatio + 20,
+    },
+    { x: node.x || 0, y: node.y || 0, z: node.z || 0 },
+    1150
+  );
+};
+
+const resetCamera3D = () => {
+  const fg = graph3dInstance.value;
+  if (!fg) return;
+  fg.cameraPosition(
+    { x: 0, y: 35, z: 360 },
+    { x: 0, y: 0, z: 0 },
+    950
+  );
+};
+
+const zoomCamera3D = factor => {
+  const fg = graph3dInstance.value;
+  if (!fg) return;
+  autoOrbit.value = false;
+  const cam = fg.camera();
+  if (!cam) return;
+  fg.cameraPosition(
+    {
+      x: cam.position.x * factor,
+      y: cam.position.y * factor,
+      z: cam.position.z * factor,
+    },
+    { x: 0, y: 0, z: 0 },
+    420
+  );
+};
+
+const refresh3DAppearance = () => {
+  const fg = graph3dInstance.value;
+  if (!fg) return;
+  fg.nodeThreeObject(node => buildNodeThreeObject(node));
+};
+
+const startOrbitLoop = () => {
+  if (orbitRafRef.value) cancelAnimationFrame(orbitRafRef.value);
+  const step = () => {
+    const fg = graph3dInstance.value;
+    if (fg && autoOrbit.value && !hoveredNodeId.value) {
+      orbitAngleRef.value += 0.0022;
+      const radius = 355;
+      fg.cameraPosition({
+        x: radius * Math.sin(orbitAngleRef.value),
+        y: 32 * Math.sin(orbitAngleRef.value * 0.6),
+        z: radius * Math.cos(orbitAngleRef.value),
+      });
+    }
+    orbitRafRef.value = requestAnimationFrame(step);
+  };
+  orbitRafRef.value = requestAnimationFrame(step);
+};
+
+const init3DForceEngine = async () => {
+  if (typeof window === 'undefined' || !stageContainerRef.value) return;
+  // Skip WebGL boot inside headless jsdom unit tests
+  if (
+    typeof navigator !== 'undefined' &&
+    /jsdom/i.test(navigator.userAgent || '')
+  ) {
+    return;
+  }
+
+  try {
+    const mod = await import('3d-force-graph');
+    const ForceGraph3D = mod.default || mod;
+    const container = stageContainerRef.value;
+    if (!container) return;
+
+    const topology = buildGraphTopology();
+    const width = container.clientWidth || 720;
+    const height = container.clientHeight || 540;
+
+    const fg = ForceGraph3D({ controlType: 'orbit' })(container)
+      .width(width)
+      .height(height)
+      .backgroundColor('#060913')
+      .showNavInfo(false)
+      .graphData(topology)
+      .nodeId('id')
+      .nodeVal('val')
+      .nodeThreeObject(node => buildNodeThreeObject(node))
+      .linkColor(link => link.stroke || '#38bdf8')
+      .linkOpacity(0.42)
+      .linkWidth(link => {
+        if (link.kind === 'backbone') return 1.8;
+        if (link.kind === 'semantic') return 0.9;
+        return 1.25;
+      })
+      .linkCurvature(link => (link.kind === 'semantic' ? 0.28 : 0.12))
+      .linkDirectionalParticles(link => {
+        if (link.kind === 'backbone') return 3;
+        if (link.kind === 'semantic') return 2;
+        return 1;
+      })
+      .linkDirectionalParticleWidth(2.4)
+      .linkDirectionalParticleSpeed(0.0055)
+      .linkDirectionalParticleColor(link => link.stroke || '#38bdf8')
+      .onNodeHover(node => {
+        hoveredNodeId.value = node ? node.id : null;
+        if (container) {
+          container.style.cursor = node ? 'pointer' : 'grab';
+        }
+      })
+      .onNodeClick(node => {
+        if (!node) return;
+        if (node.kind === 'core') {
+          selectCluster('all');
+          resetCamera3D();
+          return;
+        }
+        if (node.kind === 'cluster') {
+          selectCluster(node.clusterKey);
+          return;
+        }
+        if (node.kind === 'faq') {
+          selectedNodeId.value = node.rawId;
+          refresh3DAppearance();
+          flyToNode3D(node);
+        }
+      })
+      .onNodeDrag(() => {
+        autoOrbit.value = false;
+      });
+
+    // Tune 3D force distances
+    const linkForce = fg.d3Force('link');
+    if (linkForce) {
+      linkForce.distance(link => link.distance || 85);
+    }
+    const chargeForce = fg.d3Force('charge');
+    if (chargeForce) {
+      chargeForce.strength(node => {
+        if (node.kind === 'core') return -420;
+        if (node.kind === 'cluster') return -260;
+        return -110;
+      });
+    }
+
+    // Add UnrealBloomPass for neon glow
+    try {
+      const composer = fg.postProcessingComposer();
+      const bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(width, height),
+        1.15,
+        0.45,
+        0.18
+      );
+      composer.addPass(bloomPass);
+      bloomPassRef.value = bloomPass;
+    } catch {
+      // Fallback if postprocessing composer unavailable
+    }
+
+    addStarfieldToScene(fg.scene());
+    fg.cameraPosition({ x: 0, y: 35, z: 360 });
+
+    // Stop auto-orbit when user manually interacts with canvas
+    const domElem = fg.renderer()?.domElement;
+    if (domElem) {
+      domElem.addEventListener(
+        'pointerdown',
+        () => {
+          autoOrbit.value = false;
+        },
+        { passive: true }
+      );
+      domElem.addEventListener(
+        'wheel',
+        () => {
+          autoOrbit.value = false;
+        },
+        { passive: true }
+      );
+    }
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(entries => {
+        for (const entry of entries) {
+          const { width: w, height: h } = entry.contentRect;
+          if (w > 0 && h > 0 && graph3dInstance.value) {
+            graph3dInstance.value.width(w).height(h);
+          }
+        }
+      });
+      ro.observe(container);
+      resizeObserverRef.value = ro;
+    }
+
+    graph3dInstance.value = fg;
+    webglReady.value = true;
+    startOrbitLoop();
+  } catch {
+    webglReady.value = false;
+  }
 };
 
 watch(
   [visibleItems, activeClusterKey],
   () => {
-    buildAndRunD3ForceGraph();
-    const faqNodes = simNodes.value.filter(n => n.kind === 'faq');
+    const topology = buildGraphTopology();
+    const faqList = simNodes.value.filter(n => n.kind === 'faq');
     if (
-      !faqNodes.some(n => n.rawId === selectedNodeId.value) &&
-      faqNodes.length > 0
+      !faqList.some(n => n.rawId === selectedNodeId.value) &&
+      faqList.length > 0
     ) {
-      selectedNodeId.value = faqNodes[0].rawId;
+      selectedNodeId.value = faqList[0].rawId;
+    }
+    if (graph3dInstance.value) {
+      graph3dInstance.value.graphData(topology);
+      nextTick(() => {
+        refresh3DAppearance();
+      });
     }
   },
   { immediate: true }
 );
 
+watch(bloomEnabled, enabled => {
+  if (bloomPassRef.value) {
+    bloomPassRef.value.strength = enabled ? 1.15 : 0;
+  }
+});
+
+onMounted(() => {
+  init3DForceEngine();
+});
+
 onBeforeUnmount(() => {
-  if (simulationRef.value) {
-    simulationRef.value.stop();
+  if (orbitRafRef.value) {
+    cancelAnimationFrame(orbitRafRef.value);
+  }
+  if (resizeObserverRef.value) {
+    resizeObserverRef.value.disconnect();
+  }
+  if (graph3dInstance.value?._destructor) {
+    graph3dInstance.value._destructor();
   }
 });
 
 const faqNodes = computed(() => simNodes.value.filter(n => n.kind === 'faq'));
-const clusterNodes = computed(() =>
-  simNodes.value.filter(n => n.kind === 'cluster')
-);
-const coreNode = computed(
-  () => simNodes.value.find(n => n.kind === 'core') || null
-);
 
 const selectedNode = computed(() => {
   if (!faqNodes.value.length) return null;
@@ -610,34 +976,6 @@ const selectedNode = computed(() => {
     faqNodes.value[0]
   );
 });
-
-const activeFocusId = computed(() => {
-  if (hoveredNodeId.value) return hoveredNodeId.value;
-  return selectedNode.value?.id || null;
-});
-
-// 1-Hop neighborhood set for spotlight highlighting
-const connectedNodeIds = computed(() => {
-  const focusId = activeFocusId.value;
-  if (!focusId) return new Set();
-  const set = new Set([focusId]);
-  simEdges.value.forEach(edge => {
-    if (edge.sourceId === focusId) set.add(edge.targetId);
-    if (edge.targetId === focusId) set.add(edge.sourceId);
-  });
-  return set;
-});
-
-const isEdgeHighlighted = edge => {
-  const focusId = activeFocusId.value;
-  if (!focusId) return false;
-  return edge.sourceId === focusId || edge.targetId === focusId;
-};
-
-const isNodeDimmed = nodeId => {
-  if (!hoveredNodeId.value) return false;
-  return !connectedNodeIds.value.has(nodeId);
-};
 
 const semanticPeers = computed(() => {
   if (!selectedNode.value) return [];
@@ -663,127 +1001,40 @@ const relatedClusterNodes = computed(() => {
     .slice(0, 6);
 });
 
-const curvePath = edge => {
-  const dx = edge.x2 - edge.x1;
-  const dy = edge.y2 - edge.y1;
-  const curvature = edge.kind === 'semantic' ? 0.22 : 0.12;
-  const cx = (edge.x1 + edge.x2) / 2 - dy * curvature;
-  const cy = (edge.y1 + edge.y2) / 2 + dx * curvature;
-  return `M ${edge.x1} ${edge.y1} Q ${cx} ${cy} ${edge.x2} ${edge.y2}`;
-};
-
 const selectCluster = key => {
   activeClusterKey.value = key;
-  panX.value = 0;
-  panY.value = 0;
+  if (graph3dInstance.value) {
+    resetCamera3D();
+  }
 };
 
 const selectNode = rawId => {
   selectedNodeId.value = rawId;
+  if (graph3dInstance.value) {
+    refresh3DAppearance();
+    const gData = graph3dInstance.value.graphData();
+    const target3d = gData?.nodes?.find(n => n.rawId === rawId);
+    if (target3d) {
+      flyToNode3D(target3d);
+    }
+  }
 };
 
 const reheatPhysics = () => {
-  if (!simulationRef.value) return;
-  simulationRef.value.alpha(0.65).restart();
-  setTimeout(() => {
-    if (simulationRef.value) simulationRef.value.stop();
-  }, 1800);
-};
-
-const adjustZoom = delta => {
-  const next = Number((zoom.value + delta).toFixed(2));
-  zoom.value = Math.min(2.4, Math.max(0.5, next));
-};
-
-const resetCamera = () => {
-  zoom.value = 1;
-  panX.value = 0;
-  panY.value = 0;
-};
-
-const onWheelZoom = event => {
-  event.preventDefault();
-  const delta = event.deltaY < 0 ? 0.12 : -0.12;
-  adjustZoom(delta);
-};
-
-const clientToSvgCoords = event => {
-  const svg = svgRef.value;
-  if (!svg) return { x: CENTER_X, y: CENTER_Y };
-  const rect = svg.getBoundingClientRect();
-  const scaleX = VIEWPORT_WIDTH / Math.max(rect.width, 1);
-  const scaleY = VIEWPORT_HEIGHT / Math.max(rect.height, 1);
-  const rawX = (event.clientX - rect.left) * scaleX;
-  const rawY = (event.clientY - rect.top) * scaleY;
-  return {
-    x: (rawX - CENTER_X - panX.value) / zoom.value + CENTER_X,
-    y: (rawY - CENTER_Y - panY.value) / zoom.value + CENTER_Y,
-  };
-};
-
-const onNodePointerDown = (event, node) => {
-  event.stopPropagation();
-  if (node.kind === 'faq') {
-    selectedNodeId.value = node.rawId;
-  }
-  draggedNodeId.value = node.id;
-  if (simulationRef.value) {
-    const simNode = simulationRef.value.nodes().find(n => n.id === node.id);
-    if (simNode) {
-      simNode.fx = simNode.x;
-      simNode.fy = simNode.y;
-      simulationRef.value.alphaTarget(0.3).restart();
-    }
+  if (graph3dInstance.value) {
+    graph3dInstance.value.d3ReheatSimulation();
   }
 };
 
-const onCanvasPointerDown = event => {
-  if (draggedNodeId.value) return;
-  isPanning.value = true;
-  panStart.value = {
-    x: event.clientX,
-    y: event.clientY,
-    panX: panX.value,
-    panY: panY.value,
-  };
-};
-
-const onCanvasPointerMove = event => {
-  if (draggedNodeId.value && simulationRef.value) {
-    const coords = clientToSvgCoords(event);
-    const simNode = simulationRef.value
-      .nodes()
-      .find(n => n.id === draggedNodeId.value);
-    if (simNode) {
-      simNode.fx = Math.max(48, Math.min(VIEWPORT_WIDTH - 48, coords.x));
-      simNode.fy = Math.max(42, Math.min(VIEWPORT_HEIGHT - 42, coords.y));
-    }
-    return;
+const flyToSelectedNode = () => {
+  if (!selectedNode.value || !graph3dInstance.value) return;
+  const gData = graph3dInstance.value.graphData();
+  const target3d = gData?.nodes?.find(
+    n => n.rawId === selectedNode.value.rawId
+  );
+  if (target3d) {
+    flyToNode3D(target3d);
   }
-  if (isPanning.value) {
-    panX.value = panStart.value.panX + (event.clientX - panStart.value.x);
-    panY.value = panStart.value.panY + (event.clientY - panStart.value.y);
-  }
-};
-
-const onCanvasPointerUp = () => {
-  if (draggedNodeId.value && simulationRef.value) {
-    const simNode = simulationRef.value
-      .nodes()
-      .find(n => n.id === draggedNodeId.value);
-    if (simNode && simNode.kind !== 'core') {
-      simNode.fx = null;
-      simNode.fy = null;
-    }
-    simulationRef.value.alphaTarget(0);
-    setTimeout(() => {
-      if (simulationRef.value && !draggedNodeId.value) {
-        simulationRef.value.stop();
-      }
-    }, 900);
-  }
-  draggedNodeId.value = null;
-  isPanning.value = false;
 };
 
 const copyAnswerToClipboard = async () => {
@@ -820,7 +1071,7 @@ const handleSourceClick = documentable => {
     "
     data-testid="knowledge-graph-cloud"
   >
-    <!-- Top Topic Filter Bar & Read-Only / Engine Status -->
+    <!-- Top Topic Filter Bar & 3D WebGL Engine Status -->
     <div
       class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-n-weak bg-n-solid-2 px-4 py-3"
     >
@@ -866,11 +1117,11 @@ const handleSourceClick = documentable => {
         </button>
       </div>
 
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <span
-          class="inline-flex items-center gap-1.5 rounded-lg border border-n-blue-6/50 bg-n-blue-3/40 px-2.5 py-1 text-[11px] font-medium text-n-blue-11"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-n-violet-6/60 bg-n-violet-3/40 px-2.5 py-1 text-[11px] font-semibold text-n-violet-11"
         >
-          <Icon icon="i-lucide-cpu" class="size-3.5" />
+          <Icon icon="i-lucide-sparkles" class="size-3.5" />
           {{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.ENGINE_BADGE') }}
         </span>
         <span
@@ -882,28 +1133,26 @@ const handleSourceClick = documentable => {
       </div>
     </div>
 
-    <!-- Main Split View: D3-Force Interactive Canvas + Knowledge Inspector -->
+    <!-- Main Split View: 3D WebGL Galaxy Stage + Read-Only Inspector -->
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
-      <!-- D3-Force Interactive Constellation Canvas -->
+      <!-- 3D WebGL Force Graph Stage -->
       <div
-        class="relative flex flex-col overflow-hidden rounded-2xl border border-n-weak bg-n-solid-2 lg:col-span-7"
+        class="relative flex flex-col overflow-hidden rounded-2xl border border-n-weak bg-[#060913] shadow-xl lg:col-span-7"
       >
-        <!-- Floating HUD Controls -->
+        <!-- Top Translucent 3D Telemetry & Camera Toolbar -->
         <div
-          class="flex flex-wrap items-center justify-between gap-2 border-b border-n-weak px-4 py-2.5 text-xs text-n-slate-11"
+          class="z-10 flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-slate-950/80 px-4 py-2.5 text-xs text-slate-300 backdrop-blur-md"
         >
           <div class="flex flex-wrap items-center gap-3">
-            <span
-              class="inline-flex items-center gap-1.5 font-medium text-n-slate-12"
-            >
-              <Icon icon="i-lucide-waypoints" class="size-3.5 text-n-brand" />
+            <span class="inline-flex items-center gap-1.5 font-semibold text-white">
+              <Icon icon="i-lucide-box" class="size-3.5 text-sky-400" />
               {{
                 t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.NODES_COUNT', {
                   count: faqNodes.length,
                 })
               }}
             </span>
-            <span class="text-n-slate-8">•</span>
+            <span class="text-slate-600">•</span>
             <span>
               {{
                 t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.EDGES_COUNT', {
@@ -912,7 +1161,7 @@ const handleSourceClick = documentable => {
               }}
             </span>
             <template v-if="documentSourcesCount > 0">
-              <span class="text-n-slate-8">•</span>
+              <span class="text-slate-600">•</span>
               <span>
                 {{
                   t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.SOURCES_COUNT', {
@@ -924,6 +1173,36 @@ const handleSourceClick = documentable => {
           </div>
 
           <div class="flex items-center gap-1">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-all"
+              :class="
+                autoOrbit
+                  ? 'border-sky-500/60 bg-sky-500/20 text-sky-300'
+                  : 'border-white/10 bg-white/5 text-slate-400 hover:text-white'
+              "
+              :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.AUTO_ORBIT')"
+              @click="autoOrbit = !autoOrbit"
+            >
+              <Icon icon="i-lucide-rotate-3d" class="size-3.5" />
+              <span class="hidden sm:inline">{{ t('CAPTAIN.RESPONSES.GRAPH.AUTO_ORBIT') }}</span>
+            </button>
+
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-all"
+              :class="
+                bloomEnabled
+                  ? 'border-purple-500/60 bg-purple-500/20 text-purple-300'
+                  : 'border-white/10 bg-white/5 text-slate-400 hover:text-white'
+              "
+              :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.BLOOM_GLOW')"
+              @click="bloomEnabled = !bloomEnabled"
+            >
+              <Icon icon="i-lucide-sparkles" class="size-3.5" />
+              <span class="hidden sm:inline">{{ t('CAPTAIN.RESPONSES.GRAPH.BLOOM_GLOW') }}</span>
+            </button>
+
             <Button
               icon="i-lucide-flame"
               size="xs"
@@ -939,15 +1218,15 @@ const handleSourceClick = documentable => {
               variant="ghost"
               color="slate"
               :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.ZOOM_OUT')"
-              @click="adjustZoom(-0.18)"
+              @click="zoomCamera3D(1.22)"
             />
             <Button
-              icon="i-lucide-maximize-2"
+              icon="i-lucide-compass"
               size="xs"
               variant="ghost"
               color="slate"
-              :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.FIT_VIEW')"
-              @click="resetCamera"
+              :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.RESET_3D_CAMERA')"
+              @click="resetCamera3D"
             />
             <Button
               icon="i-lucide-zoom-in"
@@ -955,7 +1234,7 @@ const handleSourceClick = documentable => {
               variant="ghost"
               color="slate"
               :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.ZOOM_IN')"
-              @click="adjustZoom(0.18)"
+              @click="zoomCamera3D(0.8)"
             />
             <Button
               :icon="isFullscreen ? 'i-lucide-minimize' : 'i-lucide-expand'"
@@ -972,366 +1251,51 @@ const handleSourceClick = documentable => {
           </div>
         </div>
 
-        <!-- Interactive SVG Force Stage -->
+        <!-- 3D WebGL Canvas Mount + Accessible Node Overlay for Keyboard/Test Navigation -->
         <div
-          class="relative flex items-center justify-center overflow-hidden bg-gradient-to-b from-n-surface-1 via-n-solid-2 to-n-surface-1 select-none"
-          :class="[
-            isFullscreen ? 'h-[calc(100vh-14rem)]' : 'h-[520px]',
-            draggedNodeId
-              ? 'cursor-grabbing'
-              : isPanning
-                ? 'cursor-grabbing'
-                : 'cursor-grab',
-          ]"
-          @wheel="onWheelZoom"
-          @pointerdown="onCanvasPointerDown"
-          @pointermove="onCanvasPointerMove"
-          @pointerup="onCanvasPointerUp"
-          @pointerleave="onCanvasPointerUp"
+          class="relative w-full overflow-hidden bg-[#060913]"
+          :class="isFullscreen ? 'h-[calc(100vh-14rem)]' : 'h-[560px]'"
         >
-          <svg
-            ref="svgRef"
-            :viewBox="`0 0 ${VIEWPORT_WIDTH} ${VIEWPORT_HEIGHT}`"
-            class="h-full w-full"
-          >
-            <defs>
-              <!-- Subtle Obsidian-style dot grid -->
-              <pattern
-                id="knowledge-force-grid"
-                width="28"
-                height="28"
-                patternUnits="userSpaceOnUse"
-              >
-                <circle
-                  cx="2"
-                  cy="2"
-                  r="1"
-                  fill="currentColor"
-                  class="text-n-slate-7/35"
-                />
-              </pattern>
-
-              <!-- Ambient Radial Glow -->
-              <radialGradient id="core-nebula-glow" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.18" />
-                <stop offset="60%" stop-color="#8b5cf6" stop-opacity="0.05" />
-                <stop offset="100%" stop-color="#3b82f6" stop-opacity="0" />
-              </radialGradient>
-
-              <filter
-                id="node-soft-glow"
-                x="-40%"
-                y="-40%"
-                width="180%"
-                height="180%"
-              >
-                <feGaussianBlur stdDeviation="4" result="blur" />
-                <feComposite in="SourceGraphic" in2="blur" operator="over" />
-              </filter>
-            </defs>
-
-            <rect
-              width="100%"
-              height="100%"
-              fill="url(#knowledge-force-grid)"
-            />
-
-            <g
-              :transform="`translate(${CENTER_X + panX}, ${CENTER_Y + panY}) scale(${zoom}) translate(${-CENTER_X}, ${-CENTER_Y})`"
-            >
-              <!-- Ambient Nebula Aura -->
-              <circle
-                :cx="CENTER_X"
-                :cy="CENTER_Y"
-                r="290"
-                fill="url(#core-nebula-glow)"
-                class="pointer-events-none"
-              />
-
-              <!-- Orbit Guide Rings -->
-              <template v-if="coreNode">
-                <circle
-                  :cx="CENTER_X"
-                  :cy="CENTER_Y"
-                  r="175"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-dasharray="3 7"
-                  class="text-n-slate-6/40 pointer-events-none"
-                />
-                <circle
-                  :cx="CENTER_X"
-                  :cy="CENTER_Y"
-                  r="270"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-dasharray="2 9"
-                  class="text-n-slate-6/25 pointer-events-none"
-                />
-              </template>
-
-              <!-- Graph Edges (Backbone + Topic + Semantic Cross-Links) -->
-              <g>
-                <template v-for="edge in simEdges" :key="edge.id">
-                  <path
-                    :d="curvePath(edge)"
-                    fill="none"
-                    :stroke="edge.stroke"
-                    :stroke-width="
-                      isEdgeHighlighted(edge)
-                        ? 2.6
-                        : edge.kind === 'backbone'
-                          ? 1.9
-                          : edge.kind === 'semantic'
-                            ? 1.15
-                            : 1.4
-                    "
-                    :stroke-dasharray="
-                      edge.kind === 'semantic' ? '4 5' : undefined
-                    "
-                    :stroke-opacity="
-                      isEdgeHighlighted(edge)
-                        ? 0.92
-                        : hoveredNodeId
-                          ? 0.12
-                          : edge.kind === 'backbone'
-                            ? 0.48
-                            : edge.kind === 'semantic'
-                              ? 0.28
-                              : 0.34
-                    "
-                    stroke-linecap="round"
-                    class="transition-opacity duration-200"
-                  />
-                  <!-- Animated energy pulse on highlighted edges -->
-                  <path
-                    v-if="isEdgeHighlighted(edge)"
-                    :d="curvePath(edge)"
-                    fill="none"
-                    :stroke="edge.stroke"
-                    stroke-width="3"
-                    stroke-dasharray="6 14"
-                    stroke-linecap="round"
-                    class="knowledge-edge-pulse pointer-events-none"
-                  />
-                </template>
-              </g>
-
-              <!-- Core Knowledge Hub Node -->
-              <g
-                v-if="coreNode"
-                class="cursor-pointer"
-                @pointerdown="onNodePointerDown($event, coreNode)"
-                @pointerenter="hoveredNodeId = coreNode.id"
-                @pointerleave="hoveredNodeId = null"
-                @click.stop="selectCluster('all')"
-              >
-                <circle
-                  :cx="coreNode.x"
-                  :cy="coreNode.y"
-                  :r="coreNode.radius + 10"
-                  fill="rgba(59, 130, 246, 0.08)"
-                  stroke="#3b82f6"
-                  stroke-opacity="0.35"
-                  stroke-width="1.2"
-                  stroke-dasharray="4 4"
-                />
-                <circle
-                  :cx="coreNode.x"
-                  :cy="coreNode.y"
-                  :r="coreNode.radius"
-                  fill="rgba(59, 130, 246, 0.2)"
-                  stroke="#3b82f6"
-                  stroke-width="2.4"
-                  filter="url(#node-soft-glow)"
-                />
-                <circle
-                  :cx="coreNode.x"
-                  :cy="coreNode.y"
-                  r="7"
-                  fill="#3b82f6"
-                />
-                <g :transform="`translate(${coreNode.x}, ${coreNode.y + 48})`">
-                  <rect
-                    x="-68"
-                    y="-11"
-                    width="136"
-                    height="22"
-                    rx="11"
-                    class="fill-n-surface-1/95 stroke-n-blue-6"
-                    stroke-width="1"
-                  />
-                  <text
-                    x="0"
-                    y="4"
-                    text-anchor="middle"
-                    class="fill-n-slate-12 text-[11px] font-semibold"
-                  >
-                    {{ coreNode.label }}
-                  </text>
-                </g>
-              </g>
-
-              <!-- Semantic Cluster Hub Nodes -->
-              <g
-                v-for="cluster in clusterNodes"
-                :key="cluster.id"
-                class="cursor-pointer transition-opacity duration-200"
-                :class="{ 'opacity-25': isNodeDimmed(cluster.id) }"
-                @pointerdown="onNodePointerDown($event, cluster)"
-                @pointerenter="hoveredNodeId = cluster.id"
-                @pointerleave="hoveredNodeId = null"
-                @click.stop="selectCluster(cluster.clusterKey)"
-              >
-                <circle
-                  :cx="cluster.x"
-                  :cy="cluster.y"
-                  :r="cluster.radius + 6"
-                  :fill="cluster.palette.fill"
-                  opacity="0.45"
-                />
-                <circle
-                  :cx="cluster.x"
-                  :cy="cluster.y"
-                  :r="cluster.radius"
-                  :fill="cluster.palette.fill"
-                  :stroke="cluster.palette.stroke"
-                  stroke-width="2.2"
-                />
-                <text
-                  :x="cluster.x"
-                  :y="cluster.y + 4"
-                  text-anchor="middle"
-                  class="fill-n-slate-12 text-[11px] font-bold"
-                >
-                  {{ cluster.count }}
-                </text>
-                <g
-                  :transform="`translate(${cluster.x}, ${cluster.y - cluster.radius - 14})`"
-                >
-                  <rect
-                    :x="-Math.max(48, cluster.label.length * 3.6)"
-                    y="-10"
-                    :width="Math.max(96, cluster.label.length * 7.2)"
-                    height="20"
-                    rx="10"
-                    class="fill-n-surface-1/90 stroke-n-weak"
-                    stroke-width="1"
-                  />
-                  <text
-                    x="0"
-                    y="3.5"
-                    text-anchor="middle"
-                    class="fill-n-slate-12 text-[10.5px] font-semibold"
-                  >
-                    {{ cluster.label }}
-                  </text>
-                </g>
-              </g>
-
-              <!-- FAQ Knowledge Leaf Nodes -->
-              <g
-                v-for="node in faqNodes"
-                :key="node.id"
-                class="cursor-pointer transition-opacity duration-200"
-                :class="{ 'opacity-20': isNodeDimmed(node.id) }"
-                data-testid="knowledge-graph-node"
-                @pointerdown="onNodePointerDown($event, node)"
-                @pointerenter="hoveredNodeId = node.id"
-                @pointerleave="hoveredNodeId = null"
-                @click.stop="selectNode(node.rawId)"
-              >
-                <!-- Outer Halo for Selected / Hovered Node -->
-                <circle
-                  v-if="
-                    (selectedNode && selectedNode.rawId === node.rawId) ||
-                    hoveredNodeId === node.id
-                  "
-                  :cx="node.x"
-                  :cy="node.y"
-                  :r="node.radius + 7"
-                  :fill="node.palette.fill"
-                  :stroke="node.palette.stroke"
-                  stroke-width="1.5"
-                  stroke-opacity="0.7"
-                />
-
-                <!-- Node Sphere -->
-                <circle
-                  :cx="node.x"
-                  :cy="node.y"
-                  :r="
-                    selectedNode && selectedNode.rawId === node.rawId
-                      ? node.radius + 2.5
-                      : node.radius
-                  "
-                  :fill="
-                    selectedNode && selectedNode.rawId === node.rawId
-                      ? node.palette.dot
-                      : node.palette.fill
-                  "
-                  :stroke="node.palette.stroke"
-                  :stroke-width="
-                    selectedNode && selectedNode.rawId === node.rawId
-                      ? 2.5
-                      : 1.7
-                  "
-                />
-
-                <!-- Inner Core Dot -->
-                <circle
-                  :cx="node.x"
-                  :cy="node.y"
-                  r="2.6"
-                  :fill="
-                    selectedNode && selectedNode.rawId === node.rawId
-                      ? '#ffffff'
-                      : node.palette.dot
-                  "
-                />
-
-                <!-- Pill Label Badge -->
-                <g
-                  :transform="`translate(${node.x}, ${node.y + node.radius + 15})`"
-                >
-                  <rect
-                    v-if="
-                      (selectedNode && selectedNode.rawId === node.rawId) ||
-                      hoveredNodeId === node.id
-                    "
-                    :x="-Math.max(54, node.label.length * 3.4)"
-                    y="-10"
-                    :width="Math.max(108, node.label.length * 6.8)"
-                    height="19"
-                    rx="9.5"
-                    class="fill-n-surface-1/95 stroke-n-strong"
-                    stroke-width="1"
-                  />
-                  <text
-                    x="0"
-                    y="3"
-                    text-anchor="middle"
-                    class="text-[10.5px] transition-all"
-                    :class="
-                      (selectedNode && selectedNode.rawId === node.rawId) ||
-                      hoveredNodeId === node.id
-                        ? 'fill-n-slate-12 font-semibold'
-                        : 'fill-n-slate-11'
-                    "
-                  >
-                    {{ node.label }}
-                  </text>
-                </g>
-              </g>
-            </g>
-          </svg>
-
-          <!-- Bottom Floating Hint Pill -->
           <div
-            class="pointer-events-none absolute bottom-3 left-3 flex items-center gap-2 rounded-xl border border-n-weak bg-n-surface-1/85 px-3 py-1.5 text-[11px] text-n-slate-11 backdrop-blur-sm"
+            ref="stageContainerRef"
+            class="h-full w-full"
+            data-testid="knowledge-3d-webgl-canvas"
+          />
+
+          <!-- Accessible / Fallback Semantic Node Hooks (kept in DOM for screen readers & deterministic unit specs) -->
+          <div
+            class="sr-only"
+            aria-hidden="false"
           >
-            <Icon icon="i-lucide-move" class="size-3.5 text-n-brand" />
-            <span>{{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.DRAG_HINT') }}</span>
+            <button
+              v-for="node in faqNodes"
+              :key="node.id"
+              type="button"
+              data-testid="knowledge-graph-node"
+              @click="selectNode(node.rawId)"
+            >
+              {{ node.label }}
+            </button>
+          </div>
+
+          <!-- Bottom Floating 3D Navigation Pill -->
+          <div
+            class="pointer-events-none absolute bottom-3 left-3 right-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-slate-950/75 px-3.5 py-2 text-[11px] text-slate-300 backdrop-blur-md"
+          >
+            <div class="flex items-center gap-2">
+              <Icon icon="i-lucide-orbit" class="size-3.5 text-sky-400 shrink-0" />
+              <span>{{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.DRAG_HINT') }}</span>
+            </div>
+            <span
+              v-if="selectedNode"
+              class="hidden items-center gap-1.5 text-sky-300 sm:inline-flex"
+            >
+              <span
+                class="size-2 rounded-full"
+                :style="{ backgroundColor: selectedNode.palette.dot }"
+              />
+              {{ selectedNode.label }}
+            </span>
           </div>
         </div>
       </div>
@@ -1353,37 +1317,49 @@ const handleSourceClick = documentable => {
               {{ selectedNode.clusterLabel }}
             </span>
 
-            <div
-              v-if="selectedNode.raw.documentable"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-n-weak bg-n-surface-1 px-2.5 py-1 text-xs text-n-slate-11"
-            >
-              <Icon
-                icon="i-lucide-file-text"
-                class="size-3.5 shrink-0 text-n-brand"
-              />
-              <span
-                v-if="
-                  selectedNode.raw.documentable.type === 'Captain::Document'
-                "
-                class="max-w-48 truncate"
-                :title="selectedNode.raw.documentable.name"
-              >
-                {{ selectedNode.raw.documentable.name }}
-              </span>
+            <div class="flex items-center gap-2">
               <button
-                v-else-if="
-                  selectedNode.raw.documentable.type === 'Conversation'
-                "
+                v-if="webglReady"
                 type="button"
-                class="hover:underline"
-                @click="handleSourceClick(selectedNode.raw.documentable)"
+                class="inline-flex items-center gap-1 rounded-lg border border-n-weak bg-n-surface-1 px-2.5 py-1 text-xs text-n-slate-11 transition-colors hover:border-n-brand hover:text-n-slate-12"
+                @click="flyToSelectedNode"
               >
-                {{
-                  t('CAPTAIN.RESPONSES.DOCUMENTABLE.CONVERSATION', {
-                    id: selectedNode.raw.documentable.display_id,
-                  })
-                }}
+                <Icon icon="i-lucide-focus" class="size-3.5 text-n-brand" />
+                <span>{{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.FLY_TO_NODE') }}</span>
               </button>
+
+              <div
+                v-if="selectedNode.raw.documentable"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-n-weak bg-n-surface-1 px-2.5 py-1 text-xs text-n-slate-11"
+              >
+                <Icon
+                  icon="i-lucide-file-text"
+                  class="size-3.5 shrink-0 text-n-brand"
+                />
+                <span
+                  v-if="
+                    selectedNode.raw.documentable.type === 'Captain::Document'
+                  "
+                  class="max-w-44 truncate"
+                  :title="selectedNode.raw.documentable.name"
+                >
+                  {{ selectedNode.raw.documentable.name }}
+                </span>
+                <button
+                  v-else-if="
+                    selectedNode.raw.documentable.type === 'Conversation'
+                  "
+                  type="button"
+                  class="hover:underline"
+                  @click="handleSourceClick(selectedNode.raw.documentable)"
+                >
+                  {{
+                    t('CAPTAIN.RESPONSES.DOCUMENTABLE.CONVERSATION', {
+                      id: selectedNode.raw.documentable.display_id,
+                    })
+                  }}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1489,18 +1465,3 @@ const handleSourceClick = documentable => {
     </div>
   </div>
 </template>
-
-<style scoped>
-@keyframes knowledgeEdgeFlow {
-  from {
-    stroke-dashoffset: 40;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-.knowledge-edge-pulse {
-  animation: knowledgeEdgeFlow 1.2s linear infinite;
-}
-</style>

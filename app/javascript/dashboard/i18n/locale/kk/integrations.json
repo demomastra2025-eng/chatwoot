@@ -1849,11 +1849,15 @@
         "EXIT_FULLSCREEN": "Кішірейту",
         "EDGES_COUNT": "Байланыстар: {count}",
         "SOURCES_COUNT": "Дереккөздер: {count}",
-        "DRAG_HINT": "Түйіндерді сүйреңіз • Масштабтау • Ашу үшін басыңыз",
+        "DRAG_HINT": "Сол жақ батырма — 3D айналдыру • Оң жақ — панорама • Дөңгелек — ұшу • Түйінді басу — жақындау",
         "COPY_ANSWER": "Жауапты көшіру",
         "COPIED": "Көшірілді",
         "SIMILAR_NODES": "Мағыналық байланысқан білімдер",
-        "ENGINE_BADGE": "D3-Force Physics"
+        "ENGINE_BADGE": "3D WebGL • Three.js + Bloom",
+        "AUTO_ORBIT": "3D авто-айналдыру",
+        "BLOOM_GLOW": "Неон жарқылы",
+        "FLY_TO_NODE": "Камерамен жақындау",
+        "RESET_3D_CAMERA": "Бүкіл галактика шолуы"
       }
     },
     "KNOWLEDGE_VISIBILITY": {

@@ -2471,11 +2471,15 @@
         "EXIT_FULLSCREEN": "Свернуть",
         "EDGES_COUNT": "Связей: {count}",
         "SOURCES_COUNT": "Источников: {count}",
-        "DRAG_HINT": "Тяните узлы мышью • Колёсико — масштаб • Клик — карточка знания",
+        "DRAG_HINT": "ЛКМ — вращение 3D-галактики • ПКМ — панорама • Колёсико — полёт сквозь узлы • Клик — подлёт к знанию",
         "COPY_ANSWER": "Скопировать ответ",
         "COPIED": "Скопировано",
         "SIMILAR_NODES": "Семантически связанные знания",
-        "ENGINE_BADGE": "D3-Force Physics"
+        "ENGINE_BADGE": "3D WebGL • Three.js + Bloom",
+        "AUTO_ORBIT": "Авто-вращение 3D",
+        "BLOOM_GLOW": "Неоновое свечение",
+        "FLY_TO_NODE": "Подлететь камерой",
+        "RESET_3D_CAMERA": "Обзор всей галактики"
       }
     },
     "KNOWLEDGE_VISIBILITY": {

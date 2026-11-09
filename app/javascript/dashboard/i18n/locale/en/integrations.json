@@ -2695,11 +2695,15 @@
         "EXIT_FULLSCREEN": "Exit fullscreen",
         "EDGES_COUNT": "Links: {count}",
         "SOURCES_COUNT": "Sources: {count}",
-        "DRAG_HINT": "Drag nodes • Scroll to zoom • Click to inspect",
+        "DRAG_HINT": "Left-drag — orbit 3D galaxy • Right-drag — pan • Scroll — fly through • Click — fly to node",
         "COPY_ANSWER": "Copy answer",
         "COPIED": "Copied",
         "SIMILAR_NODES": "Semantically linked knowledge",
-        "ENGINE_BADGE": "D3-Force Physics"
+        "ENGINE_BADGE": "3D WebGL • Three.js + Bloom",
+        "AUTO_ORBIT": "3D Auto-Orbit",
+        "BLOOM_GLOW": "Neon Bloom",
+        "FLY_TO_NODE": "Fly camera to node",
+        "RESET_3D_CAMERA": "Galaxy overview"
       }
     },
     "KNOWLEDGE_VISIBILITY": {
