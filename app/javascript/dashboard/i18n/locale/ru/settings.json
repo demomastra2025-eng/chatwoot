@@ -607,7 +607,9 @@
     "CATALOG_PRODUCTS": "Товары",
     "CATALOG_SERVICES": "Услуги",
     "REPORTS_WHATSAPP": "WhatsApp",
-    "OWNER_FINANCE": "Финансы и сроки"
+    "OWNER_FINANCE": "Финансы и сроки",
+    "TELEPHONY": "Телефония",
+    "WHATSAPP_FLOWS": "Формы WhatsApp Flows"
   },
   "LEAD_FORMS": {
     "KICKER": "Прием заявок",
@@ -1812,5 +1814,15 @@
       "HOURS_MINUTES": "{hours} ч. {minutes} мин.",
       "MINUTES": "{minutes} мин."
     }
+  },
+  "TELEPHONY_SETTINGS": {
+    "TITLE": "Телефония",
+    "DESCRIPTION": "Все подключённые телефонные номера и выдача внутренних линий сотрудникам.",
+    "EMPTY_TITLE": "Нет подключённых телефонов",
+    "EMPTY_DESCRIPTION": "Подключите телефонный номер в разделе «Каналы», чтобы выдавать линии сотрудникам.",
+    "LINES_HINT": "Назначьте сотрудникам внутренние номера (линии) на этом телефоне.",
+    "NO_LINES_ASSIGNED": "На этом номере ещё не выданы линии сотрудникам.",
+    "NO_EMPLOYEE_LINES_NEEDED": "Для этого телефонного канала ручная привязка внутренних линий не требуется.",
+    "LOAD_ERROR": "Не удалось загрузить настройки телефонии."
   }
 }

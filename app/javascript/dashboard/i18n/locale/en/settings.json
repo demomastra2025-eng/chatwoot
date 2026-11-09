@@ -609,7 +609,9 @@
     "CATALOG_PRODUCTS": "Products",
     "CATALOG_SERVICES": "Services",
     "REPORTS_WHATSAPP": "WhatsApp",
-    "OWNER_FINANCE": "Finance & Deadlines"
+    "OWNER_FINANCE": "Finance & Deadlines",
+    "TELEPHONY": "Telephony",
+    "WHATSAPP_FLOWS": "WhatsApp Flows"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",
@@ -1816,5 +1818,15 @@
       "HOURS_MINUTES": "{hours} h {minutes} min",
       "MINUTES": "{minutes} min"
     }
+  },
+  "TELEPHONY_SETTINGS": {
+    "TITLE": "Telephony",
+    "DESCRIPTION": "All connected phone numbers and employee line assignments.",
+    "EMPTY_TITLE": "No connected phone numbers",
+    "EMPTY_DESCRIPTION": "Connect a phone number in Channels to assign lines to employees.",
+    "LINES_HINT": "Assign internal extensions (lines) to employees on this phone number.",
+    "NO_LINES_ASSIGNED": "No employee lines assigned on this number yet.",
+    "NO_EMPLOYEE_LINES_NEEDED": "Manual employee extension mapping is not required for this voice channel.",
+    "LOAD_ERROR": "Failed to load telephony settings."
   }
 }

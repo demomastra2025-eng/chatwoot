@@ -11,6 +11,7 @@ import { INBOX_TYPES, TWILIO_CHANNEL_MEDIUM } from 'dashboard/helper/inbox.js';
 import { groupWhatsAppTemplates } from 'dashboard/helper/whatsappTemplateLibrary';
 import CannedHome from '../../settings/canned/Index.vue';
 import WhatsAppTemplatesPage from '../../settings/inbox/settingsPage/WhatsAppTemplatesPage.vue';
+import WhatsAppFlowsPage from '../../settings/inbox/settingsPage/WhatsAppFlowsPage.vue';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -22,11 +23,13 @@ const getFilteredWhatsAppTemplates = useMapGetter(
   'inboxes/getFilteredWhatsAppTemplates'
 );
 const cannedHomeRef = ref(null);
-// Quick replies and WhatsApp templates are separate entries of the settings
-// hub, so the route decides which one this page shows.
-const activeTabId = computed(() =>
-  route.name === 'outbound_whatsapp_templates_index' ? 'whatsapp' : 'free_text'
-);
+// Quick replies, WhatsApp templates, and WhatsApp Flows are separate entries
+// of the settings hub, so the route decides which one this page shows.
+const activeTabId = computed(() => {
+  if (route.name === 'outbound_whatsapp_templates_index') return 'whatsapp';
+  if (route.name === 'outbound_whatsapp_flows_index') return 'whatsapp_flows';
+  return 'free_text';
+});
 const selectedWhatsAppInboxId = ref(null);
 
 const recordsCount = computed(() => {
@@ -62,22 +65,37 @@ const whatsAppTemplateCount = computed(() => {
     getFilteredWhatsAppTemplates.value(selectedWhatsAppInboxId.value) || []
   ).length;
 });
+const whatsAppFlowsCount = computed(() => {
+  const flows =
+    selectedWhatsAppInbox.value?.provider_config?.whatsapp_flows?.flows ||
+    selectedWhatsAppInbox.value?.whatsapp_flows?.flows ||
+    [];
+  return Array.isArray(flows) ? flows.length : 0;
+});
 
-const activeRecordsCount = computed(() =>
-  activeTabId.value === 'free_text'
-    ? recordsCount.value
-    : whatsAppTemplateCount.value
-);
-const pageTitle = computed(() =>
-  activeTabId.value === 'whatsapp'
-    ? t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.TITLE')
-    : t('OUTBOUND_WORKSPACE.TEMPLATES.FREE_TEXT.TITLE')
-);
-const pageDescription = computed(() =>
-  activeTabId.value === 'whatsapp'
-    ? t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.DESCRIPTION')
-    : t('OUTBOUND_WORKSPACE.TEMPLATES.FREE_TEXT.DESCRIPTION')
-);
+const activeRecordsCount = computed(() => {
+  if (activeTabId.value === 'free_text') return recordsCount.value;
+  if (activeTabId.value === 'whatsapp_flows') return whatsAppFlowsCount.value;
+  return whatsAppTemplateCount.value;
+});
+const pageTitle = computed(() => {
+  if (activeTabId.value === 'whatsapp') {
+    return t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.TITLE');
+  }
+  if (activeTabId.value === 'whatsapp_flows') {
+    return t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP_FLOWS.TITLE');
+  }
+  return t('OUTBOUND_WORKSPACE.TEMPLATES.FREE_TEXT.TITLE');
+});
+const pageDescription = computed(() => {
+  if (activeTabId.value === 'whatsapp') {
+    return t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.DESCRIPTION');
+  }
+  if (activeTabId.value === 'whatsapp_flows') {
+    return t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP_FLOWS.DESCRIPTION');
+  }
+  return t('OUTBOUND_WORKSPACE.TEMPLATES.FREE_TEXT.DESCRIPTION');
+});
 
 const openCreateDialog = () => {
   cannedHomeRef.value?.openAddPopup();
@@ -86,6 +104,14 @@ const openCreateDialog = () => {
 watch(
   whatsAppInboxes,
   inboxes => {
+    const queryInboxId = Number(route.query?.inboxId);
+    if (
+      queryInboxId &&
+      inboxes.some(inbox => Number(inbox.id) === queryInboxId)
+    ) {
+      selectedWhatsAppInboxId.value = queryInboxId;
+      return;
+    }
     if (
       !inboxes.some(
         inbox => Number(inbox.id) === Number(selectedWhatsAppInboxId.value)
@@ -126,10 +152,20 @@ watch(
     <div v-else class="grid gap-4 pt-2">
       <div v-if="!whatsAppInboxes.length" class="py-12 text-center">
         <p class="mb-1 text-base font-medium text-n-slate-12">
-          {{ $t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.EMPTY_TITLE') }}
+          {{
+            activeTabId === 'whatsapp_flows'
+              ? $t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP_FLOWS.EMPTY_TITLE')
+              : $t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.EMPTY_TITLE')
+          }}
         </p>
         <p class="mb-0 text-sm text-n-slate-11">
-          {{ $t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.EMPTY_DESCRIPTION') }}
+          {{
+            activeTabId === 'whatsapp_flows'
+              ? $t(
+                  'OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP_FLOWS.EMPTY_DESCRIPTION'
+                )
+              : $t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.EMPTY_DESCRIPTION')
+          }}
         </p>
       </div>
 
@@ -157,8 +193,13 @@ watch(
           </div>
         </div>
 
+        <WhatsAppFlowsPage
+          v-if="activeTabId === 'whatsapp_flows' && selectedWhatsAppInbox"
+          :inbox="selectedWhatsAppInbox"
+          embedded
+        />
         <WhatsAppTemplatesPage
-          v-if="selectedWhatsAppInbox"
+          v-else-if="selectedWhatsAppInbox"
           :inbox="selectedWhatsAppInbox"
           embedded
         />

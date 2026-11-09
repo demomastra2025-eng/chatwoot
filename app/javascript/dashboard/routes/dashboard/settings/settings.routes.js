@@ -22,6 +22,7 @@ import conversationWorkflow from './conversationWorkflow/conversationWorkflow.ro
 import captain from './captain/captain.routes';
 import crm from './crm/crm.routes';
 import storage from './storage/storage.routes';
+import telephony from './telephony/telephony.routes';
 import webhooks from './webhooks/webhooks.routes';
 
 export default {
@@ -64,6 +65,7 @@ export default {
     ...captain.routes,
     ...crm.routes,
     ...storage.routes,
+    ...telephony.routes,
     ...webhooks.routes,
   ],
 };

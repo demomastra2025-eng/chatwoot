@@ -591,7 +591,9 @@
     "CATALOG_PRODUCTS": "Тауарлар",
     "CATALOG_SERVICES": "Қызметтер",
     "REPORTS_WHATSAPP": "WhatsApp",
-    "OWNER_FINANCE": "Қаржы және мерзімдер"
+    "OWNER_FINANCE": "Қаржы және мерзімдер",
+    "TELEPHONY": "Телефония",
+    "WHATSAPP_FLOWS": "WhatsApp Flows формалары"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",
@@ -1786,5 +1788,15 @@
       "HOURS_MINUTES": "{hours} сағ {minutes} мин",
       "MINUTES": "{minutes} мин"
     }
+  },
+  "TELEPHONY_SETTINGS": {
+    "TITLE": "Телефония",
+    "DESCRIPTION": "Барлық қосылған телефон нөмірлері және қызметкерлерге желілерді беру.",
+    "EMPTY_TITLE": "Қосылған телефондар жоқ",
+    "EMPTY_DESCRIPTION": "Қызметкерлерге желі беру үшін «Арналар» бөлімінде телефон нөмірін қосыңыз.",
+    "LINES_HINT": "Осы телефонда қызметкерлерге ішкі нөмірлерді (желілерді) тағайындаңыз.",
+    "NO_LINES_ASSIGNED": "Бұл нөмірде қызметкерлерге әлі желілер берілмеген.",
+    "NO_EMPLOYEE_LINES_NEEDED": "Бұл телефон арнасы үшін ішкі желілерді қолмен байланыстыру қажет емес.",
+    "LOAD_ERROR": "Телефония баптауларын жүктеу мүмкін болмады."
   }
 }

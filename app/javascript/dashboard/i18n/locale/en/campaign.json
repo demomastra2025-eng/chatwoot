@@ -1043,6 +1043,12 @@
       "FREE_TEXT": {
         "TITLE": "Quick replies",
         "DESCRIPTION": "Create reusable replies that employees can insert into conversations."
+      },
+      "WHATSAPP_FLOWS": {
+        "EMPTY_TITLE": "No WhatsApp inboxes for Flows",
+        "EMPTY_DESCRIPTION": "Connect a WhatsApp Cloud channel in Channels to manage interactive WhatsApp Flows.",
+        "TITLE": "WhatsApp Flows",
+        "DESCRIPTION": "Manage interactive booking and survey forms across your connected WhatsApp channels."
       }
     }
   }

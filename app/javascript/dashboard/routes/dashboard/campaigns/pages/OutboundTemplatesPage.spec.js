@@ -3,7 +3,7 @@ import { reactive, ref } from 'vue';
 
 import OutboundTemplatesPage from './OutboundTemplatesPage.vue';
 
-const route = reactive({ name: 'outbound_templates_index' });
+const route = reactive({ name: 'outbound_templates_index', query: {} });
 const inboxes = ref([]);
 
 vi.mock('vue-router', () => ({
@@ -23,6 +23,13 @@ vi.mock('../../settings/inbox/settingsPage/WhatsAppTemplatesPage.vue', () => ({
   default: {
     name: 'WhatsAppTemplatesPage',
     template: '<div data-test="whatsapp-templates" />',
+  },
+}));
+
+vi.mock('../../settings/inbox/settingsPage/WhatsAppFlowsPage.vue', () => ({
+  default: {
+    name: 'WhatsAppFlowsPage',
+    template: '<div data-test="whatsapp-flows" />',
   },
 }));
 
@@ -70,6 +77,7 @@ const mountComponent = () =>
           methods: { openAddPopup: () => {} },
         },
         WhatsAppTemplatesPage: true,
+        WhatsAppFlowsPage: true,
         ComboBox: true,
         Button: true,
       },
@@ -79,6 +87,7 @@ const mountComponent = () =>
 describe('OutboundTemplatesPage', () => {
   beforeEach(() => {
     route.name = 'outbound_templates_index';
+    route.query = {};
     inboxes.value = [];
   });
 
@@ -103,6 +112,19 @@ describe('OutboundTemplatesPage', () => {
     expect(wrapper.find('[data-test="canned-home"]').exists()).toBe(false);
     expect(wrapper.text()).toContain(
       'OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.EMPTY_TITLE'
+    );
+  });
+
+  it('shows WhatsApp Flows on the WhatsApp Flows route', () => {
+    route.name = 'outbound_whatsapp_flows_index';
+    const wrapper = mountComponent();
+
+    expect(wrapper.get('section').attributes('data-title')).toBe(
+      'OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP_FLOWS.TITLE'
+    );
+    expect(wrapper.find('[data-test="canned-home"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain(
+      'OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP_FLOWS.EMPTY_TITLE'
     );
   });
 });

@@ -57,9 +57,16 @@ describe('DeveloperDetails', () => {
   });
 });
 
-describe('Channel settings tabs for voice inboxes', () => {
-  it.each(['sipuni', 'binotel', 'asterisk_analog', 'beeline', 'wazo'])(
-    'has the «Звонки и сотрудники» tab for a %s voice inbox',
+describe('Channel settings tabs for voice and WhatsApp inboxes', () => {
+  it.each([
+    'sipuni',
+    'binotel',
+    'asterisk_analog',
+    'beeline',
+    'wazo',
+    'twilio',
+  ])(
+    'only shows channel connection tabs for a %s voice inbox (telephony lines live on the Telephony settings page)',
     provider => {
       const tabs = Settings.computed.tabs.call(
         tabsContext({ isAVoiceChannel: true, inbox: { provider } })
@@ -67,28 +74,28 @@ describe('Channel settings tabs for voice inboxes', () => {
 
       expect(tabs.map(tab => tab.key)).toEqual([
         'inbox-settings',
-        'voice-calls',
         'configuration',
       ]);
-      expect(tabs[1].name).toBe('INBOX_MGMT.TABS.VOICE_CALLS');
+      expect(tabs.map(tab => tab.key)).not.toContain('voice-calls');
     }
   );
 
-  it('has no calls tab for a Twilio voice inbox or for other channels', () => {
-    expect(
-      tabKeys({ isAVoiceChannel: true, inbox: { provider: 'twilio' } })
-    ).toEqual(['inbox-settings', 'configuration']);
-    expect(tabKeys({ isAWebWidgetInbox: true })).not.toContain('voice-calls');
-    expect(tabKeys({ shouldShowWhatsAppConfiguration: true })).not.toContain(
-      'voice-calls'
-    );
+  it('only shows channel connection and health tabs for WhatsApp Cloud (templates and flows live in top-level Settings)', () => {
+    const keys = tabKeys({ shouldShowWhatsAppConfiguration: true });
+
+    expect(keys).toEqual([
+      'inbox-settings',
+      'configuration',
+      'whatsapp-health',
+    ]);
+    expect(keys).not.toContain('whatsapp-templates');
+    expect(keys).not.toContain('whatsapp-flows');
   });
 
-  it('opens the configuration page in its calls section on that tab', () => {
+  it('opens the configuration page only on the configuration tab', () => {
     const section = tab =>
       Settings.computed.configurationSection.call({ selectedTabKey: tab });
 
-    expect(section('voice-calls')).toBe('calls');
     expect(section('configuration')).toBe('configuration');
     expect(section('inbox-settings')).toBe('');
   });
@@ -777,7 +784,7 @@ describe('WhatsApp Cloud header status', () => {
     expect(box.props('statusExplainsRegistration')).toBe(true);
     main.unmount();
 
-    const templates = mountCloud(providerConfig, { tab: 'whatsapp-templates' });
+    const templates = mountCloud(providerConfig, { tab: 'whatsapp-health' });
     await flushPromises();
     expect(templates.findComponent(WhatsappReauthorize).exists()).toBe(false);
     expect(
@@ -792,7 +799,7 @@ describe('WhatsApp Cloud header status', () => {
         authorization_status: 'reauthorization_required',
         phone_registration: { status: 'registered' },
       },
-      { tab: 'whatsapp-templates' }
+      { tab: 'whatsapp-health' }
     );
     await flushPromises();
 

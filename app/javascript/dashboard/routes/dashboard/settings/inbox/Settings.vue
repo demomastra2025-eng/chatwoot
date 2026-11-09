@@ -19,8 +19,6 @@ import WhatsappReauthorize from './channels/whatsapp/Reauthorize.vue';
 import InboxHealthAPI from 'dashboard/api/inboxHealth';
 import PreChatFormSettings from './PreChatForm/Settings.vue';
 import ConfigurationPage from './settingsPage/ConfigurationPage.vue';
-import WhatsAppTemplatesPage from './settingsPage/WhatsAppTemplatesPage.vue';
-import WhatsAppFlowsPage from './settingsPage/WhatsAppFlowsPage.vue';
 import AccountHealth from './components/AccountHealth.vue';
 import ConnectionStatusBadge from './components/ConnectionStatusBadge.vue';
 import DeveloperDetails from './components/DeveloperDetails.vue';
@@ -58,7 +56,6 @@ import {
   describeWhatsappTokenExpiry,
   getWhatsappTokenExpiry,
 } from './helpers/whatsappTokenExpiry';
-import { VIRTUAL_PBX_PROVIDERS } from './helpers/virtualPbx';
 import AccessToken from 'dashboard/routes/dashboard/settings/profile/AccessToken.vue';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
 
@@ -94,8 +91,6 @@ export default {
     ConnectionStatusBadge,
     DeveloperDetails,
     FacebookReauthorize,
-    WhatsAppTemplatesPage,
-    WhatsAppFlowsPage,
     PreChatFormSettings,
     SettingIntroBanner,
     SettingsToggleSection,
@@ -629,21 +624,6 @@ export default {
         ];
       }
 
-      // Employees, extensions and call routing of a virtual PBX are what a
-      // manager configures; the SIP details stay on the configuration tab.
-      if (
-        this.isAVoiceChannel &&
-        VIRTUAL_PBX_PROVIDERS.includes(this.inbox?.provider)
-      ) {
-        visibleToAllChannelTabs = [
-          ...visibleToAllChannelTabs,
-          {
-            key: 'voice-calls',
-            name: this.$t('INBOX_MGMT.TABS.VOICE_CALLS'),
-          },
-        ];
-      }
-
       // Twilio and LINE show the callback address and the template sync there.
       if (
         this.isATwilioChannel ||
@@ -663,19 +643,12 @@ export default {
         ];
       }
 
-      // AI agents are set only in «ИИ-агенты → Каналы». The voice agent editor
-      // is hidden until the voice agent is reworked (owner decision 12.10).
+      // AI agents are set only in «ИИ-агенты → Каналы». WhatsApp templates,
+      // WhatsApp Flows, and Telephony employee lines have their own dedicated
+      // top-level Settings pages; channels only configure the channel itself.
       if (this.shouldShowWhatsAppConfiguration) {
         visibleToAllChannelTabs = [
           ...visibleToAllChannelTabs,
-          {
-            key: 'whatsapp-templates',
-            name: this.$t('INBOX_MGMT.TABS.WHATSAPP_TEMPLATES'),
-          },
-          {
-            key: 'whatsapp-flows',
-            name: this.$t('INBOX_MGMT.TABS.WHATSAPP_FLOWS'),
-          },
           {
             key: 'whatsapp-health',
             name: this.$t('INBOX_MGMT.TABS.ACCOUNT_HEALTH'),
@@ -685,10 +658,7 @@ export default {
 
       return visibleToAllChannelTabs;
     },
-    // The configuration page renders both the «Конфигурация» and the
-    // «Звонки и сотрудники» tab, so voice settings keep one shared form.
     configurationSection() {
-      if (this.selectedTabKey === 'voice-calls') return 'calls';
       if (this.selectedTabKey === 'configuration') return 'configuration';
       return '';
     },
@@ -4384,12 +4354,6 @@ export default {
             :is-registering-webhook="isRegisteringWebhook"
             @register-webhook="registerWebhook"
           />
-        </div>
-        <div v-if="selectedTabKey === 'whatsapp-templates'">
-          <WhatsAppTemplatesPage :inbox="inbox" />
-        </div>
-        <div v-if="selectedTabKey === 'whatsapp-flows'">
-          <WhatsAppFlowsPage :inbox="inbox" />
         </div>
       </div>
     </section>

@@ -903,6 +903,14 @@ const buildSettingsMenuItems = () =>
       activeOn: settingsInboxRouteNames,
       to: accountScopedRoute('settings_inbox_list'),
     }),
+    onlyIf(hasInboxManagement.value, {
+      name: 'Settings Telephony',
+      visibilityKey: 'Settings:Telephony',
+      label: t('SIDEBAR.TELEPHONY'),
+      icon: 'i-lucide-phone',
+      activeOn: ['settings_telephony_index'],
+      to: accountScopedRoute('settings_telephony_index'),
+    }),
     {
       name: 'Settings WhatsApp Templates',
       visibilityKey: 'Settings:WhatsAppTemplates',
@@ -910,6 +918,14 @@ const buildSettingsMenuItems = () =>
       icon: 'i-lucide-message-circle-code',
       activeOn: ['outbound_whatsapp_templates_index'],
       to: accountScopedRoute('outbound_whatsapp_templates_index'),
+    },
+    {
+      name: 'Settings WhatsApp Flows',
+      visibilityKey: 'Settings:WhatsAppFlows',
+      label: t('SIDEBAR.WHATSAPP_FLOWS'),
+      icon: 'i-lucide-workflow',
+      activeOn: ['outbound_whatsapp_flows_index'],
+      to: accountScopedRoute('outbound_whatsapp_flows_index'),
     },
     {
       name: 'Settings Integrations',

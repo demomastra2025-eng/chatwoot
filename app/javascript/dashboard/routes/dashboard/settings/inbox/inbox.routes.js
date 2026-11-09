@@ -94,6 +94,30 @@ export default {
           ],
         },
         {
+          path: ':inboxId/whatsapp-templates',
+          redirect: to => ({
+            name: 'outbound_whatsapp_templates_index',
+            params: { accountId: to.params.accountId },
+            query: { inboxId: to.params.inboxId },
+          }),
+        },
+        {
+          path: ':inboxId/whatsapp-flows',
+          redirect: to => ({
+            name: 'outbound_whatsapp_flows_index',
+            params: { accountId: to.params.accountId },
+            query: { inboxId: to.params.inboxId },
+          }),
+        },
+        {
+          path: ':inboxId/voice-calls',
+          redirect: to => ({
+            name: 'settings_telephony_index',
+            params: { accountId: to.params.accountId },
+            query: { inboxId: to.params.inboxId },
+          }),
+        },
+        {
           path: ':inboxId/:tab?',
           name: 'settings_inbox_show',
           component: Settings,
