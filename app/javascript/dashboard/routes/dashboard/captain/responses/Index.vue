@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, shallowRef, watch } from 'vue';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
@@ -22,9 +22,9 @@ const uiFlags = useMapGetter('captainResponses/getUIFlags');
 const responseMeta = useMapGetter('captainResponses/getMeta');
 const responses = useMapGetter('captainResponses/getRecords');
 
-const doctors = ref([]);
-const services = ref([]);
-const serviceStats = ref([]);
+const doctors = shallowRef([]);
+const services = shallowRef([]);
+const serviceStats = shallowRef([]);
 const isFetchingClinicData = ref(false);
 
 const isFetching = computed(
@@ -38,9 +38,7 @@ const isFetching = computed(
 
 const isGraphEmpty = computed(
   () =>
-    !responses.value.length &&
-    !doctors.value.length &&
-    !services.value.length
+    !responses.value.length && !doctors.value.length && !services.value.length
 );
 
 const searchQuery = ref('');
@@ -90,9 +88,10 @@ const fetchClinicGraphData = async () => {
   isFetchingClinicData.value = true;
   try {
     const [resourcesRes, servicesRes] = await Promise.all([
-      SchedulingResourcesAPI.get({ include_service_stats: true }).catch(
-        () => null
-      ),
+      SchedulingResourcesAPI.get({
+        include_service_stats: true,
+        lightweight: true,
+      }).catch(() => null),
       SchedulingServicesAPI.get().catch(() => null),
     ]);
     doctors.value = Array.isArray(resourcesRes?.data?.payload)

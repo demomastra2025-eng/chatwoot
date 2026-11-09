@@ -14,28 +14,12 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
     resources = Current.account.scheduling_resources.ordered
     resources = resources.active unless parse_boolean(params[:include_inactive])
     resources = resources.to_a
-    schedules = provider_schedules(resources)
+    schedules = parse_boolean(params[:lightweight]) ? {} : provider_schedules(resources)
     meta = {
       count: resources.size,
       medelement_required_patient_fields: Integrations::Medelement::Configuration.required_patient_fields_for(Current.account)
     }
-    if parse_boolean(params[:include_service_stats])
-      meta[:service_stats] = Scheduling::ResourceServiceStat
-                             .where(account_id: Current.account.id, resource_id: resources.map(&:id))
-                             .usable
-                             .ordered
-                             .select(:id, :resource_id, :service_id, :receptions_count, :median_duration_min, :status)
-                             .map do |stat|
-        {
-          id: stat.id,
-          resource_id: stat.resource_id,
-          service_id: stat.service_id,
-          receptions_count: stat.receptions_count,
-          median_duration_min: stat.median_duration_min,
-          status: stat.status
-        }
-      end
-    end
+    meta[:service_stats] = service_stats_payload(resources) if parse_boolean(params[:include_service_stats])
 
     render_payload(
       resources.map { |resource| Scheduling::PayloadBuilder.resource(resource, provider_schedule: schedules[resource]) },
@@ -68,6 +52,24 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   private
+
+  def service_stats_payload(resources)
+    Scheduling::ResourceServiceStat
+      .where(account_id: Current.account.id, resource_id: resources.map(&:id))
+      .usable
+      .ordered
+      .select(:id, :resource_id, :service_id, :receptions_count, :median_duration_min, :status)
+      .map do |stat|
+        {
+          id: stat.id,
+          resource_id: stat.resource_id,
+          service_id: stat.service_id,
+          receptions_count: stat.receptions_count,
+          median_duration_min: stat.median_duration_min,
+          status: stat.status
+        }
+      end
+  end
 
   def provider_schedules(resources)
     Integrations::Medelement::ProviderSchedulePresenter.new(account: Current.account, resources: resources).payloads
