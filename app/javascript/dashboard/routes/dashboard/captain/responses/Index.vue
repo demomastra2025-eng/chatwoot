@@ -103,7 +103,10 @@ onMounted(() => {
     :header-title="$t('CAPTAIN.NAV.KNOWLEDGE')"
     :is-fetching="isFetching"
     :is-empty="!responses.length"
-    :show-pagination-footer="!isFetching && !!responses.length"
+    :show-know-more="false"
+    :content-width="viewMode === 'graph' ? 'full' : 'default'"
+    :full-bleed="viewMode === 'graph'"
+    :show-pagination-footer="viewMode === 'list' && !isFetching && !!responses.length"
     :feature-flag="FEATURE_FLAGS.CAPTAIN"
     @update:current-page="onPageChange"
   >
@@ -164,7 +167,7 @@ onMounted(() => {
     </template>
 
     <template #body>
-      <LimitBanner class="mb-5" />
+      <LimitBanner v-if="viewMode === 'list'" class="mb-5" />
 
       <KnowledgeGraphCloud
         v-if="viewMode === 'graph'"

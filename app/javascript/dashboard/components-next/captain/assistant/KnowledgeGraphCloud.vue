@@ -266,21 +266,33 @@ const truncateText = (value, maxLength = 34) => {
   return `${clean.slice(0, maxLength - 1)}…`;
 };
 
+const detectDarkMode = () => {
+  if (typeof document === 'undefined') return false;
+  return (
+    document.body?.classList.contains('dark') ||
+    document.documentElement?.classList.contains('dark')
+  );
+};
+
 const activeClusterKey = ref('all');
 const selectedNodeId = ref(null);
+const inspectorOpen = ref(true);
 const hoveredNodeId = ref(null);
 const isFullscreen = ref(false);
 const copiedAnswer = ref(false);
 const autoOrbit = ref(true);
 const bloomEnabled = ref(true);
 const webglReady = ref(false);
+const isDarkTheme = ref(detectDarkMode());
 
 const stageContainerRef = ref(null);
 const graph3dInstance = shallowRef(null);
 const bloomPassRef = shallowRef(null);
+const starfieldRef = shallowRef(null);
 const orbitAngleRef = ref(0);
 const orbitRafRef = ref(null);
 const resizeObserverRef = shallowRef(null);
+const themeObserverRef = shallowRef(null);
 
 const simNodes = ref([]);
 const simEdges = ref([]);
@@ -565,32 +577,40 @@ const buildGraphTopology = () => {
 
 const buildNodeThreeObject = node => {
   const group = new THREE.Group();
+  const dark = isDarkTheme.value;
   const isSelected =
-    node.kind === 'faq' && selectedNode.value?.rawId === node.rawId;
+    node.kind === 'faq' &&
+    inspectorOpen.value &&
+    selectedNode.value?.rawId === node.rawId;
 
   const baseRadius =
     node.kind === 'core'
-      ? 13
+      ? 13.5
       : node.kind === 'cluster'
-        ? 8.5
+        ? 9
         : isSelected
-          ? 5.8
-          : 4.2;
+          ? 6.2
+          : 4.5;
 
   const sphereGeo = new THREE.SphereGeometry(baseRadius, 28, 28);
   const sphereMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(isSelected ? '#ffffff' : node.palette.dot),
+    color: new THREE.Color(
+      isSelected && dark ? '#ffffff' : node.palette.dot
+    ),
     emissive: new THREE.Color(node.palette.dot),
-    emissiveIntensity:
-      node.kind === 'core'
-        ? 1.4
+    emissiveIntensity: dark
+      ? node.kind === 'core'
+        ? 1.35
         : node.kind === 'cluster'
-          ? 1.05
+          ? 1.0
           : isSelected
-            ? 1.5
-            : 0.75,
-    roughness: 0.18,
-    metalness: 0.35,
+            ? 1.45
+            : 0.72
+      : isSelected
+        ? 0.42
+        : 0.2,
+    roughness: dark ? 0.18 : 0.22,
+    metalness: dark ? 0.35 : 0.12,
   });
   const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
   group.add(sphereMesh);
@@ -601,8 +621,8 @@ const buildNodeThreeObject = node => {
     const haloMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(node.palette.dot),
       transparent: true,
-      opacity: isSelected ? 0.28 : 0.16,
-      blending: THREE.AdditiveBlending,
+      opacity: dark ? (isSelected ? 0.28 : 0.16) : isSelected ? 0.22 : 0.12,
+      blending: dark ? THREE.AdditiveBlending : THREE.NormalBlending,
       depthWrite: false,
     });
     group.add(new THREE.Mesh(haloGeo, haloMat));
@@ -612,10 +632,10 @@ const buildNodeThreeObject = node => {
   if (node.kind === 'core') {
     const ringGeo = new THREE.TorusGeometry(baseRadius * 1.9, 0.45, 16, 64);
     const ringMat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color('#38bdf8'),
+      color: new THREE.Color(dark ? '#38bdf8' : '#0284c7'),
       transparent: true,
-      opacity: 0.55,
-      blending: THREE.AdditiveBlending,
+      opacity: dark ? 0.55 : 0.35,
+      blending: dark ? THREE.AdditiveBlending : THREE.NormalBlending,
     });
     const ringMesh = new THREE.Mesh(ringGeo, ringMat);
     ringMesh.rotation.x = Math.PI / 2.6;
@@ -624,14 +644,29 @@ const buildNodeThreeObject = node => {
 
   // Crisp 3D billboard text sprite below sphere
   const sprite = new SpriteText(node.label || '');
-  sprite.color =
-    node.kind === 'core'
-      ? '#f8fafc'
-      : node.kind === 'cluster'
-        ? '#f1f5f9'
-        : isSelected
-          ? '#ffffff'
-          : '#cbd5e1';
+  if (dark) {
+    sprite.color =
+      node.kind === 'core'
+        ? '#f8fafc'
+        : node.kind === 'cluster'
+          ? '#f1f5f9'
+          : isSelected
+            ? '#ffffff'
+            : '#cbd5e1';
+    sprite.backgroundColor =
+      node.kind !== 'faq' || isSelected
+        ? 'rgba(15, 23, 42, 0.84)'
+        : 'rgba(15, 23, 42, 0.52)';
+  } else {
+    sprite.color =
+      node.kind === 'core' || node.kind === 'cluster' || isSelected
+        ? '#0f172a'
+        : '#334155';
+    sprite.backgroundColor =
+      node.kind !== 'faq' || isSelected
+        ? 'rgba(255, 255, 255, 0.94)'
+        : 'rgba(248, 250, 252, 0.84)';
+  }
   sprite.textHeight =
     node.kind === 'core'
       ? 5.2
@@ -643,14 +678,10 @@ const buildNodeThreeObject = node => {
   sprite.fontWeight =
     node.kind === 'faq' && !isSelected ? '500' : '700';
   sprite.fontFace = 'Inter, system-ui, -apple-system, sans-serif';
-  sprite.backgroundColor =
-    node.kind !== 'faq' || isSelected
-      ? 'rgba(15, 23, 42, 0.82)'
-      : 'rgba(15, 23, 42, 0.48)';
   sprite.padding = node.kind !== 'faq' || isSelected ? 2.2 : 1.4;
   sprite.borderRadius = 4;
-  if (isSelected || node.kind === 'cluster') {
-    sprite.borderWidth = 0.5;
+  if (isSelected || node.kind === 'cluster' || !dark) {
+    sprite.borderWidth = isSelected || node.kind === 'cluster' ? 0.55 : 0.3;
     sprite.borderColor = node.palette.dot;
   }
   sprite.position.set(0, -(baseRadius + 6.5), 0);
@@ -700,14 +731,16 @@ const addStarfieldToScene = scene => {
 
   const stars = new THREE.Points(geo, mat);
   stars.name = 'onelink-starfield';
+  stars.visible = isDarkTheme.value;
   scene.add(stars);
+  starfieldRef.value = stars;
 
-  const ambient = new THREE.AmbientLight(0xffffff, 1.35);
+  const ambient = new THREE.AmbientLight(0xffffff, 1.55);
   ambient.name = 'onelink-ambient';
   scene.add(ambient);
 
-  const pointLight = new THREE.PointLight(0x60a5fa, 2.8, 900);
-  pointLight.position.set(80, 120, 160);
+  const pointLight = new THREE.PointLight(0x60a5fa, 2.6, 950);
+  pointLight.position.set(90, 140, 180);
   scene.add(pointLight);
 };
 
@@ -721,38 +754,34 @@ const flyToNode3D = node => {
   fg.cameraPosition(
     {
       x: (node.x || 0) * distRatio,
-      y: (node.y || 0) * distRatio,
-      z: (node.z || 0) * distRatio + 20,
+      y: (node.y || 0) * distRatio + 16,
+      z: (node.z || 0) * distRatio,
     },
     { x: node.x || 0, y: node.y || 0, z: node.z || 0 },
-    1150
+    1050
   );
 };
 
 const resetCamera3D = () => {
   const fg = graph3dInstance.value;
   if (!fg) return;
-  fg.cameraPosition(
-    { x: 0, y: 35, z: 360 },
-    { x: 0, y: 0, z: 0 },
-    950
-  );
+  fg.cameraPosition({ x: 0, y: 32, z: 340 }, { x: 0, y: 0, z: 0 }, 900);
 };
 
 const zoomCamera3D = factor => {
   const fg = graph3dInstance.value;
   if (!fg) return;
   autoOrbit.value = false;
-  const cam = fg.camera();
-  if (!cam) return;
+  const pos = fg.cameraPosition();
+  if (!pos) return;
   fg.cameraPosition(
     {
-      x: cam.position.x * factor,
-      y: cam.position.y * factor,
-      z: cam.position.z * factor,
+      x: pos.x * factor,
+      y: pos.y * factor,
+      z: pos.z * factor,
     },
     { x: 0, y: 0, z: 0 },
-    420
+    380
   );
 };
 
@@ -762,16 +791,32 @@ const refresh3DAppearance = () => {
   fg.nodeThreeObject(node => buildNodeThreeObject(node));
 };
 
+const applyThemeTo3D = () => {
+  const fg = graph3dInstance.value;
+  const dark = isDarkTheme.value;
+  if (fg) {
+    fg.backgroundColor(dark ? '#050814' : '#ffffff');
+    fg.linkOpacity(dark ? 0.42 : 0.55);
+  }
+  if (bloomPassRef.value) {
+    bloomPassRef.value.strength = dark && bloomEnabled.value ? 1.1 : 0;
+  }
+  if (starfieldRef.value) {
+    starfieldRef.value.visible = dark;
+  }
+  refresh3DAppearance();
+};
+
 const startOrbitLoop = () => {
   if (orbitRafRef.value) cancelAnimationFrame(orbitRafRef.value);
   const step = () => {
     const fg = graph3dInstance.value;
     if (fg && autoOrbit.value && !hoveredNodeId.value) {
-      orbitAngleRef.value += 0.0022;
-      const radius = 355;
+      orbitAngleRef.value += 0.002;
+      const radius = 340;
       fg.cameraPosition({
         x: radius * Math.sin(orbitAngleRef.value),
-        y: 32 * Math.sin(orbitAngleRef.value * 0.6),
+        y: 28 * Math.sin(orbitAngleRef.value * 0.6),
         z: radius * Math.cos(orbitAngleRef.value),
       });
     }
@@ -782,7 +827,6 @@ const startOrbitLoop = () => {
 
 const init3DForceEngine = async () => {
   if (typeof window === 'undefined' || !stageContainerRef.value) return;
-  // Skip WebGL boot inside headless jsdom unit tests
   if (
     typeof navigator !== 'undefined' &&
     /jsdom/i.test(navigator.userAgent || '')
@@ -796,25 +840,27 @@ const init3DForceEngine = async () => {
     const container = stageContainerRef.value;
     if (!container) return;
 
+    isDarkTheme.value = detectDarkMode();
+    const dark = isDarkTheme.value;
     const topology = buildGraphTopology();
-    const width = container.clientWidth || 720;
-    const height = container.clientHeight || 540;
+    const width = container.clientWidth || 960;
+    const height = container.clientHeight || 680;
 
     const fg = ForceGraph3D({ controlType: 'orbit' })(container)
       .width(width)
       .height(height)
-      .backgroundColor('#060913')
+      .backgroundColor(dark ? '#050814' : '#ffffff')
       .showNavInfo(false)
       .graphData(topology)
       .nodeId('id')
       .nodeVal('val')
       .nodeThreeObject(node => buildNodeThreeObject(node))
-      .linkColor(link => link.stroke || '#38bdf8')
-      .linkOpacity(0.42)
+      .linkColor(link => link.stroke || '#3b82f6')
+      .linkOpacity(dark ? 0.42 : 0.55)
       .linkWidth(link => {
         if (link.kind === 'backbone') return 1.8;
-        if (link.kind === 'semantic') return 0.9;
-        return 1.25;
+        if (link.kind === 'semantic') return 0.95;
+        return 1.3;
       })
       .linkCurvature(link => (link.kind === 'semantic' ? 0.28 : 0.12))
       .linkDirectionalParticles(link => {
@@ -824,12 +870,16 @@ const init3DForceEngine = async () => {
       })
       .linkDirectionalParticleWidth(2.4)
       .linkDirectionalParticleSpeed(0.0055)
-      .linkDirectionalParticleColor(link => link.stroke || '#38bdf8')
+      .linkDirectionalParticleColor(link => link.stroke || '#3b82f6')
       .onNodeHover(node => {
         hoveredNodeId.value = node ? node.id : null;
         if (container) {
           container.style.cursor = node ? 'pointer' : 'grab';
         }
+      })
+      .onBackgroundClick(() => {
+        inspectorOpen.value = false;
+        refresh3DAppearance();
       })
       .onNodeClick(node => {
         if (!node) return;
@@ -844,6 +894,7 @@ const init3DForceEngine = async () => {
         }
         if (node.kind === 'faq') {
           selectedNodeId.value = node.rawId;
+          inspectorOpen.value = true;
           refresh3DAppearance();
           flyToNode3D(node);
         }
@@ -852,7 +903,6 @@ const init3DForceEngine = async () => {
         autoOrbit.value = false;
       });
 
-    // Tune 3D force distances
     const linkForce = fg.d3Force('link');
     if (linkForce) {
       linkForce.distance(link => link.distance || 85);
@@ -862,29 +912,27 @@ const init3DForceEngine = async () => {
       chargeForce.strength(node => {
         if (node.kind === 'core') return -420;
         if (node.kind === 'cluster') return -260;
-        return -110;
+        return -115;
       });
     }
 
-    // Add UnrealBloomPass for neon glow
     try {
       const composer = fg.postProcessingComposer();
       const bloomPass = new UnrealBloomPass(
         new THREE.Vector2(width, height),
-        1.15,
+        dark && bloomEnabled.value ? 1.1 : 0,
         0.45,
         0.18
       );
       composer.addPass(bloomPass);
       bloomPassRef.value = bloomPass;
     } catch {
-      // Fallback if postprocessing composer unavailable
+      // Ignore if postprocessing unavailable
     }
 
     addStarfieldToScene(fg.scene());
-    fg.cameraPosition({ x: 0, y: 35, z: 360 });
+    fg.cameraPosition({ x: 0, y: 32, z: 340 });
 
-    // Stop auto-orbit when user manually interacts with canvas
     const domElem = fg.renderer()?.domElement;
     if (domElem) {
       domElem.addEventListener(
@@ -905,12 +953,12 @@ const init3DForceEngine = async () => {
 
     if (typeof ResizeObserver !== 'undefined') {
       const ro = new ResizeObserver(entries => {
-        for (const entry of entries) {
+        entries.forEach(entry => {
           const { width: w, height: h } = entry.contentRect;
           if (w > 0 && h > 0 && graph3dInstance.value) {
             graph3dInstance.value.width(w).height(h);
           }
-        }
+        });
       });
       ro.observe(container);
       resizeObserverRef.value = ro;
@@ -947,11 +995,34 @@ watch(
 
 watch(bloomEnabled, enabled => {
   if (bloomPassRef.value) {
-    bloomPassRef.value.strength = enabled ? 1.15 : 0;
+    bloomPassRef.value.strength = isDarkTheme.value && enabled ? 1.1 : 0;
   }
 });
 
+watch(isDarkTheme, () => {
+  applyThemeTo3D();
+});
+
 onMounted(() => {
+  isDarkTheme.value = detectDarkMode();
+  if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
+    const mo = new MutationObserver(() => {
+      const nextDark = detectDarkMode();
+      if (nextDark !== isDarkTheme.value) {
+        isDarkTheme.value = nextDark;
+      }
+    });
+    if (document.body) {
+      mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    }
+    if (document.documentElement) {
+      mo.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+    }
+    themeObserverRef.value = mo;
+  }
   init3DForceEngine();
 });
 
@@ -962,8 +1033,14 @@ onBeforeUnmount(() => {
   if (resizeObserverRef.value) {
     resizeObserverRef.value.disconnect();
   }
-  if (graph3dInstance.value?._destructor) {
-    graph3dInstance.value._destructor();
+  if (themeObserverRef.value) {
+    themeObserverRef.value.disconnect();
+  }
+  if (graph3dInstance.value) {
+    const destructor = graph3dInstance.value._destructor;
+    if (typeof destructor === 'function') {
+      destructor.call(graph3dInstance.value);
+    }
   }
 });
 
@@ -1010,6 +1087,7 @@ const selectCluster = key => {
 
 const selectNode = rawId => {
   selectedNodeId.value = rawId;
+  inspectorOpen.value = true;
   if (graph3dInstance.value) {
     refresh3DAppearance();
     const gData = graph3dInstance.value.graphData();
@@ -1063,404 +1141,253 @@ const handleSourceClick = documentable => {
 
 <template>
   <div
-    class="flex flex-col gap-4"
-    :class="
+    class="relative w-full overflow-hidden transition-colors"
+    :class="[
+      isDarkTheme ? 'bg-[#050814]' : 'bg-white',
       isFullscreen
-        ? 'fixed inset-4 z-50 rounded-2xl border border-n-weak bg-n-surface-1 p-5 shadow-2xl overflow-y-auto'
-        : ''
-    "
-    data-testid="knowledge-graph-cloud"
+        ? 'fixed inset-0 z-50 h-screen w-screen'
+        : 'h-[calc(100vh-3.5rem)] min-h-[640px]',
+    ]"
   >
-    <!-- Top Topic Filter Bar & 3D WebGL Engine Status -->
+    <!-- Full-Bleed 3D WebGL Canvas -->
     <div
-      class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-n-weak bg-n-solid-2 px-4 py-3"
-    >
-      <div class="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          class="inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-medium transition-all"
-          :class="
-            activeClusterKey === 'all'
-              ? 'border-n-brand bg-n-brand/10 text-n-blue-11 shadow-sm'
-              : 'border-n-weak bg-n-surface-1 text-n-slate-11 hover:text-n-slate-12'
-          "
-          @click="selectCluster('all')"
-        >
-          <Icon icon="i-lucide-orbit" class="size-3.5" />
-          <span>{{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.ALL_TOPICS') }}</span>
-          <span
-            class="rounded-full bg-n-alpha-2 px-1.5 py-0.5 text-[11px] font-semibold"
-          >
-            {{ normalizedItems.length }}
-          </span>
-        </button>
+      ref="stageContainerRef"
+      class="h-full w-full"
+      data-testid="knowledge-3d-webgl-canvas"
+    />
 
-        <button
-          v-for="cluster in clusters"
-          :key="cluster.key"
-          type="button"
-          class="inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-medium transition-all"
-          :class="
-            activeClusterKey === cluster.key
-              ? cluster.palette.chip
-              : 'border-n-weak bg-n-surface-1 text-n-slate-11 hover:text-n-slate-12'
-          "
-          data-testid="knowledge-cluster-chip"
-          @click="selectCluster(cluster.key)"
+    <!-- Accessible Semantic Node Hooks (kept in DOM for screen readers & deterministic unit specs) -->
+    <div class="sr-only" aria-hidden="false">
+      <button
+        v-for="node in faqNodes"
+        :key="node.id"
+        type="button"
+        data-testid="knowledge-graph-node"
+        @click="selectNode(node.rawId)"
+      >
+        {{ node.label }}
+      </button>
+    </div>
+
+    <!-- Top-Left Floating Topic Filter Pills (Minimal, No Noise) -->
+    <div
+      v-if="clusters.length > 1"
+      class="pointer-events-auto absolute left-4 top-4 z-10 flex max-w-[calc(100%-14rem)] flex-wrap items-center gap-1.5"
+    >
+      <button
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium shadow-sm backdrop-blur-md transition-all"
+        :class="
+          activeClusterKey === 'all'
+            ? 'border-n-brand bg-n-brand text-white'
+            : isDarkTheme
+              ? 'border-white/10 bg-slate-900/75 text-slate-300 hover:text-white'
+              : 'border-slate-200/90 bg-white/90 text-slate-700 hover:border-slate-300 hover:text-slate-950'
+        "
+        @click="selectCluster('all')"
+      >
+        <span>{{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.ALL_TOPICS') }}</span>
+      </button>
+
+      <button
+        v-for="cluster in clusters"
+        :key="cluster.key"
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium shadow-sm backdrop-blur-md transition-all"
+        :class="
+          activeClusterKey === cluster.key
+            ? cluster.palette.chip
+            : isDarkTheme
+              ? 'border-white/10 bg-slate-900/75 text-slate-300 hover:text-white'
+              : 'border-slate-200/90 bg-white/90 text-slate-700 hover:border-slate-300 hover:text-slate-950'
+        "
+        data-testid="knowledge-cluster-chip"
+        @click="selectCluster(cluster.key)"
+      >
+        <span
+          class="size-2 rounded-full"
+          :style="{ backgroundColor: cluster.palette.dot }"
+        />
+        <span>{{ cluster.label }}</span>
+      </button>
+    </div>
+
+    <!-- Top-Right Compact Floating 3D Controls -->
+    <div
+      class="pointer-events-auto absolute right-4 top-4 z-10 flex items-center gap-1 rounded-full border p-1 shadow-sm backdrop-blur-md"
+      :class="
+        isDarkTheme
+          ? 'border-white/10 bg-slate-900/80 text-slate-200'
+          : 'border-slate-200/90 bg-white/90 text-slate-700'
+      "
+    >
+      <button
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all"
+        :class="
+          autoOrbit
+            ? 'bg-sky-500/20 text-sky-600 dark:text-sky-300'
+            : 'opacity-70 hover:opacity-100'
+        "
+        :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.AUTO_ORBIT')"
+        @click="autoOrbit = !autoOrbit"
+      >
+        <Icon icon="i-lucide-rotate-3d" class="size-3.5" />
+        <span class="hidden sm:inline">{{
+          t('CAPTAIN.RESPONSES.GRAPH.AUTO_ORBIT')
+        }}</span>
+      </button>
+
+      <Button
+        icon="i-lucide-zoom-out"
+        size="xs"
+        variant="ghost"
+        color="slate"
+        :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.ZOOM_OUT')"
+        @click="zoomCamera3D(1.22)"
+      />
+      <Button
+        icon="i-lucide-compass"
+        size="xs"
+        variant="ghost"
+        color="slate"
+        :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.RESET_3D_CAMERA')"
+        @click="resetCamera3D"
+      />
+      <Button
+        icon="i-lucide-zoom-in"
+        size="xs"
+        variant="ghost"
+        color="slate"
+        :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.ZOOM_IN')"
+        @click="zoomCamera3D(0.8)"
+      />
+      <Button
+        :icon="isFullscreen ? 'i-lucide-minimize' : 'i-lucide-expand'"
+        size="xs"
+        variant="ghost"
+        color="slate"
+        :title="
+          isFullscreen
+            ? t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.EXIT_FULLSCREEN')
+            : t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.FULLSCREEN')
+        "
+        @click="isFullscreen = !isFullscreen"
+      />
+    </div>
+
+    <!-- Floating Inspector Card (Only visible when a node is selected, dismissible via × or background click) -->
+    <div
+      v-if="selectedNode && inspectorOpen"
+      class="pointer-events-auto absolute bottom-4 right-4 z-20 flex max-h-[calc(100%-5rem)] w-80 flex-col gap-3 overflow-y-auto rounded-2xl border p-4 shadow-2xl backdrop-blur-xl sm:w-96"
+      :class="
+        isDarkTheme
+          ? 'border-white/10 bg-slate-900/90 text-slate-100'
+          : 'border-slate-200/90 bg-white/95 text-slate-900'
+      "
+    >
+      <div class="flex items-center justify-between gap-2">
+        <span
+          class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium"
+          :class="selectedNode.palette.chip"
         >
           <span
             class="size-2 rounded-full"
-            :style="{ backgroundColor: cluster.palette.dot }"
+            :style="{ backgroundColor: selectedNode.palette.dot }"
           />
-          <span>{{ cluster.label }}</span>
-          <span class="opacity-75">({{ cluster.count }})</span>
-        </button>
-      </div>
-
-      <div class="flex flex-wrap items-center gap-2">
-        <span
-          class="inline-flex items-center gap-1.5 rounded-lg border border-n-violet-6/60 bg-n-violet-3/40 px-2.5 py-1 text-[11px] font-semibold text-n-violet-11"
-        >
-          <Icon icon="i-lucide-sparkles" class="size-3.5" />
-          {{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.ENGINE_BADGE') }}
+          {{ selectedNode.clusterLabel }}
         </span>
-        <span
-          class="inline-flex items-center gap-1.5 rounded-lg border border-n-weak bg-n-surface-1 px-2.5 py-1 text-xs text-n-slate-11"
-        >
-          <Icon icon="i-lucide-lock" class="size-3.5 text-n-slate-10" />
-          {{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.READ_ONLY_BADGE') }}
-        </span>
-      </div>
-    </div>
 
-    <!-- Main Split View: 3D WebGL Galaxy Stage + Read-Only Inspector -->
-    <div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
-      <!-- 3D WebGL Force Graph Stage -->
-      <div
-        class="relative flex flex-col overflow-hidden rounded-2xl border border-n-weak bg-[#060913] shadow-xl lg:col-span-7"
-      >
-        <!-- Top Translucent 3D Telemetry & Camera Toolbar -->
-        <div
-          class="z-10 flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-slate-950/80 px-4 py-2.5 text-xs text-slate-300 backdrop-blur-md"
-        >
-          <div class="flex flex-wrap items-center gap-3">
-            <span class="inline-flex items-center gap-1.5 font-semibold text-white">
-              <Icon icon="i-lucide-box" class="size-3.5 text-sky-400" />
+        <div class="flex items-center gap-1">
+          <button
+            v-if="selectedNode.raw.documentable"
+            type="button"
+            class="inline-flex items-center gap-1 rounded-lg border border-n-weak bg-n-surface-1 px-2 py-0.5 text-[11px] text-n-slate-11"
+            @click="handleSourceClick(selectedNode.raw.documentable)"
+          >
+            <Icon
+              icon="i-lucide-file-text"
+              class="size-3 shrink-0 text-n-brand"
+            />
+            <span
+              v-if="
+                selectedNode.raw.documentable.type === 'Captain::Document'
+              "
+              class="max-w-32 truncate"
+            >
+              {{ selectedNode.raw.documentable.name }}
+            </span>
+            <span v-else>
               {{
-                t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.NODES_COUNT', {
-                  count: faqNodes.length,
+                t('CAPTAIN.RESPONSES.DOCUMENTABLE.CONVERSATION', {
+                  id: selectedNode.raw.documentable.display_id,
                 })
               }}
             </span>
-            <span class="text-slate-600">•</span>
+          </button>
+
+          <button
+            type="button"
+            class="inline-flex size-6 items-center justify-center rounded-lg text-n-slate-10 transition-colors hover:bg-n-alpha-2 hover:text-n-slate-12"
+            @click="inspectorOpen = false"
+          >
+            <Icon icon="i-lucide-x" class="size-4" />
+          </button>
+        </div>
+      </div>
+
+      <h3 class="m-0 text-sm font-semibold leading-snug text-n-slate-12">
+        {{ selectedNode.question }}
+      </h3>
+
+      <div
+        class="flex flex-col gap-1.5 rounded-xl border border-n-weak bg-n-surface-1 p-3"
+      >
+        <div class="flex items-center justify-between gap-2">
+          <span
+            class="text-[11px] font-medium uppercase tracking-wide text-n-slate-10"
+          >
+            {{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.ANSWER_LABEL') }}
+          </span>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-n-slate-11 transition-colors hover:bg-n-alpha-2 hover:text-n-slate-12"
+            @click="copyAnswerToClipboard"
+          >
+            <Icon
+              :icon="copiedAnswer ? 'i-lucide-check' : 'i-lucide-copy'"
+              class="size-3"
+            />
             <span>
               {{
-                t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.EDGES_COUNT', {
-                  count: simEdges.length,
-                })
+                copiedAnswer
+                  ? t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.COPIED')
+                  : t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.COPY_ANSWER')
               }}
             </span>
-            <template v-if="documentSourcesCount > 0">
-              <span class="text-slate-600">•</span>
-              <span>
-                {{
-                  t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.SOURCES_COUNT', {
-                    count: documentSourcesCount,
-                  })
-                }}
-              </span>
-            </template>
-          </div>
-
-          <div class="flex items-center gap-1">
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-all"
-              :class="
-                autoOrbit
-                  ? 'border-sky-500/60 bg-sky-500/20 text-sky-300'
-                  : 'border-white/10 bg-white/5 text-slate-400 hover:text-white'
-              "
-              :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.AUTO_ORBIT')"
-              @click="autoOrbit = !autoOrbit"
-            >
-              <Icon icon="i-lucide-rotate-3d" class="size-3.5" />
-              <span class="hidden sm:inline">{{ t('CAPTAIN.RESPONSES.GRAPH.AUTO_ORBIT') }}</span>
-            </button>
-
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-all"
-              :class="
-                bloomEnabled
-                  ? 'border-purple-500/60 bg-purple-500/20 text-purple-300'
-                  : 'border-white/10 bg-white/5 text-slate-400 hover:text-white'
-              "
-              :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.BLOOM_GLOW')"
-              @click="bloomEnabled = !bloomEnabled"
-            >
-              <Icon icon="i-lucide-sparkles" class="size-3.5" />
-              <span class="hidden sm:inline">{{ t('CAPTAIN.RESPONSES.GRAPH.BLOOM_GLOW') }}</span>
-            </button>
-
-            <Button
-              icon="i-lucide-flame"
-              size="xs"
-              variant="ghost"
-              color="slate"
-              :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.REHEAT_PHYSICS')"
-              data-testid="knowledge-graph-reheat"
-              @click="reheatPhysics"
-            />
-            <Button
-              icon="i-lucide-zoom-out"
-              size="xs"
-              variant="ghost"
-              color="slate"
-              :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.ZOOM_OUT')"
-              @click="zoomCamera3D(1.22)"
-            />
-            <Button
-              icon="i-lucide-compass"
-              size="xs"
-              variant="ghost"
-              color="slate"
-              :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.RESET_3D_CAMERA')"
-              @click="resetCamera3D"
-            />
-            <Button
-              icon="i-lucide-zoom-in"
-              size="xs"
-              variant="ghost"
-              color="slate"
-              :title="t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.ZOOM_IN')"
-              @click="zoomCamera3D(0.8)"
-            />
-            <Button
-              :icon="isFullscreen ? 'i-lucide-minimize' : 'i-lucide-expand'"
-              size="xs"
-              variant="ghost"
-              color="slate"
-              :title="
-                isFullscreen
-                  ? t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.EXIT_FULLSCREEN')
-                  : t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.FULLSCREEN')
-              "
-              @click="isFullscreen = !isFullscreen"
-            />
-          </div>
+          </button>
         </div>
-
-        <!-- 3D WebGL Canvas Mount + Accessible Node Overlay for Keyboard/Test Navigation -->
-        <div
-          class="relative w-full overflow-hidden bg-[#060913]"
-          :class="isFullscreen ? 'h-[calc(100vh-14rem)]' : 'h-[560px]'"
+        <p
+          class="m-0 whitespace-pre-line text-xs leading-relaxed text-n-slate-12"
         >
-          <div
-            ref="stageContainerRef"
-            class="h-full w-full"
-            data-testid="knowledge-3d-webgl-canvas"
-          />
-
-          <!-- Accessible / Fallback Semantic Node Hooks (kept in DOM for screen readers & deterministic unit specs) -->
-          <div
-            class="sr-only"
-            aria-hidden="false"
-          >
-            <button
-              v-for="node in faqNodes"
-              :key="node.id"
-              type="button"
-              data-testid="knowledge-graph-node"
-              @click="selectNode(node.rawId)"
-            >
-              {{ node.label }}
-            </button>
-          </div>
-
-          <!-- Bottom Floating 3D Navigation Pill -->
-          <div
-            class="pointer-events-none absolute bottom-3 left-3 right-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-slate-950/75 px-3.5 py-2 text-[11px] text-slate-300 backdrop-blur-md"
-          >
-            <div class="flex items-center gap-2">
-              <Icon icon="i-lucide-orbit" class="size-3.5 text-sky-400 shrink-0" />
-              <span>{{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.DRAG_HINT') }}</span>
-            </div>
-            <span
-              v-if="selectedNode"
-              class="hidden items-center gap-1.5 text-sky-300 sm:inline-flex"
-            >
-              <span
-                class="size-2 rounded-full"
-                :style="{ backgroundColor: selectedNode.palette.dot }"
-              />
-              {{ selectedNode.label }}
-            </span>
-          </div>
-        </div>
+          {{ selectedNode.answer }}
+        </p>
       </div>
 
-      <!-- Read-Only Knowledge Node Inspector -->
-      <div
-        class="flex flex-col justify-between rounded-2xl border border-n-weak bg-n-solid-2 p-5 lg:col-span-5"
-      >
-        <div v-if="selectedNode" class="flex flex-col gap-4">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <span
-              class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium"
-              :class="selectedNode.palette.chip"
-            >
-              <span
-                class="size-2 rounded-full"
-                :style="{ backgroundColor: selectedNode.palette.dot }"
-              />
-              {{ selectedNode.clusterLabel }}
-            </span>
-
-            <div class="flex items-center gap-2">
-              <button
-                v-if="webglReady"
-                type="button"
-                class="inline-flex items-center gap-1 rounded-lg border border-n-weak bg-n-surface-1 px-2.5 py-1 text-xs text-n-slate-11 transition-colors hover:border-n-brand hover:text-n-slate-12"
-                @click="flyToSelectedNode"
-              >
-                <Icon icon="i-lucide-focus" class="size-3.5 text-n-brand" />
-                <span>{{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.FLY_TO_NODE') }}</span>
-              </button>
-
-              <div
-                v-if="selectedNode.raw.documentable"
-                class="inline-flex items-center gap-1.5 rounded-lg border border-n-weak bg-n-surface-1 px-2.5 py-1 text-xs text-n-slate-11"
-              >
-                <Icon
-                  icon="i-lucide-file-text"
-                  class="size-3.5 shrink-0 text-n-brand"
-                />
-                <span
-                  v-if="
-                    selectedNode.raw.documentable.type === 'Captain::Document'
-                  "
-                  class="max-w-44 truncate"
-                  :title="selectedNode.raw.documentable.name"
-                >
-                  {{ selectedNode.raw.documentable.name }}
-                </span>
-                <button
-                  v-else-if="
-                    selectedNode.raw.documentable.type === 'Conversation'
-                  "
-                  type="button"
-                  class="hover:underline"
-                  @click="handleSourceClick(selectedNode.raw.documentable)"
-                >
-                  {{
-                    t('CAPTAIN.RESPONSES.DOCUMENTABLE.CONVERSATION', {
-                      id: selectedNode.raw.documentable.display_id,
-                    })
-                  }}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex flex-col gap-1.5">
-            <span
-              class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
-            >
-              {{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.QUESTION_LABEL') }}
-            </span>
-            <h3 class="m-0 text-base font-semibold leading-6 text-n-slate-12">
-              {{ selectedNode.question }}
-            </h3>
-          </div>
-
-          <div
-            class="flex flex-col gap-2 rounded-xl border border-n-weak bg-n-surface-1 p-4"
-          >
-            <div class="flex items-center justify-between gap-2">
-              <span
-                class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
-              >
-                {{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.ANSWER_LABEL') }}
-              </span>
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs text-n-slate-11 transition-colors hover:bg-n-alpha-2 hover:text-n-slate-12"
-                @click="copyAnswerToClipboard"
-              >
-                <Icon
-                  :icon="copiedAnswer ? 'i-lucide-check' : 'i-lucide-copy'"
-                  class="size-3.5"
-                />
-                <span>
-                  {{
-                    copiedAnswer
-                      ? t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.COPIED')
-                      : t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.COPY_ANSWER')
-                  }}
-                </span>
-              </button>
-            </div>
-            <p
-              class="m-0 whitespace-pre-line text-sm leading-relaxed text-n-slate-12"
-            >
-              {{ selectedNode.answer }}
-            </p>
-          </div>
-
-          <!-- Semantically Connected Knowledge Nodes -->
-          <div v-if="semanticPeers.length" class="flex flex-col gap-2 pt-1">
-            <span
-              class="inline-flex items-center gap-1.5 text-xs font-medium text-n-slate-11"
-            >
-              <Icon icon="i-lucide-sparkles" class="size-3.5 text-n-brand" />
-              {{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.SIMILAR_NODES') }}
-            </span>
-            <div class="flex flex-wrap gap-1.5">
-              <button
-                v-for="peer in semanticPeers"
-                :key="peer.id"
-                type="button"
-                class="inline-flex items-center gap-1.5 rounded-lg border border-n-blue-6/40 bg-n-blue-3/25 px-2.5 py-1.5 text-left text-xs text-n-slate-12 transition-colors hover:border-n-brand"
-                @click="selectNode(peer.rawId)"
-              >
-                <span
-                  class="size-1.5 rounded-full"
-                  :style="{ backgroundColor: peer.palette.dot }"
-                />
-                <span>{{ peer.label }}</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Other Nodes in the Same Cluster -->
-          <div
-            v-if="relatedClusterNodes.length"
-            class="flex flex-col gap-2 pt-1"
-          >
-            <span class="text-xs font-medium text-n-slate-11">
-              {{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.RELATED_QUESTIONS') }}
-            </span>
-            <div class="flex flex-wrap gap-1.5">
-              <button
-                v-for="rel in relatedClusterNodes"
-                :key="rel.id"
-                type="button"
-                class="rounded-lg border border-n-weak bg-n-surface-1 px-2.5 py-1.5 text-left text-xs text-n-slate-11 transition-colors hover:border-n-brand/40 hover:text-n-slate-12"
-                @click="selectNode(rel.rawId)"
-              >
-                {{ rel.label }}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div
-          v-else
-          class="flex h-full items-center justify-center text-center text-sm text-n-slate-11"
+      <div v-if="semanticPeers.length" class="flex flex-wrap gap-1.5">
+        <button
+          v-for="peer in semanticPeers"
+          :key="peer.id"
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-n-weak bg-n-surface-1 px-2 py-1 text-left text-[11px] text-n-slate-11 transition-colors hover:border-n-brand hover:text-n-slate-12"
+          @click="selectNode(peer.rawId)"
         >
-          {{ t('CAPTAIN.KNOWLEDGE_BASE.GRAPH.SELECT_NODE_HINT') }}
-        </div>
+          <span
+            class="size-1.5 rounded-full"
+            :style="{ backgroundColor: peer.palette.dot }"
+          />
+          <span>{{ peer.label }}</span>
+        </button>
       </div>
     </div>
   </div>

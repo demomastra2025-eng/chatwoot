@@ -77,6 +77,10 @@ const props = defineProps({
     default: 'default',
     validator: value => ['default', 'form', 'full'].includes(value),
   },
+  fullBleed: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(['click', 'close', 'update:currentPage']);
@@ -159,8 +163,14 @@ const handlePageChange = event => {
         <slot name="subHeader" />
       </div>
     </header>
-    <main class="flex-1 px-6 overflow-y-auto">
-      <div class="w-full h-full mx-auto py-4" :class="contentWidthClass">
+    <main
+      class="flex-1"
+      :class="fullBleed ? 'p-0 overflow-hidden' : 'px-6 overflow-y-auto'"
+    >
+      <div
+        class="w-full h-full mx-auto"
+        :class="[contentWidthClass, fullBleed ? 'py-0' : 'py-4']"
+      >
         <slot v-if="!showPaywall" name="controls" />
         <div
           v-if="isFetching"
