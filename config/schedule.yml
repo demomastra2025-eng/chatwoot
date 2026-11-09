@@ -75,12 +75,6 @@ medelement_resource_service_stats_job:
   queue: scheduled_jobs
   active_job: true
 
-# executed every minute to keep Weixin Personal gateway pollers synced after gateway restarts
-weixin_sync_channels_job:
-  cron: '*/1 * * * *'
-  class: 'Weixin::SyncChannelsJob'
-  queue: scheduled_jobs
-
 # executed every 5 minutes to ensure Telegram Personal gateway runtimes stay connected and complete/reconcile history sync
 telegram_personal_sync_channels_job:
   cron: '*/5 * * * *'

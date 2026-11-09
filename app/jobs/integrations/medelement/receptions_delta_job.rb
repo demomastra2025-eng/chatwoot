@@ -3,10 +3,12 @@ class Integrations::Medelement::ReceptionsDeltaJob < ApplicationJob
 
   LOCK_TIMEOUT = 30.minutes
   MAX_BACKOFF_SECONDS = 5.minutes.to_i
+  NEXT_SCHEDULED_TTL = 90.seconds.to_i
 
   discard_on ActiveRecord::RecordNotFound
 
   def perform(hook_id)
+    clear_next_scheduled_lease(hook_id)
     hook = Integrations::Hook.find_by!(id: hook_id, app_id: 'medelement')
     configuration = Integrations::Medelement::Configuration.new(hook: hook)
     return unless enabled?(hook, configuration)
@@ -83,6 +85,25 @@ class Integrations::Medelement::ReceptionsDeltaJob < ApplicationJob
 
     cursor = Integrations::Medelement::SyncCursor.find_by(hook_id: hook.id, name: 'receptions_delta')
     interval = cursor&.current_interval_seconds || fresh_configuration.incremental_receptions_interval_seconds
-    self.class.set(wait: interval + Kernel.rand(0..3)).perform_later(hook.id)
+    return unless claim_next_scheduled_lease(hook.id, interval)
+
+    self.class.set(wait: interval + (hook.id.to_i % 5)).perform_later(hook.id)
+  end
+
+  def next_scheduled_key(hook_id)
+    "MEDELEMENT_RECEPTIONS_DELTA_SCHEDULED::#{hook_id}"
+  end
+
+  def claim_next_scheduled_lease(hook_id, interval)
+    ttl = [interval.to_i + 15, NEXT_SCHEDULED_TTL].max
+    Redis::Alfred.set(next_scheduled_key(hook_id), '1', nx: true, ex: ttl)
+  rescue StandardError
+    true
+  end
+
+  def clear_next_scheduled_lease(hook_id)
+    Redis::Alfred.delete(next_scheduled_key(hook_id))
+  rescue StandardError
+    nil
   end
 end

@@ -46,12 +46,10 @@ RSpec.context 'with valid schedule.yml' do
     )
   end
 
-  it 'syncs Weixin gateway channels every minute' do
+  it 'does not schedule retired Weixin gateway sync' do
     schedule = YAML.safe_load(file.read)
 
-    expect(schedule.dig('weixin_sync_channels_job', 'cron')).to eq('*/1 * * * *')
-    expect(schedule.dig('weixin_sync_channels_job', 'class')).to eq('Weixin::SyncChannelsJob')
-    expect(schedule.dig('weixin_sync_channels_job', 'queue')).to eq('scheduled_jobs')
+    expect(schedule).not_to have_key('weixin_sync_channels_job')
   end
 
   it 'syncs Telegram Personal gateway channels every 5 minutes' do
@@ -178,7 +176,7 @@ RSpec.context 'with valid schedule.yml' do
       expect(job.valid?).to be(true), "Invalid cron for #{name}: #{job.errors.inspect}"
     end
 
-    expect(schedule.dig('accounts_storage_breakdown_refresh_job', 'cron')).to eq('37 * * * *')
+    expect(schedule.dig('accounts_storage_breakdown_refresh_job', 'cron')).to eq('15 4 * * * Asia/Almaty')
     expect(schedule.dig('ai_booking_monitor_job', 'cron')).to eq('3,18,33,48 * * * *')
     expect(schedule.dig('periodic_assignment_job', 'cron')).to eq('13,43 * * * *')
   end
