@@ -406,6 +406,10 @@ en:
       name: 'Kaspi Pay'
       short_description: 'Generate payment links, Unified Kaspi QR, and remote phone invoices with automatic payment status reconciliation.'
       description: 'Connect a virtual Kaspi Pay cashier via SMS to issue payment links, Unified QR codes, and remote Kaspi.kz push invoices right from conversations and appointments.'
+    meta_capi:
+      name: 'Meta Conversions API (CAPI)'
+      short_description: 'Automatically send WhatsApp (CTWA) and CRM conversions (Lead, Schedule, Purchase) back to Meta Ads.'
+      description: 'Connect Meta Conversions API (Dataset / Pixel ID) to automatically attribute and send Lead, Schedule, and Purchase events with deal revenue and Click-to-WhatsApp (ctwa_clid) back to Meta Ads Manager.'
   captain:
     channel_matrix:
       invalid_assistant: Agent not found in this workspace.

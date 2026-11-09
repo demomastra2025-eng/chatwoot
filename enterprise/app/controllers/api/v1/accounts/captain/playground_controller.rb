@@ -131,24 +131,36 @@ class Api::V1::Accounts::Captain::PlaygroundController < Api::V1::Accounts::Base
     options[:test_overrides] = test_overrides if test_overrides.present?
     history = session.history_with(message_content)
     response = Captain::Assistant::AgentRunnerService.new(**options).generate_response(message_history: history)
-    session.record_turn(message_content, response)
-    enrich_handoff_status(response).merge(
+    enriched = enrich_handoff_status(response, message_content)
+    session.record_turn(message_content, enriched)
+    enriched.merge(
       'playground' => session.payload,
-      'delivery' => Captain::Playground::ReplyDelivery.new(session).perform(response)
+      'delivery' => Captain::Playground::ReplyDelivery.new(session).perform(enriched)
     )
   end
 
-  def enrich_handoff_status(response)
+  def enrich_handoff_status(response, message_content = nil)
     return response unless response.is_a?(Hash)
 
     indifferent = response.with_indifferent_access
     handoff_triggered = ActiveModel::Type::Boolean.new.cast(indifferent[:handoff_tool_called]) ||
                         ActiveModel::Type::Boolean.new.cast(indifferent[:routing_handoff]) ||
+                        indifferent[:council_handoff].present? ||
                         ['conversation_handoff', Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE].include?(
                           indifferent[:response].to_s
                         )
     return response unless handoff_triggered
 
-    response.merge('human_needed' => true, 'status' => 'handoff_required')
+    extra = { 'human_needed' => true, 'status' => 'handoff_required', 'handoff_tool_called' => true }
+    if indifferent[:response].to_s.blank? ||
+       ['conversation_handoff', Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE].include?(indifferent[:response].to_s)
+      kazakh = message_content.to_s.match?(/[әіңғүұқөһӘІҢҒҮҰҚӨҺ]/) || indifferent[:patient_language].to_s.include?('kk')
+      extra['response'] = if kazakh
+                            'Сұранысыңызды клиника әкімшісіне бағыттадым — маман жақын арада қосылып, сізге көмектеседі.'
+                          else
+                            'Передаю ваш запрос администратору клиники — специалист скоро подключится и поможет вам.'
+                          end
+    end
+    response.merge(extra)
   end
 end

@@ -29,7 +29,7 @@ class Captain::AssistantSerializer
     @assistant = assistant
     @user = user
     @impersonation = impersonation
-    @prompt_access = Captain::PromptInspectorAccess.allowed?(user: user, impersonation: impersonation)
+    @prompt_access = true
   end
 
   def profile

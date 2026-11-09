@@ -348,6 +348,10 @@ kk:
       name: 'Kaspi Pay'
       short_description: 'Төлем сілтемелерін, бірыңғай Kaspi QR және телефон нөмірі бойынша қашықтан шоттарды автоматты тексерумен жіберу.'
       description: 'Диалогтар мен жазбалардан тікелей төлем сілтемелерін, бірыңғай QR және Kaspi.kz қосымшасына шоттар жіберу үшін виртуалды Kaspi Pay кассирін SMS арқылы қосыңыз.'
+    meta_capi:
+      name: 'Meta Conversions API (CAPI)'
+      short_description: 'WhatsApp (CTWA) және CRM жүйесінен лидтерді, жазбаларды және төлемдерді Meta Ads кабинетіне автоматты түрде жіберу.'
+      description: 'Таргет алгоритмдерін оқыту үшін Lead, Schedule және Purchase оқиғаларын мәміле сомасымен және Click-to-WhatsApp (ctwa_clid) идентификаторымен Meta Ads Manager жүйесіне автоматты түрде жіберу үшін Meta Conversions API қосыңыз.'
   captain:
     channel_matrix:
       invalid_assistant: Агент осы кеңістікте табылмады.

@@ -34,6 +34,41 @@ class HookListener < BaseListener
     execute_account_hooks(event, conversation.account, conversation: conversation)
   end
 
+  def crm_deal_created(event)
+    deal, account = extract_deal_and_account(event)
+    return if deal.blank? || account.blank?
+
+    execute_account_hooks(event, account, deal: deal)
+  end
+
+  def crm_deal_stage_changed(event)
+    deal, account = extract_deal_and_account(event)
+    return if deal.blank? || account.blank?
+
+    execute_account_hooks(event, account, deal: deal)
+  end
+
+  def appointment_created(event)
+    appointment, account = extract_appointment_and_account(event)
+    return if appointment.blank? || account.blank?
+
+    execute_account_hooks(event, account, appointment: appointment)
+  end
+
+  def appointment_completed(event)
+    appointment, account = extract_appointment_and_account(event)
+    return if appointment.blank? || account.blank?
+
+    execute_account_hooks(event, account, appointment: appointment)
+  end
+
+  def appointment_updated(event)
+    appointment, account = extract_appointment_and_account(event)
+    return if appointment.blank? || account.blank?
+
+    execute_account_hooks(event, account, appointment: appointment)
+  end
+
   private
 
   def execute_hooks(event, message)
@@ -64,7 +99,14 @@ class HookListener < BaseListener
       'google_translate' => ['message.created'],
       'leadsquared' => ['contact.updated', 'conversation.created', 'conversation.resolved'],
       'macrocrm' => ['message.created'],
-      'medelement' => ['contact.created', 'contact.updated', 'message.created']
+      'medelement' => ['contact.created', 'contact.updated', 'message.created'],
+      'meta_capi' => [
+        'crm.deal.created',
+        'crm.deal.stage_changed',
+        'appointment.created',
+        'appointment.completed',
+        'appointment.updated'
+      ]
     }
 
     return false unless supported_events_map.key?(hook.app_id)

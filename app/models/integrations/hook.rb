@@ -87,6 +87,8 @@ class Integrations::Hook < ApplicationRecord
     app_id == 'kaspi_pay'
   end
 
+  def meta_capi? = app_id == 'meta_capi'
+
   def macrocrm_manager_changed_webhook_url
     frontend_url = ENV.fetch('FRONTEND_URL', nil)
     return if frontend_url.blank? || reference_id.blank? || !macrocrm?
@@ -110,6 +112,7 @@ class Integrations::Hook < ApplicationRecord
   def process_event(event_name)
     return process_medelement_event(event_name) if medelement?
     return process_moysklad_event(event_name) if moysklad?
+    return Integrations::MetaCapi::ProcessorService.process_hook_event(self, event_name) if meta_capi?
 
     # OpenAI integration migrated to Captain::EditorService
     # Other integrations (slack, dialogflow, etc.) handled via HookJob

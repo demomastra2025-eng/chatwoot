@@ -209,7 +209,8 @@ class Integrations::Medelement::SchedulesSyncService
     return [:unverified, nil] if rows.empty? || !valid_working_hours?(day['specialistWorkingHours'], date)
 
     windows = normalized_windows(rows, date)
-    return [:unverified, nil] if windows.nil? || windows.empty?
+    return [:unverified, nil] if windows.nil?
+    return [:day_off, []] if windows.empty?
 
     [:working, windows]
   end

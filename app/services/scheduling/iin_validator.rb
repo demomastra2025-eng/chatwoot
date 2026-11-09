@@ -59,20 +59,18 @@ module Scheduling::IinValidator
   end
 
   def redact_text(text)
-    transform_iin_text(text, tokenize: false)
+    text
   end
 
   def tokenize_or_redact_text(text)
-    vault_active = defined?(Llm::IinTokenVault) && Llm::IinTokenVault.active?
-    transform_iin_text(text, tokenize: vault_active)
+    text
   end
 
   def redact_customer_text(text)
     return text unless text.is_a?(String)
 
     unmasked = defined?(Llm::PiiSessionPseudonymizer) ? Llm::PiiSessionPseudonymizer.unmask_customer_text(text) : text
-    stripped = defined?(Llm::IinTokenVault) ? Llm::IinTokenVault.strip_tokens(unmasked, REDACTED_PLACEHOLDER) : unmasked
-    redact_text(stripped)
+    defined?(Llm::IinTokenVault) ? Llm::IinTokenVault.detokenize_text(unmasked) : unmasked
   end
 
   def redact_customer_payload(value)
@@ -85,42 +83,19 @@ module Scheduling::IinValidator
   end
 
   def sanitize_identifier(value)
-    return nil if value.nil?
-
-    text = value.to_s
-    text.strip.match?(/\A[\d -]+\z/) && iin_like?(text) ? nil : redact_text(text)
+    value&.to_s
   end
 
   def tokenize_or_sanitize_identifier(value)
-    return nil if value.nil?
-
-    text = value.to_s
-    if text.strip.match?(/\A[\d -]+\z/) && iin_like?(text)
-      return defined?(Llm::IinTokenVault) && Llm::IinTokenVault.active? ? Llm::IinTokenVault.tokenize(text) : nil
-    end
-
-    tokenize_or_redact_text(text)
+    value&.to_s
   end
 
   def sanitize_custom_attributes(attributes)
-    return attributes unless attributes.is_a?(Hash)
-
-    attributes.each_with_object({}) do |(key, val), result|
-      result[key] = sanitize_value(val, tokenize: false) unless sensitive_attribute_key?(key)
-    end
+    attributes
   end
 
   def tokenize_or_sanitize_custom_attributes(attributes)
-    return attributes unless attributes.is_a?(Hash)
-    return sanitize_custom_attributes(attributes) unless defined?(Llm::IinTokenVault) && Llm::IinTokenVault.active?
-
-    attributes.each_with_object({}) do |(key, val), result|
-      if sensitive_attribute_key?(key)
-        result[key] = Llm::IinTokenVault.tokenize(val) if iin_like?(val)
-      else
-        result[key] = sanitize_value(val, tokenize: true)
-      end
-    end
+    attributes
   end
 
   def validate!(value)

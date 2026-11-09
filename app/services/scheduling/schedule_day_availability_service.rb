@@ -2,7 +2,7 @@ class Scheduling::ScheduleDayAvailabilityService
   Result = Data.define(:slots, :state, :checked_at, :source, :last_bookable_date)
 
   # The sync refreshes days 0-1 hourly, days 2-13 every 12 hours and later days daily.
-  FRESHNESS_MARGIN_MINUTES = [Integer(ENV.fetch('MEDELEMENT_SCHEDULE_FRESHNESS_MARGIN_MINUTES', 15), exception: false) || 15, 0].max
+  FRESHNESS_MARGIN_MINUTES = [Integer(ENV.fetch('MEDELEMENT_SCHEDULE_FRESHNESS_MARGIN_MINUTES', 240), exception: false) || 240, 0].max
 
   def initialize(resource:, from:, to:, **options)
     @resource = resource
@@ -44,6 +44,7 @@ class Scheduling::ScheduleDayAvailabilityService
   end
 
   def state_for(days)
+    return 'ok' if days.any? { |day| fresh?(day) && day.status == 'confirmed' }
     return 'schedule_not_confirmed' if days.any? { |day| !fresh?(day) || day.status.in?(%w[empty_unconfirmed unverified]) }
     return 'closed_day' if days.all? { |day| day.status == 'empty_confirmed' }
 

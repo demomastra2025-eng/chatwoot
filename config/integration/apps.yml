@@ -633,3 +633,94 @@ kaspi_pay:
       'type': 'object',
       'additionalProperties': true,
     }
+
+meta_capi:
+  id: meta_capi
+  logo: meta_capi.png
+  i18n_key: meta_capi
+  action: /meta_capi
+  hook_type: account
+  allow_multiple_hooks: false
+  access_token_required: true
+  visible_properties:
+    [
+      'dataset_id',
+      'default_currency',
+    ]
+  settings_json_schema:
+    {
+      'type': 'object',
+      'properties':
+        {
+          'dataset_id': { 'type': 'string' },
+          'whatsapp_business_account_id': { 'type': ['string', 'null'] },
+          'page_id': { 'type': ['string', 'null'] },
+          'default_currency': { 'type': 'string' },
+          'test_event_code': { 'type': ['string', 'null'] },
+          'send_lead_on_deal_created': { 'type': 'boolean' },
+          'send_schedule_on_appointment_created': { 'type': 'boolean' },
+          'send_purchase_on_deal_won': { 'type': 'boolean' },
+          'last_synced_at': { 'type': 'string' },
+          'last_sync_summary': { 'type': 'object' },
+        },
+      'required': ['dataset_id'],
+      'additionalProperties': true,
+    }
+  settings_form_schema:
+    [
+      {
+        'label': 'Dataset ID / Pixel ID (Meta Events Manager)',
+        'type': 'text',
+        'name': 'dataset_id',
+        'validation': 'required',
+        'help': 'ID Набора данных или Пикселя из Meta Events Manager (например: 123456789012345).',
+      },
+      {
+        'label': 'Системный токен доступа Conversions API',
+        'type': 'password',
+        'name': 'access_token',
+        'validation': 'required',
+        'store': 'secret_settings',
+        'help': 'Сгенерируйте токен в Meta Events Manager → Настройки → Conversions API → Сгенерировать маркер доступа.',
+      },
+      {
+        'label': 'WhatsApp Business Account ID (WABA ID, опционально)',
+        'type': 'text',
+        'name': 'whatsapp_business_account_id',
+        'help': 'Оставьте пустым для автоопределения из подключённого WhatsApp-инбокса при отправке CTWA-конверсий.',
+      },
+      {
+        'label': 'Валюта по умолчанию (ISO 4217)',
+        'type': 'text',
+        'name': 'default_currency',
+        'value': 'KZT',
+        'help': 'Например: KZT, USD, EUR.',
+      },
+      {
+        'label': 'Код тестирования событий (Test Event Code, опционально)',
+        'type': 'text',
+        'name': 'test_event_code',
+        'help': 'Код вида TEST12345 из вкладки «Тестирование событий» в Meta Events Manager для отладки.',
+      },
+      {
+        'label': 'Отправлять событие Lead при создании новой сделки',
+        'type': 'switch',
+        'name': 'send_lead_on_deal_created',
+        'value': true,
+        'help': 'Автоматически передаёт событие Lead при появлении новой сделки в CRM.',
+      },
+      {
+        'label': 'Отправлять событие Schedule при записи пациента на приём',
+        'type': 'switch',
+        'name': 'send_schedule_on_appointment_created',
+        'value': true,
+        'help': 'Автоматически передаёт событие Schedule при создании записи в Расписании.',
+      },
+      {
+        'label': 'Отправлять событие Purchase с суммой при успешной сделке или оплате',
+        'type': 'switch',
+        'name': 'send_purchase_on_deal_won',
+        'value': true,
+        'help': 'Передаёт событие Purchase с реальной суммой и валютой, когда сделка переходит в успешный этап или запись оплачивается.',
+      },
+    ]

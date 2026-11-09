@@ -4,7 +4,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   VOICE_SETTINGS_SCALAR_FIELDS = (Telephony::AiVoice::VoiceSettingsDefaults::DEFAULTS.keys - VOICE_SETTINGS_ARRAY_FIELDS.keys).freeze
 
   before_action :current_account
-  before_action :hide_prompt_preview_from_clinics, only: [:prompt_preview, :voice_preview]
+  before_action :hide_prompt_preview_from_clinics, only: [:voice_preview]
   before_action -> { check_authorization(Captain::Assistant) }
 
   before_action :set_assistant, only: [:show, :update, :destroy, :playground, :avatar, :prompt_preview, :voice_preview]

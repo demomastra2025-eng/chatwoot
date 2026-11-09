@@ -5,7 +5,8 @@ class HookJob < MutexApplicationJob
     'google_translate' => :google_translate_integration,
     'leadsquared' => :process_leadsquared_integration_with_lock,
     'macrocrm' => :process_macrocrm_integration,
-    'medelement' => :process_medelement_integration
+    'medelement' => :process_medelement_integration,
+    'meta_capi' => :process_meta_capi_integration
   }.freeze
 
   retry_on LockAcquisitionError, wait: 3.seconds, attempts: 3
@@ -106,5 +107,15 @@ class HookJob < MutexApplicationJob
 
     message = event_data[:message]
     message.conversation&.contact if message&.incoming?
+  end
+
+  def process_meta_capi_integration(hook, event_name, event_data)
+    return unless hook.feature_allowed?
+
+    Integrations::MetaCapi::ProcessorService.new(
+      hook: hook,
+      event_name: event_name,
+      event_data: event_data
+    ).perform
   end
 end

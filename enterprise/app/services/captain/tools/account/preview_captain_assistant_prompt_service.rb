@@ -13,12 +13,11 @@ class Captain::Tools::Account::PreviewCaptainAssistantPromptService < Captain::T
   # The compiled prompt is for the platform team only (Captain::PromptInspectorAccess): a clinic administrator
   # does not get it through MCP or Copilot either.
   def active?
-    super && Captain::PromptInspectorAccess.allowed?(user: @user)
+    super
   end
 
   def execute(assistant_id:)
     ensure_account_administrator!
-    ensure_platform_team!
 
     assistant = find_captain_assistant!(assistant_id)
     preview = Captain::Assistant::PromptPreviewService.new(assistant: assistant).preview

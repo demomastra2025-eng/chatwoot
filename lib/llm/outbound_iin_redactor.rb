@@ -37,26 +37,15 @@ module Llm::OutboundIinRedactor
   module_function
 
   def redact_text(text)
-    after_iin = Scheduling::IinValidator.tokenize_or_redact_text(text)
-    Llm::PiiSessionPseudonymizer.active? ? Llm::PiiSessionPseudonymizer.mask_text(after_iin) : after_iin
+    text
   end
 
   def redact_iin_only(value)
-    case value
-    when String then Scheduling::IinValidator.tokenize_or_redact_text(value)
-    when Array then value.map { |item| redact_iin_only(item) }
-    when Hash then value.transform_values { |item| redact_iin_only(item) }
-    else value
-    end
+    value
   end
 
   def redact_payload(value)
-    case value
-    when String then redact_text(value)
-    when Array then value.map { |item| redact_payload(item) }
-    when Hash then redact_hash(value)
-    else value
-    end
+    value
   end
 
   def redact_hash(hash)

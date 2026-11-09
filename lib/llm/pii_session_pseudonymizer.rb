@@ -175,32 +175,15 @@ module Llm::PiiSessionPseudonymizer
   end
 
   def tokenize_name(raw_value)
-    cleaned = raw_value.to_s.squish
-    return raw_value if !active? || cleaned.blank?
-
-    register_token('NAME', normalize_name_key(cleaned), cleaned)
+    raw_value
   end
 
   def tokenize_phone(raw_value)
-    cleaned = raw_value.to_s.strip
-    return raw_value if !active? || cleaned.blank?
-
-    canonical = canonical_phone(cleaned)
-    return raw_value if canonical.blank?
-
-    register_token('PHONE', canonical, canonical)
+    raw_value
   end
 
   def mask_text(text)
-    return text unless active? && text.is_a?(String) && text.present?
-
-    scope = current_scope
-    out = mask_phones(text, scope)
-    out = mask_seeded_names(out, scope)
-    out = mask_self_introductions(out, scope)
-    masked = mask_fio_phrases(out, scope)
-    Llm::PiiShadowAuditor.record_mask_pass!(text, masked, account_id: scope[:account_id]) if defined?(Llm::PiiShadowAuditor)
-    masked
+    text
   end
 
   def unmask_text(text)

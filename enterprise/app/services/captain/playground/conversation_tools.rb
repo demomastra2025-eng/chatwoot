@@ -116,6 +116,26 @@ module Captain::Playground::ConversationTools
 
   def simulate_handoff
     @data['conversation']['status'] = 'open'
+    reason = @args['reason'].presence
+    if @context&.context.is_a?(Hash)
+      faq_result = @context.context[:captain_faq_outcome].to_h
+      faq_miss = faq_result[:assistant_id] == @session.assistant&.id && faq_result[:result] == 'not_found' && !faq_result[:unavailable]
+      @context.context[:pending_human_handoff] = {
+        reason: reason,
+        outcome_signal: faq_miss ? 'faq_no_answer' : nil,
+        timestamp: Time.current
+      }.compact
+      @context.context[Captain::Tools::HandoffTool::AUTHORIZED_CONTEXT_KEY] = true
+      done = Captain::DoneActions.handoff_entry(
+        reason: reason,
+        request: Captain::Runtime::OperationScope.request(@context.context),
+        user_message: @context.context[:captain_v2_current_input]
+      )
+      if done
+        @context.context[:agent_session]&.record_done(done)
+        @context.context[:done_actions] = Captain::DoneActions.remember(@context.context[:done_actions], done)
+      end
+    end
     { action: 'handoff', reason: @args['reason'], simulated: true, external_delivery: false }
   end
 

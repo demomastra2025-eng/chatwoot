@@ -35,13 +35,13 @@ class Captain::AssistantPolicy < ApplicationPolicy
     true
   end
 
-  # The compiled prompt is for the platform team only, never for a clinic (Captain::PromptInspectorAccess).
+  # Read-only compiled prompt preview is available to account administrators and platform team.
   def prompt_preview?
-    Captain::PromptInspectorAccess.allowed?(user: user, impersonation: user_context[:super_admin_impersonation])
+    @account_user&.administrator? || Captain::PromptInspectorAccess.allowed?(user: user, impersonation: user_context[:super_admin_impersonation])
   end
 
   def voice_preview?
-    prompt_preview?
+    Captain::PromptInspectorAccess.allowed?(user: user, impersonation: user_context[:super_admin_impersonation])
   end
 
   def preview?

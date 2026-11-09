@@ -376,7 +376,7 @@ class Captain::Assistant::AgentRunnerService
     return routed_human_suggestion if suggestion_run?
 
     record_routed_handoff(context, reason)
-    human_handoff_response({ reason: reason }, actor&.agent_name).merge('routing_handoff' => true)
+    human_handoff_response({ reason: reason }, actor&.agent_name, handoff_tool_called: @source == 'playground').merge('routing_handoff' => true)
   end
 
   # The router decided it, not an agent: routing_human tells the outcome so (no agent is named as its author).
@@ -547,7 +547,10 @@ class Captain::Assistant::AgentRunnerService
       return response_cancellation_response(result.context[:pending_response_cancellation], result.context[:current_agent])
     end
 
-    if authorized_handoff_pending?(result.context, handoff_tool_called)
+    if authorized_handoff_pending?(result.context, handoff_tool_called) &&
+       !(@source == 'playground' && result.output.is_a?(Hash) &&
+         result.output['response'].to_s.strip.present? &&
+         !['conversation_handoff', PROVIDER_ERROR_RESPONSE].include?(result.output['response'].to_s))
       return human_handoff_response(result.context[:pending_human_handoff],
                                     result.context[:current_agent],
                                     handoff_tool_called: handoff_tool_called)
@@ -583,7 +586,11 @@ class Captain::Assistant::AgentRunnerService
     end
     refs = part_refs_for(result.context)
     response['part_refs'] = refs if refs.any?
-    response['handoff_tool_called'] = handoff_tool_called
+    response['handoff_tool_called'] = handoff_tool_called || (@source == 'playground' && result.context&.dig(:council_handoff).present?)
+    if authorized_handoff_pending?(result.context, handoff_tool_called)
+      response['handoff_authorized'] = true
+      response['handoff_reason'] = result.context.dig(:pending_human_handoff, :reason) if result.context.dig(:pending_human_handoff, :reason).present?
+    end
     if ActiveModel::Type::Boolean.new.cast(result.context&.dig(:captain_v2_resolve_tool_called))
       response['resolve_tool_called'] = true
       resolved_transition_id = result.context&.dig(:captain_v2_resolved_status_transition_id)
