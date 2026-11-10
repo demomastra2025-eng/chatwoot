@@ -65,7 +65,7 @@ class Whatsapp::Flows::BookingDataExchangeHandler # rubocop:disable Metrics/Clas
 
   def back_selection_params
     {
-      service_id: data[:selected_service_id] || data[:service_id],
+      service_id: 'none',
       resource_id: data[:selected_resource_id] || data[:resource_id],
       booking_date: data[:selected_date] || data[:booking_date]
     }
@@ -88,12 +88,12 @@ class Whatsapp::Flows::BookingDataExchangeHandler # rubocop:disable Metrics/Clas
     end
   end
 
-  def handle_booking_step_submit(service_id:, resource_id:, booking_date:)
-    service = resolver.find_service(service_id)
+  def handle_booking_step_submit(service_id: nil, resource_id:, booking_date:) # rubocop:disable Lint/UnusedMethodArgument
+    service = nil
     resources = resolver.candidate_resources(resource_id, service: service)
     if resources.empty?
       return build_booking_step(
-        service_id: service_id, resource_id: resource_id, booking_date: booking_date,
+        service_id: 'none', resource_id: resource_id, booking_date: booking_date,
         error: copy[:no_specialists_error]
       )
     end
@@ -114,18 +114,18 @@ class Whatsapp::Flows::BookingDataExchangeHandler # rubocop:disable Metrics/Clas
         next_date: format_date(next_date)
       )
       return build_booking_step(
-        service_id: service&.id, resource_id: resource_id, booking_date: next_date.iso8601, error: msg
+        service_id: 'none', resource_id: resource_id, booking_date: next_date.iso8601, error: msg
       )
     end
 
     build_booking_step(
-      service_id: service&.id, resource_id: resource_id, booking_date: date.iso8601,
+      service_id: 'none', resource_id: resource_id, booking_date: date.iso8601,
       error: copy[:no_slots_any_date]
     )
   end
 
   def handle_slot_step_submit
-    service = resolver.find_service(data[:service_id])
+    service = nil
     slot = resolver.resolve_slot_key(data[:slot_key], service: service)
     return slot_step_error_fallback(service) if slot.nil?
 
@@ -144,14 +144,19 @@ class Whatsapp::Flows::BookingDataExchangeHandler # rubocop:disable Metrics/Clas
   end
 
   def handle_confirm_booking
-    service = resolver.find_service(data[:service_id])
+    service = nil
     slot = resolver.resolve_slot_key(data[:slot_key], service: service)
     return confirm_slot_taken_fallback(service) if slot.nil?
 
     validation = client_validator_for(slot[:resource]).validate_submission(data)
     return build_details_step(service: service, slot: slot, submitted: data, error: validation[:error]) unless validation[:valid]
 
-    build_success_response(service: service, slot: slot, client_attrs: validation[:attributes])
+    build_success_response(
+      service: service,
+      slot: slot,
+      client_attrs: validation[:attributes],
+      masked_client_attrs: validation[:masked_attributes]
+    )
   end
 
   def confirm_slot_taken_fallback(service)
@@ -177,7 +182,7 @@ class Whatsapp::Flows::BookingDataExchangeHandler # rubocop:disable Metrics/Clas
 
   def booking_step_dropdown_options
     {
-      services: build_service_options(resolver.active_services),
+      services: [{ id: 'none', title: '-', description: '' }],
       specialists: build_specialist_options(resolver.available_resources),
       dates: resolver.upcoming_dates.map { |d| { id: d.iso8601, title: format_date(d).truncate(TITLE_LIMIT) } }
     }
@@ -187,11 +192,11 @@ class Whatsapp::Flows::BookingDataExchangeHandler # rubocop:disable Metrics/Clas
     {
       has_error: error_text.present?,
       error_message: error_text.to_s,
-      show_services: resolver.active_services.any?,
+      show_services: false,
       services: options[:services],
       specialists: options[:specialists],
       dates: options[:dates],
-      init_service_id: resolve_option_id(options[:services], opts[:service_id]),
+      init_service_id: 'none',
       init_resource_id: resolve_option_id(options[:specialists], opts[:resource_id]),
       init_booking_date: resolve_option_id(options[:dates], opts[:booking_date])
     }
@@ -201,13 +206,13 @@ class Whatsapp::Flows::BookingDataExchangeHandler # rubocop:disable Metrics/Clas
   def build_slot_step(service:, resource_id:, resources:, date:, slots:, error: nil)
     slot_options = build_slot_dropdown_options(slots, service, resources.size > 1)
     chosen_resource_label = resources.one? ? resources.first.name : copy[:any_specialist]
-    summary = [service&.name, chosen_resource_label, format_date(date)].compact_blank.join(' • ').truncate(80)
+    summary = [chosen_resource_label, format_date(date)].compact_blank.join(' • ').truncate(80)
 
     {
       screen: 'SLOT_STEP',
       data: {
         selection_summary: summary, has_error: error.present?, error_message: error.to_s,
-        slots: slot_options, selected_service_id: service ? service.id.to_s : 'none',
+        slots: slot_options, selected_service_id: 'none',
         selected_resource_id: resource_id.presence.to_s.presence || 'any', selected_date: date.iso8601
       }
     }
@@ -231,42 +236,41 @@ class Whatsapp::Flows::BookingDataExchangeHandler # rubocop:disable Metrics/Clas
     }
   end
 
-  def details_step_base_data(service, resource, slot, error)
+  def details_step_base_data(_service, resource, slot, error)
     local_start = slot[:local_start]
     {
-      booking_summary: details_booking_summary(service, resource, local_start),
+      booking_summary: details_booking_summary(resource, local_start),
       has_error: error.present?,
       error_message: error.to_s,
-      selected_service_id: service ? service.id.to_s : 'none',
+      selected_service_id: 'none',
       selected_resource_id: (resource&.id || data[:resource_id]).to_s,
       selected_date: local_start ? local_start.to_date.iso8601 : data[:booking_date].to_s,
       selected_slot_key: (slot[:key].presence || data[:slot_key]).to_s
     }
   end
 
-  def details_booking_summary(service, resource, local_start)
+  def details_booking_summary(resource, local_start)
     time_text = local_start ? "#{format_date(local_start.to_date)}, #{local_start.strftime('%H:%M')}" : data[:booking_date].to_s
-    [service&.name, resource&.name, time_text].compact_blank.join(' • ').truncate(80)
+    [resource&.name, time_text].compact_blank.join(' • ').truncate(80)
   end
 
-  def build_success_response(service:, slot:, client_attrs:)
-    params = build_completion_params(service, slot).merge(client_attrs).compact_blank
+  def build_success_response(service:, slot:, client_attrs:, masked_client_attrs: nil)
+    safe_client_attrs = masked_client_attrs || Whatsapp::Flows::BookingClientValidator.mask_client_attributes(client_attrs)
+    params = build_completion_params(service, slot, client_attrs).merge(safe_client_attrs).compact_blank
     {
       screen: 'SUCCESS',
       data: { extension_message_response: { params: params } }
     }
   end
 
-  def build_completion_params(service, slot)
+  def build_completion_params(service, slot, client_attrs)
     resource = slot[:resource]
     {
       flow_token: payload[:flow_token].to_s.presence || 'unused',
-      booking_grant: build_booking_grant(service, slot),
+      booking_grant: build_booking_grant(service, slot, client_attrs),
       onelink_flow_kind: 'booking',
       resource_id: resource.id.to_s,
       resource_name: resource.name,
-      service_id: service&.id&.to_s,
-      service_name: service&.name,
       starts_at: slot[:starts_at].iso8601,
       duration_min: slot[:duration_min],
       booking_date: slot[:local_start].to_date.iso8601,
@@ -275,7 +279,7 @@ class Whatsapp::Flows::BookingDataExchangeHandler # rubocop:disable Metrics/Clas
     }
   end
 
-  def build_booking_grant(service, slot)
+  def build_booking_grant(service, slot, client_attrs)
     return nil unless token_check[:valid]
 
     Whatsapp::Flows::TokenService.generate_booking_grant(
@@ -286,19 +290,9 @@ class Whatsapp::Flows::BookingDataExchangeHandler # rubocop:disable Metrics/Clas
       service_id: service&.id,
       starts_at: slot[:starts_at].iso8601,
       duration_min: slot[:duration_min],
-      cabinet_code: slot[:cabinet_code]
+      cabinet_code: slot[:cabinet_code],
+      client_attrs: client_attrs
     )
-  end
-
-  def build_service_options(services)
-    return [{ id: 'none', title: '-', description: '' }] if services.empty?
-
-    services.map do |svc|
-      full_name = svc.name.to_s.strip
-      duration_label = svc.duration_min.present? ? "#{svc.duration_min} #{copy[:duration_min_short]}" : ''
-      desc = full_name.length > TITLE_LIMIT ? [full_name, duration_label].compact_blank.join(' • ') : duration_label
-      { id: svc.id.to_s, title: full_name.truncate(TITLE_LIMIT), description: desc.truncate(DESCRIPTION_LIMIT) }
-    end
   end
 
   def build_specialist_options(resources)
@@ -314,9 +308,9 @@ class Whatsapp::Flows::BookingDataExchangeHandler # rubocop:disable Metrics/Clas
     options
   end
 
-  def format_slot_option(entry, service, show_resource_name)
+  def format_slot_option(entry, _service, show_resource_name)
     time_range = "#{entry[:local_start].strftime('%H:%M')} – #{entry[:local_end].strftime('%H:%M')}"
-    desc = show_resource_name ? entry[:resource].name.to_s : service&.name.to_s
+    desc = show_resource_name ? entry[:resource].name.to_s : ''
     { id: entry[:key], title: time_range.truncate(TITLE_LIMIT), description: desc.to_s.truncate(DESCRIPTION_LIMIT) }
   end
 

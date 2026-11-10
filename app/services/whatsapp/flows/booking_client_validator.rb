@@ -4,6 +4,73 @@ class Whatsapp::Flows::BookingClientValidator
   DOTTED_DATE_FORMAT = /\A(\d{2})\.(\d{2})\.(\d{4})\z/
   BASIC_PHONE_DIGITS_MIN = 7
 
+  class << self
+    def mask_name(raw_name)
+      text = raw_name.to_s.strip
+      return '' if text.empty?
+
+      text.split(/\s+/).map { |word| mask_word(word) }.join(' ')
+    end
+
+    def mask_phone(raw_phone)
+      text = raw_phone.to_s.strip
+      return '' if text.empty?
+
+      digits = text.gsub(/\D/, '')
+      return "#{text[0]}***" if digits.length < 6
+
+      prefix = text.start_with?('+') ? "+#{digits[0, 4]}" : digits[0, 4]
+      suffix = digits[-2, 2]
+      masked_len = [digits.length - 6, 3].max
+      "#{prefix}#{'*' * masked_len}#{suffix}"
+    end
+
+    def mask_iin(raw_iin)
+      digits = raw_iin.to_s.gsub(/\D/, '')
+      return '' if digits.empty?
+      return "#{digits[0, 2]}****" if digits.length < 8
+
+      "#{digits[0, 4]}#{'*' * (digits.length - 6)}#{digits[-2, 2]}"
+    end
+
+    def mask_birth_date(raw_date)
+      text = raw_date.to_s.strip
+      return '' if text.empty?
+
+      if (m = /\A(\d{4})-(\d{2})-(\d{2})\z/.match(text))
+        "**.**.#{m[1]}"
+      elsif (m = DOTTED_DATE_FORMAT.match(text))
+        "**.**.#{m[3]}"
+      else
+        '**.**.****'
+      end
+    end
+
+    def mask_client_attributes(attrs)
+      data = attrs.to_h.with_indifferent_access
+      {
+        visit_reason: data[:visit_reason].presence,
+        client_first_name: mask_name(data[:client_first_name]).presence,
+        client_last_name: mask_name(data[:client_last_name]).presence,
+        client_middle_name: mask_name(data[:client_middle_name]).presence,
+        client_phone: mask_phone(data[:client_phone]).presence,
+        client_birth_date: mask_birth_date(data[:client_birth_date]).presence,
+        client_iin: mask_iin(data[:client_iin]).presence,
+        notes: data[:notes].presence
+      }.compact
+    end
+
+    private
+
+    def mask_word(word)
+      chars = word.chars
+      return '' if chars.empty?
+      return "#{chars[0]}*" if chars.length <= 2
+
+      "#{chars.first}#{'*' * (chars.length - 2)}#{chars.last}"
+    end
+  end
+
   def initialize(account:, resource:, locale:, contact: nil, clinic_preset: nil)
     @account = account
     @resource = resource
@@ -29,15 +96,15 @@ class Whatsapp::Flows::BookingClientValidator
 
   def prefill_values(submitted = {})
     submitted = submitted.to_h.with_indifferent_access
-    defaults = contact_defaults
+    masked_defaults = masked_contact_defaults
     {
       init_visit_reason: submitted[:visit_reason].presence || @clinic_config[:default_visit_reason].to_s,
-      init_first_name: submitted[:client_first_name].presence || defaults[:first_name],
-      init_last_name: submitted[:client_last_name].presence || defaults[:last_name],
-      init_middle_name: submitted[:client_middle_name].presence || defaults[:middle_name],
-      init_phone: submitted[:client_phone].presence || defaults[:phone],
-      init_birth_date: submitted[:client_birth_date].presence || defaults[:birth_date],
-      init_iin: submitted[:client_iin].presence || defaults[:iin],
+      init_first_name: submitted[:client_first_name].presence || masked_defaults[:first_name],
+      init_last_name: submitted[:client_last_name].presence || masked_defaults[:last_name],
+      init_middle_name: submitted[:client_middle_name].presence || masked_defaults[:middle_name],
+      init_phone: submitted[:client_phone].presence || masked_defaults[:phone],
+      init_birth_date: submitted[:client_birth_date].presence || masked_defaults[:birth_date],
+      init_iin: submitted[:client_iin].presence || masked_defaults[:iin],
       init_notes: submitted[:notes].to_s
     }
   end
@@ -47,7 +114,12 @@ class Whatsapp::Flows::BookingClientValidator
     error = submission_error(fields)
     return { valid: false, error: error } if error.present?
 
-    { valid: true, attributes: build_validated_attributes(fields) }
+    validated = build_validated_attributes(fields)
+    {
+      valid: true,
+      attributes: validated,
+      masked_attributes: self.class.mask_client_attributes(validated)
+    }
   end
 
   private
@@ -63,16 +135,24 @@ class Whatsapp::Flows::BookingClientValidator
 
   def normalize_raw_submission(raw_data)
     data = raw_data.to_h.with_indifferent_access
+    defaults = contact_defaults
     {
       visit_reason: clean_text(data[:visit_reason]),
-      first_name: clean_text(data[:client_first_name]),
-      last_name: clean_text(data[:client_last_name]),
-      middle_name: clean_text(data[:client_middle_name]),
-      phone: clean_text(data[:client_phone]),
-      birth_date: clean_text(data[:client_birth_date]),
-      iin: clean_text(data[:client_iin]),
+      first_name: unmask_if_unchanged(data[:client_first_name], defaults[:first_name]),
+      last_name: unmask_if_unchanged(data[:client_last_name], defaults[:last_name]),
+      middle_name: unmask_if_unchanged(data[:client_middle_name], defaults[:middle_name]),
+      phone: unmask_if_unchanged(data[:client_phone], defaults[:phone]),
+      birth_date: unmask_if_unchanged(data[:client_birth_date], defaults[:birth_date]),
+      iin: unmask_if_unchanged(data[:client_iin], defaults[:iin]),
       notes: clean_text(data[:notes])
     }
+  end
+
+  def unmask_if_unchanged(raw_submitted, default_val)
+    text = clean_text(raw_submitted)
+    return default_val.to_s if text.include?('*') && default_val.present?
+
+    text
   end
 
   def submission_error(fields)
@@ -110,9 +190,9 @@ class Whatsapp::Flows::BookingClientValidator
   end
 
   def validate_names(first_name, last_name, middle_name)
-    return copy[:first_name_required] if first_name.blank?
-    return copy[:last_name_required] if require_last_name? && last_name.blank?
-    return copy[:middle_name_required] if require_middle_name? && middle_name.blank?
+    return copy[:first_name_required] if first_name.blank? || first_name.include?('*')
+    return copy[:last_name_required] if require_last_name? && (last_name.blank? || last_name.include?('*'))
+    return copy[:middle_name_required] if require_middle_name? && (middle_name.blank? || middle_name.include?('*'))
 
     nil
   end
@@ -130,19 +210,28 @@ class Whatsapp::Flows::BookingClientValidator
   end
 
   def validate_birth_date(raw_birth_date)
-    return (require_birth_date? ? copy[:birth_date_required] : nil) if raw_birth_date.blank?
+    return nil unless show_birth_date?
 
     normalized = normalize_birth_date(raw_birth_date)
-    return nil if normalized.present? && Scheduling::BirthDate.valid?(normalized, plain: true)
+    if normalized.blank?
+      return copy[:birth_date_required] if require_birth_date?
 
-    copy[:birth_date_invalid]
+      return nil
+    end
+
+    Scheduling::BirthDate.valid?(normalized, plain: true) ? nil : copy[:birth_date_invalid]
   end
 
   def validate_iin(raw_iin)
-    return (require_iin? ? copy[:iin_required] : nil) if raw_iin.blank?
-    return nil if Scheduling::IinValidator.valid?(raw_iin)
+    return nil unless show_iin?
 
-    copy[:iin_invalid]
+    if raw_iin.blank?
+      return copy[:iin_required] if require_iin?
+
+      return nil
+    end
+
+    Scheduling::IinValidator.valid?(raw_iin) ? nil : copy[:iin_invalid]
   end
 
   def normalize_birth_date(value)
@@ -161,6 +250,18 @@ class Whatsapp::Flows::BookingClientValidator
 
     cleaned = raw_phone.to_s.strip
     cleaned.start_with?('+') ? "+#{cleaned.gsub(/\D/, '')}" : cleaned
+  end
+
+  def masked_contact_defaults
+    defaults = contact_defaults
+    {
+      first_name: self.class.mask_name(defaults[:first_name]),
+      last_name: self.class.mask_name(defaults[:last_name]),
+      middle_name: self.class.mask_name(defaults[:middle_name]),
+      phone: self.class.mask_phone(defaults[:phone]),
+      birth_date: self.class.mask_birth_date(defaults[:birth_date]),
+      iin: self.class.mask_iin(defaults[:iin])
+    }
   end
 
   def contact_defaults

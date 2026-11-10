@@ -12,7 +12,15 @@ RSpec.describe Whatsapp::Flows::InboundResponseProcessor do
     )
   end
   let(:inbox) { channel.inbox }
-  let(:contact) { create(:contact, account: account, name: 'Марат Оспанов', phone_number: '+77015550101') }
+  let(:contact) do
+    create(
+      :contact,
+      account: account,
+      name: 'Марат Оспанов',
+      phone_number: '+77015550101',
+      custom_attributes: { 'birth_date' => '1988-05-15' }
+    )
+  end
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact) }
   let(:resource) do
     create(
@@ -89,15 +97,14 @@ RSpec.describe Whatsapp::Flows::InboundResponseProcessor do
   end
 
   describe '#perform' do
-    it 'creates a whatsapp_flow appointment via UpsertService, updates generic message content, and is idempotent' do
+    it 'creates a whatsapp_flow appointment via UpsertService, unmasks asterisk-masked prefill values, and is idempotent' do
       message = build_flow_message(
         response_payload: {
           'flow_token' => flow_token, 'onelink_flow_kind' => 'booking',
           'resource_id' => resource.id.to_s, 'resource_name' => resource.name,
-          'service_id' => service_item.id.to_s, 'service_name' => service_item.name,
           'starts_at' => starts_at.iso8601, 'duration_min' => 30, 'slot_label' => '10:00–10:30',
-          'client_first_name' => 'Марат', 'client_last_name' => 'Оспанов',
-          'client_phone' => '+77015550101', 'client_birth_date' => '15.05.1988', 'notes' => 'Натощак'
+          'client_first_name' => 'М***т', 'client_last_name' => 'О*****в',
+          'client_phone' => '+7701*****01', 'client_birth_date' => '**.**.1988', 'notes' => 'Натощак'
         }
       )
 
@@ -106,16 +113,16 @@ RSpec.describe Whatsapp::Flows::InboundResponseProcessor do
 
       appointment = account.scheduling_appointments.last
       expect(appointment).to have_attributes(
-        source: 'whatsapp_flow', resource_id: resource.id, service_id: service_item.id,
+        source: 'whatsapp_flow', resource_id: resource.id, service_id: nil,
         contact_id: contact.id, conversation_id: conversation.id, idempotency_key: 'wa_flow:wamid.FLOW_REPLY_1',
         client_first_name: 'Марат', client_last_name: 'Оспанов', client_phone: '+77015550101',
         client_birth_date: Date.new(1988, 5, 15), client_comment: 'Натощак'
       )
 
       message.reload
-      expect(message.content).to include('Онлайн-запись:', service_item.name)
+      expect(message.content).to include('Онлайн-запись:', resource.name)
       expect(message.content_attributes['whatsapp_flow_booking']).to include(
-        'status' => 'booked', 'appointment_id' => appointment.id, 'resource_id' => resource.id, 'service_id' => service_item.id
+        'status' => 'booked', 'appointment_id' => appointment.id, 'resource_id' => resource.id
       )
 
       expect { described_class.new(inbox: inbox, message: message).perform }
@@ -275,7 +282,7 @@ RSpec.describe Whatsapp::Flows::InboundResponseProcessor do
         .to eq(Integrations::Medelement::AppointmentProviderStatus::PENDING)
     end
 
-    it 'processes clinic_intake Flow submissions (labs, 075/у, ОСМС), updates Contact IIN/name, and posts a private registrar note' do
+    it 'processes clinic_intake Flow submissions, masks public PII with asterisks, updates Contact IIN/name, and posts a private registrar note' do
       valid_iin = '900101300047'
       msg = build_flow_message(
         source_id: 'wamid.FLOW_INTAKE_1',
@@ -296,11 +303,12 @@ RSpec.describe Whatsapp::Flows::InboundResponseProcessor do
         'status' => 'received',
         'clinic_preset' => 'aliya_center',
         'request_title' => 'Результаты КДЛ Олимп',
-        'client_full_name' => 'Алия Садыкова'
+        'client_full_name' => 'А**я С******а',
+        'client_iin' => '9001******47'
       )
-      expect(msg.reload.content).to include('Заявка: Результаты КДЛ Олимп')
+      expect(msg.reload.content).to include('Заявка: Результаты КДЛ Олимп', 'ФИО: А**я С******а', 'ИИН: 9001******47')
       expect(msg.content_attributes['whatsapp_flow_intake']).to be_present
-      expect(conversation.messages.where(private: true).last.content).to include('Заполнена форма пациента')
+      expect(conversation.messages.where(private: true).last.content).to include('Заполнена форма пациента', 'ФИО: Алия Садыкова')
     end
   end
 end

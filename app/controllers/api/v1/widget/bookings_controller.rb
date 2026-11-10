@@ -16,7 +16,7 @@ class Api::V1::Widget::BookingsController < Api::V1::Widget::BaseController
       show_visit_reason: clinic_config[:show_visit_reason] == true,
       visit_reasons: Array(clinic_config[:visit_reasons]),
       default_visit_reason: clinic_config[:default_visit_reason].to_s,
-      services: serialized_services,
+      services: [],
       specialists: serialized_specialists,
       dates: serialized_dates,
       field_flags: validator.field_flags,
@@ -28,7 +28,7 @@ class Api::V1::Widget::BookingsController < Api::V1::Widget::BaseController
   def slots
     return render json: { error: 'Online booking is disabled' }, status: :forbidden unless booking_enabled?
 
-    service = resolver.find_service(params[:service_id])
+    service = nil
     resources = resolver.candidate_resources(params[:resource_id], service: service)
     return render json: { slots: [], error: copy[:no_specialists_error] }, status: :ok if resources.empty?
 
@@ -47,7 +47,7 @@ class Api::V1::Widget::BookingsController < Api::V1::Widget::BaseController
   def create
     return render json: { error: 'Online booking is disabled' }, status: :forbidden unless booking_enabled?
 
-    service = resolver.find_service(booking_params[:service_id])
+    service = nil
     slot = resolver.resolve_slot_key(booking_params[:slot_key], service: service)
     return render json: { error: copy[:slot_taken_error], code: 'SLOT_TAKEN' }, status: :unprocessable_content if slot.nil?
 
@@ -107,27 +107,13 @@ class Api::V1::Widget::BookingsController < Api::V1::Widget::BaseController
     )
   end
 
-  def serialized_services
-    resolver.active_services.map do |svc|
-      candidate_ids = resolver.candidate_resources('any', service: svc).map { |res| res.id.to_s }
-      {
-        id: svc.id.to_s,
-        name: svc.name,
-        duration_min: svc.duration_min,
-        price: svc.try(:base_price) || svc.try(:price),
-        resource_ids: candidate_ids
-      }
-    end
-  end
-
   def serialized_specialists
     resolver.available_resources.map do |res|
-      supported_service_ids = resolver.active_services.select { |svc| resolver.resource_supports_service?(res, svc) }.map { |svc| svc.id.to_s }
       {
         id: res.id.to_s,
         name: res.name,
         specialty: res.custom_attributes.to_h['specialty'].to_s.strip.presence,
-        service_ids: supported_service_ids
+        service_ids: []
       }
     end
   end
@@ -233,7 +219,6 @@ class Api::V1::Widget::BookingsController < Api::V1::Widget::BaseController
     slot_label = "#{slot[:local_start].strftime('%d.%m.%Y %H:%M')}–#{slot[:local_end].strftime('%H:%M')}"
     summary = [
       "📅 Онлайн-запись через виджет сайта (№#{appointment.id})",
-      service&.name.present? ? "Услуга: #{service.name}" : nil,
       "Специалист: #{slot[:resource].name}",
       "Дата и время: #{slot_label}"
     ].compact.join(' • ')
@@ -261,6 +246,10 @@ class Api::V1::Widget::BookingsController < Api::V1::Widget::BaseController
   end
 
   def serialize_appointment(appointment, service, slot, client_attrs)
+    masked_name = Whatsapp::Flows::BookingClientValidator.mask_name(
+      [client_attrs[:client_first_name], client_attrs[:client_last_name]].compact_blank.join(' ')
+    )
+    masked_phone = Whatsapp::Flows::BookingClientValidator.mask_phone(client_attrs[:client_phone])
     {
       id: appointment.id,
       resource_name: slot[:resource].name,
@@ -268,8 +257,8 @@ class Api::V1::Widget::BookingsController < Api::V1::Widget::BaseController
       date_label: slot[:local_start].strftime('%d.%m.%Y'),
       time_label: "#{slot[:local_start].strftime('%H:%M')}–#{slot[:local_end].strftime('%H:%M')}",
       starts_at: slot[:starts_at].iso8601,
-      client_name: [client_attrs[:client_first_name], client_attrs[:client_last_name]].compact_blank.join(' '),
-      client_phone: client_attrs[:client_phone]
+      client_name: masked_name,
+      client_phone: masked_phone
     }
   end
 
@@ -280,13 +269,12 @@ class Api::V1::Widget::BookingsController < Api::V1::Widget::BaseController
     wa_channel.phone_number.to_s.gsub(/\D/, '').presence
   end
 
-  def build_whatsapp_deeplink(appointment, service, slot, _client_attrs)
+  def build_whatsapp_deeplink(appointment, _service, slot, _client_attrs)
     digits = primary_whatsapp_phone
     return nil if digits.blank?
 
     date_time_str = "#{slot[:local_start].strftime('%d.%m.%Y в %H:%M')}"
-    svc_part = service ? " (#{service.name})" : ''
-    text = "Здравствуйте! Подтверждаю запись №#{appointment.id} на #{date_time_str} к специалисту #{slot[:resource].name}#{svc_part}."
+    text = "Здравствуйте! Подтверждаю запись №#{appointment.id} на #{date_time_str} к специалисту #{slot[:resource].name}."
     "https://wa.me/#{digits}?text=#{ERB::Util.url_encode(text)}"
   end
 end

@@ -75,6 +75,7 @@ class Whatsapp::Flows::TokenService # rubocop:disable Metrics/ClassLength
       conversation_id: nil,
       contact_id: nil,
       cabinet_code: nil,
+      client_attrs: nil,
       ttl: GRANT_TTL
     )
       parsed_start = starts_at.is_a?(Time) ? starts_at : Time.iso8601(starts_at.to_s)
@@ -89,6 +90,7 @@ class Whatsapp::Flows::TokenService # rubocop:disable Metrics/ClassLength
         st: parsed_start.iso8601,
         dur: duration_min.to_i,
         cab: cabinet_code.to_s.strip.presence,
+        ca: encrypt_grant_client_attrs(client_attrs),
         exp: (Time.current + ttl).to_i,
         n: SecureRandom.urlsafe_base64(6)
       }.compact
@@ -198,8 +200,28 @@ class Whatsapp::Flows::TokenService # rubocop:disable Metrics/ClassLength
         service_id: claims[:sid].present? ? claims[:sid].to_i : nil,
         starts_at: claims[:st].to_s,
         duration_min: claims[:dur].to_i,
-        cabinet_code: claims[:cab].presence
+        cabinet_code: claims[:cab].presence,
+        client_attrs: decrypt_grant_client_attrs(claims[:ca])
       }
+    end
+
+    def encrypt_grant_client_attrs(client_attrs)
+      return nil if client_attrs.blank?
+
+      grant_encryptor.encrypt_and_sign(client_attrs.to_h.to_json)
+    end
+
+    def decrypt_grant_client_attrs(encrypted_blob)
+      return {} if encrypted_blob.blank?
+
+      parsed = JSON.parse(grant_encryptor.decrypt_and_verify(encrypted_blob.to_s))
+      parsed.is_a?(Hash) ? parsed.with_indifferent_access : {}
+    rescue StandardError
+      {}
+    end
+
+    def grant_encryptor
+      ActiveSupport::MessageEncryptor.new(signing_key, cipher: 'aes-256-gcm')
     end
 
     def preview_result

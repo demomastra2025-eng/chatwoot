@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'rails_helper'
 
 RSpec.describe Whatsapp::Flows::DataExchangeService do
@@ -15,9 +17,16 @@ RSpec.describe Whatsapp::Flows::DataExchangeService do
     create(
       :scheduling_resource,
       account: account,
-      name: 'Алия Серикова',
+      name: 'Д-р Айдос Сериков',
       timezone: 'Asia/Almaty',
-      slot_duration_min: 30
+      slot_duration_min: 30,
+      custom_attributes: {
+        'specialty' => 'Терапевт',
+        'require_last_name' => true,
+        'show_birth_date' => true,
+        'show_iin' => true,
+        'require_iin' => true
+      }
     )
   end
   let(:service_item) do
@@ -26,39 +35,38 @@ RSpec.describe Whatsapp::Flows::DataExchangeService do
       account: account,
       name: 'Первичная консультация',
       duration_min: 30,
-      base_price: 10_000
+      base_price: 5_000
     )
-  end
-
-  def sample_valid_iin
-    candidate = '900101300047'
-    return candidate if Scheduling::IinValidator.valid?(candidate)
-
-    digits = '90010130001'
-    weights1 = (1..11).to_a
-    weights2 = [3, 4, 5, 6, 7, 8, 9, 10, 11, 1, 2]
-    chk = digits.chars.map(&:to_i).zip(weights1).sum { |d, w| d * w } % 11
-    chk = digits.chars.map(&:to_i).zip(weights2).sum { |d, w| d * w } % 11 if chk == 10
-    "#{digits}#{chk}"
   end
 
   before do
     account.enable_features!('scheduling')
+    create(:custom_attribute_definition, account: account, attribute_model: :contact_attribute, attribute_key: 'iin')
+    create(:custom_attribute_definition, account: account, attribute_model: :contact_attribute, attribute_key: 'birth_date')
+  end
+
+  def sample_valid_iin(base11 = '90010130004')
+    digits = base11.chars.map(&:to_i)
+    w1 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    k = digits.each_with_index.sum { |d, idx| d * w1[idx] } % 11
+    if k == 10
+      w2 = [3, 4, 5, 6, 7, 8, 9, 10, 11, 1, 2]
+      k = digits.each_with_index.sum { |d, idx| d * w2[idx] } % 11
+    end
+    "#{base11}#{k}"
   end
 
   describe '#perform' do
-    it 'responds to Meta health check ping with active status' do
-      result = described_class.new(channel: channel, payload: { version: '3.0', action: 'ping' }).perform
-      expect(result).to eq(data: { status: 'active' })
-    end
+    it 'responds to ping health checks and acknowledges error_notification actions' do
+      expect(described_class.new(channel: channel, payload: { version: '3.0', action: 'ping' }).perform)
+        .to eq(data: { status: 'active' })
 
-    it 'acknowledges Meta client error notifications' do
       result = described_class.new(
         channel: channel,
         payload: {
           version: '3.0',
           action: 'data_exchange',
-          data: { error: 'INVALID_ROUTING_MODEL', error_message: 'Client side error' }
+          data: { error: 'INVALID_SCREEN_TRANSITION', error_message: 'Bad screen' }
         }
       ).perform
 
@@ -76,7 +84,7 @@ RSpec.describe Whatsapp::Flows::DataExchangeService do
       expect(result.dig(:data, :error_message)).to include('устарела')
     end
 
-    it 'loads BOOKING_STEP on INIT and resolves SLOT_STEP with cache-only availability' do
+    it 'loads BOOKING_STEP on INIT without service selector (show_services: false) and resolves SLOT_STEP with cache-only availability' do
       target_date = Time.current.in_time_zone('Asia/Almaty').to_date + 2.days
       create(:scheduling_work_rule, resource: resource, weekday: target_date.wday)
       service_item
@@ -88,8 +96,8 @@ RSpec.describe Whatsapp::Flows::DataExchangeService do
       ).perform
 
       expect(init_res[:screen]).to eq('BOOKING_STEP')
-      expect(init_res.dig(:data, :show_services)).to be(true)
-      expect(init_res.dig(:data, :services).map { |s| s[:id] }).to include(service_item.id.to_s)
+      expect(init_res.dig(:data, :show_services)).to be(false)
+      expect(init_res.dig(:data, :init_service_id)).to eq('none')
       expect(init_res.dig(:data, :specialists).map { |s| s[:id] }).to include(resource.id.to_s)
 
       expect(Scheduling::ScheduleDayAvailabilityService).to receive(:new)
@@ -101,7 +109,7 @@ RSpec.describe Whatsapp::Flows::DataExchangeService do
         payload: {
           version: '3.0', action: 'data_exchange', screen: 'BOOKING_STEP', flow_token: flow_token,
           data: {
-            step: 'BOOKING_STEP', service_id: service_item.id.to_s,
+            step: 'BOOKING_STEP', service_id: 'none',
             resource_id: resource.id.to_s, booking_date: target_date.iso8601
           }
         }
@@ -111,18 +119,24 @@ RSpec.describe Whatsapp::Flows::DataExchangeService do
       expect(slot_res.dig(:data, :slots, 0, :id)).to start_with("#{resource.id}@")
     end
 
-    it 'prefills DETAILS_STEP only for verified signed flow tokens and never for unsigned preview tokens' do
+    it 'prefills DETAILS_STEP with asterisk-masked personal data only for verified signed flow tokens' do
       target_date = Time.current.in_time_zone('Asia/Almaty').to_date + 2.days
       create(:scheduling_work_rule, resource: resource, weekday: target_date.wday)
-      contact = create(:contact, account: account, name: 'Айгуль Касымова', phone_number: '+77015551234')
+      contact = create(
+        :contact,
+        account: account,
+        name: 'Айгуль Касымова',
+        phone_number: '+77015551234',
+        custom_attributes: { 'iin' => '900101300047', 'birth_date' => '1990-01-01' }
+      )
       flow_token = Whatsapp::Flows::TokenService.generate_flow_token(
         channel: channel, kind: 'booking', contact_id: contact.id, locale: 'ru'
       )
       slot_key = Whatsapp::Flows::BookingSlotResolver.new(account: account)
-                                                     .slots_for_date(resources: [resource], date: target_date, service: service_item)
+                                                     .slots_for_date(resources: [resource], date: target_date, service: nil)
                                                      .first[:key]
       step_data = {
-        step: 'SLOT_STEP', service_id: service_item.id.to_s,
+        step: 'SLOT_STEP', service_id: 'none',
         resource_id: resource.id.to_s, booking_date: target_date.iso8601, slot_key: slot_key
       }
 
@@ -132,7 +146,12 @@ RSpec.describe Whatsapp::Flows::DataExchangeService do
       ).perform
       expect(verified_res[:screen]).to eq('DETAILS_STEP')
       expect(verified_res[:data]).to include(
-        init_first_name: 'Айгуль', init_last_name: 'Касымова', init_phone: '+77015551234', selected_slot_key: slot_key
+        init_first_name: 'А****ь',
+        init_last_name: 'К******а',
+        init_phone: '+7701*****34',
+        init_iin: '9001******47',
+        init_birth_date: '**.**.1990',
+        selected_slot_key: slot_key
       )
 
       preview_res = described_class.new(
@@ -142,25 +161,34 @@ RSpec.describe Whatsapp::Flows::DataExchangeService do
       expect(preview_res.dig(:data, :init_phone)).to eq('')
     end
 
-    it 'validates CONFIRM_BOOKING inputs and returns SUCCESS extension_message_response params' do
+    it 'validates CONFIRM_BOOKING inputs, accepts unchanged masked prefill values, and returns asterisk-masked SUCCESS params while sealing real PII in booking_grant' do
       target_date = Time.current.in_time_zone('Asia/Almaty').to_date + 2.days
       create(:scheduling_work_rule, resource: resource, weekday: target_date.wday)
       valid_iin = sample_valid_iin
-      flow_token = Whatsapp::Flows::TokenService.generate_flow_token(channel: channel, kind: 'booking', locale: 'ru')
+      contact = create(
+        :contact,
+        account: account,
+        name: 'Айгуль Касымова',
+        phone_number: '+77015551234',
+        custom_attributes: { 'iin' => valid_iin, 'birth_date' => '1990-01-01' }
+      )
+      flow_token = Whatsapp::Flows::TokenService.generate_flow_token(
+        channel: channel, kind: 'booking', contact_id: contact.id, locale: 'ru'
+      )
       slot_key = Whatsapp::Flows::BookingSlotResolver.new(account: account)
-                                                     .slots_for_date(resources: [resource], date: target_date, service: service_item)
+                                                     .slots_for_date(resources: [resource], date: target_date, service: nil)
                                                      .first[:key]
       base_submission = {
-        step: 'CONFIRM_BOOKING', service_id: service_item.id.to_s, resource_id: resource.id.to_s,
+        step: 'CONFIRM_BOOKING', service_id: 'none', resource_id: resource.id.to_s,
         booking_date: target_date.iso8601, slot_key: slot_key,
-        client_first_name: 'Айгуль', client_last_name: 'Касымова', client_phone: '+77015551234'
+        client_first_name: 'А****ь', client_last_name: 'К******а', client_phone: '+7701*****34'
       }
 
       bad_iin_res = described_class.new(
         channel: channel,
         payload: {
           version: '3.0', action: 'data_exchange', screen: 'DETAILS_STEP', flow_token: flow_token,
-          data: base_submission.merge(client_iin: '123456789012')
+          data: base_submission.merge(client_iin: '123456789011')
         }
       ).perform
       expect(bad_iin_res[:screen]).to eq('DETAILS_STEP')
@@ -170,16 +198,27 @@ RSpec.describe Whatsapp::Flows::DataExchangeService do
         channel: channel,
         payload: {
           version: '3.0', action: 'data_exchange', screen: 'DETAILS_STEP', flow_token: flow_token,
-          data: base_submission.merge(client_birth_date: '01.01.1990', client_iin: valid_iin, notes: 'Позвонить за час')
+          data: base_submission.merge(client_birth_date: '**.**.1990', client_iin: "#{valid_iin[0, 4]}******#{valid_iin[-2, 2]}", notes: 'Позвонить за час')
         }
       ).perform
       expect(confirm_res[:screen]).to eq('SUCCESS')
       completion_params = confirm_res.dig(:data, :extension_message_response, :params)
       expect(completion_params).to include(
         flow_token: flow_token, onelink_flow_kind: 'booking', resource_id: resource.id.to_s,
-        service_id: service_item.id.to_s, client_birth_date: '1990-01-01', client_iin: valid_iin, notes: 'Позвонить за час'
+        client_first_name: 'А****ь', client_last_name: 'К******а', client_phone: '+7701*****34',
+        client_birth_date: '**.**.1990', client_iin: "#{valid_iin[0, 4]}******#{valid_iin[-2, 2]}", notes: 'Позвонить за час'
       )
       expect(completion_params[:booking_grant]).to start_with('olfg1.')
+
+      grant_check = Whatsapp::Flows::TokenService.verify_booking_grant(completion_params[:booking_grant], channel: channel)
+      expect(grant_check[:valid]).to be(true)
+      expect(grant_check.dig(:payload, :client_attrs)).to include(
+        client_first_name: 'Айгуль',
+        client_last_name: 'Касымова',
+        client_phone: '+77015551234',
+        client_iin: valid_iin,
+        client_birth_date: '1990-01-01'
+      )
     end
 
     it 'suggests the nearest available date when chosen date has no free slots' do

@@ -100,19 +100,30 @@ class Whatsapp::Flows::InboundResponseProcessor # rubocop:disable Metrics/ClassL
 
     update_contact_from_intake!(full_name, iin)
 
+    masked_name = Whatsapp::Flows::BookingClientValidator.mask_name(full_name)
+    masked_iin = Whatsapp::Flows::BookingClientValidator.mask_iin(iin)
+
     intake_summary = {
       'status' => 'received',
       'clinic_preset' => response_data['clinic_preset'].to_s.presence || Whatsapp::Flows::ClinicProfile.detect_preset(account),
       'request_type' => response_data['request_type'].to_s,
       'request_title' => req_title,
-      'client_full_name' => full_name.presence,
-      'client_iin' => iin.presence,
+      'client_full_name' => masked_name.presence,
+      'client_iin' => masked_iin.presence,
       'visit_date' => visit_date.presence,
       'details' => details.presence
     }.compact
 
     attrs = message.content_attributes.to_h.deep_stringify_keys.merge('whatsapp_flow_intake' => intake_summary)
-    summary_parts = [
+    public_summary_parts = [
+      req_title.present? ? "Заявка: #{req_title}" : 'Заявка через WhatsApp Flow',
+      masked_name.present? ? "ФИО: #{masked_name}" : nil,
+      masked_iin.present? ? "ИИН: #{masked_iin}" : nil,
+      visit_date.present? ? "Дата: #{visit_date}" : nil,
+      details.present? ? "Детали: #{details}" : nil
+    ].compact
+
+    registrar_note_parts = [
       req_title.present? ? "Заявка: #{req_title}" : 'Заявка через WhatsApp Flow',
       full_name.present? ? "ФИО: #{full_name}" : nil,
       iin.present? ? "ИИН: #{iin}" : nil,
@@ -121,10 +132,10 @@ class Whatsapp::Flows::InboundResponseProcessor # rubocop:disable Metrics/ClassL
     ].compact
 
     updates = { content_attributes: attrs }
-    updates[:content] = summary_parts.join(' • ') if generic_flow_body?(message.content)
+    updates[:content] = public_summary_parts.join(' • ') if generic_flow_body?(message.content)
     message.update!(updates)
 
-    create_intake_registrar_note!(summary_parts)
+    create_intake_registrar_note!(registrar_note_parts)
     intake_summary
   end
 
@@ -133,9 +144,11 @@ class Whatsapp::Flows::InboundResponseProcessor # rubocop:disable Metrics/ClassL
     return if contact.blank?
 
     custom = contact.custom_attributes.to_h.deep_dup
-    custom['iin'] = iin if iin.present?
+    custom['iin'] = iin if iin.present? && !iin.include?('*')
     contact_updates = { custom_attributes: custom }
-    contact_updates[:name] = full_name if full_name.present? && (contact.name.blank? || contact.name.to_s.match?(/\A\+?\d[\d\s()-]+\z/))
+    if full_name.present? && !full_name.include?('*') && (contact.name.blank? || contact.name.to_s.match?(/\A\+?\d[\d\s()-]+\z/))
+      contact_updates[:name] = full_name
+    end
     contact.update(contact_updates)
   end
 
@@ -187,7 +200,8 @@ class Whatsapp::Flows::InboundResponseProcessor # rubocop:disable Metrics/ClassL
 
   def verify_booking_selection!(response_data, token_check)
     slot_selection = resolve_verified_slot!(response_data)
-    client_attrs = validate_client_submission!(slot_selection[:resource], response_data, token_check)
+    effective_submission = response_data.merge((slot_selection[:granted_client_attrs] || {}).stringify_keys)
+    client_attrs = validate_client_submission!(slot_selection[:resource], effective_submission, token_check)
     slot_selection.merge(client_attrs: client_attrs)
   end
 
@@ -210,7 +224,8 @@ class Whatsapp::Flows::InboundResponseProcessor # rubocop:disable Metrics/ClassL
 
     {
       resource: resource, service: service, starts_at: starts_at,
-      duration_min: grant[:duration_min], cabinet_code: grant[:cabinet_code]
+      duration_min: grant[:duration_min], cabinet_code: grant[:cabinet_code],
+      granted_client_attrs: grant[:client_attrs]
     }
   end
 
