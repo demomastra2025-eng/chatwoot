@@ -786,6 +786,8 @@
           "RELATIVE_FIXED_TIME_DESCRIPTION": "The date will still be calculated before/after the anchor, but the reminder will run at the selected time on that day.",
           "RELATIVE_TIME_OF_DAY": "Time on that day",
           "AUTO_CANCEL": "Cancel on incoming reply",
+          "BATCH_SAME_DAY": "Smart same-day sending",
+          "BATCH_SAME_DAY_DESCRIPTION": "Combine multiple appointments on the same day into a single reminder message",
           "AUTO_CANCEL_DESCRIPTION": "If the contact replies in the same channel before execution, the reminder will be cancelled automatically.",
           "TEXT_MODE": "Text mode",
           "FREE_TEXT_TEMPLATE": "Free text template",
@@ -951,7 +953,9 @@
           "DAYS": "days"
         },
         "AUTO_CANCEL": "Cancel on incoming reply",
-        "AUTO_CANCEL_DESCRIPTION": "If the contact replies in the same channel before execution, the reminder will be cancelled automatically.",
+        "BATCH_SAME_DAY": "Smart same-day sending",
+          "BATCH_SAME_DAY_DESCRIPTION": "Combine multiple appointments on the same day into a single reminder message",
+          "AUTO_CANCEL_DESCRIPTION": "If the contact replies in the same channel before execution, the reminder will be cancelled automatically.",
         "TEXT_MODE": "Text mode",
         "FREE_TEXT_TEMPLATE": "Free text template",
         "FREE_TEXT_TEMPLATE_PLACEHOLDER": "Select a saved free text template"

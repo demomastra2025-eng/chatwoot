@@ -31,6 +31,7 @@
         timezone: '<%= @web_widget.account.workspace_working_hours_timezone %>',
         allowMessagesAfterResolved: <%= @web_widget.inbox.allow_messages_after_resolved %>,
         disableBranding: <%= @web_widget.inbox.account.feature_enabled?('disable_branding') %>,
+        bookingEnabled: <%= @web_widget.inbox.account.feature_enabled?('scheduling') && @web_widget.inbox.account.scheduling_resources.where(active: true).exists? %>,
       }
       window.chatwootPubsubToken = '<%= @contact_inbox.pubsub_token %>'
       window.authToken = '<%= @token %>'

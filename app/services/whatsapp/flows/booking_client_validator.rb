@@ -4,15 +4,18 @@ class Whatsapp::Flows::BookingClientValidator
   DOTTED_DATE_FORMAT = /\A(\d{2})\.(\d{2})\.(\d{4})\z/
   BASIC_PHONE_DIGITS_MIN = 7
 
-  def initialize(account:, resource:, locale:, contact: nil)
+  def initialize(account:, resource:, locale:, contact: nil, clinic_preset: nil)
     @account = account
     @resource = resource
     @copy = Whatsapp::Flows::BookingFlowCopy.for_locale(locale, account: account)
     @contact = contact
+    @clinic_config = Whatsapp::Flows::ClinicProfile.config_for(account: account, preset: clinic_preset)
   end
 
   def field_flags
     {
+      show_visit_reason: @clinic_config[:show_visit_reason] == true,
+      visit_reasons: visit_reasons_data_source,
       show_last_name: true,
       require_last_name: require_last_name?,
       show_middle_name: require_middle_name?,
@@ -28,6 +31,7 @@ class Whatsapp::Flows::BookingClientValidator
     submitted = submitted.to_h.with_indifferent_access
     defaults = contact_defaults
     {
+      init_visit_reason: submitted[:visit_reason].presence || @clinic_config[:default_visit_reason].to_s,
       init_first_name: submitted[:client_first_name].presence || defaults[:first_name],
       init_last_name: submitted[:client_last_name].presence || defaults[:last_name],
       init_middle_name: submitted[:client_middle_name].presence || defaults[:middle_name],
@@ -50,9 +54,17 @@ class Whatsapp::Flows::BookingClientValidator
 
   attr_reader :account, :resource, :copy, :contact
 
+  def visit_reasons_data_source
+    reasons = Array(@clinic_config[:visit_reasons])
+    return [{ id: 'none', title: '-', description: '' }] if reasons.empty?
+
+    reasons
+  end
+
   def normalize_raw_submission(raw_data)
     data = raw_data.to_h.with_indifferent_access
     {
+      visit_reason: clean_text(data[:visit_reason]),
       first_name: clean_text(data[:client_first_name]),
       last_name: clean_text(data[:client_last_name]),
       middle_name: clean_text(data[:client_middle_name]),
@@ -72,14 +84,29 @@ class Whatsapp::Flows::BookingClientValidator
 
   def build_validated_attributes(fields)
     {
+      visit_reason: fields[:visit_reason].presence,
       client_first_name: fields[:first_name],
       client_last_name: fields[:last_name].presence,
       client_middle_name: fields[:middle_name].presence,
       client_phone: normalize_phone(fields[:phone]),
       client_birth_date: normalize_birth_date(fields[:birth_date]).presence,
       client_iin: Scheduling::IinValidator.normalize(fields[:iin]),
-      notes: fields[:notes].presence
+      notes: combine_visit_reason_and_notes(fields[:visit_reason], fields[:notes])
     }.compact
+  end
+
+  def combine_visit_reason_and_notes(visit_reason, raw_notes)
+    notes_text = raw_notes.to_s.strip
+    reason_code = visit_reason.to_s.strip
+    return notes_text.presence if reason_code.blank? || reason_code == 'none'
+
+    reason_title = Whatsapp::Flows::ClinicProfile.visit_reason_title(account, reason_code)
+    return notes_text.presence if reason_title.blank?
+
+    prefix = "[#{reason_title}]"
+    return notes_text if notes_text.start_with?(prefix)
+
+    notes_text.present? ? "#{prefix} #{notes_text}" : prefix
   end
 
   def validate_names(first_name, last_name, middle_name)
@@ -197,13 +224,18 @@ class Whatsapp::Flows::BookingClientValidator
   def require_last_name? = medelement_config&.require_patient_last_name? == true
   def require_middle_name? = medelement_config&.require_patient_middle_name? == true
   def require_birth_date? = medelement_config&.require_patient_birth_date? == true
-  def show_birth_date? = require_birth_date? || contact_attribute_defined?('birth_date')
+  def show_birth_date? = require_birth_date? || @clinic_config[:force_show_birth_date] == true || contact_attribute_defined?('birth_date')
   def require_iin? = medelement_config&.require_patient_iin? == true
-  def show_iin? = require_iin? || Scheduling::IinValidator.in_use?(account)
+  def show_iin? = require_iin? || @clinic_config[:force_show_iin] == true || contact_attribute_defined?('iin')
 
   def contact_attribute_defined?(key)
-    account.custom_attribute_definitions.contact_attribute.exists?(attribute_key: key)
+    account.custom_attribute_definitions.exists?(
+      attribute_model: :contact_attribute,
+      attribute_key: key
+    )
   end
 
-  def clean_text(value) = value.to_s.strip
+  def clean_text(value)
+    value.to_s.strip
+  end
 end

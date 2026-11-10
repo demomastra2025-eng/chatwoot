@@ -57,6 +57,8 @@ class Whatsapp::Flows::ManagementService # rubocop:disable Metrics/ClassLength
     encryption_result = ensure_encryption_uploaded!
     return encryption_result unless encryption_result[:success]
 
+    return create_and_upload_flow(intake_flow_creation_options(params)) if params[:flow_type].to_s == 'clinic_intake'
+
     locale = Whatsapp::Flows::BookingFlowCopy.normalize_locale(params[:locale], account: whatsapp_channel.account)
     create_and_upload_flow(booking_flow_creation_options(locale, params))
   rescue ArgumentError => e
@@ -172,14 +174,30 @@ class Whatsapp::Flows::ManagementService # rubocop:disable Metrics/ClassLength
   end
 
   def booking_flow_creation_options(locale, params)
+    preset = Whatsapp::Flows::ClinicProfile.detect_preset(whatsapp_channel.account, params[:clinic_preset])
     {
-      name: params[:name].to_s.strip.presence || default_booking_flow_name(locale),
+      name: params[:name].to_s.strip.presence || default_booking_flow_name(locale, preset),
       categories: ['APPOINTMENT_BOOKING'],
-      flow_json: build_booking_flow_json(locale, params),
+      flow_json: build_booking_flow_json(locale, params, preset),
       use_endpoint: true,
       publish: cast_boolean(params[:publish]),
-      local_meta: { 'kind' => 'booking', 'locale' => locale },
+      local_meta: { 'kind' => 'booking', 'locale' => locale, 'clinic_preset' => preset },
       set_as_booking: true
+    }
+  end
+
+  def intake_flow_creation_options(params)
+    preset = Whatsapp::Flows::ClinicProfile.detect_preset(whatsapp_channel.account, params[:clinic_preset])
+    cfg = Whatsapp::Flows::ClinicProfile.config_for(account: whatsapp_channel.account, preset: preset)
+    default_name = "#{cfg[:intake_flow_default_name]} - #{whatsapp_channel.inbox&.id || whatsapp_channel.id}"
+    {
+      name: params[:name].to_s.strip.presence || default_name,
+      categories: ['CUSTOMER_SUPPORT'],
+      flow_json: Whatsapp::Flows::ClinicIntakeFlowSchemaBuilder.new(account: whatsapp_channel.account, preset: preset).to_json,
+      use_endpoint: false,
+      publish: cast_boolean(params[:publish]),
+      local_meta: { 'kind' => 'clinic_intake', 'clinic_preset' => preset },
+      set_as_booking: false
     }
   end
 
@@ -298,6 +316,7 @@ class Whatsapp::Flows::ManagementService # rubocop:disable Metrics/ClassLength
   def assign_booking_flow_defaults!(flows_cfg, flow_id, local_meta)
     flows_cfg['booking_flow_id'] = flow_id
     flows_cfg['booking_locale'] = local_meta['locale'] if local_meta['locale'].present?
+    flows_cfg['clinic_preset'] = local_meta['clinic_preset'] if local_meta['clinic_preset'].present?
   end
 
   def handle_non_draft_removal!(flow_id, cached_status)
@@ -383,18 +402,21 @@ class Whatsapp::Flows::ManagementService # rubocop:disable Metrics/ClassLength
     flow_item['kind'] == 'booking' && flow_item['status'] != 'DEPRECATED'
   end
 
-  def default_booking_flow_name(locale)
+  def default_booking_flow_name(locale, preset = nil)
+    cfg = Whatsapp::Flows::ClinicProfile.config_for(account: whatsapp_channel.account, preset: preset)
     copy = Whatsapp::Flows::BookingFlowCopy.for_locale(locale, account: whatsapp_channel.account)
-    "#{copy[:flow_default_name]} (#{locale.upcase}) - #{whatsapp_channel.inbox&.id || whatsapp_channel.id}"
+    base_title = cfg[:flow_default_name].presence || copy[:flow_default_name]
+    "#{base_title} (#{locale.upcase}) - #{whatsapp_channel.inbox&.id || whatsapp_channel.id}"
   end
 
-  def build_booking_flow_json(locale, params)
+  def build_booking_flow_json(locale, params, preset = nil)
     Whatsapp::Flows::BookingFlowSchemaBuilder.new(
       locale: locale,
       account: whatsapp_channel.account,
       specialist_label: params[:specialist_label],
       service_label: params[:service_label],
-      confirm_cta: params[:confirm_cta]
+      confirm_cta: params[:confirm_cta],
+      clinic_preset: preset
     ).to_json
   end
 

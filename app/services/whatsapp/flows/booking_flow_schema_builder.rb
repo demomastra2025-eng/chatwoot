@@ -6,14 +6,18 @@ class Whatsapp::Flows::BookingFlowSchemaBuilder # rubocop:disable Metrics/ClassL
   FIELD_LABEL_LIMIT = 20
   FOOTER_LABEL_LIMIT = 35
 
-  def initialize(locale: nil, account: nil, specialist_label: nil, service_label: nil, confirm_cta: nil)
+  # rubocop:disable Metrics/ParameterLists
+  def initialize(locale: nil, account: nil, specialist_label: nil, service_label: nil, confirm_cta: nil, clinic_preset: nil)
     @locale = Whatsapp::Flows::BookingFlowCopy.normalize_locale(locale, account: account)
     @copy = Whatsapp::Flows::BookingFlowCopy.for_locale(@locale)
-    @specialist_label = specialist_label.to_s.strip.presence || @copy[:specialist_label]
-    @service_label = service_label.to_s.strip.presence || @copy[:service_label]
-    @confirm_cta = confirm_cta.to_s.strip.presence || @copy[:confirm_cta]
+    @clinic_config = Whatsapp::Flows::ClinicProfile.config_for(account: account, preset: clinic_preset)
+    @specialist_label = specialist_label.to_s.strip.presence || @clinic_config[:specialist_label].presence || @copy[:specialist_label]
+    @service_label = service_label.to_s.strip.presence || @clinic_config[:service_label].presence || @copy[:service_label]
+    @confirm_cta = confirm_cta.to_s.strip.presence || @clinic_config[:confirm_cta].presence || @copy[:confirm_cta]
+    @notes_helper = @clinic_config[:notes_helper]
     validate_custom_labels!
   end
+  # rubocop:enable Metrics/ParameterLists
 
   def build
     {
@@ -34,7 +38,7 @@ class Whatsapp::Flows::BookingFlowSchemaBuilder # rubocop:disable Metrics/ClassL
 
   private
 
-  attr_reader :copy, :specialist_label, :service_label, :confirm_cta
+  attr_reader :copy, :specialist_label, :service_label, :confirm_cta, :notes_helper
 
   def validate_custom_labels!
     raise ArgumentError, "Specialist label cannot exceed #{FIELD_LABEL_LIMIT} characters" if specialist_label.length > FIELD_LABEL_LIMIT
@@ -148,6 +152,7 @@ class Whatsapp::Flows::BookingFlowSchemaBuilder # rubocop:disable Metrics/ClassL
 
   def details_form_init_values
     {
+      visit_reason: '${data.init_visit_reason}',
       client_first_name: '${data.init_first_name}',
       client_last_name: '${data.init_last_name}',
       client_middle_name: '${data.init_middle_name}',
@@ -160,6 +165,13 @@ class Whatsapp::Flows::BookingFlowSchemaBuilder # rubocop:disable Metrics/ClassL
 
   def details_form_children
     [
+      dropdown_field(
+        name: 'visit_reason',
+        label: copy[:visit_reason_label],
+        source: '${data.visit_reasons}',
+        required: '${data.show_visit_reason}',
+        visible: '${data.show_visit_reason}'
+      ),
       text_input_field(name: 'client_first_name', label: copy[:first_name_label], required: true),
       text_input_field(
         name: 'client_last_name', label: copy[:last_name_label],
@@ -190,7 +202,9 @@ class Whatsapp::Flows::BookingFlowSchemaBuilder # rubocop:disable Metrics/ClassL
   end
 
   def notes_field
-    { 'type' => 'TextArea', 'name' => 'notes', 'label' => copy[:notes_label], 'required' => false, 'max-length' => 300 }
+    field = { 'type' => 'TextArea', 'name' => 'notes', 'label' => copy[:notes_label], 'required' => false, 'max-length' => 300 }
+    field['helper-text'] = notes_helper if notes_helper.present?
+    field
   end
 
   def details_submit_payload
@@ -200,6 +214,7 @@ class Whatsapp::Flows::BookingFlowSchemaBuilder # rubocop:disable Metrics/ClassL
       resource_id: '${data.selected_resource_id}',
       booking_date: '${data.selected_date}',
       slot_key: '${data.selected_slot_key}',
+      visit_reason: '${form.visit_reason}',
       client_first_name: '${form.client_first_name}',
       client_last_name: '${form.client_last_name}',
       client_middle_name: '${form.client_middle_name}',
@@ -278,7 +293,9 @@ class Whatsapp::Flows::BookingFlowSchemaBuilder # rubocop:disable Metrics/ClassL
       selected_service_id: string_example('1'),
       selected_resource_id: string_example('1'),
       selected_date: string_example('2026-10-30'),
-      selected_slot_key: string_example('1@2026-10-30T10:00:00+05:00')
+      selected_slot_key: string_example('1@2026-10-30T10:00:00+05:00'),
+      show_visit_reason: boolean_example(false),
+      visit_reasons: option_list_schema(with_description: true, example_id: 'general', example_title: copy[:visit_reason_label])
     }
   end
 
@@ -297,6 +314,7 @@ class Whatsapp::Flows::BookingFlowSchemaBuilder # rubocop:disable Metrics/ClassL
 
   def details_init_data_schema
     {
+      init_visit_reason: string_example(''),
       init_first_name: string_example(''),
       init_last_name: string_example(''),
       init_middle_name: string_example(''),

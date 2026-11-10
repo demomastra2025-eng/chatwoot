@@ -821,6 +821,8 @@
         "TEMPLATE": "WhatsApp template",
         "TEMPLATE_PLACEHOLDER": "Select a message template",
         "DAY_BEFORE_TIME": "Send time the day before",
+        "BATCH_SAME_DAY": "Smart same-day sending",
+        "BATCH_SAME_DAY_HINT": "Combine multiple appointments on the same day into a single reminder message",
         "CONFIRM_VIA_BUTTON": "Confirm via WhatsApp button",
         "CONFIRM_VIA_BUTTON_HINT": "When the client taps the quick-reply button, the booking status automatically updates to Confirmed",
         "REVIEW_DELAY": "When to send after visit completion",

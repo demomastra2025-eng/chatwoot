@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class Api::V1::Accounts::InboxWhatsappFlowsController < Api::V1::Accounts::BaseController
-  PROVISION_BOOKING_FIELDS = %i[name locale publish specialist_label service_label confirm_cta].freeze
+  PROVISION_BOOKING_FIELDS = %i[name locale publish specialist_label service_label confirm_cta clinic_preset flow_type].freeze
   CREATE_FLOW_FIELDS = [:name, :flow_json, :use_endpoint, :publish, :kind, { categories: [] }].freeze
 
   before_action :fetch_inbox

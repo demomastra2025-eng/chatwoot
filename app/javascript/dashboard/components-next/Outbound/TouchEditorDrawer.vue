@@ -184,6 +184,7 @@ const buildFreeTextTemplateOption = template => ({
 const form = reactive({
   actionType: 'send_message',
   autoCancelOnIncoming: false,
+  batchSameDayAppointments: false,
   body: '',
   contentKind: 'free_text',
   conversationId: '',
@@ -1079,6 +1080,7 @@ const hydrateTargetSelection = async () => {
 const resetForm = () => {
   form.actionType = 'send_message';
   form.autoCancelOnIncoming = false;
+  form.batchSameDayAppointments = false;
   form.body = props.initialBody || '';
   form.contentKind = 'free_text';
   form.conversationId = props.conversationId || '';
@@ -1122,6 +1124,7 @@ const hydrateForm = () => {
   }
 
   form.autoCancelOnIncoming = props.touch.auto_cancel_on_incoming ?? false;
+  form.batchSameDayAppointments = Boolean(props.touch.metadata?.batch_same_day_appointments);
   form.actionType = props.touch.action_type || 'send_message';
   form.body =
     props.touch.content_kind === 'channel_template'
@@ -1209,6 +1212,14 @@ const buildPayload = () => {
     action_type: form.actionType,
     attachments: form.actionType === 'send_message' ? attachmentIds.value : [],
     auto_cancel_on_incoming: form.autoCancelOnIncoming,
+    ...(resolvedRemindableType.value === 'Scheduling::Appointment'
+      ? {
+          metadata: {
+            ...(props.touch?.metadata || {}),
+            batch_same_day_appointments: Boolean(form.batchSameDayAppointments),
+          },
+        }
+      : {}),
     body,
     content_kind: form.contentKind,
     ...(resolvedConversationId.value
@@ -1800,6 +1811,31 @@ watch(
               @update:model-value="form.repeatUntilAt = $event"
             />
           </template>
+        </div>
+      </SchedulingFormFieldGroup>
+
+      <SchedulingFormFieldGroup
+        v-if="resolvedRemindableType === 'Scheduling::Appointment'"
+        :framed="false"
+      >
+        <div class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3">
+          <Checkbox
+            class="mt-0.5 shrink-0"
+            :model-value="form.batchSameDayAppointments"
+            @update:model-value="form.batchSameDayAppointments = $event"
+          />
+          <div class="flex min-w-0 flex-col gap-1">
+            <p class="mb-0 text-sm font-medium text-n-slate-12">
+              {{ $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.BATCH_SAME_DAY') }}
+            </p>
+            <p class="mb-0 text-xs leading-5 text-n-slate-10">
+              {{
+                $t(
+                  'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.BATCH_SAME_DAY_DESCRIPTION'
+                )
+              }}
+            </p>
+          </div>
         </div>
       </SchedulingFormFieldGroup>
 

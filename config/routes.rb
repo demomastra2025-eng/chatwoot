@@ -859,6 +859,9 @@ Rails.application.routes.draw do
       end
 
       namespace :widget do
+        resource :booking, only: [:show, :create], controller: 'bookings' do
+          get :slots, on: :collection
+        end
         resource :availability, only: [:show], controller: 'availability'
         resource :direct_uploads, only: [:create]
         resource :config, only: [:create]

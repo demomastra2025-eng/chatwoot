@@ -25,7 +25,11 @@ class Whatsapp::Flows::InboundResponseProcessor # rubocop:disable Metrics/ClassL
     response_data = extract_response_data
     return if response_data.nil?
 
-    process_booking_submission(response_data)
+    if clinic_intake_submission?(response_data)
+      process_clinic_intake_submission(response_data)
+    else
+      process_booking_submission(response_data)
+    end
   rescue Scheduling::Error, Crm::Error => e
     handle_processing_exception(e, response_data, e.code, e.message)
   rescue ActiveRecord::RecordInvalid, ArgumentError => e
@@ -64,7 +68,8 @@ class Whatsapp::Flows::InboundResponseProcessor # rubocop:disable Metrics/ClassL
     return true unless valid_whatsapp_message_context?
     return true if message.content_attributes.to_h['whatsapp_flow_response'].blank?
 
-    message.content_attributes.to_h['whatsapp_flow_booking'].present?
+    attrs = message.content_attributes.to_h
+    attrs['whatsapp_flow_booking'].present? || attrs['whatsapp_flow_intake'].present?
   end
 
   def valid_whatsapp_message_context?
@@ -80,6 +85,70 @@ class Whatsapp::Flows::InboundResponseProcessor # rubocop:disable Metrics/ClassL
     return nil unless data.is_a?(Hash) && !data['_invalid_json']
 
     data.deep_stringify_keys
+  end
+
+  def clinic_intake_submission?(response_data)
+    response_data['onelink_flow_kind'].to_s == 'clinic_intake'
+  end
+
+  def process_clinic_intake_submission(response_data)
+    req_title = Whatsapp::Flows::ClinicIntakeFlowSchemaBuilder.request_type_title(response_data['request_type'])
+    full_name = response_data['client_full_name'].to_s.strip
+    iin = Scheduling::IinValidator.normalize(response_data['client_iin'])
+    visit_date = response_data['visit_date'].to_s.strip
+    details = response_data['details'].to_s.strip
+
+    update_contact_from_intake!(full_name, iin)
+
+    intake_summary = {
+      'status' => 'received',
+      'clinic_preset' => response_data['clinic_preset'].to_s.presence || Whatsapp::Flows::ClinicProfile.detect_preset(account),
+      'request_type' => response_data['request_type'].to_s,
+      'request_title' => req_title,
+      'client_full_name' => full_name.presence,
+      'client_iin' => iin.presence,
+      'visit_date' => visit_date.presence,
+      'details' => details.presence
+    }.compact
+
+    attrs = message.content_attributes.to_h.deep_stringify_keys.merge('whatsapp_flow_intake' => intake_summary)
+    summary_parts = [
+      req_title.present? ? "Заявка: #{req_title}" : 'Заявка через WhatsApp Flow',
+      full_name.present? ? "ФИО: #{full_name}" : nil,
+      iin.present? ? "ИИН: #{iin}" : nil,
+      visit_date.present? ? "Дата: #{visit_date}" : nil,
+      details.present? ? "Детали: #{details}" : nil
+    ].compact
+
+    updates = { content_attributes: attrs }
+    updates[:content] = summary_parts.join(' • ') if generic_flow_body?(message.content)
+    message.update!(updates)
+
+    create_intake_registrar_note!(summary_parts)
+    intake_summary
+  end
+
+  def update_contact_from_intake!(full_name, iin)
+    contact = conversation.contact
+    return if contact.blank?
+
+    custom = contact.custom_attributes.to_h.deep_dup
+    custom['iin'] = iin if iin.present?
+    contact_updates = { custom_attributes: custom }
+    contact_updates[:name] = full_name if full_name.present? && (contact.name.blank? || contact.name.to_s.match?(/\A\+?\d[\d\s()-]+\z/))
+    contact.update(contact_updates)
+  end
+
+  def create_intake_registrar_note!(summary_parts)
+    conversation.messages.create!(
+      account: account,
+      inbox: inbox,
+      message_type: :activity,
+      private: true,
+      content: "📋 Заполнена форма пациента (WhatsApp Flow):\n#{summary_parts.join("\n")}"
+    )
+  rescue StandardError => e
+    Rails.logger.warn("[WHATSAPP_FLOWS] Failed to create intake note: #{e.class}: #{e.message}")
   end
 
   def booking_submission?(response_data, token_check)

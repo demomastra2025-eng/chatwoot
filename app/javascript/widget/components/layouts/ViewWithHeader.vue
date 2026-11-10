@@ -44,7 +44,7 @@ export default {
       );
     },
     showBackButton() {
-      return ['article-viewer', 'messages', 'prechat-form'].includes(
+      return ['article-viewer', 'messages', 'prechat-form', 'booking'].includes(
         this.$route.name
       );
     },

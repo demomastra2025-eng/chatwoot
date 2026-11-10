@@ -36,6 +36,7 @@ const isSettingUpEncryption = ref(false);
 const isRotatingKeys = ref(false);
 const isSyncingFlows = ref(false);
 const isProvisioningBooking = ref(false);
+const isProvisioningIntake = ref(false);
 const publishingFlowIds = ref(new Set());
 const isRemovingFlow = ref(false);
 const flowPendingRemove = ref(null);
@@ -43,12 +44,20 @@ const removeDialogRef = ref(null);
 
 const bookingForm = reactive({
   locale: 'ru',
+  clinicPreset: '',
   name: '',
   specialistLabel: '',
   serviceLabel: '',
   confirmCta: '',
   publish: true,
 });
+
+const clinicPresetOptions = [
+  { value: '', label: 'Авто по клинике (АлияЦентр / Intermedical / Универсальный)' },
+  { value: 'aliya_center', label: 'МО «Әлия» (гинекология, беременность, УЗИ, КДЛ Олимп)' },
+  { value: 'intermedical', label: 'Intermedical (взрослый/детский, УЗИ/МРТ/КТ/ФГДС, 075/у, ОСМС)' },
+  { value: 'default', label: 'Универсальный профиль' },
+];
 
 const flowsConfig = computed(
   () =>
@@ -301,6 +310,9 @@ const provisionBookingFlow = async () => {
     if (bookingForm.confirmCta.trim()) {
       payload.confirm_cta = bookingForm.confirmCta.trim();
     }
+    if (bookingForm.clinicPreset) {
+      payload.clinic_preset = bookingForm.clinicPreset;
+    }
 
     const updatedInbox = await store.dispatch(
       'inboxes/provisionWhatsAppBookingFlow',
@@ -314,6 +326,32 @@ const provisionBookingFlow = async () => {
     useAlert(error.message);
   } finally {
     isProvisioningBooking.value = false;
+  }
+};
+
+const provisionIntakeFlow = async () => {
+  try {
+    isProvisioningIntake.value = true;
+    const payload = {
+      flow_type: 'clinic_intake',
+      locale: bookingForm.locale || 'ru',
+      publish: Boolean(bookingForm.publish),
+    };
+    if (bookingForm.clinicPreset) {
+      payload.clinic_preset = bookingForm.clinicPreset;
+    }
+    const updatedInbox = await store.dispatch(
+      'inboxes/provisionWhatsAppBookingFlow',
+      {
+        inboxId: props.inbox.id,
+        whatsappFlow: payload,
+      }
+    );
+    notifyProvisionOutcome(updatedInbox, payload.publish);
+  } catch (error) {
+    useAlert(error.message);
+  } finally {
+    isProvisioningIntake.value = false;
   }
 };
 
@@ -461,17 +499,39 @@ const containerClass = computed(() =>
                 {{ t('INBOX_MGMT.WHATSAPP_FLOWS.BOOKING.DESCRIPTION') }}
               </p>
             </div>
-            <Button
-              size="sm"
-              icon="i-lucide-sparkles"
-              data-test="provision-booking-flow-button"
-              :label="t('INBOX_MGMT.WHATSAPP_FLOWS.BOOKING.PROVISION_BUTTON')"
-              :is-loading="isProvisioningBooking"
-              @click="provisionBookingFlow"
-            />
+            <div class="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                color="slate"
+                icon="i-lucide-file-check-2"
+                data-test="provision-intake-flow-button"
+                label="Создать Flow анализов и справок"
+                :is-loading="isProvisioningIntake"
+                @click="provisionIntakeFlow"
+              />
+              <Button
+                size="sm"
+                icon="i-lucide-sparkles"
+                data-test="provision-booking-flow-button"
+                :label="t('INBOX_MGMT.WHATSAPP_FLOWS.BOOKING.PROVISION_BUTTON')"
+                :is-loading="isProvisioningBooking"
+                @click="provisionBookingFlow"
+              />
+            </div>
           </div>
 
-          <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
+            <div class="flex flex-col gap-1">
+              <label class="mb-0.5 text-xs font-medium text-n-slate-12">
+                Профиль процессов клиники
+              </label>
+              <ComboBox
+                v-model="bookingForm.clinicPreset"
+                :options="clinicPresetOptions"
+                input-like
+              />
+            </div>
             <div class="flex flex-col gap-1">
               <label class="mb-0.5 text-xs font-medium text-n-slate-12">
                 {{ t('INBOX_MGMT.WHATSAPP_FLOWS.BOOKING.LOCALE_LABEL') }}

@@ -92,5 +92,19 @@ RSpec.describe Whatsapp::Flows::BookingFlowSchemaBuilder do
       expect(custom_booking_children.find { |c| c['name'] == 'resource_id' }['label']).to eq('Мастер')
       expect(custom_details_children.find { |c| c['type'] == 'Footer' }['label']).to eq('Подтвердить визит')
     end
+
+    it 'tailors labels, visit_reasons, and intake Flow schema for МО Әлия (aliya_center) and Intermedical (intermedical)' do
+      %w[aliya_center intermedical].each do |preset|
+        schema = JSON.parse(described_class.new(locale: 'ru', clinic_preset: preset).to_json)
+        details_screen = schema['screens'].last
+        declared_data_keys = details_screen.fetch('data').keys
+        referenced_data_keys = collect_string_references(details_screen.fetch('layout'), 'data').uniq
+        expect(referenced_data_keys - declared_data_keys).to be_empty
+
+        intake_schema = JSON.parse(Whatsapp::Flows::ClinicIntakeFlowSchemaBuilder.new(preset: preset).to_json)
+        expect(intake_schema['version']).to eq('6.0')
+        expect(intake_schema['screens'].first).to include('id' => 'INTAKE_STEP', 'terminal' => true, 'success' => true)
+      end
+    end
   end
 end

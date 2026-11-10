@@ -50,7 +50,7 @@ class Confirmations::InboundTextResolver
     end
 
     # If the patient confirmed ("Ок" / "Да" / "Приду" / 👍), also confirm any other scheduled appointments on the same day
-    confirm_same_day_scheduled_appointments! if decision == 'confirmed' && reply_context_delivery.blank?
+    confirm_same_day_scheduled_appointments!(target_requests) if decision == 'confirmed' && reply_context_delivery.blank?
 
     result(
       true,
@@ -161,7 +161,14 @@ class Confirmations::InboundTextResolver
     upcoming_appointments_scope.limit(2).count >= 2
   end
 
-  def confirm_same_day_scheduled_appointments!
+  def confirm_same_day_scheduled_appointments!(resolved_requests)
+    batch_enabled = Array(resolved_requests).any? do |req|
+      meta = req.reminder&.metadata.to_h
+      meta['coalesced_appointment_ids'].present? ||
+        Reminders::BooleanParam.truthy?(meta[Reminders::SameDayAppointmentBatcher::OPT_IN_KEY])
+    end
+    return unless batch_enabled
+
     scheduled = upcoming_appointments_scope.where(status: 'scheduled').to_a
     return if scheduled.empty?
 

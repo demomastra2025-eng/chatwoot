@@ -99,6 +99,7 @@ const createDefaultPresetDraft = preset => ({
   templateKey: '',
   dayBeforeTime: preset.relativeTimeOfDay || '15:00',
   confirmationEnabled: Boolean(preset.supportsConfirmation),
+  batchSameDayAppointments: false,
   reviewDelayHours: 1,
   minMinutesBeforeAppointment: '',
   variableBindings: {},
@@ -310,6 +311,10 @@ const hydratePresetsFromRulesAndTemplates = () => {
         state.confirmationEnabled =
           rawTouch.response_action === 'confirm_appointment';
       }
+      state.batchSameDayAppointments = Boolean(
+        rawTouch.metadata?.batch_same_day_appointments ||
+          rawTouch.batch_same_day_appointments
+      );
 
       if (preset.supportsReviewDelay) {
         const offsetSec = Number(rawTouch.relative_offset_seconds || 3600);
@@ -335,6 +340,7 @@ const hydratePresetsFromRulesAndTemplates = () => {
       state.variableBindings = parsedBindings;
     } else {
       state.enabled = false;
+      state.batchSameDayAppointments = false;
       state.minMinutesBeforeAppointment = '';
       if (!state.templateKey || !templateByKey.value.has(state.templateKey)) {
         const defaultMatch = presetTemplate(preset);
@@ -615,6 +621,13 @@ const saveInlinePreset = async (preset, { forceActive = null } = {}) => {
   } else {
     delete params.min_minutes_before_appointment;
   }
+  const nextMeta = { ...(params.metadata || {}) };
+  if (state.batchSameDayAppointments) {
+    nextMeta.batch_same_day_appointments = true;
+  } else {
+    delete nextMeta.batch_same_day_appointments;
+  }
+  params.metadata = nextMeta;
 
   const payload = {
     name:
@@ -1098,6 +1111,33 @@ onMounted(async () => {
                           </option>
                         </Select>
                       </label>
+                    </div>
+
+                    <div
+                      class="flex flex-col justify-center rounded-xl border border-n-weak bg-n-alpha-black2 px-3.5 py-2.5"
+                    >
+                      <label
+                        class="flex cursor-pointer items-center justify-between gap-2"
+                      >
+                        <span class="text-xs font-medium text-n-slate-12">
+                          {{
+                            t('SCHEDULING.REMINDERS.FIELDS.BATCH_SAME_DAY')
+                          }}
+                        </span>
+                        <input
+                          v-model="
+                            presetStates[preset.key].batchSameDayAppointments
+                          "
+                          type="checkbox"
+                          data-testid="preset-batch-same-day-checkbox"
+                          class="rounded border-n-weak text-n-brand"
+                        />
+                      </label>
+                      <p class="mb-0 mt-1 text-[11px] text-n-slate-11">
+                        {{
+                          t('SCHEDULING.REMINDERS.FIELDS.BATCH_SAME_DAY_HINT')
+                        }}
+                      </p>
                     </div>
 
                     <div

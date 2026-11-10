@@ -96,6 +96,7 @@ const normalizeLegacyParams = raw => {
 
 const clone = value => JSON.parse(JSON.stringify(value || {}));
 const LATE_IMPORT_OPT_IN_KEY = 'skip_if_imported_late';
+const SAME_DAY_BATCH_OPT_IN_KEY = 'batch_same_day_appointments';
 const VISIT_ANCHORS = ['appointment.starts_at', 'appointment.ends_at'];
 // The late-import skip applies to a booking notice counted from the event; a touch timed from the visit ignores it.
 const allowsLateImportSkip = (eventName, params) =>
@@ -525,6 +526,20 @@ export default {
           metadata[LATE_IMPORT_OPT_IN_KEY] = true;
         } else {
           delete metadata[LATE_IMPORT_OPT_IN_KEY];
+        }
+        this.emitValue({ metadata });
+      },
+    },
+    batchSameDayAppointments: {
+      get() {
+        return this.normalizedValue.metadata?.[SAME_DAY_BATCH_OPT_IN_KEY] === true;
+      },
+      set(value) {
+        const metadata = clone(this.normalizedValue.metadata);
+        if (value) {
+          metadata[SAME_DAY_BATCH_OPT_IN_KEY] = true;
+        } else {
+          delete metadata[SAME_DAY_BATCH_OPT_IN_KEY];
         }
         this.emitValue({ metadata });
       },
@@ -1484,6 +1499,30 @@ export default {
         <p class="mb-0 text-xs leading-5 text-n-slate-10">
           {{ $t('AUTOMATION.ACTION.TOUCH_EDITOR.MIN_MINUTES_BEFORE_NOTE') }}
         </p>
+      </div>
+    </SchedulingFormFieldGroup>
+
+    <SchedulingFormFieldGroup
+      v-if="entityKey === 'appointment'"
+      :framed="false"
+    >
+      <div
+        class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 border-t border-n-weak pt-4"
+      >
+        <Checkbox
+          class="mt-0.5 shrink-0"
+          data-testid="touch-batch-same-day-checkbox"
+          :model-value="batchSameDayAppointments"
+          @update:model-value="batchSameDayAppointments = $event"
+        />
+        <div class="flex min-w-0 flex-col gap-1">
+          <p class="mb-0 text-sm font-medium text-n-slate-12">
+            {{ $t('AUTOMATION.ACTION.TOUCH_EDITOR.BATCH_SAME_DAY_LABEL') }}
+          </p>
+          <p class="mb-0 text-xs leading-5 text-n-slate-10">
+            {{ $t('AUTOMATION.ACTION.TOUCH_EDITOR.BATCH_SAME_DAY_NOTE') }}
+          </p>
+        </div>
       </div>
     </SchedulingFormFieldGroup>
 

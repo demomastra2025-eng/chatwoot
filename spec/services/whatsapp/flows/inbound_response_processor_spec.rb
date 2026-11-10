@@ -274,5 +274,33 @@ RSpec.describe Whatsapp::Flows::InboundResponseProcessor do
       expect(appointment.custom_attributes[Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY])
         .to eq(Integrations::Medelement::AppointmentProviderStatus::PENDING)
     end
+
+    it 'processes clinic_intake Flow submissions (labs, 075/у, ОСМС), updates Contact IIN/name, and posts a private registrar note' do
+      valid_iin = '900101300047'
+      msg = build_flow_message(
+        source_id: 'wamid.FLOW_INTAKE_1',
+        response_payload: {
+          'onelink_flow_kind' => 'clinic_intake',
+          'clinic_preset' => 'aliya_center',
+          'request_type' => 'olymp_results',
+          'client_full_name' => 'Алия Садыкова',
+          'client_iin' => valid_iin,
+          'visit_date' => '09.11.2026',
+          'details' => 'ОАК и ферритин'
+        }
+      )
+
+      result = described_class.new(inbox: inbox, message: msg).perform
+
+      expect(result).to include(
+        'status' => 'received',
+        'clinic_preset' => 'aliya_center',
+        'request_title' => 'Результаты КДЛ Олимп',
+        'client_full_name' => 'Алия Садыкова'
+      )
+      expect(msg.reload.content).to include('Заявка: Результаты КДЛ Олимп')
+      expect(msg.content_attributes['whatsapp_flow_intake']).to be_present
+      expect(conversation.messages.where(private: true).last.content).to include('Заполнена форма пациента')
+    end
   end
 end

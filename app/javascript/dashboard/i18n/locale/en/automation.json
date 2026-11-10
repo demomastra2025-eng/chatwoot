@@ -126,6 +126,8 @@
         "APPOINTMENT_CONFIRMATION_DESCRIPTION": "Clicking the selected WhatsApp button confirms only the appointment linked to this exact message.",
         "APPOINTMENT_CONFIRMATION_BUTTON_LABEL": "Confirmation button",
         "APPOINTMENT_CONFIRMATION_UNAVAILABLE": "Select an approved template with a QUICK_REPLY button from an official WhatsApp Cloud channel.",
+        "BATCH_SAME_DAY_LABEL": "Smart same-day sending (combine multiple same-day bookings into one message)",
+        "BATCH_SAME_DAY_NOTE": "If a patient has multiple appointments on the same day, reminders from this rule are combined into a single message instead of sending separate ones.",
         "SKIP_LATE_IMPORT_LABEL": "Skip if the booking reached OneLink late from MedElement",
         "SKIP_LATE_IMPORT_NOTE": "If the booking arrived more than an hour after it was created in MedElement, this notice is not sent. A booking or reschedule notice is never sent after the visit has started.",
         "MIN_MINUTES_BEFORE_LABEL": "Minimum minutes before visit",

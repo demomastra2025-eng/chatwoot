@@ -91,6 +91,9 @@ class Reminders::CreateService
 
   def normalized_metadata
     metadata = (attributes[:metadata] || {}).to_h.stringify_keys
+    if attributes.key?(:batch_same_day_appointments)
+      metadata['batch_same_day_appointments'] = Reminders::BooleanParam.truthy?(attributes[:batch_same_day_appointments])
+    end
     return metadata unless attributes.key?(:auto_cancel_on_incoming)
 
     metadata.merge('auto_cancel_on_incoming_explicit' => auto_cancel_on_incoming_value)

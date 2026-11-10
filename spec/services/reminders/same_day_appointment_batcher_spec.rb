@@ -59,8 +59,8 @@ RSpec.describe Reminders::SameDayAppointmentBatcher do
     )
   end
 
-  describe 'Smart same-day reminder grouping (1 message instead of several)' do
-    it 'combines multiple same-day appointment reminders into 1 message and coalesces siblings' do
+  describe 'Smart same-day reminder grouping (selective opt-in only)' do
+    it 'does NOT combine same-day appointment reminders by default when batch_same_day_appointments is not enabled' do
       r1 = create(
         :reminder,
         account: account,
@@ -98,6 +98,54 @@ RSpec.describe Reminders::SameDayAppointmentBatcher do
       message = Reminders::ExecuteService.new(reminder: r1, processing_claim: claim_1).perform
 
       expect(message).to be_a(Message)
+      expect(message.content).to eq('Напоминаем о вашем визите завтра в 10:00.')
+      expect(message.content).not_to include('Все ваши записи на')
+
+      expect(r1.reload).to be_completed
+      expect(r2.reload).to be_pending
+      expect(r2.metadata['coalesced_into_reminder_id']).to be_nil
+    end
+
+    it 'combines multiple same-day appointment reminders into 1 message and coalesces siblings when selectively enabled' do
+      r1 = create(
+        :reminder,
+        account: account,
+        conversation: conversation,
+        target_conversation: conversation,
+        target_inbox: inbox,
+        target_contact: contact,
+        target_contact_inbox: contact_inbox,
+        remindable: apt_1,
+        action_type: :send_message,
+        content_kind: :free_text,
+        body: 'Напоминаем о вашем визите завтра в 10:00.',
+        timezone: 'Asia/Almaty',
+        status: :pending,
+        scheduled_at: 1.minute.ago,
+        metadata: { 'batch_same_day_appointments' => true }
+      )
+      r2 = create(
+        :reminder,
+        account: account,
+        conversation: conversation,
+        target_conversation: conversation,
+        target_inbox: inbox,
+        target_contact: contact,
+        target_contact_inbox: contact_inbox,
+        remindable: apt_2,
+        action_type: :send_message,
+        content_kind: :free_text,
+        body: 'Напоминаем о вашем визите завтра в 10:00.',
+        timezone: 'Asia/Almaty',
+        status: :pending,
+        scheduled_at: 30.minutes.from_now,
+        metadata: { 'batch_same_day_appointments' => true }
+      )
+
+      claim_1 = r1.mark_processing!
+      message = Reminders::ExecuteService.new(reminder: r1, processing_claim: claim_1).perform
+
+      expect(message).to be_a(Message)
       expect(message.content).to include('Все ваши записи на')
       expect(message.content).to include('10:00 — Д-р Иванова — УЗИ брюшной полости')
       expect(message.content).to include('11:00 — Д-р Петров — Прием терапевта')
@@ -107,7 +155,6 @@ RSpec.describe Reminders::SameDayAppointmentBatcher do
       expect(r2.metadata['coalesced_into_reminder_id']).to eq(r1.id)
       expect(r2.metadata['coalesced_delivery_message_id']).to eq(message.id)
 
-      # Executing the coalesced second reminder does not send a second message
       outgoing_count_before = conversation.messages.outgoing.count
       Reminders::ExecuteService.new(reminder: r2).perform
       expect(conversation.messages.outgoing.count).to eq(outgoing_count_before)
@@ -131,7 +178,7 @@ RSpec.describe Reminders::SameDayAppointmentBatcher do
       )
     end
 
-    it 'confirms a button-enabled appointment reminder and all same-day visits when the patient replies "Да, приду"' do
+    it 'confirms only the target appointment by default and confirms all same-day visits when batching is enabled' do
       delivery = create(:message, account: account, inbox: inbox, conversation: conversation,
                                   message_type: :outgoing, content: 'Подтвердите запись', source_id: 'wamid.conf.1')
       touch = create(
@@ -148,7 +195,8 @@ RSpec.describe Reminders::SameDayAppointmentBatcher do
         template_params: { name: 'appointment_confirmation', language: 'ru' },
         response_action: 'confirm_appointment',
         response_button_index: 0,
-        scheduled_at: 1.hour.from_now
+        scheduled_at: 1.hour.from_now,
+        metadata: { 'batch_same_day_appointments' => true }
       )
       req = create(
         :confirmation_request,

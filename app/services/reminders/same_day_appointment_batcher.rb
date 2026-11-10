@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Reminders::SameDayAppointmentBatcher
+  OPT_IN_KEY = 'batch_same_day_appointments'
   COALESCED_INTO_REMINDER_KEY = 'coalesced_into_reminder_id'
   COALESCED_DELIVERY_MESSAGE_KEY = 'coalesced_delivery_message_id'
   COALESCED_APPOINTMENT_IDS_KEY = 'coalesced_appointment_ids'
@@ -71,9 +72,44 @@ class Reminders::SameDayAppointmentBatcher
   def eligible_reminder?
     reminder.persisted? &&
       reminder.action_type == 'send_message' &&
+      same_day_batching_enabled? &&
       primary_appointment.present? &&
       primary_appointment.starts_at.present? &&
       primary_appointment.status.in?(%w[scheduled confirmed])
+  end
+
+  def same_day_batching_enabled?
+    explicit_meta = reminder.metadata.to_h
+    return Reminders::BooleanParam.truthy?(explicit_meta[OPT_IN_KEY]) if explicit_meta.key?(OPT_IN_KEY)
+
+    rule_opt_in = automation_rule_opt_in
+    return rule_opt_in unless rule_opt_in.nil?
+
+    false
+  end
+
+  def automation_rule_opt_in
+    rule_id = reminder.metadata.to_h['automation_rule_id'].presence ||
+              reminder.metadata.to_h[Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY].presence
+    if rule_id.blank? && reminder.metadata.to_h['touch_plan_enrollment_id'].present?
+      rule_id = TouchPlanEnrollment.where(
+        id: reminder.metadata.to_h['touch_plan_enrollment_id'],
+        account_id: reminder.account_id
+      ).pick(:automation_rule_id)
+    end
+    return nil if rule_id.blank?
+
+    rule = AutomationRule.find_by(id: rule_id, account_id: reminder.account_id)
+    return nil if rule.blank?
+
+    touch_action = Array(rule.actions).find { |a| a.to_h['action_name'].to_s == 'create_touch' }
+    params = Array(touch_action&.dig('action_params')).first.to_h
+    return Reminders::BooleanParam.truthy?(params[OPT_IN_KEY]) if params.key?(OPT_IN_KEY)
+
+    meta = params['metadata'].to_h
+    return Reminders::BooleanParam.truthy?(meta[OPT_IN_KEY]) if meta.key?(OPT_IN_KEY)
+
+    nil
   end
 
   def primary_appointment
@@ -140,6 +176,7 @@ class Reminders::SameDayAppointmentBatcher
 
   def matching_sibling_reminder?(candidate)
     return false if candidate.delivery_materialized?
+    return false if candidate.metadata.to_h.key?(OPT_IN_KEY) && !Reminders::BooleanParam.truthy?(candidate.metadata.to_h[OPT_IN_KEY])
     return false if reminder.target_contact_id.present? && candidate.target_contact_id.present? &&
                     candidate.target_contact_id != reminder.target_contact_id
 

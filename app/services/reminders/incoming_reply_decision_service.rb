@@ -166,9 +166,18 @@ class Reminders::IncomingReplyDecisionService
     scheduled = upcoming_appointments.select { |apt| apt.status == 'scheduled' }
     return if scheduled.empty?
 
-    target_date = scheduled.first.starts_at.in_time_zone('Asia/Almaty').to_date
-    same_day = scheduled.select { |apt| apt.starts_at.in_time_zone('Asia/Almaty').to_date == target_date }
-    same_day.each do |appointment|
+    batch_enabled = account.reminders.where(conversation_id: conversation.id).any? do |rem|
+      meta = rem.metadata.to_h
+      meta['coalesced_appointment_ids'].present? ||
+        Reminders::BooleanParam.truthy?(meta[Reminders::SameDayAppointmentBatcher::OPT_IN_KEY])
+    end
+    targets = if batch_enabled
+                target_date = scheduled.first.starts_at.in_time_zone('Asia/Almaty').to_date
+                scheduled.select { |apt| apt.starts_at.in_time_zone('Asia/Almaty').to_date == target_date }
+              else
+                [scheduled.first]
+              end
+    targets.each do |appointment|
       appointment.update(
         status: 'confirmed',
         custom_attributes: appointment.custom_attributes.to_h.merge(
