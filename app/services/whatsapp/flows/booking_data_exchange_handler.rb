@@ -88,7 +88,7 @@ class Whatsapp::Flows::BookingDataExchangeHandler # rubocop:disable Metrics/Clas
     end
   end
 
-  def handle_booking_step_submit(service_id: nil, resource_id:, booking_date:) # rubocop:disable Lint/UnusedMethodArgument
+  def handle_booking_step_submit(resource_id:, booking_date:, service_id: nil) # rubocop:disable Lint/UnusedMethodArgument
     service = nil
     resources = resolver.candidate_resources(resource_id, service: service)
     if resources.empty?
@@ -171,7 +171,7 @@ class Whatsapp::Flows::BookingDataExchangeHandler # rubocop:disable Metrics/Clas
 
   def build_booking_step(overrides = {})
     opts = overrides.to_h.with_indifferent_access
-    options = booking_step_dropdown_options
+    options = booking_step_dropdown_options(opts[:resource_id])
     error_text = opts[:error].presence || (resolver.available_resources.empty? ? copy[:no_specialists_error] : '')
 
     {
@@ -180,11 +180,16 @@ class Whatsapp::Flows::BookingDataExchangeHandler # rubocop:disable Metrics/Clas
     }
   end
 
-  def booking_step_dropdown_options
+  def booking_step_dropdown_options(preferred_resource_id = nil)
+    scoped_resources = resolver.candidate_resources(preferred_resource_id)
+    scoped_resources = resolver.available_resources if scoped_resources.empty?
+    avail_dates = resolver.available_dates_for_resources(scoped_resources)
+    avail_dates = resolver.upcoming_dates if avail_dates.empty?
+
     {
       services: [{ id: 'none', title: '-', description: '' }],
       specialists: build_specialist_options(resolver.available_resources),
-      dates: resolver.upcoming_dates.map { |d| { id: d.iso8601, title: format_date(d).truncate(TITLE_LIMIT) } }
+      dates: avail_dates.map { |d| { id: d.iso8601, title: format_date(d).truncate(TITLE_LIMIT) } }
     }
   end
 
@@ -300,17 +305,37 @@ class Whatsapp::Flows::BookingDataExchangeHandler # rubocop:disable Metrics/Clas
 
     options = resources.map do |res|
       full_name = res.name.to_s.strip
-      specialty = res.custom_attributes.to_h['specialty'].to_s.strip
-      desc = full_name.length > TITLE_LIMIT ? [full_name, specialty].compact_blank.join(' • ') : specialty
-      { id: res.id.to_s, title: full_name.truncate(TITLE_LIMIT), description: desc.truncate(DESCRIPTION_LIMIT) }
+      specialty = resolved_specialty_text(res)
+      nearest_hint = format_nearest_dates_hint(res)
+      desc_parts = []
+      desc_parts << full_name if full_name.length > TITLE_LIMIT
+      desc_parts << specialty if specialty.present?
+      desc_parts << nearest_hint if nearest_hint.present?
+      {
+        id: res.id.to_s,
+        title: full_name.truncate(TITLE_LIMIT),
+        description: desc_parts.join(' • ').truncate(DESCRIPTION_LIMIT)
+      }
     end
     options.unshift(id: 'any', title: copy[:any_specialist].truncate(TITLE_LIMIT), description: '') if resources.size > 1
     options
   end
 
+  def resolved_specialty_text(resource)
+    resource.custom_attributes.to_h['specialty'].to_s.strip.presence || resource.try(:specialty).to_s.strip
+  end
+
+  def format_nearest_dates_hint(resource)
+    dates = resolver.available_dates_for_resource(resource)
+    return '' if dates.empty?
+
+    sample = dates.first(3).map { |d| d.strftime('%d.%m') }.join(', ')
+    "Свободно: #{sample}"
+  end
+
   def format_slot_option(entry, _service, show_resource_name)
     time_range = "#{entry[:local_start].strftime('%H:%M')} – #{entry[:local_end].strftime('%H:%M')}"
-    desc = show_resource_name ? entry[:resource].name.to_s : ''
+    desc = show_resource_name ? entry[:resource].name.to_s : resolved_specialty_text(entry[:resource])
     { id: entry[:key], title: time_range.truncate(TITLE_LIMIT), description: desc.to_s.truncate(DESCRIPTION_LIMIT) }
   end
 

@@ -32,12 +32,15 @@ class Api::V1::Widget::BookingsController < Api::V1::Widget::BaseController
     resources = resolver.candidate_resources(params[:resource_id], service: service)
     return render json: { slots: [], error: copy[:no_specialists_error] }, status: :ok if resources.empty?
 
+    avail_dates = resolver.available_dates_for_resources(resources)
     date = resolver.parse_booking_date(params[:booking_date])
+    date = avail_dates.first if avail_dates.any? && avail_dates.exclude?(date)
     available_slots = resolver.slots_for_date(resources: resources, date: date, service: service)
     nearest_date = available_slots.empty? ? resolver.nearest_available_date(resources: resources, after_date: date, service: service) : nil
 
     render json: {
       booking_date: date.iso8601,
+      available_dates: avail_dates.map(&:iso8601),
       slots: available_slots.map { |entry| serialize_slot(entry, service) },
       nearest_date: nearest_date&.iso8601,
       nearest_date_label: nearest_date ? Whatsapp::Flows::BookingFlowCopy.format_date(nearest_date, locale: resolved_locale) : nil
@@ -109,17 +112,22 @@ class Api::V1::Widget::BookingsController < Api::V1::Widget::BaseController
 
   def serialized_specialists
     resolver.available_resources.map do |res|
+      specialty = res.custom_attributes.to_h['specialty'].to_s.strip.presence || res.try(:specialty).to_s.strip.presence
       {
         id: res.id.to_s,
         name: res.name,
-        specialty: res.custom_attributes.to_h['specialty'].to_s.strip.presence,
+        specialty: specialty,
+        category: res.custom_attributes.to_h['booking_category'].to_s.presence,
+        available_dates: resolver.available_dates_for_resource(res).map(&:iso8601),
         service_ids: []
       }
     end
   end
 
   def serialized_dates
-    resolver.upcoming_dates.map do |date|
+    avail = resolver.available_dates_for_resources(resolver.available_resources)
+    avail = resolver.upcoming_dates if avail.empty?
+    avail.map do |date|
       {
         id: date.iso8601,
         label: Whatsapp::Flows::BookingFlowCopy.format_date(date, locale: resolved_locale)

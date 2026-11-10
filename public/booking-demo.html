@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Тестовый стенд онлайн-записи — МО «Әлия» & МЦ «Intermedical»</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --primary: #0284c7;
+      --primary-hover: #0369a1;
+      --primary-soft: #e0f2fe;
+      --success: #059669;
+      --success-bg: #ecfdf5;
+      --danger: #dc2626;
+      --danger-bg: #fef2f2;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px 16px 80px;
+    }
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+    }
+    .header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0 0 4px;
+    }
+    .header p {
+      margin: 0;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .clinic-tabs {
+      display: inline-flex;
+      background: #e2e8f0;
+      padding: 4px;
+      border-radius: 12px;
+      gap: 4px;
+    }
+    .clinic-tab {
+      border: none;
+      background: transparent;
+      padding: 10px 18px;
+      border-radius: 9px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #334155;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .clinic-tab.active {
+      background: var(--surface);
+      color: var(--primary);
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 400px;
+      gap: 24px;
+      align-items: start;
+    }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .card-title {
+      font-size: 17px;
+      font-weight: 700;
+      margin: 0 0 4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .badge {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+    .card-sub {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 0 0 20px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #475569;
+      margin-bottom: 6px;
+    }
+    select, input[type="text"], input[type="tel"] {
+      width: 100%;
+      padding: 11px 13px;
+      border-radius: 10px;
+      border: 1px solid #cbd5e1;
+      font-size: 14px;
+      background: #fff;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    select:focus, input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
+    }
+    .specialist-info {
+      margin-top: 8px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      font-size: 13px;
+      color: #334155;
+    }
+    .slots-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .slot-btn {
+      padding: 9px 8px;
+      border-radius: 9px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      color: #1e293b;
+      cursor: pointer;
+      transition: all 0.12s;
+      text-align: center;
+    }
+    .slot-btn:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .slot-btn.active {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+    .submit-btn {
+      width: 100%;
+      padding: 13px 18px;
+      border-radius: 10px;
+      border: none;
+      background: var(--primary);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.15s;
+    }
+    .submit-btn:hover:not(:disabled) {
+      background: var(--primary-hover);
+    }
+    .submit-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .alert {
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    .alert-error {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border: 1px solid #fecaca;
+    }
+    .alert-success {
+      background: var(--success-bg);
+      color: var(--success);
+      border: 1px solid #a7f3d0;
+    }
+    .iframe-wrap {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: #fff;
+      height: 640px;
+      box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+    }
+    .iframe-wrap iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+    .meta-list {
+      margin: 12px 0 0;
+      padding: 0;
+      list-style: none;
+      font-size: 13px;
+    }
+    .meta-list li {
+      padding: 6px 0;
+      border-bottom: 1px dashed var(--border);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .meta-list li:last-child { border-bottom: none; }
+    code {
+      background: #f1f5f9;
+      padding: 2px 6px;
+      border-radius: 5px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>Онлайн-запись в календарь клиники (Виджет + API)</h1>
+        <p>Реальные специалисты, кабинеты, цены и фильтрация только доступных дат из MedElement и локального расписания</p>
+      </div>
+      <div class="clinic-tabs">
+        <button class="clinic-tab active" onclick="switchClinic('aliya')" id="tab-aliya">
+          МО «Әлия» (Актобе)
+        </button>
+        <button class="clinic-tab" onclick="switchClinic('intermedical')" id="tab-intermedical">
+          МЦ «Intermedical» (Алматы)
+        </button>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- Left: Interactive Direct Booking Calendar Form -->
+      <div class="card">
+        <div class="card-title">
+          <span id="clinic-title">МО «Әлия» — Прямая форма онлайн-записи</span>
+          <span class="badge" id="specialists-count">Загрузка...</span>
+        </div>
+        <p class="card-sub" id="clinic-subtitle">
+          Показываются только врачи и кабинеты с открытыми окнами на ближайшие 14 дней (без живой очереди рентгена и врачей в отпуске).
+        </p>
+
+        <div id="alert-box"></div>
+
+        <!-- Category filter -->
+        <div class="form-group">
+          <label class="form-label">Направление / Категория</label>
+          <select id="category-select" onchange="onCategoryChange()">
+            <option value="all">Все направления</option>
+          </select>
+        </div>
+
+        <!-- Specialist selector -->
+        <div class="form-group">
+          <label class="form-label">Врач или диагностический кабинет</label>
+          <select id="specialist-select" onchange="onSpecialistChange()"></select>
+          <div class="specialist-info" id="specialist-meta" style="display:none;"></div>
+        </div>
+
+        <!-- Available Date selector (filtered strictly to dates with free slots) -->
+        <div class="form-group">
+          <label class="form-label">Доступная дата (только дни со свободными окнами)</label>
+          <select id="date-select" onchange="loadSlots()"></select>
+        </div>
+
+        <!-- Time Slots -->
+        <div class="form-group">
+          <label class="form-label">Свободное время приёма</label>
+          <div id="slots-container" class="slots-grid"></div>
+        </div>
+
+        <!-- Patient info -->
+        <div class="form-group">
+          <label class="form-label">ФИО пациента</label>
+          <input type="text" id="patient-name" placeholder="Например: Тест Онлайн Запись" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Телефон (WhatsApp)</label>
+          <input type="tel" id="patient-phone" placeholder="+7 707 281 70 60" value="+77072817060" />
+        </div>
+
+        <button class="submit-btn" id="submit-btn" onclick="submitBooking()" disabled>
+          Записаться на приём
+        </button>
+
+        <ul class="meta-list" style="margin-top: 20px;">
+          <li>
+            <span>Токен виджета:</span>
+            <code id="token-display">GNyudhPc5sk86W7A9ku1szxK</code>
+          </li>
+          <li>
+            <span>Прямая ссылка на виджет:</span>
+            <a id="direct-widget-link" href="/widget?website_token=GNyudhPc5sk86W7A9ku1szxK" target="_blank">Открыть отдельно ↗</a>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Right: Live Embedded Chatwoot Widget Frame -->
+      <div>
+        <div style="margin-bottom: 8px; font-size: 13px; font-weight: 600; color: #475569; display: flex; justify-content: space-between;">
+          <span>Встроенный веб-виджет чата (нажмите «Онлайн-запись» в шапке)</span>
+        </div>
+        <div class="iframe-wrap">
+          <iframe id="widget-iframe" src="/widget?website_token=GNyudhPc5sk86W7A9ku1szxK"></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const CLINICS = {
+      aliya: {
+        name: 'МО «Әлия» (г. Актобе)',
+        token: 'GNyudhPc5sk86W7A9ku1szxK'
+      },
+      intermedical: {
+        name: 'МЦ «Intermedical» (г. Алматы)',
+        token: 'HVMs38HMW7989qe5qKG9iALW'
+      }
+    };
+
+    let currentClinic = 'aliya';
+    let bookingData = { categories: [], specialists: [], available_dates: [] };
+    let selectedSlot = null;
+
+    function switchClinic(key) {
+      currentClinic = key;
+      document.getElementById('tab-aliya').classList.toggle('active', key === 'aliya');
+      document.getElementById('tab-intermedical').classList.toggle('active', key === 'intermedical');
+
+      const clinic = CLINICS[key];
+      document.getElementById('clinic-title').textContent = clinic.name + ' — Прямая форма онлайн-записи';
+      document.getElementById('token-display').textContent = clinic.token;
+      const widgetUrl = '/widget?website_token=' + encodeURIComponent(clinic.token);
+      document.getElementById('direct-widget-link').href = widgetUrl;
+      document.getElementById('widget-iframe').src = widgetUrl;
+
+      loadClinicConfig();
+    }
+
+    async function loadClinicConfig() {
+      const clinic = CLINICS[currentClinic];
+      const alertBox = document.getElementById('alert-box');
+      alertBox.innerHTML = '';
+      document.getElementById('specialists-count').textContent = 'Загрузка...';
+
+      try {
+        const res = await fetch('/api/v1/widget/bookings?website_token=' + encodeURIComponent(clinic.token));
+        const data = await res.json();
+        bookingData = data;
+
+        document.getElementById('specialists-count').textContent =
+          (data.specialists || []).length + ' спец. со свободными окнами';
+
+        const catSelect = document.getElementById('category-select');
+        catSelect.innerHTML = '<option value="all">Все направления (' + (data.specialists || []).length + ')</option>';
+        (data.categories || []).forEach(c => {
+          const count = (data.specialists || []).filter(s => s.category === c.id).length;
+          if (count > 0) {
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = c.title + ' (' + count + ')';
+            catSelect.appendChild(opt);
+          }
+        });
+
+        onCategoryChange();
+      } catch (e) {
+        alertBox.innerHTML = '<div class="alert alert-error">Ошибка загрузки данных: ' + e.message + '</div>';
+      }
+    }
+
+    function onCategoryChange() {
+      const cat = document.getElementById('category-select').value;
+      const specSelect = document.getElementById('specialist-select');
+      specSelect.innerHTML = '';
+
+      const list = (bookingData.specialists || []).filter(s => cat === 'all' || s.category === cat);
+      list.forEach(sp => {
+        const opt = document.createElement('option');
+        opt.value = sp.id;
+        opt.textContent = sp.name + (sp.specialty ? ' — ' + sp.specialty : '');
+        specSelect.appendChild(opt);
+      });
+
+      onSpecialistChange();
+    }
+
+    function onSpecialistChange() {
+      const specId = Number(document.getElementById('specialist-select').value);
+      const sp = (bookingData.specialists || []).find(s => s.id === specId);
+      const metaEl = document.getElementById('specialist-meta');
+      const dateSelect = document.getElementById('date-select');
+      dateSelect.innerHTML = '';
+
+      if (!sp) {
+        metaEl.style.display = 'none';
+        return;
+      }
+
+      const dates = (sp.available_dates && sp.available_dates.length > 0)
+        ? sp.available_dates
+        : (bookingData.available_dates || []);
+
+      metaEl.style.display = 'block';
+      metaEl.innerHTML =
+        '<strong>' + sp.name + '</strong><br/>' +
+        '<span>Специализация и стоимость: ' + (sp.specialty || 'Приём специалиста') + '</span><br/>' +
+        '<span>Доступно дней в ближайшие 2 недели: <strong>' + dates.length + '</strong></span>';
+
+      dates.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        opt.textContent = d.title;
+        dateSelect.appendChild(opt);
+      });
+
+      loadSlots();
+    }
+
+    async function loadSlots() {
+      selectedSlot = null;
+      updateSubmitState();
+      const specId = document.getElementById('specialist-select').value;
+      const dateVal = document.getElementById('date-select').value;
+      const container = document.getElementById('slots-container');
+
+      if (!dateVal) {
+        container.innerHTML = '<span style="font-size:13px;color:#64748b;">Нет доступных дат</span>';
+        return;
+      }
+
+      container.innerHTML = '<span style="font-size:13px;color:#64748b;">Загрузка окон...</span>';
+      const clinic = CLINICS[currentClinic];
+      try {
+        const url = '/api/v1/widget/bookings/slots?website_token=' + encodeURIComponent(clinic.token) +
+          '&booking_date=' + encodeURIComponent(dateVal) +
+          '&resource_id=' + encodeURIComponent(specId);
+        const res = await fetch(url);
+        const data = await res.json();
+        const slots = data.slots || [];
+
+        if (slots.length === 0) {
+          container.innerHTML = '<span style="font-size:13px;color:#dc2626;">На выбранную дату свободных окон не осталось</span>';
+          return;
+        }
+
+        container.innerHTML = '';
+        slots.forEach(slot => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'slot-btn';
+          btn.textContent = slot.title;
+          btn.onclick = () => {
+            document.querySelectorAll('.slot-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            selectedSlot = slot.id;
+            updateSubmitState();
+          };
+          container.appendChild(btn);
+        });
+      } catch (e) {
+        container.innerHTML = '<span style="font-size:13px;color:#dc2626;">Ошибка загрузки слотов</span>';
+      }
+    }
+
+    function updateSubmitState() {
+      const name = document.getElementById('patient-name').value.trim();
+      const phone = document.getElementById('patient-phone').value.trim();
+      document.getElementById('submit-btn').disabled = !(selectedSlot && name && phone);
+    }
+
+    document.getElementById('patient-name').addEventListener('input', updateSubmitState);
+    document.getElementById('patient-phone').addEventListener('input', updateSubmitState);
+
+    async function submitBooking() {
+      const clinic = CLINICS[currentClinic];
+      const alertBox = document.getElementById('alert-box');
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.textContent = 'Отправка...';
+      alertBox.innerHTML = '';
+
+      try {
+        const payload = {
+          website_token: clinic.token,
+          booking: {
+            resource_id: document.getElementById('specialist-select').value,
+            booking_date: document.getElementById('date-select').value,
+            slot_time: selectedSlot,
+            patient_name: document.getElementById('patient-name').value.trim(),
+            patient_phone: document.getElementById('patient-phone').value.trim()
+          }
+        };
+        const res = await fetch('/api/v1/widget/bookings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'Не удалось создать запись');
+        }
+        const a = data.appointment;
+        alertBox.innerHTML =
+          '<div class="alert alert-success">' +
+          '<strong>Запись успешно создана!</strong><br/>' +
+          'Врач/кабинет: ' + a.specialist_name + '<br/>' +
+          'Дата и время: ' + a.date + ' в ' + a.time + ' (ID брони: #' + a.id + ')' +
+          '</div>';
+        loadSlots();
+      } catch (e) {
+        alertBox.innerHTML = '<div class="alert alert-error">' + e.message + '</div>';
+      } finally {
+        btn.textContent = 'Записаться на приём';
+        updateSubmitState();
+      }
+    }
+
+    loadClinicConfig();
+  </script>
+</body>
+</html>

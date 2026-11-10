@@ -6,6 +6,7 @@ class Whatsapp::Flows::BookingSlotResolver # rubocop:disable Metrics/ClassLength
   MIN_LEAD_MINUTES = 5
   WEEKDAY_KEYS = Scheduling::AvailableSlotSearchService::WEEKDAY_KEYS
   LAST_BOOKING_PATTERN = Scheduling::AvailableSlotSearchService::LAST_BOOKING_PATTERN
+  NON_APPOINTMENT_PATTERNS = /\Aкабинет\s+(рентген|флюорограф)/i
 
   def initialize(account:)
     @account = account
@@ -13,7 +14,7 @@ class Whatsapp::Flows::BookingSlotResolver # rubocop:disable Metrics/ClassLength
 
   def timezone
     @timezone ||= begin
-      tz_name = available_resources.filter_map { |res| res.timezone.presence }.first ||
+      tz_name = all_active_resources.filter_map { |res| res.timezone.presence }.first ||
                 account.reporting_timezone.presence ||
                 Scheduling::Constants::DEFAULT_TIMEZONE
       ActiveSupport::TimeZone[tz_name] || ActiveSupport::TimeZone[Scheduling::Constants::DEFAULT_TIMEZONE]
@@ -21,7 +22,11 @@ class Whatsapp::Flows::BookingSlotResolver # rubocop:disable Metrics/ClassLength
   end
 
   def available_resources
-    @available_resources ||= account.scheduling_resources.available_for_scheduling.ordered.to_a
+    @available_resources ||= begin
+      filtered = all_active_resources.reject { |res| non_bookable_resource?(res) }
+      with_dates = filtered.select { |res| available_dates_for_resource(res).any? }
+      with_dates.presence || filtered
+    end
   end
 
   def active_services
@@ -34,7 +39,7 @@ class Whatsapp::Flows::BookingSlotResolver # rubocop:disable Metrics/ClassLength
     id = Integer(raw_resource_id.to_s, 10, exception: false)
     return nil unless id&.positive?
 
-    available_resources.find { |item| item.id == id }
+    all_active_resources.find { |item| item.id == id }
   end
 
   def find_service(raw_service_id)
@@ -76,6 +81,18 @@ class Whatsapp::Flows::BookingSlotResolver # rubocop:disable Metrics/ClassLength
     (0...days).map { |offset| today + offset.days }
   end
 
+  def available_dates_for_resource(resource)
+    return [] if resource.nil?
+
+    dates_map = available_dates_by_resource_id
+    dates_map[resource.id] || []
+  end
+
+  def available_dates_for_resources(resources = available_resources)
+    dates_set = Array(resources).flat_map { |res| available_dates_for_resource(res) }.uniq.sort
+    dates_set.presence || upcoming_dates.select { |d| Array(resources).any? { |res| slots_for_date(resources: [res], date: d).any? } }
+  end
+
   def parse_booking_date(raw_date)
     parsed = Scheduling::InputValidation.parse_date(raw_date)
     today = earliest_active_today
@@ -95,7 +112,9 @@ class Whatsapp::Flows::BookingSlotResolver # rubocop:disable Metrics/ClassLength
   end
 
   def nearest_available_date(resources:, after_date:, service: nil)
-    upcoming_dates.find do |candidate_date|
+    candidate_dates = available_dates_for_resources(resources)
+    candidate_dates = upcoming_dates if candidate_dates.empty?
+    candidate_dates.find do |candidate_date|
       next false if candidate_date == after_date
 
       slots_for_date(resources: resources, date: candidate_date, service: service).any?
@@ -133,9 +152,65 @@ class Whatsapp::Flows::BookingSlotResolver # rubocop:disable Metrics/ClassLength
 
   attr_reader :account
 
+  def all_active_resources
+    @all_active_resources ||= account.scheduling_resources.available_for_scheduling.includes(:work_rules).ordered.to_a
+  end
+
+  def non_bookable_resource?(resource)
+    return true if resource.custom_attributes.to_h['hide_from_online_booking'] == true
+
+    resource.name.to_s.strip.match?(NON_APPOINTMENT_PATTERNS)
+  end
+
+  def available_dates_by_resource_id
+    @available_dates_by_resource_id ||= begin
+      horizon = upcoming_dates
+      date_range = horizon.first..horizon.last
+      med_days_by_res = confirmed_medelement_days_by_resource(date_range)
+
+      all_active_resources.each_with_object({}) do |res, memo|
+        memo[res.id] = compute_available_dates_for(res, horizon, med_days_by_res[res.id] || [])
+      end
+    end
+  end
+
+  def confirmed_medelement_days_by_resource(date_range)
+    hook = account.hooks.enabled.find_by(app_id: 'medelement')
+    return {} unless hook&.feature_allowed?
+
+    Integrations::Medelement::ScheduleDay.where(
+      account_id: account.id,
+      hook_id: hook.id,
+      status: 'confirmed',
+      date: date_range
+    ).select { |day| fresh_schedule_day?(day) && Array(day.windows).any? }.group_by(&:resource_id)
+  end
+
+  def fresh_schedule_day?(day)
+    checked_at = day.source_checked_at
+    return false unless checked_at
+
+    offset = (day.date - earliest_active_today).to_i
+    interval = Integrations::Medelement::SchedulesSyncService.refresh_interval([offset, 0].max)
+    margin = Scheduling::ScheduleDayAvailabilityService::FRESHNESS_MARGIN_MINUTES.minutes
+    checked_at > Time.current - interval - margin
+  end
+
+  def compute_available_dates_for(resource, horizon, confirmed_days)
+    policy = Scheduling::ResourceHoursPolicy.new(resource: resource)
+    if policy.provider_hours?
+      confirmed_days.map(&:date).uniq.sort
+    else
+      active_weekdays = resource.work_rules.select(&:active).map(&:weekday).to_set
+      return [] if active_weekdays.empty?
+
+      horizon.select { |d| active_weekdays.include?(d.wday) && slots_for_date(resources: [resource], date: d).any? }
+    end
+  end
+
   def earliest_active_today
     now = Time.current
-    dates = available_resources.map { |res| now.in_time_zone(resource_zone(res)).to_date }
+    dates = all_active_resources.map { |res| now.in_time_zone(resource_zone(res)).to_date }
     dates << now.in_time_zone(timezone).to_date
     dates.min
   end

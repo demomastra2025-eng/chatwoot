@@ -67,6 +67,19 @@ export default {
         selectedSvc.resource_ids.includes(String(sp.id))
       );
     },
+    filteredDates() {
+      const allDates = this.config.dates || [];
+      if (!this.form.resource_id || this.form.resource_id === 'any') {
+        return allDates;
+      }
+      const sp = (this.config.specialists || []).find(
+        item => String(item.id) === String(this.form.resource_id)
+      );
+      if (!sp || !Array.isArray(sp.available_dates) || !sp.available_dates.length) {
+        return allDates;
+      }
+      return allDates.filter(d => sp.available_dates.includes(d.id));
+    },
     selectedServiceName() {
       const svc = (this.config.services || []).find(
         s => String(s.id) === String(this.form.service_id)
@@ -120,6 +133,16 @@ export default {
       ) {
         this.form.resource_id = 'any';
       }
+      await this.onSpecialistChange();
+    },
+    async onSpecialistChange() {
+      const validDates = this.filteredDates;
+      if (
+        validDates.length &&
+        !validDates.some(d => d.id === this.form.booking_date)
+      ) {
+        this.form.booking_date = validDates[0].id;
+      }
       await this.fetchSlots();
     },
     async fetchSlots() {
@@ -135,6 +158,9 @@ export default {
           resource_id: this.form.resource_id || 'any',
           booking_date: this.form.booking_date,
         });
+        if (data.booking_date && data.booking_date !== this.form.booking_date) {
+          this.form.booking_date = data.booking_date;
+        }
         this.slots = data.slots || [];
         if (!this.slots.length && data.nearest_date) {
           this.nearestDateSuggestion = {
@@ -212,7 +238,7 @@ export default {
       </button>
     </div>
 
-    <!-- STEP 1: Choose Service, Specialist, Date & Time Slot -->
+    <!-- STEP 1: Choose Specialist, Date & Time Slot -->
     <div v-else-if="step === 1" class="flex flex-col gap-3.5">
       <div class="rounded-xl border border-n-weak bg-n-solid-2 p-3.5 shadow-sm">
         <div class="mb-2.5 flex items-center justify-between">
@@ -225,32 +251,13 @@ export default {
         </div>
 
         <div class="flex flex-col gap-2.5">
-          <label v-if="config.services.length" class="flex flex-col gap-1 text-xs font-medium text-n-slate-11">
-            <span>{{ config.service_label }}</span>
-            <select
-              v-model="form.service_id"
-              data-testid="widget-booking-service"
-              class="w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 py-2 text-xs text-n-slate-12"
-              @change="onSelectionChange"
-            >
-              <option value="">Все услуги / консультация</option>
-              <option
-                v-for="svc in config.services"
-                :key="svc.id"
-                :value="svc.id"
-              >
-                {{ svc.name }}{{ svc.duration_min ? ` (${svc.duration_min} мин)` : '' }}
-              </option>
-            </select>
-          </label>
-
           <label class="flex flex-col gap-1 text-xs font-medium text-n-slate-11">
             <span>{{ config.specialist_label }}</span>
             <select
               v-model="form.resource_id"
               data-testid="widget-booking-specialist"
               class="w-full rounded-lg border border-n-weak bg-n-surface-1 px-2.5 py-2 text-xs text-n-slate-12"
-              @change="fetchSlots"
+              @change="onSpecialistChange"
             >
               <option value="any">Любой свободный специалист</option>
               <option
@@ -264,7 +271,7 @@ export default {
           </label>
 
           <label class="flex flex-col gap-1 text-xs font-medium text-n-slate-11">
-            <span>Дата приёма</span>
+            <span>Доступные даты приёма</span>
             <select
               v-model="form.booking_date"
               data-testid="widget-booking-date"
@@ -272,7 +279,7 @@ export default {
               @change="fetchSlots"
             >
               <option
-                v-for="d in config.dates"
+                v-for="d in filteredDates"
                 :key="d.id"
                 :value="d.id"
               >
@@ -301,7 +308,7 @@ export default {
 
         <div v-else-if="!slots.length" class="flex flex-col items-center gap-2 py-4 text-center">
           <p class="m-0 text-xs text-n-slate-11">
-            На выбранную дату нет свободных окон.
+            На выбранную дату все окна уже заняты.
           </p>
           <button
             v-if="nearestDateSuggestion"
@@ -348,7 +355,6 @@ export default {
             </p>
             <p class="m-0 text-[11px] text-n-slate-11">
               {{ selectedDateLabel }} • {{ selectedSlotObj?.time_label }}
-              <template v-if="selectedServiceName"> • {{ selectedServiceName }}</template>
             </p>
           </div>
           <button
@@ -497,9 +503,6 @@ export default {
       <div class="rounded-lg bg-n-alpha-2 p-3 text-left text-xs text-n-slate-12">
         <p class="m-0 font-semibold">
           {{ confirmedResult.appointment.resource_name }}
-        </p>
-        <p v-if="confirmedResult.appointment.service_name" class="m-0 mt-0.5 text-n-slate-11">
-          {{ confirmedResult.appointment.service_name }}
         </p>
         <p class="m-0 mt-1 font-medium">
           📅 {{ confirmedResult.appointment.date_label }} • {{ confirmedResult.appointment.time_label }}
