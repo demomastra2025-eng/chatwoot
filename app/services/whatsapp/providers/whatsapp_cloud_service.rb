@@ -471,9 +471,16 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     return payload unless payload[:type].to_s == 'flow'
 
     flow = payload[:flow].to_h.with_indifferent_access
-    return payload if flow[:flow_token].present? && flow[:flow_token].to_s != 'unused'
-
-    flow[:flow_token] = generate_outbound_flow_token(flow[:flow_id], message)
+    cached_flow = Array(whatsapp_channel.provider_config.to_h.dig('whatsapp_flows', 'flows')).find do |item|
+      item['id'].to_s == flow[:flow_id].to_s
+    end.to_h
+    if cached_flow['kind'].to_s == 'clinic_intake'
+      flow[:flow_action] = 'navigate'
+      flow[:flow_action_payload] = { 'screen' => 'INTAKE_STEP' } if flow.dig(:flow_action_payload, :screen).blank?
+    end
+    if flow[:flow_token].blank? || flow[:flow_token].to_s == 'unused'
+      flow[:flow_token] = generate_outbound_flow_token(flow[:flow_id], message)
+    end
     payload[:flow] = flow
     payload
   end

@@ -88,10 +88,12 @@ class Whatsapp::Flows::CryptoService
     raise DecryptionError, 'Initial vector cannot be empty' if initial_vector.to_s.b.empty?
 
     plaintext_json = response_payload.is_a?(String) ? response_payload : response_payload.to_json
+    flipped_iv = flip_initial_vector(initial_vector)
     cipher = OpenSSL::Cipher.new("aes-#{aes_key.bytesize * 8}-gcm")
     cipher.encrypt
     cipher.key = aes_key
-    cipher.iv = flip_initial_vector(initial_vector)
+    cipher.iv_len = flipped_iv.bytesize
+    cipher.iv = flipped_iv
     cipher.auth_data = ''
 
     ciphertext = cipher.update(plaintext_json) + cipher.final
@@ -139,6 +141,7 @@ class Whatsapp::Flows::CryptoService
     cipher = OpenSSL::Cipher.new("aes-#{aes_key.bytesize * 8}-gcm")
     cipher.decrypt
     cipher.key = aes_key
+    cipher.iv_len = initial_vector.bytesize
     cipher.iv = initial_vector
     cipher.auth_tag = auth_tag
     cipher.auth_data = ''
